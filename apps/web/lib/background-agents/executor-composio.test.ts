@@ -329,6 +329,7 @@ mock.module("@/lib/inference/model-option-id", () => ({
 }));
 
 mock.module("@/lib/inference/profile-resolution", () => ({
+  assertInferenceProfileRouteAvailable: mock(async () => undefined),
   resolveInferenceProfileModelSelection: mock(
     async (params: { selection: unknown }) => params.selection,
   ),
@@ -560,6 +561,7 @@ describe("Background agent Composio tool injection (Phase 5)", () => {
     expect(executeTool).not.toHaveBeenCalled();
     expect(recordedEvent("background-agent.run.failed")).toMatchObject({
       status: "failed",
+      errorKind: "agent_disabled",
     });
   });
 

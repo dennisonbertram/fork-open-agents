@@ -461,7 +461,23 @@ export async function createRunForTrigger(params: {
     triggerId: params.trigger.id,
     event: params.event,
   });
-  const executionSnapshot = buildBackgroundAgentExecutionSnapshot(params.agent);
+  const existingRun = await db.query.backgroundAgentRuns.findFirst({
+    where: eq(backgroundAgentRuns.idempotencyKey, idempotencyKey),
+  });
+  if (existingRun) {
+    return { run: existingRun, created: false };
+  }
+
+  const { resolveBackgroundAgentInferenceSnapshot } =
+    await import("./inference-snapshot");
+  const inference = await resolveBackgroundAgentInferenceSnapshot({
+    userId: params.agent.userId,
+    modelId: params.agent.modelId,
+  });
+  const executionSnapshot = buildBackgroundAgentExecutionSnapshot(
+    params.agent,
+    inference,
+  );
   const definitionHash =
     hashBackgroundAgentExecutionSnapshot(executionSnapshot);
 

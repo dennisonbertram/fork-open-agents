@@ -479,7 +479,9 @@ function buildSnapshotRun(
   overrides: Record<string, unknown> = {},
 ): BackgroundAgentRun {
   const executionSnapshot =
-    buildBackgroundAgentExecutionSnapshot(acceptedAgent);
+    (overrides.executionSnapshot as ReturnType<
+      typeof buildBackgroundAgentExecutionSnapshot
+    >) ?? buildBackgroundAgentExecutionSnapshot(acceptedAgent);
   return buildRun({
     ...({
       executionSnapshot,
@@ -1084,6 +1086,9 @@ describe("(c) model resolution", () => {
     );
     currentRun = buildSnapshotRun(acceptedAgent, { executionSnapshot });
     currentAgent = acceptedAgent;
+    // Initial validation passes. The mocked model resolver does not perform
+    // its own DB check, so the second call is the executor guard immediately
+    // before the first model turn.
     inferenceRouteAvailabilityFailureAt = 2;
     const { executeBackgroundAgentRun } = await executorModulePromise;
 

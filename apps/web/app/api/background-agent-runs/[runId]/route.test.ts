@@ -113,7 +113,10 @@ function validPrivateSnapshot(): BackgroundAgentExecutionSnapshotV1 {
     },
     writeScope: { mode: "this_repo" },
     requireCiGreenForMerge: true,
-    modelId: null,
+    inference: {
+      route: "gateway",
+      modelId: "anthropic/claude-opus-4.6",
+    },
   };
 }
 

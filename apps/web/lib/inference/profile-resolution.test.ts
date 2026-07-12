@@ -159,6 +159,35 @@ describe("resolveInferenceProfileModelSelection", () => {
     ).rejects.toThrow("changed");
   });
 
+  test("treats profile deletion and disablement as live revocation", async () => {
+    profile = null;
+    await expect(
+      assertInferenceProfileRouteAvailable({
+        userId: "user-1",
+        inferenceProfileId: "profile-openai",
+        provider: "openai-compatible",
+        baseUrl: "https://accepted.example.com/v1",
+      }),
+    ).rejects.toThrow("unavailable");
+
+    profile = {
+      id: "profile-openai",
+      name: "Disabled endpoint",
+      provider: "openai-compatible",
+      enabled: false,
+      baseUrl: "https://accepted.example.com/v1",
+      encryptedApiKey: "encrypted-key",
+    };
+    await expect(
+      assertInferenceProfileRouteAvailable({
+        userId: "user-1",
+        inferenceProfileId: "profile-openai",
+        provider: "openai-compatible",
+        baseUrl: "https://accepted.example.com/v1",
+      }),
+    ).rejects.toThrow("unavailable");
+  });
+
   test("allows key rotation when the accepted provider and endpoint are unchanged", async () => {
     profile = {
       id: "profile-openai",

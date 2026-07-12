@@ -182,6 +182,28 @@ describe("BackgroundAgentExecutionSnapshotV1", () => {
     );
   });
 
+  test("any accepted user inference route edit changes the definition hash", () => {
+    const agent = buildAgent({ modelId: "user-profile:profile-1:glm-5.2" });
+    const first = buildBackgroundAgentExecutionSnapshot(agent, {
+      route: "user",
+      modelId: "glm-5.2",
+      inferenceProfileId: "profile-1",
+      provider: "anthropic",
+      baseUrl: "https://accepted.example.com/v1",
+    });
+    const changed = buildBackgroundAgentExecutionSnapshot(agent, {
+      route: "user",
+      modelId: "glm-5.2",
+      inferenceProfileId: "profile-1",
+      provider: "anthropic",
+      baseUrl: "https://changed.example.com/v1",
+    });
+
+    expect(hashBackgroundAgentExecutionSnapshot(changed)).not.toBe(
+      hashBackgroundAgentExecutionSnapshot(first),
+    );
+  });
+
   test("rejects unknown versions and unsafe fields at every strict boundary", () => {
     const snapshot = buildBackgroundAgentExecutionSnapshot(buildAgent());
 

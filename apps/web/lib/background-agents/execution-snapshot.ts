@@ -1,6 +1,11 @@
 import { z } from "zod";
+import { defaultModelLabel } from "@open-agents/agent";
 import type { BackgroundAgent, BackgroundAgentRun } from "@/lib/db/schema";
 import { sha256CanonicalJson } from "@/lib/execution-snapshots/canonical-json";
+import {
+  parseModelOptionSelection,
+  USER_INFERENCE_OPTION_PREFIX,
+} from "@/lib/inference/model-option-id";
 import { LEARNINGS_AGENT_MARKER } from "@/lib/learnings/builtin-marker";
 
 const githubPermissionsSchema = z
@@ -41,6 +46,41 @@ const writeScopeSchema = z.discriminatedUnion("mode", [
     .strict(),
 ]);
 
+const gatewayInferenceSchema = z
+  .object({
+    route: z.literal("gateway"),
+    modelId: z.string().min(1),
+  })
+  .strict();
+
+const userInferenceSchema = z
+  .object({
+    route: z.literal("user"),
+    modelId: z.string().min(1),
+    inferenceProfileId: z.string().min(1),
+    provider: z.enum(["anthropic", "openai-compatible"]),
+    baseUrl: z.string().url().nullable(),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (value.provider === "openai-compatible" && !value.baseUrl) {
+      context.addIssue({
+        code: "custom",
+        path: ["baseUrl"],
+        message: "OpenAI-compatible inference routes require a base URL.",
+      });
+    }
+  });
+
+export const backgroundAgentInferenceSnapshotV1Schema = z.discriminatedUnion(
+  "route",
+  [gatewayInferenceSchema, userInferenceSchema],
+);
+
+export type BackgroundAgentInferenceSnapshotV1 = z.infer<
+  typeof backgroundAgentInferenceSnapshotV1Schema
+>;
+
 export const backgroundAgentExecutionSnapshotV1Schema = z
   .object({
     snapshotVersion: z.literal(1),
@@ -61,7 +101,7 @@ export const backgroundAgentExecutionSnapshotV1Schema = z
     githubActions: githubActionsSchema,
     writeScope: writeScopeSchema,
     requireCiGreenForMerge: z.boolean(),
-    modelId: z.string().nullable(),
+    inference: backgroundAgentInferenceSnapshotV1Schema,
   })
   .strict();
 
@@ -102,6 +142,9 @@ function normalizeWriteScope(
 
 export function buildBackgroundAgentExecutionSnapshot(
   agent: BackgroundAgent,
+  inference: BackgroundAgentInferenceSnapshotV1 = buildLocalBackgroundAgentInferenceSnapshot(
+    agent.modelId,
+  ),
 ): BackgroundAgentExecutionSnapshotV1 {
   return backgroundAgentExecutionSnapshotV1Schema.parse({
     snapshotVersion: 1,
@@ -134,8 +177,24 @@ export function buildBackgroundAgentExecutionSnapshot(
     },
     writeScope: normalizeWriteScope(agent.writeScope),
     requireCiGreenForMerge: agent.requireCiGreenForMerge ?? true,
-    modelId: normalizedText(agent.modelId),
+    inference,
   });
+}
+
+function buildLocalBackgroundAgentInferenceSnapshot(
+  modelId: string | null | undefined,
+): BackgroundAgentInferenceSnapshotV1 {
+  const selectionId = normalizedText(modelId) ?? defaultModelLabel;
+  const parsed = parseModelOptionSelection(selectionId);
+  if (parsed.inferenceProfileId) {
+    throw new Error(
+      "User inference selections require resolved profile routing metadata.",
+    );
+  }
+  if (selectionId.startsWith(USER_INFERENCE_OPTION_PREFIX)) {
+    throw new Error("User inference selection is malformed.");
+  }
+  return { route: "gateway", modelId: parsed.modelId };
 }
 
 export function parseBackgroundAgentExecutionSnapshot(
@@ -159,6 +218,7 @@ export type BackgroundAgentSnapshotErrorKind =
   | "snapshot_hash_mismatch"
   | "agent_disabled"
   | "agent_deleted"
+  | "model_resolution_failed"
   | "permission_missing"
   | "installation_missing";
 
@@ -182,6 +242,7 @@ export type ResolvedBackgroundAgentExecutionDefinition = {
 export function resolveBackgroundAgentExecutionDefinition(
   run: BackgroundAgentRun,
   liveAgent: BackgroundAgent | null,
+  legacyInference?: BackgroundAgentInferenceSnapshotV1,
 ): ResolvedBackgroundAgentExecutionDefinition {
   const tuple = [
     run.executionSnapshot,
@@ -210,7 +271,11 @@ export function resolveBackgroundAgentExecutionDefinition(
       );
     }
     return {
-      definition: buildBackgroundAgentExecutionSnapshot(liveAgent),
+      definition: buildBackgroundAgentExecutionSnapshot(
+        liveAgent,
+        legacyInference ??
+          buildLocalBackgroundAgentInferenceSnapshot(liveAgent.modelId),
+      ),
       snapshotSource: "legacy_live_fallback",
       definitionVersion: null,
       definitionHash: null,

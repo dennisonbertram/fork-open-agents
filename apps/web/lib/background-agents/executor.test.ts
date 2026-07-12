@@ -345,6 +345,7 @@ mock.module("@/lib/inference/model-option-id", () => ({
 }));
 
 mock.module("@/lib/inference/profile-resolution", () => ({
+  assertInferenceProfileRouteAvailable: mock(async () => undefined),
   resolveInferenceProfileModelSelection: mock(
     async (params: { selection: unknown }) => params.selection,
   ),

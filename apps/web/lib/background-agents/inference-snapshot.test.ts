@@ -2,19 +2,17 @@ import { beforeEach, describe, expect, mock, test } from "bun:test";
 
 mock.module("server-only", () => ({}));
 
-let profile:
-  | {
-      id: string;
-      userId: string;
-      name: string;
-      provider: "anthropic" | "openai-compatible";
-      baseUrl: string | null;
-      encryptedApiKey: string;
-      keyLast4: string;
-      keyFingerprint: string;
-      enabled: boolean;
-    }
-  | null = null;
+let profile: {
+  id: string;
+  userId: string;
+  name: string;
+  provider: "anthropic" | "openai-compatible";
+  baseUrl: string | null;
+  encryptedApiKey: string;
+  keyLast4: string;
+  keyFingerprint: string;
+  enabled: boolean;
+} | null = null;
 let profileLookupCount = 0;
 
 mock.module("@/lib/db/inference-profiles", () => ({

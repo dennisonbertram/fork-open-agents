@@ -11,14 +11,12 @@ let insertedRunValues: Record<string, unknown> | null = null;
 let persistedRun: Record<string, unknown> | null = null;
 let runInsertWins = true;
 let eventInsertFails = false;
-let inferenceProfile:
-  | {
-      id: string;
-      provider: "anthropic" | "openai-compatible";
-      baseUrl: string | null;
-      enabled: boolean;
-    }
-  | null = null;
+let inferenceProfile: {
+  id: string;
+  provider: "anthropic" | "openai-compatible";
+  baseUrl: string | null;
+  enabled: boolean;
+} | null = null;
 let inferenceProfileLookupCount = 0;
 const recordedEvents: Array<Record<string, unknown>> = [];
 

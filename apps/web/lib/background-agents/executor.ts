@@ -1,7 +1,6 @@
 import "server-only";
 
 import {
-  defaultModelLabel,
   gateway,
   openAgent,
   type AgentModelSelection,
@@ -69,7 +68,10 @@ import {
   recordBackgroundAgentEvent,
   updateBackgroundAgentRunStatus,
 } from "./store";
-import { resolveComposioToolsForBgRun } from "./composio-tools";
+import {
+  assertComposioRepoToolkitsStillAllowed,
+  resolveComposioToolsForBgRun,
+} from "./composio-tools";
 import {
   resolveGitHubActionTools,
   type GitHubActionToggles,
@@ -95,14 +97,18 @@ import { createDbLearningsStore } from "@/lib/learnings/store";
 import { generateText, Output } from "ai";
 import { recordUsage } from "@/lib/db/usage";
 import { extractedLearningCandidateSchema } from "@/lib/learnings/types";
-import { parseModelOptionSelection } from "@/lib/inference/model-option-id";
-import { resolveInferenceProfileModelSelection } from "@/lib/inference/profile-resolution";
+import {
+  assertInferenceProfileRouteAvailable,
+  resolveInferenceProfileModelSelection,
+} from "@/lib/inference/profile-resolution";
 import {
   BackgroundAgentSnapshotError,
   resolveBackgroundAgentExecutionDefinition,
   type BackgroundAgentExecutionSnapshotV1,
+  type BackgroundAgentInferenceSnapshotV1,
 } from "./execution-snapshot";
 import { sha256CanonicalJson } from "@/lib/execution-snapshots/canonical-json";
+import { resolveBackgroundAgentInferenceSnapshot } from "./inference-snapshot";
 
 const DEFAULT_CHECK_TIMEOUT_MS = 120_000;
 const DEFAULT_AGENT_TIMEOUT_MS = 600_000;
@@ -388,9 +394,31 @@ async function assertLiveBackgroundExecution(params: {
       "Background Run or source was deleted during execution.",
     );
   }
+  let legacyInference: BackgroundAgentInferenceSnapshotV1 | undefined;
+  if (
+    row.run.executionSnapshot == null &&
+    row.run.definitionVersion == null &&
+    row.run.definitionHash == null &&
+    row.agent
+  ) {
+    try {
+      legacyInference = await resolveBackgroundAgentInferenceSnapshot({
+        userId: row.run.userId,
+        modelId: row.agent.modelId,
+      });
+    } catch (error) {
+      throw new BackgroundAgentSnapshotError(
+        "model_resolution_failed",
+        error instanceof Error
+          ? error.message
+          : "Selected inference profile is unavailable.",
+      );
+    }
+  }
   const resolved = resolveBackgroundAgentExecutionDefinition(
     row.run,
     row.agent,
+    legacyInference,
   );
   if (!isBackgroundAgentsEnabled()) {
     throw new BackgroundAgentSnapshotError(
@@ -413,6 +441,23 @@ async function assertLiveBackgroundExecution(params: {
       "agent_deleted",
       "Background agent configuration was deleted during execution.",
     );
+  }
+  if (resolved.definition.inference.route === "user") {
+    try {
+      await assertInferenceProfileRouteAvailable({
+        userId: row.run.userId,
+        inferenceProfileId: resolved.definition.inference.inferenceProfileId,
+        provider: resolved.definition.inference.provider,
+        baseUrl: resolved.definition.inference.baseUrl,
+      });
+    } catch (error) {
+      throw new BackgroundAgentSnapshotError(
+        "model_resolution_failed",
+        error instanceof Error
+          ? error.message
+          : "Selected inference profile is unavailable.",
+      );
+    }
   }
   const policy = buildEffectiveSecurityPolicy(resolved.definition, row.agent);
   if (
@@ -784,35 +829,36 @@ function getSandboxState(sandbox: Sandbox): SandboxState {
 }
 
 /**
- * Resolves the agent's explicit model selection (agent.modelId) into an
- * OpenAgentCallOptions["model"] value. Returns `undefined` when the agent
- * has no explicit selection — the caller falls back to the default model.
- *
- * Never silently falls back on a resolution failure: the caller is
- * expected to fail the run with errorKind 'model_resolution_failed' when
- * this throws, because the user explicitly chose this model.
+ * Resolves the accepted Run's concrete inference descriptor into the model
+ * selection used by Open Agent. The descriptor has no credential material;
+ * user-route keys are loaded live only after the saved route still matches.
  */
 async function resolveBackgroundAgentModel(params: {
   userId: string;
-  modelId: string | null;
-}): Promise<AgentModelSelection | undefined> {
-  if (!params.modelId) {
-    return undefined;
-  }
-
-  const parsed = parseModelOptionSelection(params.modelId);
+  inference: BackgroundAgentInferenceSnapshotV1;
+}): Promise<AgentModelSelection> {
   const baseSelection: AgentModelSelection = {
-    id: parsed.modelId as AgentModelSelection["id"],
+    id: params.inference.modelId as AgentModelSelection["id"],
   };
 
-  if (!parsed.inferenceProfileId) {
-    return baseSelection;
+  if (params.inference.route === "gateway") {
+    return {
+      ...baseSelection,
+      attribution: {
+        inferenceRoute: "gateway",
+        provider: params.inference.modelId.split("/")[0],
+      },
+    };
   }
 
   return resolveInferenceProfileModelSelection({
     userId: params.userId,
-    inferenceProfileId: parsed.inferenceProfileId,
+    inferenceProfileId: params.inference.inferenceProfileId,
     selection: baseSelection,
+    expectedRoute: {
+      provider: params.inference.provider,
+      baseUrl: params.inference.baseUrl,
+    },
   });
 }
 
@@ -837,6 +883,7 @@ async function runBackgroundAgent(params: {
   modelSelection?: AgentModelSelection;
   /** The model id recorded on usage events / the started event payload. */
   recordedModelId: string;
+  inference: BackgroundAgentInferenceSnapshotV1;
   assertLiveAuthorization: () => Promise<void>;
 }) {
   let messages: ModelMessage[] = [
@@ -1043,6 +1090,11 @@ async function runBackgroundAgent(params: {
         source: "background-agent",
         agentType: "main",
         model: params.recordedModelId,
+        inferenceRoute: params.inference.route,
+        inferenceProfileId:
+          params.inference.route === "user"
+            ? params.inference.inferenceProfileId
+            : null,
         usage: {
           inputTokens: result.usage.inputTokens ?? 0,
           cachedInputTokens: result.usage.cachedInputTokens ?? 0,
@@ -1711,11 +1763,11 @@ export async function executeBackgroundAgentRun(params: {
   // A misconfigured explicit model selection must fail the run rather than
   // silently fall back — the user chose this model. Failing before sandbox
   // setup avoids paying sandbox costs for a run that cannot proceed.
-  let resolvedModelSelection: AgentModelSelection | undefined;
+  let resolvedModelSelection: AgentModelSelection;
   try {
     resolvedModelSelection = await resolveBackgroundAgentModel({
       userId: run.userId,
-      modelId: definition.modelId,
+      inference: definition.inference,
     });
   } catch (error) {
     const freshRow = await getBackgroundAgentRunWithAgent(run.id);
@@ -1734,7 +1786,7 @@ export async function executeBackgroundAgentRun(params: {
     });
     return;
   }
-  const recordedModelId = resolvedModelSelection?.id ?? defaultModelLabel;
+  const recordedModelId = resolvedModelSelection.id;
 
   let setupToken: ScopedInstallationToken | undefined;
   let sandbox: Sandbox | undefined;
@@ -1892,7 +1944,23 @@ export async function executeBackgroundAgentRun(params: {
     });
 
     if (composioResult.status === "ready") {
-      resolvedComposioTools = composioResult.tools;
+      resolvedComposioTools = guardToolSet(composioResult.tools, async () => {
+        try {
+          await assertComposioRepoToolkitsStillAllowed({
+            userId: run.userId,
+            repoOwner: run.repoOwner,
+            repoName: run.repoName,
+            toolkitSlugs: composioResult.toolkitSlugs,
+          });
+        } catch (error) {
+          throw new BackgroundAgentSnapshotError(
+            "agent_disabled",
+            error instanceof Error
+              ? error.message
+              : "Repository Composio policy could not be verified.",
+          );
+        }
+      });
       await recordBackgroundAgentEvent({
         runId: run.id,
         agentId: run.agentId,
@@ -2064,6 +2132,7 @@ export async function executeBackgroundAgentRun(params: {
       allowedBuiltinToolNames,
       modelSelection: resolvedModelSelection,
       recordedModelId,
+      inference: definition.inference,
       assertLiveAuthorization,
     });
   } catch (error) {

@@ -31,8 +31,12 @@ type RepoSettingsValues = {
 };
 
 let repoSettingsValues: RepoSettingsValues | null = null;
+let repoSettingsError: Error | null = null;
 
-const getRepositoryComposioSettings = mock(async () => ({}) as unknown);
+const getRepositoryComposioSettings = mock(async () => {
+  if (repoSettingsError) throw repoSettingsError;
+  return {} as unknown;
+});
 const getRepositoryComposioSettingsValues = mock(
   (_settings: unknown): RepoSettingsValues | null => repoSettingsValues,
 );
@@ -153,6 +157,7 @@ const composioToolsModulePromise = import("./composio-tools");
 
 beforeEach(() => {
   repoSettingsValues = null;
+  repoSettingsError = null;
   configured = true;
   composioClientThrows = null;
   toolkitListThrows = null;
@@ -198,6 +203,33 @@ describe("resolveComposioToolsForBgRun — typed outcome contract", () => {
       }),
     ).rejects.toThrow("github");
     expect(resolveComposioToolsForToolkitList).not.toHaveBeenCalled();
+  });
+
+  test("fails closed with safe copy when repository policy cannot be loaded", async () => {
+    const { assertComposioRepoToolkitsStillAllowed } =
+      await composioToolsModulePromise;
+    repoSettingsError = new Error(
+      "database password=private-policy-loader-canary",
+    );
+
+    await expect(
+      assertComposioRepoToolkitsStillAllowed({
+        userId: "user-1",
+        repoOwner: "acme",
+        repoName: "widgets",
+        toolkitSlugs: ["github"],
+      }),
+    ).rejects.toThrow("could not be verified");
+    try {
+      await assertComposioRepoToolkitsStillAllowed({
+        userId: "user-1",
+        repoOwner: "acme",
+        repoName: "widgets",
+        toolkitSlugs: ["github"],
+      });
+    } catch (error) {
+      expect(String(error)).not.toContain("private-policy-loader-canary");
+    }
   });
 
   test("BT-CT-001: empty slugs -> off with reason no_slugs_selected, no blockedSlugs", async () => {
