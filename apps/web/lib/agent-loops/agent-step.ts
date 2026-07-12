@@ -469,6 +469,15 @@ export async function executeAgentStep(
     accessResult.defaultBranch,
   );
 
+  if (!(await isAgentLoopRunSourceLive(loopRunId))) {
+    await revokeInstallationToken(cloneToken).catch(() => undefined);
+    return {
+      outcome: "failure",
+      errorKind: "source_deleted",
+      errorMessage: "Source Automation deleted",
+    };
+  }
+
   // ── 4. Connect sandbox ────────────────────────────────────────────────────────
 
   let sandbox: Sandbox | undefined;
