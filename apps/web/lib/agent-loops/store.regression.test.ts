@@ -156,24 +156,6 @@ const VALID_DEFINITION = {
   edges: [{ id: "e1", source: "s", target: "e", when: "always" }],
 };
 
-function makeLoop(overrides: Partial<Record<string, unknown>> = {}) {
-  return {
-    id: "loop-1",
-    userId: "user-1",
-    name: "Test Loop",
-    description: null,
-    repoOwner: "acme",
-    repoName: "widgets",
-    definition: VALID_DEFINITION,
-    status: "draft",
-    guardrails: null,
-    permissions: {},
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    ...overrides,
-  };
-}
-
 function makeLoopRun(overrides: Partial<Record<string, unknown>> = {}) {
   return {
     id: "run-1",
@@ -181,6 +163,9 @@ function makeLoopRun(overrides: Partial<Record<string, unknown>> = {}) {
     userId: "user-1",
     status: "queued",
     definitionSnapshot: { nodes: [], edges: [] },
+    executionSnapshot: null,
+    definitionVersion: null,
+    definitionHash: null,
     currentNodeId: null,
     currentStepRunId: null,
     iterationCount: 0,
@@ -470,14 +455,9 @@ describe("REGRESSION-009: createAgentLoopRun duplicate key returns existing run,
   beforeEach(resetMocks);
 
   test("second call with same idempotencyKey returns {run, created:false} without throwing", async () => {
-    const loop = makeLoop();
     const existing = makeLoopRun({ idempotencyKey: "key-retry" });
 
-    // Ownership check passes
-    findFirstMock.mockResolvedValueOnce(loop);
-    // Conflict suppressed — insert returns nothing
-    returningMock.mockImplementationOnce(() => []);
-    // Fetch of the pre-existing run
+    // The accepted winner is returned before consulting the mutable source.
     findFirstMock.mockResolvedValueOnce(existing);
 
     const store = await storePromise;

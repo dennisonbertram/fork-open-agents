@@ -6,9 +6,12 @@ import {
   listStepRunsForRun,
   listWatchdogRunsForLoopRun,
 } from "@/lib/agent-loops/store";
-import { isAgentLoopsEnabled } from "@/lib/agent-loops/config";
 import type { GetAgentLoopRunDetailResponse } from "@/app/api/agent-loops/types";
 import { mergeEventsForSummary } from "./_lib/merge-events-for-summary";
+import {
+  toPublicAgentLoopRun,
+  toSafeAgentLoopEvidence,
+} from "@/lib/agent-loops/public-run";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -30,17 +33,6 @@ export async function GET(_req: Request, ctx: RouteContext): Promise<Response> {
   const authResult = await requireAuthenticatedUser();
   if (!authResult.ok) {
     return authResult.response;
-  }
-
-  if (!isAgentLoopsEnabled()) {
-    return Response.json(
-      {
-        errorKind: "feature_disabled",
-        message:
-          "Agent loops are not enabled. Set AGENT_LOOPS_ENABLED=true to enable.",
-      },
-      { status: 403 },
-    );
   }
 
   const { runId } = await ctx.params;
@@ -72,16 +64,19 @@ export async function GET(_req: Request, ctx: RouteContext): Promise<Response> {
   );
 
   const events = mergeEventsForSummary(cappedEvents, composioEvents);
+  const safeLoop = toSafeAgentLoopEvidence(row.run, row.loop);
 
   const body: GetAgentLoopRunDetailResponse = {
-    run: row.run,
-    loop: row.loop
+    run: toPublicAgentLoopRun(row.run),
+    loop: safeLoop
       ? {
-          id: row.loop.id,
-          name: row.loop.name,
-          repoOwner: row.loop.repoOwner,
-          repoName: row.loop.repoName,
-          guardrails: row.loop.guardrails,
+          id: safeLoop.id,
+          name: safeLoop.name,
+          repoOwner: safeLoop.repoOwner,
+          repoName: safeLoop.repoName,
+          guardrails: safeLoop.guardrails,
+          sourceDeleted: safeLoop.sourceDeleted,
+          sourceActive: safeLoop.sourceActive,
         }
       : null,
     steps,

@@ -17,7 +17,7 @@ import type {
   AgentLoopStepRun,
   AgentLoopWatchdogRun,
 } from "@/lib/db/schema";
-import { loopDefinitionSchema } from "@/lib/agent-loops/types";
+import { publicLoopGraphSchema } from "@/lib/agent-loops/public-run";
 import { getLoopErrorCopy, sanitizeErrorDetail } from "@/app/loops/error-copy";
 import { getRunCompletionLabel } from "../../run-completion-label";
 import { getTurnBudgetProof } from "./turn-budget-proof";
@@ -117,6 +117,19 @@ function buildProofStripRows(
       copyable: true,
     },
     { key: "current-node", label: "Current Node", value: run.currentNodeId },
+    {
+      key: "definition",
+      label: "Definition",
+      value:
+        run.definitionVersion === 1
+          ? `v1 ${run.definitionHash?.slice(0, 12) ?? "invalid"}`
+          : "Legacy",
+    },
+    {
+      key: "snapshot-source",
+      label: "Snapshot source",
+      value: run.snapshotSource ?? null,
+    },
   ];
 
   const turnProof = getTurnBudgetProof(run.errorKind, guardrails);
@@ -350,7 +363,7 @@ export function RunDetail({
   const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
 
   // SNAPSHOT RULE: parse snapshot from the run, never from loop.definition
-  const definitionSnapshotResult = loopDefinitionSchema.safeParse(
+  const definitionSnapshotResult = publicLoopGraphSchema.safeParse(
     run.definitionSnapshot,
   );
   const definitionSnapshot = definitionSnapshotResult.success
@@ -384,18 +397,20 @@ export function RunDetail({
 
       <RunMetadataTable rows={buildProofStripRows(run, loop, guardrails)} />
 
-      {!loop ? (
+      {!loop || loop.sourceActive === false || loop.sourceDeleted ? (
         <p
           role="status"
           className="rounded-md border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-200"
         >
-          Source deleted; execution history retained.
+          {loop?.sourceDeleted || !loop
+            ? "Source deleted; execution history retained."
+            : "Source inactive; execution history retained."}
         </p>
       ) : null}
 
       <RunActions
         runId={run.id}
-        loopId={loop?.id ?? null}
+        loopId={loop?.sourceActive && !loop.sourceDeleted ? loop.id : null}
         sourceAvailable={loop !== null}
         status={run.status}
         onActionComplete={() => {
@@ -595,7 +610,7 @@ export function RunDetail({
                 Loops
               </Link>
               <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-              {loop ? (
+              {loop?.sourceActive && !loop.sourceDeleted ? (
                 <>
                   <Link
                     href={`/repos/${loop.repoOwner}/${loop.repoName}`}
@@ -615,7 +630,9 @@ export function RunDetail({
               ) : (
                 <>
                   <span className="text-muted-foreground">
-                    Deleted automation
+                    {loop
+                      ? `${loop.name} (${loop.sourceDeleted ? "deleted" : "inactive"})`
+                      : "Deleted automation"}
                   </span>
                   <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                 </>

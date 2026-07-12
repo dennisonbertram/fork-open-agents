@@ -28,9 +28,30 @@ mock.module("server-only", () => ({}));
 // ── Store mocks ────────────────────────────────────────────────────────────────
 
 let createAgentLoopRunResult: {
-  run: { id: string; status: string };
+  run: {
+    id: string;
+    status: string;
+    definitionSnapshot: Record<string, unknown>;
+  };
   created: boolean;
-} | null = { run: { id: "loop-run-1", status: "queued" }, created: true };
+} | null = {
+  run: {
+    id: "loop-run-1",
+    status: "queued",
+    definitionSnapshot: {
+      nodes: [
+        {
+          id: "start-node",
+          kind: "start",
+          label: "Start",
+          position: { x: 0, y: 0 },
+        },
+      ],
+      edges: [],
+    },
+  },
+  created: true,
+};
 
 let hasActiveRunResult = false;
 let ownedLoopResult: {
@@ -278,7 +299,11 @@ function resetMocks() {
     definition: validDefinition,
   };
   createAgentLoopRunResult = {
-    run: { id: "loop-run-1", status: "queued" },
+    run: {
+      id: "loop-run-1",
+      status: "queued",
+      definitionSnapshot: validDefinition,
+    },
     created: true,
   };
   start.mockClear();
@@ -381,7 +406,11 @@ describe("dispatchLoopRunForTrigger", () => {
   // BT-326-02: duplicate delivery dedupes
   test("BT-326-02: duplicate delivery returns existing run without dispatching", async () => {
     createAgentLoopRunResult = {
-      run: { id: "loop-run-existing", status: "queued" },
+      run: {
+        id: "loop-run-existing",
+        status: "queued",
+        definitionSnapshot: validDefinition,
+      },
       created: false,
     };
     const { dispatchLoopRunForTrigger } = await bridgeModulePromise;

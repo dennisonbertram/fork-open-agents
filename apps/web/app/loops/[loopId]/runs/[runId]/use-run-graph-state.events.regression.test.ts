@@ -123,7 +123,6 @@ function makeRun() {
     currentStepRunId: null,
     iterationCount: 0,
     stepCount: 0,
-    context: {} as Record<string, unknown>,
     source: "manual" as const,
     workflowRunId: null,
     requestId: null,

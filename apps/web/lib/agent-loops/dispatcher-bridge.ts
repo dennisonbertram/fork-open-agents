@@ -30,6 +30,7 @@ import {
   type AgentLoopRepoRefusalReason,
 } from "./config";
 import { validateLoopDefinition } from "./validation";
+import { loopDefinitionSchema } from "./types";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -293,6 +294,14 @@ async function dispatchLoopRun(params: {
     return { skipped: true, reason: "ownership_fail" };
   }
 
+  if (result.activeRunId) {
+    return {
+      skipped: true,
+      reason: "active_run",
+      activeRunId: result.activeRunId,
+    };
+  }
+
   if (!result.created) {
     // Duplicate delivery — return existing run without re-dispatching
     return { created: false, runId: result.run.id };
@@ -331,8 +340,22 @@ async function dispatchLoopRun(params: {
     requestId: requestId ?? null,
   });
 
-  // Find the start node from the validated definition snapshot
-  const definition = validation.definition;
+  // Dispatch exactly the graph accepted by the winning Run. The source may
+  // have changed between the outer gate and the locked create transaction.
+  const winningDefinition = loopDefinitionSchema.safeParse(
+    result.run.definitionSnapshot,
+  );
+  if (!winningDefinition.success) {
+    await conditionallyTransitionRunStatus({
+      runId: loopRunId,
+      toStatus: "failed",
+      fromStatuses: ["queued"],
+      errorKind: "snapshot_invalid",
+      errorMessage: "Accepted graph snapshot failed validation.",
+    });
+    return { created: true, runId: loopRunId };
+  }
+  const definition = winningDefinition.data;
   const startNode = definition.nodes.find((n) => n.kind === "start");
   if (!startNode) {
     // Validated definitions always have exactly one start node; this path is

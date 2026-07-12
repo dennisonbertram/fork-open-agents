@@ -109,6 +109,15 @@ const updateAgentLoopRunContextMock = mock(
     return { ...currentLoopRun, context: input.context };
   },
 );
+let terminalTransitionWins = true;
+const conditionallyTransitionRunStatusMock = mock(
+  async (input: { runId: string; toStatus: AgentLoopRun["status"] }) => {
+    if (!terminalTransitionWins) return null;
+    recordedRunUpdates.push({ runId: input.runId, status: input.toStatus });
+    currentLoopRun = { ...currentLoopRun, status: input.toStatus };
+    return currentLoopRun;
+  },
+);
 
 mock.module("./store", () => ({
   isAgentLoopRunSourceLive: mock(async () => true),
@@ -120,7 +129,7 @@ mock.module("./store", () => ({
   recordAgentLoopEvent: recordAgentLoopEventMock,
   updateAgentLoopRunStatus: updateAgentLoopRunStatusMock,
   updateAgentLoopRunContext: updateAgentLoopRunContextMock,
-  conditionallyTransitionRunStatus: mock(async () => null),
+  conditionallyTransitionRunStatus: conditionallyTransitionRunStatusMock,
   findStalledLoopRunCandidates: mock(async () => []),
   retryCurrentStep: mock(async () => undefined),
 }));
@@ -338,6 +347,9 @@ function makeLoopRun(overrides: Partial<AgentLoopRun> = {}): AgentLoopRun {
     userId: "user-1",
     status: "running",
     definitionSnapshot: makeDefinitionSnapshot([]) as Record<string, unknown>,
+    executionSnapshot: null,
+    definitionVersion: null,
+    definitionHash: null,
     currentNodeId: null,
     currentStepRunId: null,
     iterationCount: 0,
@@ -388,6 +400,8 @@ function resetMocks() {
   recordedStepUpdates = [];
   recordedRunUpdates = [];
   recordedContextUpdates = [];
+  terminalTransitionWins = true;
+  conditionallyTransitionRunStatusMock.mockClear();
   githubApiCallCount = 0;
 
   verifyRepoAccessResult = {
@@ -446,6 +460,9 @@ describe("github_check — list_issues", () => {
     });
     currentLoopRun = makeLoopRun({
       definitionSnapshot: snapshot as Record<string, unknown>,
+      executionSnapshot: null,
+      definitionVersion: null,
+      definitionHash: null,
     });
     currentLoop = makeLoop();
 
@@ -571,6 +588,9 @@ describe("github_check — pr_status", () => {
     });
     currentLoopRun = makeLoopRun({
       definitionSnapshot: snapshot as Record<string, unknown>,
+      executionSnapshot: null,
+      definitionVersion: null,
+      definitionHash: null,
       context: { impl_step: { prNumber: 42 } },
     });
     currentLoop = makeLoop();
@@ -611,6 +631,9 @@ describe("github_check — pr_status", () => {
     // Context does NOT have impl_step.prNumber
     currentLoopRun = makeLoopRun({
       definitionSnapshot: currentLoopRun.definitionSnapshot,
+      executionSnapshot: null,
+      definitionVersion: null,
+      definitionHash: null,
       context: {},
     });
 
@@ -661,6 +684,9 @@ describe("github_check — deployment_status", () => {
     });
     currentLoopRun = makeLoopRun({
       definitionSnapshot: snapshot as Record<string, unknown>,
+      executionSnapshot: null,
+      definitionVersion: null,
+      definitionHash: null,
     });
     currentLoop = makeLoop();
 
@@ -728,6 +754,9 @@ describe("github_check — ci_status", () => {
     });
     currentLoopRun = makeLoopRun({
       definitionSnapshot: snapshot as Record<string, unknown>,
+      executionSnapshot: null,
+      definitionVersion: null,
+      definitionHash: null,
       context: { impl_step: { headSha: "abc123" } },
     });
     currentLoop = makeLoop();
@@ -761,6 +790,9 @@ describe("github_check — ci_status", () => {
     // Context has no impl_step.headSha
     currentLoopRun = makeLoopRun({
       definitionSnapshot: currentLoopRun.definitionSnapshot,
+      executionSnapshot: null,
+      definitionVersion: null,
+      definitionHash: null,
       context: {},
     });
 
@@ -807,6 +839,9 @@ describe("github_check — pr_status *From type validation", () => {
     });
     currentLoopRun = makeLoopRun({
       definitionSnapshot: snapshot as Record<string, unknown>,
+      executionSnapshot: null,
+      definitionVersion: null,
+      definitionHash: null,
       context: { step: { prNumber: contextValue } },
     });
     currentLoop = makeLoop();
@@ -931,6 +966,9 @@ describe("github_check — ci_status *From type validation", () => {
     });
     currentLoopRun = makeLoopRun({
       definitionSnapshot: snapshot as Record<string, unknown>,
+      executionSnapshot: null,
+      definitionVersion: null,
+      definitionHash: null,
       context: { step: { headSha: contextValue } },
     });
     currentLoop = makeLoop();
@@ -1021,6 +1059,9 @@ describe("github_check — no check config guard ordering", () => {
     });
     currentLoopRun = makeLoopRun({
       definitionSnapshot: snapshot as Record<string, unknown>,
+      executionSnapshot: null,
+      definitionVersion: null,
+      definitionHash: null,
     });
     currentLoop = makeLoop();
   });
@@ -1062,6 +1103,9 @@ describe("github_check — permission / installation failures", () => {
     });
     currentLoopRun = makeLoopRun({
       definitionSnapshot: snapshot as Record<string, unknown>,
+      executionSnapshot: null,
+      definitionVersion: null,
+      definitionHash: null,
     });
     currentLoop = makeLoop();
   });
@@ -1129,6 +1173,9 @@ describe("condition node", () => {
     });
     currentLoopRun = makeLoopRun({
       definitionSnapshot: snapshot as Record<string, unknown>,
+      executionSnapshot: null,
+      definitionVersion: null,
+      definitionHash: null,
       context,
     });
     currentLoop = makeLoop();
@@ -1219,6 +1266,9 @@ describe("end node", () => {
     currentStepRun = makeStepRun({ nodeId: "end-node-1", nodeKind: "end" });
     currentLoopRun = makeLoopRun({
       definitionSnapshot: snapshot as Record<string, unknown>,
+      executionSnapshot: null,
+      definitionVersion: null,
+      definitionHash: null,
     });
     currentLoop = makeLoop();
   });
@@ -1262,6 +1312,29 @@ describe("end node", () => {
     expect(verifyRepoAccessMock.mock.calls.length).toBe(0);
     expect(githubApiCallCount).toBe(0);
   });
+
+  test("concurrent cancellation wins over end-node completion evidence", async () => {
+    terminalTransitionWins = false;
+    const { executeAgentLoopStep } = await executorPromise;
+    await executeAgentLoopStep({
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+    });
+
+    expect(
+      recordedEvents.find(
+        (event) => event.eventName === "agent-loop.run.completed",
+      ),
+    ).toBeUndefined();
+    expect(
+      recordedEvents.find(
+        (event) => event.eventName === "agent-loop.step.completed",
+      ),
+    ).toBeUndefined();
+    expect(
+      recordedStepUpdates.some((update) => update.status === "completed"),
+    ).toBe(false);
+  });
 });
 
 // ── BT-008: start node trivially succeeds ─────────────────────────────────────
@@ -1280,6 +1353,9 @@ describe("start node", () => {
     currentStepRun = makeStepRun({ nodeId: "start-node-1", nodeKind: "start" });
     currentLoopRun = makeLoopRun({
       definitionSnapshot: snapshot as Record<string, unknown>,
+      executionSnapshot: null,
+      definitionVersion: null,
+      definitionHash: null,
     });
     currentLoop = makeLoop();
   });
@@ -1321,6 +1397,9 @@ describe("agent_step node", () => {
     });
     currentLoopRun = makeLoopRun({
       definitionSnapshot: snapshot as Record<string, unknown>,
+      executionSnapshot: null,
+      definitionVersion: null,
+      definitionHash: null,
     });
     currentLoop = makeLoop();
   });
@@ -1357,6 +1436,9 @@ describe("snapshot parse failure", () => {
     currentStepRun = makeStepRun({ nodeId: "x", nodeKind: "github_check" });
     currentLoopRun = makeLoopRun({
       definitionSnapshot: badSnapshot as Record<string, unknown>,
+      executionSnapshot: null,
+      definitionVersion: null,
+      definitionHash: null,
     });
     currentLoop = makeLoop();
 
@@ -1393,6 +1475,9 @@ describe("missing node in snapshot", () => {
     });
     currentLoopRun = makeLoopRun({
       definitionSnapshot: snapshot as Record<string, unknown>,
+      executionSnapshot: null,
+      definitionVersion: null,
+      definitionHash: null,
     });
     currentLoop = makeLoop();
   });
@@ -1425,6 +1510,9 @@ describe("event emission", () => {
     currentStepRun = makeStepRun({ nodeId: "end-node-1", nodeKind: "end" });
     currentLoopRun = makeLoopRun({
       definitionSnapshot: snapshot as Record<string, unknown>,
+      executionSnapshot: null,
+      definitionVersion: null,
+      definitionHash: null,
     });
     currentLoop = makeLoop();
   });
@@ -1480,6 +1568,9 @@ describe("event emission", () => {
     });
     currentLoopRun = makeLoopRun({
       definitionSnapshot: snapshot as Record<string, unknown>,
+      executionSnapshot: null,
+      definitionVersion: null,
+      definitionHash: null,
     });
     currentLoop = makeLoop();
 
@@ -1522,6 +1613,9 @@ describe("redaction", () => {
     });
     currentLoopRun = makeLoopRun({
       definitionSnapshot: snapshot as Record<string, unknown>,
+      executionSnapshot: null,
+      definitionVersion: null,
+      definitionHash: null,
     });
     currentLoop = makeLoop();
     listIssuesResult = [];

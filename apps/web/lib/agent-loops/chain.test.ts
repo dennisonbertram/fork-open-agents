@@ -22,6 +22,12 @@ import type {
   AgentLoopRun,
   AgentLoopStepRun,
 } from "@/lib/db/schema";
+import {
+  AgentLoopSnapshotError,
+  buildAgentLoopExecutionSnapshot,
+  hashAgentLoopExecutionSnapshot,
+  toAgentLoopExecutionPolicy,
+} from "./execution-snapshot";
 
 mock.module("server-only", () => ({}));
 
@@ -73,6 +79,7 @@ let recordedStepRunCreations: {
 let workflowStartCalls: Array<{ stepRunId: string }> = [];
 let atomicAdvanceSourceDeleted = false;
 let sourceLiveBeforeDispatch = true;
+let contextLoadError: Error | null = null;
 
 // ── Store mock state ──────────────────────────────────────────────────────────
 
@@ -137,6 +144,7 @@ let stepRunIdToNodeId: Record<string, string> = {};
 // ── Store mocks ───────────────────────────────────────────────────────────────
 
 const getAgentLoopStepRunWithContextMock = mock(async (stepRunId: string) => {
+  if (contextLoadError) throw contextLoadError;
   // Return context for the given stepRunId
   const stepRun = stepRunIdToStepRun[stepRunId] ?? currentStepRun;
   return {
@@ -144,6 +152,71 @@ const getAgentLoopStepRunWithContextMock = mock(async (stepRunId: string) => {
     loopRun: currentLoopRun,
     loop: currentLoop,
   };
+});
+
+describe("execution snapshot fail-closed boundary", () => {
+  test("snapshot loader failure uses winner-only CAS and safe terminal evidence", async () => {
+    currentLoopRun = makeLoopRun({ status: "queued" });
+    currentLoop = makeLoop();
+    currentStepRun = makeStepRun();
+    contextLoadError = new AgentLoopSnapshotError(
+      "snapshot_hash_mismatch",
+      "Execution snapshot hash verification failed.",
+      currentLoopRun.id,
+    );
+    try {
+      const { runAgentLoopStep } = await chainPromise;
+      await runAgentLoopStep({
+        stepRunId: currentStepRun.id,
+        workflowRunId: "wf-snapshot-invalid",
+      });
+    } finally {
+      contextLoadError = null;
+    }
+
+    expect(conditionallyTransitionRunStatusMock).toHaveBeenCalledWith({
+      runId: currentLoopRun.id,
+      toStatus: "failed",
+      fromStatuses: ["queued", "running", "stalled"],
+      errorKind: "snapshot_hash_mismatch",
+      errorMessage: "Execution snapshot hash verification failed.",
+    });
+    expect(recordedEvents).toContainEqual(
+      expect.objectContaining({
+        eventName: "agent-loop.snapshot.invalid",
+        payload: { errorKind: "snapshot_hash_mismatch" },
+      }),
+    );
+    expect(executeAgentLoopStepMock).not.toHaveBeenCalled();
+  });
+
+  test("losing the terminal CAS does not contradict a concurrent control action", async () => {
+    currentLoopRun = makeLoopRun({ status: "queued" });
+    currentLoop = makeLoop();
+    currentStepRun = makeStepRun();
+    recordedEvents = [];
+    updateAgentLoopStepRunMock.mockClear();
+    transitionShouldWin = false;
+    contextLoadError = new AgentLoopSnapshotError(
+      "source_inactive",
+      "Source Automation is no longer active.",
+      currentLoopRun.id,
+    );
+    try {
+      const { runAgentLoopStep } = await chainPromise;
+      await runAgentLoopStep({
+        stepRunId: currentStepRun.id,
+        workflowRunId: "wf-source-inactive",
+      });
+    } finally {
+      contextLoadError = null;
+      transitionShouldWin = true;
+    }
+
+    expect(updateAgentLoopStepRunMock).not.toHaveBeenCalled();
+    expect(recordedEvents).toHaveLength(0);
+    expect(executeAgentLoopStepMock).not.toHaveBeenCalled();
+  });
 });
 
 // Maps stepRunId → stepRun object
@@ -257,16 +330,22 @@ const getMaxAttemptForNodeMock = mock(
 // conditionallyTransitionRunStatus — new in M1-10 race fix.
 // Returns the updated run (transition succeeded) by default.
 // Tests that need to simulate a race (0 rows) override this mock.
+let transitionShouldWin = true;
 const conditionallyTransitionRunStatusMock = mock(
   async (params: {
     runId: string;
     toStatus: AgentLoopRun["status"];
     fromStatuses: AgentLoopRun["status"][];
+    errorKind?: string | null;
+    errorMessage?: string | null;
   }): Promise<AgentLoopRun | null> => {
+    if (!transitionShouldWin) return null;
     // Record as a status update so existing assertions still pass
     recordedRunStatusUpdates.push({
       runId: params.runId,
       status: params.toStatus,
+      errorKind: params.errorKind,
+      errorMessage: params.errorMessage,
     });
     currentLoopRun = {
       ...currentLoopRun,
@@ -473,6 +552,9 @@ function makeLoopRun(overrides: Partial<AgentLoopRun> = {}): AgentLoopRun {
     userId: "user-1",
     status: "queued",
     definitionSnapshot: makeCanonicalDefinition() as Record<string, unknown>,
+    executionSnapshot: null,
+    definitionVersion: null,
+    definitionHash: null,
     currentNodeId: "start",
     currentStepRunId: null,
     iterationCount: 0,
@@ -537,6 +619,7 @@ function resetAll() {
   workflowStartThrows = null;
   nextStepRunIdCounter = 100;
   workflowRunIdCounter = 200;
+  transitionShouldWin = true;
 
   currentLoop = makeLoop();
   currentLoopRun = makeLoopRun();
@@ -716,6 +799,9 @@ describe("BT-C02: failure stop — failed step, no failure edge → run failed",
     currentLoopRun = makeLoopRun({
       status: "running",
       definitionSnapshot: definition as Record<string, unknown>,
+      executionSnapshot: null,
+      definitionVersion: null,
+      definitionHash: null,
       currentNodeId: "work",
       currentStepRunId: "step-work-1",
     });
@@ -831,6 +917,9 @@ describe("BT-C03: failure routed — failed step WITH failure edge → continues
     currentLoopRun = makeLoopRun({
       status: "running",
       definitionSnapshot: definition as Record<string, unknown>,
+      executionSnapshot: null,
+      definitionVersion: null,
+      definitionHash: null,
       currentNodeId: "work",
       currentStepRunId: "step-work-2",
     });
@@ -902,6 +991,9 @@ describe("BT-C04: chain_route_missing — dangling/null route on success", () =>
     currentLoopRun = makeLoopRun({
       status: "running",
       definitionSnapshot: definition as Record<string, unknown>,
+      executionSnapshot: null,
+      definitionVersion: null,
+      definitionHash: null,
       currentNodeId: "work",
       currentStepRunId: "step-work-3",
     });
@@ -1000,6 +1092,9 @@ describe("BT-C05: guardrails", () => {
     currentStepRun = sr;
     currentLoopRun = makeRunningRun({
       definitionSnapshot: makeDefinitionWithWork() as Record<string, unknown>,
+      executionSnapshot: null,
+      definitionVersion: null,
+      definitionHash: null,
       currentNodeId: "work",
       currentStepRunId: "step-guard-1",
       stepCount: 50, // exactly at default maxStepsPerRun ceiling
@@ -1032,6 +1127,9 @@ describe("BT-C05: guardrails", () => {
     currentStepRun = sr;
     currentLoopRun = makeRunningRun({
       definitionSnapshot: makeDefinitionWithWork() as Record<string, unknown>,
+      executionSnapshot: null,
+      definitionVersion: null,
+      definitionHash: null,
       currentNodeId: "work",
       currentStepRunId: "step-guard-2",
       stepCount: 5,
@@ -1057,11 +1155,45 @@ describe("BT-C05: guardrails", () => {
     expect(failedUpdate?.errorKind).toBe("guardrail_exceeded");
   });
 
+  test("cancel winning the guardrail CAS suppresses terminal and step evidence", async () => {
+    const sr = makeStepRunForNode("work", "step-guard-cancelled");
+    currentStepRun = sr;
+    currentLoopRun = makeRunningRun({
+      definitionSnapshot: makeDefinitionWithWork() as Record<string, unknown>,
+      executionSnapshot: null,
+      definitionVersion: null,
+      definitionHash: null,
+      currentNodeId: "work",
+      currentStepRunId: sr.id,
+      stepCount: 50,
+    });
+    transitionShouldWin = false;
+
+    const { runAgentLoopStep } = await chainPromise;
+    await runAgentLoopStep({
+      stepRunId: sr.id,
+      workflowRunId: "wf-cancelled",
+    });
+
+    expect(conditionallyTransitionRunStatusMock).toHaveBeenCalledTimes(1);
+    expect(updateAgentLoopStepRunMock).not.toHaveBeenCalled();
+    expect(
+      recordedEvents.some(
+        (event) =>
+          event.eventName === "agent-loop.guardrail.tripped" ||
+          event.eventName === "agent-loop.run.failed",
+      ),
+    ).toBe(false);
+  });
+
   test("BT-C05: wall-clock exceeds maxRunDurationMs → guardrail.tripped", async () => {
     const sr = makeStepRunForNode("work", "step-guard-3");
     currentStepRun = sr;
     currentLoopRun = makeRunningRun({
       definitionSnapshot: makeDefinitionWithWork() as Record<string, unknown>,
+      executionSnapshot: null,
+      definitionVersion: null,
+      definitionHash: null,
       currentNodeId: "work",
       currentStepRunId: "step-guard-3",
       stepCount: 5,
@@ -1125,6 +1257,9 @@ describe("BT-C05: guardrails", () => {
     currentStepRun = sr;
     currentLoopRun = makeRunningRun({
       definitionSnapshot: makeDefinitionWithWork() as Record<string, unknown>,
+      executionSnapshot: null,
+      definitionVersion: null,
+      definitionHash: null,
       currentNodeId: "work",
       currentStepRunId: "step-guard-timeout",
       stepCount: 0,
@@ -1172,6 +1307,50 @@ describe("BT-C05: guardrails", () => {
     const { loopGuardrailsSchema } = await import("./types");
     const result = loopGuardrailsSchema.safeParse({ maxAgentTurnsPerStep: 12 });
     expect(result.success).toBe(true);
+  });
+
+  test("accepted snapshot guardrails survive a live edit and still pass current ceilings", async () => {
+    const definition = makeDefinitionWithWork();
+    const accepted = makeLoop({
+      definition,
+      guardrails: {
+        stepTimeoutMs: 5 * 60 * 1000,
+        maxAgentTurnsPerStep: 12,
+      },
+    });
+    const snapshot = buildAgentLoopExecutionSnapshot(accepted);
+    currentLoopRun = makeRunningRun({
+      definitionSnapshot: snapshot.definition,
+      executionSnapshot: snapshot,
+      definitionVersion: 1,
+      definitionHash: hashAgentLoopExecutionSnapshot(snapshot),
+      currentNodeId: "work",
+      currentStepRunId: "step-frozen-guardrails",
+    });
+    currentStepRun = makeStepRunForNode("work", "step-frozen-guardrails");
+    currentLoop = toAgentLoopExecutionPolicy(
+      currentLoopRun,
+      makeLoop({
+        definition,
+        guardrails: { stepTimeoutMs: 1, maxAgentTurnsPerStep: 1 },
+      }),
+    ).loop as unknown as AgentLoop;
+
+    const { runAgentLoopStep } = await chainPromise;
+    await runAgentLoopStep({
+      stepRunId: currentStepRun.id,
+      workflowRunId: "wf-frozen-guardrails",
+    });
+
+    const call = executeAgentLoopStepMock.mock.calls.find(
+      (candidate) =>
+        (candidate[0] as { stepRunId: string }).stepRunId ===
+        "step-frozen-guardrails",
+    );
+    expect(call?.[0]).toMatchObject({
+      stepTimeoutMs: 5 * 60 * 1000,
+      maxAgentTurnsPerStep: 12,
+    });
   });
 });
 
@@ -1406,8 +1585,42 @@ describe("source deletion after atomic advance", () => {
 
     expect(recordedStepRunCreations).toHaveLength(1);
     expect(recordedAdvanceCalls).toHaveLength(1);
-    expect(isAgentLoopRunSourceLiveMock).toHaveBeenCalledWith("loop-run-1");
+    expect(isAgentLoopRunSourceLiveMock).toHaveBeenCalledWith("loop-run-1", {
+      repoOwner: "acme",
+      repoName: "my-repo",
+    });
     expect(workflowStartCalls).toHaveLength(0);
+    expect(conditionallyTransitionRunStatusMock).toHaveBeenCalledWith({
+      runId: "loop-run-1",
+      toStatus: "failed",
+      fromStatuses: ["queued", "running", "stalled"],
+      errorKind: "execution_revoked",
+      errorMessage: "Loop execution authorization was revoked before dispatch.",
+    });
+    expect(recordedEvents).toContainEqual(
+      expect.objectContaining({
+        eventName: "agent-loop.execution.revoked",
+        payload: { errorKind: "execution_revoked" },
+      }),
+    );
+  });
+
+  test("losing the revocation CAS preserves a concurrent control result", async () => {
+    transitionShouldWin = false;
+    const { runAgentLoopStep } = await chainPromise;
+
+    await runAgentLoopStep({
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+    });
+
+    expect(conditionallyTransitionRunStatusMock).toHaveBeenCalledTimes(1);
+    expect(workflowStartCalls).toHaveLength(0);
+    expect(
+      recordedEvents.some(
+        (event) => event.eventName === "agent-loop.execution.revoked",
+      ),
+    ).toBe(false);
   });
 });
 
@@ -1543,6 +1756,9 @@ describe("BT-C12: watchdog branch — failed step, no failure edge, watchdogEnab
     currentLoopRun = makeLoopRun({
       status: "running",
       definitionSnapshot: definition as Record<string, unknown>,
+      executionSnapshot: null,
+      definitionVersion: null,
+      definitionHash: null,
       currentNodeId: "work",
       currentStepRunId: "step-work-wd",
     });
@@ -1639,5 +1855,54 @@ describe("BT-C12: watchdog branch — failed step, no failure edge, watchdogEnab
       (u) => u.status === "failed",
     );
     expect(failedUpdate).toBeDefined();
+  });
+
+  test("watchdog live denial terminalizes the run through a winner-only CAS", async () => {
+    invokeWatchdogMock.mockResolvedValue({
+      invoked: false,
+      decision: "retry",
+    });
+
+    const { runAgentLoopStep } = await chainPromise;
+    await runAgentLoopStep({
+      stepRunId: "step-work-wd",
+      workflowRunId: "wf-run-1",
+    });
+
+    expect(conditionallyTransitionRunStatusMock).toHaveBeenCalledWith({
+      runId: "loop-run-1",
+      toStatus: "failed",
+      fromStatuses: ["queued", "running", "stalled"],
+      errorKind: "execution_revoked",
+      errorMessage:
+        "Loop execution authorization was revoked before watchdog action.",
+    });
+    expect(recordedEvents).toContainEqual(
+      expect.objectContaining({
+        eventName: "agent-loop.execution.revoked",
+        payload: { errorKind: "execution_revoked" },
+      }),
+    );
+  });
+
+  test("watchdog live-denial CAS loser emits no contradictory revocation", async () => {
+    invokeWatchdogMock.mockResolvedValue({
+      invoked: false,
+      decision: "retry",
+    });
+    transitionShouldWin = false;
+
+    const { runAgentLoopStep } = await chainPromise;
+    await runAgentLoopStep({
+      stepRunId: "step-work-wd",
+      workflowRunId: "wf-run-1",
+    });
+
+    expect(conditionallyTransitionRunStatusMock).toHaveBeenCalledTimes(1);
+    expect(
+      recordedEvents.some(
+        (event) => event.eventName === "agent-loop.execution.revoked",
+      ),
+    ).toBe(false);
   });
 });

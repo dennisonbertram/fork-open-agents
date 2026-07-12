@@ -344,6 +344,9 @@ function makeRegLoopRun(o: Partial<AgentLoopRun> = {}): AgentLoopRun {
       string,
       unknown
     >,
+    executionSnapshot: null,
+    definitionVersion: null,
+    definitionHash: null,
     currentNodeId: null,
     currentStepRunId: null,
     iterationCount: 0,

@@ -47,6 +47,12 @@ export function mapControlError(err: unknown): Response {
         { status: 409 },
       );
     }
+    if (err.kind === "source_inactive") {
+      return Response.json(
+        { errorKind: "source_inactive", message: err.message },
+        { status: 409 },
+      );
+    }
 
     // kind === "illegal_transition"
     return Response.json(

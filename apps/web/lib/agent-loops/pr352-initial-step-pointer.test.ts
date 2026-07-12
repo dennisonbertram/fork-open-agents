@@ -121,9 +121,30 @@ const stepRunsCreated: Array<{
 // ── Store mocks ───────────────────────────────────────────────────────────────
 
 let createAgentLoopRunResult: {
-  run: { id: string; status: string };
+  run: {
+    id: string;
+    status: string;
+    definitionSnapshot: Record<string, unknown>;
+  };
   created: boolean;
-} | null = { run: { id: "loop-run-1", status: "queued" }, created: true };
+} | null = {
+  run: {
+    id: "loop-run-1",
+    status: "queued",
+    definitionSnapshot: {
+      nodes: [
+        {
+          id: "start-node",
+          kind: "start",
+          label: "Start",
+          position: { x: 0, y: 0 },
+        },
+      ],
+      edges: [],
+    },
+  },
+  created: true,
+};
 
 const createAgentLoopRun = mock(async () => createAgentLoopRunResult);
 const hasActiveRunForLoop = mock(async () => false);
@@ -344,7 +365,11 @@ function resetAll() {
   setInitialStepPointerCalls.length = 0;
   workflowStartCalls.length = 0;
   createAgentLoopRunResult = {
-    run: { id: "loop-run-1", status: "queued" },
+    run: {
+      id: "loop-run-1",
+      status: "queued",
+      definitionSnapshot: activeLoopFixture().definition,
+    },
     created: true,
   };
 

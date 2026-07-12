@@ -279,6 +279,7 @@ const resolveComposioToolsForBgRunRegressionMock = mock(
 
 mock.module("@/lib/background-agents/composio-tools", () => ({
   resolveComposioToolsForBgRun: resolveComposioToolsForBgRunRegressionMock,
+  assertComposioRepoToolkitsStillAllowed: mock(async () => undefined),
 }));
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -314,6 +315,9 @@ function makeLoopRun(overrides: Partial<AgentLoopRun> = {}): AgentLoopRun {
     userId: "user-1",
     status: "running",
     definitionSnapshot: {} as Record<string, unknown>,
+    executionSnapshot: null,
+    definitionVersion: null,
+    definitionHash: null,
     currentNodeId: null,
     currentStepRunId: null,
     iterationCount: 0,

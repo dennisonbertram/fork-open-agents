@@ -11,12 +11,15 @@
 import type {
   AgentLoop,
   AgentLoopEvent,
-  AgentLoopRun,
   AgentLoopStepRun,
   AgentLoopWatchdogRun,
   BackgroundAgentTrigger,
 } from "@/lib/db/schema";
-import type { LoopValidationError } from "@/lib/agent-loops/types";
+import type {
+  LoopValidationError,
+  ResolvedGuardrails,
+} from "@/lib/agent-loops/types";
+import type { PublicAgentLoopRun } from "@/lib/agent-loops/public-run";
 
 // ── Error shapes ──────────────────────────────────────────────────────────────
 
@@ -80,7 +83,7 @@ export type StartAgentLoopRunDispatchFailedResponse = {
  * runs list and run-detail header to render "Completed — N step(s) failed"
  * honestly instead of a clean green for a completed-with-failures run.
  */
-export type AgentLoopRunWithFailedStepCount = AgentLoopRun & {
+export type AgentLoopRunWithFailedStepCount = PublicAgentLoopRun & {
   failedStepCount: number;
 };
 
@@ -96,7 +99,9 @@ export type RunLoopSummary = {
   name: string;
   repoOwner: string;
   repoName: string;
-  guardrails: AgentLoop["guardrails"];
+  guardrails: ResolvedGuardrails | AgentLoop["guardrails"];
+  sourceDeleted: boolean;
+  sourceActive: boolean;
 };
 
 /**
@@ -111,7 +116,7 @@ export type RunLoopSummary = {
  *   - watchdogRuns: watchdog decisions ordered by createdAt asc (M3-02-B)
  */
 export type GetAgentLoopRunDetailResponse = {
-  run: AgentLoopRun;
+  run: PublicAgentLoopRun;
   loop: RunLoopSummary | null;
   steps: AgentLoopStepRun[];
   events: AgentLoopEvent[];

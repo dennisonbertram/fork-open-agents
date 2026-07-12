@@ -21,8 +21,8 @@ import type {
   GetAgentLoopResponse,
   ListAgentLoopRunsResponse,
   AgentLoopsReadinessResponse,
+  AgentLoopRunWithFailedStepCount,
 } from "@/app/api/agent-loops/types";
-import type { AgentLoopRun } from "@/lib/db/schema";
 import type { LoopDefinition } from "@/lib/agent-loops/types";
 import type { ListLoopTriggersResponse } from "@/app/api/agent-loops/[loopId]/triggers/trigger-route-types";
 import { summarizeLoopSteps } from "./loop-step-summary";
@@ -86,7 +86,7 @@ function RunRow({
   loopId,
   surface,
 }: {
-  run: AgentLoopRun & { failedStepCount?: number };
+  run: AgentLoopRunWithFailedStepCount;
   loopId: string;
   surface: "legacy" | "automation";
 }) {

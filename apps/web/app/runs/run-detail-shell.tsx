@@ -149,12 +149,18 @@ export function RunDetailShell({
             />
             {summary.repository ? (
               <>
-                <Link
-                  href={summary.repository.href}
-                  className="min-w-0 truncate font-mono text-muted-foreground hover:text-foreground"
-                >
-                  {summary.repository.owner}/{summary.repository.name}
-                </Link>
+                {summary.repository.href ? (
+                  <Link
+                    href={summary.repository.href}
+                    className="min-w-0 truncate font-mono text-muted-foreground hover:text-foreground"
+                  >
+                    {summary.repository.owner}/{summary.repository.name}
+                  </Link>
+                ) : (
+                  <span className="min-w-0 truncate font-mono text-muted-foreground">
+                    {summary.repository.owner}/{summary.repository.name}
+                  </span>
+                )}
                 <ChevronRight
                   aria-hidden="true"
                   className="size-3.5 shrink-0 text-muted-foreground"

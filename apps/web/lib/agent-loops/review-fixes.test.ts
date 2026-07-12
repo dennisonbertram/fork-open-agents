@@ -520,6 +520,9 @@ function makeF3F4LoopRun(overrides: Partial<AgentLoopRun> = {}): AgentLoopRun {
       string,
       unknown
     >,
+    executionSnapshot: null,
+    definitionVersion: null,
+    definitionHash: null,
     currentNodeId: null,
     currentStepRunId: null,
     iterationCount: 0,

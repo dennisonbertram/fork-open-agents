@@ -1,6 +1,7 @@
 import "server-only";
 
 import { and, desc, eq, inArray, lt, or, type SQL, sql } from "drizzle-orm";
+import { getSafeFrozenAgentLoopEvidence } from "@/lib/agent-loops/public-run";
 import { db } from "@/lib/db/client";
 import {
   agentLoopRuns,
@@ -56,6 +57,25 @@ function repositoryConditions(
       : undefined,
     filters.repoName
       ? sql`lower(${name}) = ${filters.repoName.toLowerCase()}`
+      : undefined,
+  ];
+}
+
+function loopRepositoryConditions(
+  filters: RunsFilters,
+): Array<SQL | undefined> {
+  return [
+    filters.repoOwner
+      ? sql`(
+          lower(${agentLoops.repoOwner}) = ${filters.repoOwner.toLowerCase()}
+          or lower(${agentLoopRuns.executionSnapshot} #>> '{repository,owner}') = ${filters.repoOwner.toLowerCase()}
+        )`
+      : undefined,
+    filters.repoName
+      ? sql`(
+          lower(${agentLoops.repoName}) = ${filters.repoName.toLowerCase()}
+          or lower(${agentLoopRuns.executionSnapshot} #>> '{repository,name}') = ${filters.repoName.toLowerCase()}
+        )`
       : undefined,
   ];
 }
@@ -262,6 +282,10 @@ function createLoopRunLoader(userId: string): RunsSourceLoader {
         loopName: agentLoops.name,
         repoOwner: agentLoops.repoOwner,
         repoName: agentLoops.repoName,
+        definitionSnapshot: agentLoopRuns.definitionSnapshot,
+        executionSnapshot: agentLoopRuns.executionSnapshot,
+        definitionVersion: agentLoopRuns.definitionVersion,
+        definitionHash: agentLoopRuns.definitionHash,
         status: agentLoopRuns.status,
         source: agentLoopRuns.source,
         currentNodeId: agentLoopRuns.currentNodeId,
@@ -294,13 +318,12 @@ function createLoopRunLoader(userId: string): RunsSourceLoader {
         and(
           ...compactConditions([
             eq(agentLoopRuns.userId, userId),
-            ...repositoryConditions(
-              query.filters,
-              agentLoops.repoOwner,
-              agentLoops.repoName,
-            ),
+            ...loopRepositoryConditions(query.filters),
             query.filters.automationId
-              ? eq(agentLoopRuns.loopId, query.filters.automationId)
+              ? sql`(
+                  ${agentLoopRuns.loopId} = ${query.filters.automationId}
+                  or ${agentLoopRuns.executionSnapshot} #>> '{source,definitionId}' = ${query.filters.automationId}
+                )`
               : undefined,
             query.filters.triggerSource
               ? sql`${agentLoopRuns.source} = ${query.filters.triggerSource}`
@@ -324,19 +347,33 @@ function createLoopRunLoader(userId: string): RunsSourceLoader {
       .orderBy(desc(agentLoopRuns.createdAt), desc(agentLoopRuns.id))
       .limit(query.limit);
 
+    // Snapshot JSON paths only widen the SQL candidate set. Every retained-row
+    // filter below uses hash/parity-verified frozen evidence, so corrupt JSON is
+    // never trusted for inclusion or display. Because filtering happens after
+    // the bounded query, corrupt candidates can under-fill a page; the cursor
+    // remains deterministic and a later page can still be requested.
     return rows
-      .map((row) =>
-        adaptAgentLoopRun(
+      .map((row) => {
+        const frozenEvidence = getSafeFrozenAgentLoopEvidence({
+          loopId: row.loopId,
+          definitionSnapshot: row.definitionSnapshot,
+          executionSnapshot: row.executionSnapshot,
+          definitionVersion: row.definitionVersion,
+          definitionHash: row.definitionHash,
+        });
+        const run = adaptAgentLoopRun(
           {
             id: row.id,
             loopId: row.loopId,
             triggerId: row.triggerId,
             triggerKind: row.triggerKind,
-            title: redactText(row.loopName, 120) ?? "Deleted automation",
+            title:
+              redactText(frozenEvidence?.name ?? row.loopName, 120) ??
+              "Deleted automation",
             nativeStatus: row.status,
             nativeSource: row.source,
-            repoOwner: row.repoOwner,
-            repoName: row.repoName,
+            repoOwner: frozenEvidence?.repoOwner ?? row.repoOwner ?? null,
+            repoName: frozenEvidence?.repoName ?? row.repoName ?? null,
             currentNodeId: row.currentNodeId,
             stepCount: row.stepCount,
             totalStepCount: null,
@@ -350,9 +387,34 @@ function createLoopRunLoader(userId: string): RunsSourceLoader {
             finishedAt: row.finishedAt,
           },
           { now: query.now },
-        ),
-      )
-      .filter((run) => matchesView(run, query.filters));
+        );
+        return { run, frozenEvidence };
+      })
+      .filter(({ run, frozenEvidence }) => {
+        if (
+          query.filters.repoOwner &&
+          run.repository?.owner.toLowerCase() !==
+            query.filters.repoOwner.toLowerCase()
+        ) {
+          return false;
+        }
+        if (
+          query.filters.repoName &&
+          run.repository?.name.toLowerCase() !==
+            query.filters.repoName.toLowerCase()
+        ) {
+          return false;
+        }
+        if (
+          query.filters.automationId &&
+          run.automation?.sourceId !== query.filters.automationId &&
+          frozenEvidence?.id !== query.filters.automationId
+        ) {
+          return false;
+        }
+        return matchesView(run, query.filters);
+      })
+      .map(({ run }) => run);
   };
 }
 

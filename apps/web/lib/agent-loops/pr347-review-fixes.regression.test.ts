@@ -152,6 +152,9 @@ function makeLoopRun(overrides: Partial<AgentLoopRun> = {}): AgentLoopRun {
         { id: "e4", source: "condition", target: "work", when: "false" }, // cycle
       ],
     },
+    executionSnapshot: null,
+    definitionVersion: null,
+    definitionHash: null,
     currentNodeId: "condition",
     currentStepRunId: "reg-step-cond",
     iterationCount: 0,
