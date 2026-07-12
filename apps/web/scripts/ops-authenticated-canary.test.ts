@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   canaryExitCodeForStatus,
+  findDiagnosisHref,
   formatCanaryResult,
   isCanaryConfigRequired,
   readCanaryConfig,
@@ -136,5 +137,36 @@ describe("ops authenticated canary", () => {
     expect(exitCode).toBe(0);
     expect(logs.join("\n")).toContain("Status: blocked_by_configuration");
     expect(logs.join("\n")).toContain("No production proof occurred");
+  });
+
+  test("derives a valid diagnosis target from an account snapshot", () => {
+    expect(
+      findDiagnosisHref({
+        needsAttention: [],
+        running: [
+          {
+            diagnosisHref:
+              "/api/account/diagnosis?source=background_agent&id=run-1",
+          },
+        ],
+        recentlyCompleted: [],
+        waitingOnUser: [],
+        stale: [],
+      }),
+    ).toBe("/api/account/diagnosis?source=background_agent&id=run-1");
+  });
+
+  test("rejects missing or malformed diagnosis targets", () => {
+    expect(findDiagnosisHref({ running: [] })).toBeNull();
+    expect(
+      findDiagnosisHref({
+        running: [{ diagnosisHref: "/api/account/diagnosis?source=session" }],
+      }),
+    ).toBeNull();
+    expect(
+      findDiagnosisHref({
+        running: [{ diagnosisHref: "https://attacker.example/diagnosis" }],
+      }),
+    ).toBeNull();
   });
 });
