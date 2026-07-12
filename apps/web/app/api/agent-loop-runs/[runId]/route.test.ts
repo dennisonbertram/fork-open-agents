@@ -93,7 +93,7 @@ const eventsFixture: AgentLoopEvent[] = [
 ];
 
 const getAgentLoopRunWithLoop = mock(
-  async (): Promise<typeof runAndLoopFixture | null> => runAndLoopFixture,
+  async (): Promise<unknown> => runAndLoopFixture,
 );
 const listStepRunsForRun = mock(async () => stepRunsFixture);
 const listAgentLoopEvents = mock(
@@ -220,6 +220,33 @@ describe("GET /api/agent-loop-runs/[runId]", () => {
     );
     // Must be 404, not 200 or 403 (no existence leak)
     expect(response.status).toBe(404);
+  });
+
+  test("returns retained evidence with loop:null after source deletion", async () => {
+    getAgentLoopRunWithLoop.mockImplementation(async () => ({
+      ...runAndLoopFixture,
+      run: {
+        ...runAndLoopFixture.run,
+        loopId: null,
+        status: "cancelled" as const,
+        errorKind: "source_deleted",
+      },
+      loop: null,
+    }));
+    const { GET } = await routeModulePromise;
+    const response = await GET(
+      new Request("http://localhost/api/agent-loop-runs/run-1"),
+      context(),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      run: { id: "run-1", loopId: null, errorKind: "source_deleted" },
+      loop: null,
+      steps: expect.any(Array),
+      events: expect.any(Array),
+      watchdogRuns: expect.any(Array),
+    });
   });
 
   test("BT-044: includes steps ordered correctly", async () => {

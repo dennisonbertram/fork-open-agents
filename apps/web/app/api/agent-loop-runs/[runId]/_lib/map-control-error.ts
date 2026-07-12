@@ -41,6 +41,13 @@ export function mapControlError(err: unknown): Response {
       return Response.json({ error: "Loop run not found" }, { status: 404 });
     }
 
+    if (err.kind === "source_deleted") {
+      return Response.json(
+        { errorKind: "source_deleted", message: err.message },
+        { status: 409 },
+      );
+    }
+
     // kind === "illegal_transition"
     return Response.json(
       {

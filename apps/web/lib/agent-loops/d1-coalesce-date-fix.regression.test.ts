@@ -75,18 +75,24 @@ const whereMockLeft = mock(() => ({ limit: limitMockLeft }));
 const leftJoinMock = mock(() => ({ where: whereMockLeft }));
 const fromMock = mock(() => ({
   leftJoin: leftJoinMock,
-  where: mock(() => ({ limit: limitMockLeft })),
+  where: mock(() => ({
+    limit: limitMockLeft,
+    for: mock(() => ({ limit: limitMockLeft })),
+  })),
 }));
 const selectMock = mock((_fields?: unknown) => ({ from: fromMock }));
 
 const txFindFirstMock = mock(async () => (queryResult[0] ?? null) as unknown);
-const txUpdateSetMock = mock((setVals: unknown) => ({
-  where: mock(() => ({
-    returning: mock(() => [
-      { ...(insertedValues[0] as object), ...(setVals as object) },
-    ]),
-  })),
-}));
+const txUpdateSetMock = mock((setVals: unknown) => {
+  updateSetCapture.push(setVals);
+  return {
+    where: mock(() => ({
+      returning: mock(() => [
+        { ...(insertedValues[0] as object), ...(setVals as object) },
+      ]),
+    })),
+  };
+});
 const txUpdateMock = mock((_table: unknown) => ({
   set: txUpdateSetMock,
 }));
@@ -109,6 +115,7 @@ mock.module("@/lib/db/client", () => ({
         insert: txInsertMock,
         update: txUpdateMock,
         delete: deleteMock,
+        select: selectMock,
         query: {
           agentLoops: { findFirst: txFindFirstMock },
           agentLoopRuns: { findFirst: txFindFirstMock },

@@ -221,7 +221,16 @@ const recordAgentLoopEventMock = mock(
   },
 );
 
+let sourceLiveResults: boolean[] = [];
+const isAgentLoopRunSourceLiveMock = mock(
+  async () => sourceLiveResults.shift() ?? true,
+);
+
 mock.module("./store", () => ({
+  isAgentLoopRunSourceLive: isAgentLoopRunSourceLiveMock,
+  createAndAdvanceAgentLoopStep: mock(async () => ({
+    outcome: "source_deleted" as const,
+  })),
   createAgentLoopWatchdogRun: createAgentLoopWatchdogRunMock,
   updateAgentLoopWatchdogRun: updateAgentLoopWatchdogRunMock,
   countWatchdogRetryDecisions: countWatchdogRetryDecisionsMock,
@@ -370,6 +379,7 @@ function resetAll() {
   mockAgentDecision = { decision: "retry", diagnosis: "Test diagnosis" };
   watchdogRunIdCounter = 0;
   retryCurrentStepForWatchdogShouldThrow = false;
+  sourceLiveResults = [];
 
   createAgentLoopWatchdogRunMock.mockClear();
   updateAgentLoopWatchdogRunMock.mockClear();
@@ -379,6 +389,7 @@ function resetAll() {
   advanceToFailureEdgeMock.mockClear();
   dispatchStepWorkflowMock.mockClear();
   recordAgentLoopEventMock.mockClear();
+  isAgentLoopRunSourceLiveMock.mockClear();
   generateTextMock.mockClear();
 
   // Reset advanceToFailureEdge to return a success step run by default
@@ -414,6 +425,34 @@ function resetAll() {
 
 // Import watchdog after all mocks are set up
 const watchdogPromise = import("./watchdog");
+
+describe("watchdog source deletion race guard", () => {
+  beforeEach(resetAll);
+
+  test("deletion after diagnosis prevents every decision mutation", async () => {
+    sourceLiveResults = [true, false];
+    const { invokeWatchdog } = await watchdogPromise;
+
+    const result = await invokeWatchdog({
+      loop: makeLoop({ watchdogEnabled: true, watchdogRetryBudget: 2 }),
+      loopRun: makeLoopRun(),
+      stepRunId: "step-run-1",
+      nodeId: "node-a",
+      nodeKind: "agent_step",
+      attempt: 1,
+      errorKind: "step_failed",
+      errorMessage: "Step failed",
+      workflowRunId: "wf-1",
+    });
+
+    expect(result.invoked).toBe(false);
+    expect(generateTextMock).toHaveBeenCalledTimes(1);
+    expect(retryCurrentStepForWatchdogMock).not.toHaveBeenCalled();
+    expect(pauseLoopRunSystemMock).not.toHaveBeenCalled();
+    expect(advanceToFailureEdgeMock).not.toHaveBeenCalled();
+    expect(dispatchStepWorkflowMock).not.toHaveBeenCalled();
+  });
+});
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 

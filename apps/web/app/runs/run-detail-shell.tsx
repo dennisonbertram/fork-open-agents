@@ -41,7 +41,9 @@ function proofRows(summary: RunDetailShellSummary): RunMetadataRow[] {
     {
       key: "repository",
       label: "Repository",
-      value: `${summary.repository.owner}/${summary.repository.name}`,
+      value: summary.repository
+        ? `${summary.repository.owner}/${summary.repository.name}`
+        : null,
     },
     {
       key: "automation-source",
@@ -145,16 +147,20 @@ export function RunDetailShell({
               aria-hidden="true"
               className="size-3.5 shrink-0 text-muted-foreground"
             />
-            <Link
-              href={summary.repository.href}
-              className="min-w-0 truncate font-mono text-muted-foreground hover:text-foreground"
-            >
-              {summary.repository.owner}/{summary.repository.name}
-            </Link>
-            <ChevronRight
-              aria-hidden="true"
-              className="size-3.5 shrink-0 text-muted-foreground"
-            />
+            {summary.repository ? (
+              <>
+                <Link
+                  href={summary.repository.href}
+                  className="min-w-0 truncate font-mono text-muted-foreground hover:text-foreground"
+                >
+                  {summary.repository.owner}/{summary.repository.name}
+                </Link>
+                <ChevronRight
+                  aria-hidden="true"
+                  className="size-3.5 shrink-0 text-muted-foreground"
+                />
+              </>
+            ) : null}
             {summary.automation.href ? (
               <Link
                 href={summary.automation.href}

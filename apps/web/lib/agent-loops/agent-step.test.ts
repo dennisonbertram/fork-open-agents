@@ -117,7 +117,16 @@ const updateAgentLoopRunContextMock = mock(async (input: RunContextInput) => {
   return { ...currentLoopRun, context: input.context };
 });
 
+let sourceLiveResults: boolean[] = [];
+const isAgentLoopRunSourceLiveMock = mock(
+  async () => sourceLiveResults.shift() ?? true,
+);
+
 mock.module("./store", () => ({
+  isAgentLoopRunSourceLive: isAgentLoopRunSourceLiveMock,
+  createAndAdvanceAgentLoopStep: mock(async () => ({
+    outcome: "source_deleted" as const,
+  })),
   getAgentLoopStepRunWithContext: mock(async (_stepRunId: string) => ({
     stepRun: currentStepRun,
     loopRun: currentLoopRun,
@@ -479,6 +488,7 @@ function resetMocks() {
   recordedEvents = [];
   recordedStepUpdates = [];
   recordedContextUpdates = [];
+  sourceLiveResults = [];
 
   sandboxConnectShouldThrow = null;
   sandboxReadFileResult = JSON.stringify({ result: "done" });
@@ -528,6 +538,7 @@ function resetMocks() {
   updateAgentLoopStepRunMock.mockClear();
   recordAgentLoopEventMock.mockClear();
   updateAgentLoopRunContextMock.mockClear();
+  isAgentLoopRunSourceLiveMock.mockClear();
   verifyRepoAccessMock.mockClear();
   mintInstallationTokenMock.mockClear();
   revokeInstallationTokenMock.mockClear();
@@ -562,6 +573,73 @@ function resetMocks() {
 
 // Import after mocks
 const { executeAgentStep } = await import("./agent-step");
+
+describe("source deletion race guards", () => {
+  beforeEach(() => {
+    resetMocks();
+    currentStepRun = makeStepRun();
+    currentLoopRun = makeLoopRun();
+    currentLoop = makeLoop();
+  });
+
+  const execute = () =>
+    executeAgentStep({
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+      loopRunId: "loop-run-1",
+      node: makeAgentStepNode() as Parameters<
+        typeof executeAgentStep
+      >[0]["node"],
+      loopRun: currentLoopRun,
+      loop: currentLoop,
+      startedAt: Date.now(),
+    });
+
+  test("deletion before setup prevents repository and sandbox access", async () => {
+    sourceLiveResults = [false];
+
+    const result = await execute();
+
+    expect(result.errorKind).toBe("source_deleted");
+    expect(verifyRepoAccessMock).not.toHaveBeenCalled();
+    expect(connectSandboxMock).not.toHaveBeenCalled();
+    expect(createCommitMock).not.toHaveBeenCalled();
+  });
+
+  test("deletion after setup prevents sandbox allocation", async () => {
+    sourceLiveResults = [true, false];
+
+    const result = await execute();
+
+    expect(result.errorKind).toBe("source_deleted");
+    expect(verifyRepoAccessMock).toHaveBeenCalledTimes(1);
+    expect(connectSandboxMock).not.toHaveBeenCalled();
+    expect(revokeInstallationTokenMock).toHaveBeenCalledTimes(1);
+    expect(openAgentGenerateMock).not.toHaveBeenCalled();
+    expect(createCommitMock).not.toHaveBeenCalled();
+  });
+
+  test("deletion after the model returns prevents commit preparation", async () => {
+    sourceLiveResults = [true, true, false];
+
+    const result = await execute();
+
+    expect(result.errorKind).toBe("source_deleted");
+    expect(openAgentGenerateMock).toHaveBeenCalledTimes(1);
+    expect(buildCommitIntentFromSandboxMock).not.toHaveBeenCalled();
+    expect(createCommitMock).not.toHaveBeenCalled();
+  });
+
+  test("deletion immediately before commit prevents the GitHub write", async () => {
+    sourceLiveResults = [true, true, true, false];
+
+    const result = await execute();
+
+    expect(result.errorKind).toBe("source_deleted");
+    expect(buildCommitIntentFromSandboxMock).toHaveBeenCalledTimes(1);
+    expect(createCommitMock).not.toHaveBeenCalled();
+  });
+});
 
 // ── BT-S01: Happy path ────────────────────────────────────────────────────────
 

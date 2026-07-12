@@ -115,7 +115,7 @@ export interface BackgroundAgentRunRow {
 
 export interface AgentLoopRunRow {
   id: string;
-  loopId: string;
+  loopId: string | null;
   loopName: string | null;
   status: string;
   source: string;
@@ -400,7 +400,7 @@ export function normalizeAgentLoopRun(
     {
       id: row.id,
       loopId: row.loopId,
-      title: redactText(row.loopName, 120) ?? "Agent loop run",
+      title: redactText(row.loopName, 120) ?? "Deleted automation",
       nativeStatus: row.status,
       nativeSource: row.source,
       repoOwner: row.repoOwner,

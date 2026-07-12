@@ -81,4 +81,18 @@ describe("RunActions", () => {
     // Should surface a non-destructive notice about the active run
     expect(html).toContain("run_existing");
   });
+
+  test("does not render source-dependent controls after the Automation is deleted", async () => {
+    const { RunActions } = await runActionsModulePromise;
+    const html = renderToStaticMarkup(
+      <RunActions
+        runId="run_retained"
+        status="failed"
+        loopId={null}
+        sourceAvailable={false}
+      />,
+    );
+
+    expect(html).toBe("");
+  });
 });

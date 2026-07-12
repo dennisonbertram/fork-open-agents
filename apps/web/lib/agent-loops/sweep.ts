@@ -90,7 +90,7 @@ export async function sweepStalledLoopRuns(): Promise<SweepResult> {
     try {
       const detail = await getAgentLoopRunWithLoop(candidate.id);
       if (
-        detail?.loop.watchdogEnabled &&
+        detail?.loop?.watchdogEnabled &&
         detail.run.currentStepRunId &&
         detail.run.currentNodeId
       ) {

@@ -46,6 +46,7 @@ import {
   updateAgentLoopRunContext,
 } from "./store";
 import { executeAgentStep } from "./agent-step";
+import { AgentLoopSourceDeletedError } from "./source-deleted-error";
 
 // ── Public types ───────────────────────────────────────────────────────────────
 
@@ -143,7 +144,19 @@ export async function executeAgentLoopStep(params: {
 
   // ── 1. Load step run + loop run + loop ─────────────────────────────────────
 
-  const ctx = await getAgentLoopStepRunWithContext(stepRunId);
+  let ctx: Awaited<ReturnType<typeof getAgentLoopStepRunWithContext>>;
+  try {
+    ctx = await getAgentLoopStepRunWithContext(stepRunId);
+  } catch (error) {
+    if (error instanceof AgentLoopSourceDeletedError) {
+      return {
+        outcome: "failure",
+        errorKind: "source_deleted",
+        errorMessage: error.message,
+      };
+    }
+    throw error;
+  }
   if (!ctx) {
     // We cannot record an event without a loopRunId — just return a failure
     // result. The chain / dispatcher handles the missing-row case.

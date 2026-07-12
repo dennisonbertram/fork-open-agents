@@ -77,6 +77,10 @@ const recordAgentLoopEventMock = mock(async (input: EventInput) => {
 });
 
 mock.module("./store", () => ({
+  isAgentLoopRunSourceLive: mock(async () => true),
+  createAndAdvanceAgentLoopStep: mock(async () => ({
+    outcome: "source_deleted" as const,
+  })),
   getAgentLoopStepRunWithContext: mock(async (_stepRunId: string) => ({
     stepRun: currentStepRun,
     loopRun: currentLoopRun,

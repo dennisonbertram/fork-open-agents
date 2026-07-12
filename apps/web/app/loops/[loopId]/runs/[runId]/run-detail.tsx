@@ -87,7 +87,7 @@ function buildProofStripRows(
     {
       key: "repository",
       label: "Repository",
-      value: `${loop.repoOwner}/${loop.repoName}`,
+      value: loop ? `${loop.repoOwner}/${loop.repoName}` : null,
     },
     {
       key: "iterations",
@@ -340,7 +340,7 @@ export function RunDetail({
     failedStepCount,
   });
 
-  const guardrails = loop.guardrails as
+  const guardrails = loop?.guardrails as
     | Record<string, unknown>
     | null
     | undefined;
@@ -384,13 +384,23 @@ export function RunDetail({
 
       <RunMetadataTable rows={buildProofStripRows(run, loop, guardrails)} />
 
+      {!loop ? (
+        <p
+          role="status"
+          className="rounded-md border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-200"
+        >
+          Source deleted; execution history retained.
+        </p>
+      ) : null}
+
       <RunActions
         runId={run.id}
-        loopId={loop.id}
+        loopId={loop?.id ?? null}
+        sourceAvailable={loop !== null}
         status={run.status}
         onActionComplete={() => {
           void globalMutate(`/api/agent-loop-runs/${run.id}`);
-          void globalMutate(loopRunsListSwrKey(loop.id));
+          if (loop) void globalMutate(loopRunsListSwrKey(loop.id));
         }}
       />
 
@@ -585,20 +595,31 @@ export function RunDetail({
                 Loops
               </Link>
               <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-              <Link
-                href={`/repos/${loop.repoOwner}/${loop.repoName}`}
-                className="min-w-0 truncate font-mono text-muted-foreground hover:text-foreground"
-              >
-                {loop.repoOwner}/{loop.repoName}
-              </Link>
-              <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-              <Link
-                href={`/loops/${loop.id}`}
-                className="min-w-0 truncate text-muted-foreground hover:text-foreground"
-              >
-                {loop.name}
-              </Link>
-              <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              {loop ? (
+                <>
+                  <Link
+                    href={`/repos/${loop.repoOwner}/${loop.repoName}`}
+                    className="min-w-0 truncate font-mono text-muted-foreground hover:text-foreground"
+                  >
+                    {loop.repoOwner}/{loop.repoName}
+                  </Link>
+                  <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  <Link
+                    href={`/loops/${loop.id}`}
+                    className="min-w-0 truncate text-muted-foreground hover:text-foreground"
+                  >
+                    {loop.name}
+                  </Link>
+                  <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                </>
+              ) : (
+                <>
+                  <span className="text-muted-foreground">
+                    Deleted automation
+                  </span>
+                  <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                </>
+              )}
               <span className="shrink-0 font-medium">Run</span>
             </nav>
             <div className="flex items-center gap-2">

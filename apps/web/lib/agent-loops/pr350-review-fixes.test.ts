@@ -116,7 +116,10 @@ const updateSet = mock(() => ({ where: updateWhere }));
 const updateMock = mock(() => ({ set: updateSet }));
 
 const selectLimitMock = mock(() => Promise.resolve(selectReturning));
-const selectWhereMock = mock(() => ({ limit: selectLimitMock }));
+const selectWhereMock = mock(() => ({
+  limit: selectLimitMock,
+  for: mock(() => ({ limit: selectLimitMock })),
+}));
 const selectFromMock = mock(() => ({ where: selectWhereMock }));
 const selectMock = mock(() => ({ from: selectFromMock }));
 
@@ -128,6 +131,12 @@ mock.module("@/lib/db/client", () => ({
   db: {
     update: updateMock,
     select: selectMock,
+    transaction: mock(async (fn: (tx: unknown) => Promise<unknown>) =>
+      fn({
+        update: updateMock,
+        select: selectMock,
+      }),
+    ),
     query: {
       agentLoopRuns: { findFirst: findFirstMock },
       agentLoopStepRuns: {

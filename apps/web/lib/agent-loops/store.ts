@@ -1,6 +1,16 @@
 import "server-only";
 
-import { and, asc, count, desc, eq, inArray, like, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  inArray,
+  isNotNull,
+  like,
+  sql,
+} from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { db } from "@/lib/db/client";
 import {
@@ -21,6 +31,7 @@ import {
 } from "@/lib/db/schema";
 import { redactBackgroundAgentPayload } from "@/lib/background-agents/redaction";
 import { RunControlError } from "./run-controls-error";
+import { AgentLoopSourceDeletedError } from "./source-deleted-error";
 import type { LoopValidationError } from "./types";
 import { validateLoopDefinition } from "./validation";
 
@@ -28,7 +39,7 @@ import { validateLoopDefinition } from "./validation";
 
 export type AgentLoopRunWithLoop = {
   run: AgentLoopRun;
-  loop: AgentLoop;
+  loop: AgentLoop | null;
 };
 
 /**
@@ -240,11 +251,140 @@ export async function deleteAgentLoop(
   userId: string,
   loopId: string,
 ): Promise<boolean> {
-  const deleted = await db
-    .delete(agentLoops)
-    .where(and(eq(agentLoops.id, loopId), eq(agentLoops.userId, userId)))
-    .returning({ id: agentLoops.id });
-  return deleted.length > 0;
+  const result = await db.transaction(async (tx) => {
+    const [ownedLoop] = await tx
+      .select({ id: agentLoops.id })
+      .from(agentLoops)
+      .where(and(eq(agentLoops.id, loopId), eq(agentLoops.userId, userId)))
+      .for("update")
+      .limit(1);
+    if (!ownedLoop) {
+      return {
+        deleted: false as const,
+        activeRunsRevoked: 0,
+        retainedRunCount: 0,
+      };
+    }
+
+    const runs = await tx
+      .select({
+        id: agentLoopRuns.id,
+        status: agentLoopRuns.status,
+        requestId: agentLoopRuns.requestId,
+        workflowRunId: agentLoopRuns.workflowRunId,
+      })
+      .from(agentLoopRuns)
+      .where(
+        and(eq(agentLoopRuns.loopId, loopId), eq(agentLoopRuns.userId, userId)),
+      )
+      .for("update");
+
+    const activeStatuses: AgentLoopRun["status"][] = [
+      "queued",
+      "running",
+      "paused",
+      "stalled",
+    ];
+    const activeStatusSet = new Set(activeStatuses);
+    const activeRuns = runs.filter((run) => activeStatusSet.has(run.status));
+    const now = new Date();
+
+    if (activeRuns.length > 0) {
+      const activeRunIds = activeRuns.map((run) => run.id);
+
+      await tx
+        .update(agentLoopRuns)
+        .set({
+          status: "cancelled",
+          errorKind: "source_deleted",
+          errorMessage: "Source Automation deleted",
+          finishedAt: now,
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(agentLoopRuns.loopId, loopId),
+            eq(agentLoopRuns.userId, userId),
+            inArray(agentLoopRuns.id, activeRunIds),
+            inArray(agentLoopRuns.status, activeStatuses),
+          ),
+        );
+
+      await tx
+        .update(agentLoopStepRuns)
+        .set({
+          status: "skipped",
+          errorKind: "source_deleted",
+          errorMessage: "Source Automation deleted",
+          finishedAt: now,
+        })
+        .where(
+          and(
+            inArray(agentLoopStepRuns.loopRunId, activeRunIds),
+            inArray(agentLoopStepRuns.status, ["queued", "running"]),
+          ),
+        );
+
+      await tx
+        .update(agentLoopWatchdogRuns)
+        .set({
+          status: "failed",
+          decision: null,
+          diagnosis: "Source Automation deleted",
+          decisionPayload: null,
+          finishedAt: now,
+        })
+        .where(
+          and(
+            inArray(agentLoopWatchdogRuns.loopRunId, activeRunIds),
+            inArray(agentLoopWatchdogRuns.status, ["pending", "running"]),
+          ),
+        );
+
+      for (const run of activeRuns) {
+        await tx.insert(agentLoopEvents).values({
+          id: nanoid(),
+          loopRunId: run.id,
+          eventName: "agent-loop.source.revoked",
+          status: "info",
+          level: "warn",
+          summary: "Source deleted; execution history retained.",
+          payload: redactBackgroundAgentPayload({
+            formerLoopId: loopId,
+            previousStatus: run.status,
+            newStatus: "cancelled",
+            errorKind: "source_deleted",
+          }),
+          redactionStatus: "passed",
+          requestId: run.requestId,
+          workflowRunId: run.workflowRunId,
+        });
+      }
+    }
+
+    const deleted = await tx
+      .delete(agentLoops)
+      .where(and(eq(agentLoops.id, loopId), eq(agentLoops.userId, userId)))
+      .returning({ id: agentLoops.id });
+    if (deleted.length === 0) {
+      throw new Error("Owned Automation disappeared during deletion");
+    }
+
+    return {
+      deleted: true as const,
+      activeRunsRevoked: activeRuns.length,
+      retainedRunCount: runs.length,
+    };
+  });
+
+  if (!result.deleted) return false;
+  console.info("[agent-loop.source.deleted]", {
+    formerLoopId: loopId,
+    userId,
+    activeRunsRevoked: result.activeRunsRevoked,
+    retainedRunCount: result.retainedRunCount,
+  });
+  return true;
 }
 
 export async function listAgentLoops(
@@ -402,11 +542,18 @@ export async function getAgentLoopRunWithLoop(
     .where(eq(agentLoopRuns.id, runId))
     .limit(1);
 
-  if (!row?.loop) {
-    return null;
-  }
+  return row ? { run: row.run, loop: row.loop } : null;
+}
 
-  return { run: row.run, loop: row.loop };
+export async function isAgentLoopRunSourceLive(
+  runId: string,
+): Promise<boolean> {
+  const [row] = await db
+    .select({ id: agentLoopRuns.id })
+    .from(agentLoopRuns)
+    .where(and(eq(agentLoopRuns.id, runId), isNotNull(agentLoopRuns.loopId)))
+    .limit(1);
+  return Boolean(row);
 }
 
 export async function getOwnedAgentLoopRunWithLoop(params: {
@@ -431,8 +578,7 @@ export async function getOwnedAgentLoopRunWithLoop(params: {
     )
     .limit(1);
 
-  if (!row?.loop) return null;
-  return { run: row.run, loop: row.loop };
+  return row ? { run: row.run, loop: row.loop } : null;
 }
 
 /** An AgentLoopRun extended with the count of its failed step runs (#767). */
@@ -538,7 +684,9 @@ export async function updateAgentLoopRunStatus(params: {
       ...(terminalStatuses.has(params.status) ? { finishedAt: now } : {}),
       updatedAt: now,
     })
-    .where(eq(agentLoopRuns.id, params.runId))
+    .where(
+      and(eq(agentLoopRuns.id, params.runId), isNotNull(agentLoopRuns.loopId)),
+    )
     .returning();
 
   return run ?? null;
@@ -561,7 +709,9 @@ export async function updateAgentLoopRunContext(params: {
       context: params.context,
       updatedAt: now,
     })
-    .where(eq(agentLoopRuns.id, params.runId))
+    .where(
+      and(eq(agentLoopRuns.id, params.runId), isNotNull(agentLoopRuns.loopId)),
+    )
     .returning();
 
   return run ?? null;
@@ -596,7 +746,9 @@ export async function setInitialStepPointer(params: {
       currentStepRunId: params.stepRunId,
       updatedAt: now,
     })
-    .where(eq(agentLoopRuns.id, params.runId))
+    .where(
+      and(eq(agentLoopRuns.id, params.runId), isNotNull(agentLoopRuns.loopId)),
+    )
     .returning({ id: agentLoopRuns.id });
 
   return row ?? null;
@@ -631,6 +783,7 @@ export async function getAgentLoopStepRunWithContext(
   if (!row) {
     return null;
   }
+  if (!row.loop) throw new AgentLoopSourceDeletedError(row.run.id);
 
   return { stepRun, loopRun: row.run, loop: row.loop };
 }
@@ -656,6 +809,74 @@ export async function createAgentLoopStepRun(
   }
 
   return step;
+}
+
+export async function createAndAdvanceAgentLoopStep(params: {
+  runId: string;
+  fromStepRunId: string;
+  nextNodeId: string;
+  nextNodeKind: string;
+  attempt: number;
+  stepCount: number;
+  iterationCount: number;
+  workflowRunId: string;
+}): Promise<
+  | { outcome: "advanced"; step: AgentLoopStepRun }
+  | { outcome: "duplicate" }
+  | { outcome: "source_deleted" }
+> {
+  return db.transaction(async (tx) => {
+    const [run] = await tx
+      .select({
+        id: agentLoopRuns.id,
+        loopId: agentLoopRuns.loopId,
+        currentStepRunId: agentLoopRuns.currentStepRunId,
+      })
+      .from(agentLoopRuns)
+      .where(eq(agentLoopRuns.id, params.runId))
+      .for("update")
+      .limit(1);
+    if (!run || run.currentStepRunId !== params.fromStepRunId) {
+      return { outcome: "duplicate" };
+    }
+    if (run.loopId === null) return { outcome: "source_deleted" };
+
+    const [step] = await tx
+      .insert(agentLoopStepRuns)
+      .values({
+        id: nanoid(),
+        loopRunId: params.runId,
+        nodeId: params.nextNodeId,
+        nodeKind: params.nextNodeKind,
+        attempt: params.attempt,
+        status: "queued",
+      })
+      .returning();
+    if (!step) throw new Error("Failed to create next agent loop step run");
+
+    const [advanced] = await tx
+      .update(agentLoopRuns)
+      .set({
+        currentNodeId: params.nextNodeId,
+        currentStepRunId: step.id,
+        stepCount: params.stepCount,
+        iterationCount: params.iterationCount,
+        workflowRunId: params.workflowRunId,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(agentLoopRuns.id, params.runId),
+          eq(agentLoopRuns.currentStepRunId, params.fromStepRunId),
+          isNotNull(agentLoopRuns.loopId),
+        ),
+      )
+      .returning({ id: agentLoopRuns.id });
+    if (!advanced) {
+      throw new Error("Agent loop advance lost its locked source row");
+    }
+    return { outcome: "advanced", step };
+  });
 }
 
 export async function updateAgentLoopStepRun(
@@ -697,7 +918,16 @@ export async function updateAgentLoopStepRun(
         ? { finishedAt: params.finishedAt ?? now }
         : {}),
     })
-    .where(eq(agentLoopStepRuns.id, params.stepRunId))
+    .where(
+      and(
+        eq(agentLoopStepRuns.id, params.stepRunId),
+        sql`exists (
+          select 1 from ${agentLoopRuns}
+          where ${agentLoopRuns.id} = ${agentLoopStepRuns.loopRunId}
+            and ${agentLoopRuns.loopId} is not null
+        )`,
+      ),
+    )
     .returning();
 
   return step ?? null;
@@ -803,6 +1033,7 @@ export async function advanceRunToNextStep(params: {
       and(
         eq(agentLoopRuns.id, params.runId),
         eq(agentLoopRuns.currentStepRunId, params.fromStepRunId),
+        isNotNull(agentLoopRuns.loopId),
       ),
     )
     .returning({ id: agentLoopRuns.id });
@@ -886,6 +1117,7 @@ export async function pauseLoopRun(
         eq(agentLoopRuns.id, runId),
         eq(agentLoopRuns.userId, userId),
         sql`${agentLoopRuns.status} IN ('running', 'queued')`,
+        isNotNull(agentLoopRuns.loopId),
       ),
     )
     .returning();
@@ -940,6 +1172,7 @@ export async function cancelLoopRun(
         eq(agentLoopRuns.id, runId),
         eq(agentLoopRuns.userId, userId),
         sql`${agentLoopRuns.status} IN ('running', 'queued', 'paused')`,
+        isNotNull(agentLoopRuns.loopId),
       ),
     )
     .returning();
@@ -986,46 +1219,54 @@ export async function resumeLoopRun(
   runId: string,
   userId: string,
 ): Promise<AgentLoopRun> {
-  const now = new Date();
-
-  const [run] = await db
-    .update(agentLoopRuns)
-    .set({
-      status: "running",
-      // COALESCE: preserve startedAt if already set.
-      // D1 fix: use NOW() SQL function, not a JS Date parameter — the postgres v3
-      // driver's Bind() cannot serialize a Date instance (live-proof D1).
-      startedAt: sql`COALESCE(${agentLoopRuns.startedAt}, NOW())`,
-      updatedAt: now,
-    })
-    .where(
-      and(
-        eq(agentLoopRuns.id, runId),
-        eq(agentLoopRuns.userId, userId),
-        eq(agentLoopRuns.status, "paused"),
-      ),
-    )
-    .returning();
-
-  if (!run) {
-    // Re-check: determine if the run exists and is owned by userId.
-    const [existing] = await db
-      .select({ id: agentLoopRuns.id })
+  return db.transaction(async (tx) => {
+    const [existing] = await tx
+      .select()
       .from(agentLoopRuns)
       .where(and(eq(agentLoopRuns.id, runId), eq(agentLoopRuns.userId, userId)))
+      .for("update")
       .limit(1);
-
     if (!existing) {
       throw new RunControlError("not_found", `Loop run not found: ${runId}`);
     }
+    if (existing.loopId === null) {
+      throw new RunControlError(
+        "source_deleted",
+        `Cannot resume run ${runId}: source Automation was deleted`,
+      );
+    }
+    if (existing.status !== "paused") {
+      throw new RunControlError(
+        "illegal_transition",
+        `Cannot resume run ${runId}: not in paused status`,
+      );
+    }
 
-    throw new RunControlError(
-      "illegal_transition",
-      `Cannot resume run ${runId}: not in paused status`,
-    );
-  }
-
-  return run;
+    const now = new Date();
+    const [run] = await tx
+      .update(agentLoopRuns)
+      .set({
+        status: "running",
+        startedAt: sql`COALESCE(${agentLoopRuns.startedAt}, NOW())`,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(agentLoopRuns.id, runId),
+          eq(agentLoopRuns.userId, userId),
+          eq(agentLoopRuns.status, "paused"),
+          isNotNull(agentLoopRuns.loopId),
+        ),
+      )
+      .returning();
+    if (!run) {
+      throw new RunControlError(
+        "source_deleted",
+        `Cannot resume run ${runId}: source Automation was deleted`,
+      );
+    }
+    return run;
+  });
 }
 
 /**
@@ -1053,17 +1294,29 @@ export async function retryCurrentStep(params: {
 }): Promise<AgentLoopStepRun> {
   return db.transaction(async (tx) => {
     // Load the run inside the transaction — ownership-scoped
-    const run = await tx.query.agentLoopRuns.findFirst({
-      where: and(
-        eq(agentLoopRuns.id, params.runId),
-        eq(agentLoopRuns.userId, params.userId),
-      ),
-    });
+    const [run] = await tx
+      .select()
+      .from(agentLoopRuns)
+      .where(
+        and(
+          eq(agentLoopRuns.id, params.runId),
+          eq(agentLoopRuns.userId, params.userId),
+        ),
+      )
+      .for("update")
+      .limit(1);
 
     if (!run) {
       throw new RunControlError(
         "not_found",
         `Loop run not found: ${params.runId}`,
+      );
+    }
+
+    if (run.loopId === null) {
+      throw new RunControlError(
+        "source_deleted",
+        `Cannot retry run ${params.runId}: source Automation was deleted`,
       );
     }
 
@@ -1129,6 +1382,7 @@ export async function retryCurrentStep(params: {
             eq(agentLoopRuns.id, params.runId),
             inArray(agentLoopRuns.status, ["failed", "stalled"]),
             eq(agentLoopRuns.currentStepRunId, observedStepRunId),
+            isNotNull(agentLoopRuns.loopId),
           ),
         )
         .returning();
@@ -1207,6 +1461,7 @@ export async function retryCurrentStep(params: {
           eq(agentLoopRuns.id, params.runId),
           inArray(agentLoopRuns.status, ["failed", "stalled"]),
           eq(agentLoopRuns.currentStepRunId, observedStepRunId),
+          isNotNull(agentLoopRuns.loopId),
         ),
       )
       .returning();
@@ -1274,6 +1529,7 @@ export async function conditionallyTransitionRunStatus(params: {
       and(
         eq(agentLoopRuns.id, params.runId),
         inArray(agentLoopRuns.status, params.fromStatuses),
+        isNotNull(agentLoopRuns.loopId),
       ),
     )
     .returning();
@@ -1399,22 +1655,40 @@ export type UpdateAgentLoopWatchdogRunInput = {
 export async function createAgentLoopWatchdogRun(
   input: CreateAgentLoopWatchdogRunInput,
 ): Promise<AgentLoopWatchdogRun> {
-  const [row] = await db
-    .insert(agentLoopWatchdogRuns)
-    .values({
-      id: nanoid(),
-      loopRunId: input.loopRunId,
-      stepRunId: input.stepRunId ?? null,
-      nodeId: input.nodeId,
-      status: input.status,
-      attempt: input.attempt,
-      budgetRemaining: input.budgetRemaining,
-      decision: input.decision ?? null,
-      diagnosis: input.diagnosis ?? null,
-      decisionPayload: input.decisionPayload ?? null,
-      ...(input.startedAt !== undefined ? { startedAt: input.startedAt } : {}),
-    })
-    .returning();
+  const row = await db.transaction(async (tx) => {
+    const [liveRun] = await tx
+      .select({ id: agentLoopRuns.id })
+      .from(agentLoopRuns)
+      .where(
+        and(
+          eq(agentLoopRuns.id, input.loopRunId),
+          isNotNull(agentLoopRuns.loopId),
+        ),
+      )
+      .for("update")
+      .limit(1);
+    if (!liveRun) return null;
+
+    const [inserted] = await tx
+      .insert(agentLoopWatchdogRuns)
+      .values({
+        id: nanoid(),
+        loopRunId: input.loopRunId,
+        stepRunId: input.stepRunId ?? null,
+        nodeId: input.nodeId,
+        status: input.status,
+        attempt: input.attempt,
+        budgetRemaining: input.budgetRemaining,
+        decision: input.decision ?? null,
+        diagnosis: input.diagnosis ?? null,
+        decisionPayload: input.decisionPayload ?? null,
+        ...(input.startedAt !== undefined
+          ? { startedAt: input.startedAt }
+          : {}),
+      })
+      .returning();
+    return inserted ?? null;
+  });
 
   if (!row) {
     throw new Error("Failed to create watchdog run");
@@ -1440,7 +1714,16 @@ export async function updateAgentLoopWatchdogRun(
         ? { finishedAt: input.finishedAt }
         : {}),
     })
-    .where(eq(agentLoopWatchdogRuns.id, input.id));
+    .where(
+      and(
+        eq(agentLoopWatchdogRuns.id, input.id),
+        sql`exists (
+          select 1 from ${agentLoopRuns}
+          where ${agentLoopRuns.id} = ${agentLoopWatchdogRuns.loopRunId}
+            and ${agentLoopRuns.loopId} is not null
+        )`,
+      ),
+    );
 }
 
 /**
@@ -1498,12 +1781,19 @@ export async function retryCurrentStepForWatchdog(params: {
   hint?: string;
 }): Promise<AgentLoopStepRun> {
   return db.transaction(async (tx) => {
-    const run = await tx.query.agentLoopRuns.findFirst({
-      where: eq(agentLoopRuns.id, params.runId),
-    });
+    const [run] = await tx
+      .select()
+      .from(agentLoopRuns)
+      .where(eq(agentLoopRuns.id, params.runId))
+      .for("update")
+      .limit(1);
 
     if (!run) {
       throw new Error(`Watchdog retry: loop run not found: ${params.runId}`);
+    }
+
+    if (run.loopId === null) {
+      throw new Error(`Watchdog retry: source deleted for run ${params.runId}`);
     }
 
     if (!run.currentNodeId || !run.currentStepRunId) {
@@ -1592,6 +1882,7 @@ export async function retryCurrentStepForWatchdog(params: {
           eq(agentLoopRuns.id, params.runId),
           inArray(agentLoopRuns.status, ["failed", "stalled", "running"]),
           eq(agentLoopRuns.currentStepRunId, observedStepRunId),
+          isNotNull(agentLoopRuns.loopId),
         ),
       )
       .returning();
@@ -1624,6 +1915,7 @@ export async function pauseLoopRunSystem(runId: string): Promise<void> {
       and(
         eq(agentLoopRuns.id, runId),
         sql`${agentLoopRuns.status} IN ('running', 'queued', 'failed', 'stalled')`,
+        isNotNull(agentLoopRuns.loopId),
       ),
     );
 }
@@ -1661,49 +1953,63 @@ export async function advanceToFailureEdge(params: {
   const nextNode = definition.nodes.find((n) => n.id === nextNodeId);
   const nextNodeKind = nextNode?.kind ?? "unknown";
 
-  // Compute next attempt (MAX+1 sparse-safe)
-  const [attemptRow] = await db
-    .select({ maxAttempt: sql<number>`MAX(${agentLoopStepRuns.attempt})` })
-    .from(agentLoopStepRuns)
-    .where(
-      and(
-        eq(agentLoopStepRuns.loopRunId, params.loopRunId),
-        eq(agentLoopStepRuns.nodeId, nextNodeId),
-      ),
-    );
-  const nextAttempt = (attemptRow?.maxAttempt ?? 0) + 1;
+  return db.transaction(async (tx) => {
+    const [liveRun] = await tx
+      .select({ id: agentLoopRuns.id })
+      .from(agentLoopRuns)
+      .where(
+        and(
+          eq(agentLoopRuns.id, params.loopRunId),
+          isNotNull(agentLoopRuns.loopId),
+        ),
+      )
+      .for("update")
+      .limit(1);
+    if (!liveRun) return null;
 
-  // Create next step run
-  const [nextStepRun] = await db
-    .insert(agentLoopStepRuns)
-    .values({
-      id: nanoid(),
-      loopRunId: params.loopRunId,
-      nodeId: nextNodeId,
-      nodeKind: nextNodeKind,
-      attempt: nextAttempt,
-      status: "queued",
-    })
-    .returning();
+    const [attemptRow] = await tx
+      .select({ maxAttempt: sql<number>`MAX(${agentLoopStepRuns.attempt})` })
+      .from(agentLoopStepRuns)
+      .where(
+        and(
+          eq(agentLoopStepRuns.loopRunId, params.loopRunId),
+          eq(agentLoopStepRuns.nodeId, nextNodeId),
+        ),
+      );
+    const nextAttempt = (attemptRow?.maxAttempt ?? 0) + 1;
 
-  if (!nextStepRun) {
-    return null;
-  }
+    const [nextStepRun] = await tx
+      .insert(agentLoopStepRuns)
+      .values({
+        id: nanoid(),
+        loopRunId: params.loopRunId,
+        nodeId: nextNodeId,
+        nodeKind: nextNodeKind,
+        attempt: nextAttempt,
+        status: "queued",
+      })
+      .returning();
+    if (!nextStepRun) return null;
 
-  // Advance the run pointer
-  const now = new Date();
-  await db
-    .update(agentLoopRuns)
-    .set({
-      currentNodeId: nextNodeId,
-      currentStepRunId: nextStepRun.id,
-      stepCount: sql`${agentLoopRuns.stepCount} + 1`,
-      status: "running",
-      updatedAt: now,
-    })
-    .where(eq(agentLoopRuns.id, params.loopRunId));
-
-  return nextStepRun;
+    const [advanced] = await tx
+      .update(agentLoopRuns)
+      .set({
+        currentNodeId: nextNodeId,
+        currentStepRunId: nextStepRun.id,
+        stepCount: sql`${agentLoopRuns.stepCount} + 1`,
+        status: "running",
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(agentLoopRuns.id, params.loopRunId),
+          isNotNull(agentLoopRuns.loopId),
+        ),
+      )
+      .returning({ id: agentLoopRuns.id });
+    if (!advanced) throw new Error("Watchdog advance lost its locked source");
+    return nextStepRun;
+  });
 }
 
 /**
@@ -1712,6 +2018,20 @@ export async function advanceToFailureEdge(params: {
  * Used by watchdog retry and skip paths.
  */
 export async function dispatchStepWorkflow(stepRunId: string): Promise<void> {
+  const [liveStep] = await db
+    .select({ id: agentLoopStepRuns.id })
+    .from(agentLoopStepRuns)
+    .innerJoin(
+      agentLoopRuns,
+      and(
+        eq(agentLoopRuns.id, agentLoopStepRuns.loopRunId),
+        isNotNull(agentLoopRuns.loopId),
+      ),
+    )
+    .where(eq(agentLoopStepRuns.id, stepRunId))
+    .limit(1);
+  if (!liveStep) return;
+
   const { start } = await import("workflow/api");
   const { runAgentLoopStepWorkflow } =
     await import("@/app/workflows/agent-loop-step");

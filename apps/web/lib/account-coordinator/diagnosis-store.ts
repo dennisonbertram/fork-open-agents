@@ -1161,7 +1161,7 @@ async function loadAgentLoopDiagnosis(params: {
       ),
     )
     .limit(1);
-  if (!row?.loop) {
+  if (!row) {
     return null;
   }
 
@@ -1171,11 +1171,11 @@ async function loadAgentLoopDiagnosis(params: {
     {
       id: run.id,
       loopId: run.loopId,
-      loopName: loop.name,
+      loopName: loop?.name ?? null,
       status: run.status,
       source: run.source,
-      repoOwner: loop.repoOwner,
-      repoName: loop.repoName,
+      repoOwner: loop?.repoOwner ?? null,
+      repoName: loop?.repoName ?? null,
       currentNodeId: run.currentNodeId,
       stepCount: run.stepCount,
       failedStepCount: Number(row.failedStepCount),
@@ -1203,7 +1203,7 @@ async function loadAgentLoopDiagnosis(params: {
     makeDiagnosticEvidence({
       id: run.id,
       kind: "target",
-      title: loop.name,
+      title: loop?.name ?? "Deleted automation",
       status: run.status,
       summary: run.errorMessage ? "Agent loop run failed" : undefined,
       occurredAt: run.updatedAt,
@@ -1224,18 +1224,20 @@ async function loadAgentLoopDiagnosis(params: {
         errorMessage: run.errorMessage,
         definitionSnapshot: run.definitionSnapshot,
         context: run.context,
-        loop: {
-          id: loop.id,
-          name: loop.name,
-          description: loop.description,
-          repoOwner: loop.repoOwner,
-          repoName: loop.repoName,
-          status: loop.status,
-          guardrails: loop.guardrails,
-          permissions: loop.permissions,
-          watchdogEnabled: loop.watchdogEnabled,
-          watchdogRetryBudget: loop.watchdogRetryBudget,
-        },
+        loop: loop
+          ? {
+              id: loop.id,
+              name: loop.name,
+              description: loop.description,
+              repoOwner: loop.repoOwner,
+              repoName: loop.repoName,
+              status: loop.status,
+              guardrails: loop.guardrails,
+              permissions: loop.permissions,
+              watchdogEnabled: loop.watchdogEnabled,
+              watchdogRetryBudget: loop.watchdogRetryBudget,
+            }
+          : null,
       },
     }),
   ]);

@@ -1652,9 +1652,9 @@ export const agentLoopRuns = pgTable(
   "agent_loop_runs",
   {
     id: text("id").primaryKey(),
-    loopId: text("loop_id")
-      .notNull()
-      .references(() => agentLoops.id, { onDelete: "cascade" }),
+    loopId: text("loop_id").references(() => agentLoops.id, {
+      onDelete: "set null",
+    }),
     userId: text("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),

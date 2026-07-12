@@ -261,6 +261,38 @@ const getMaxAttemptForNodeMock = mock(
 );
 
 mock.module("./store", () => ({
+  isAgentLoopRunSourceLive: mock(async () => true),
+  createAndAdvanceAgentLoopStep: mock(
+    async (input: {
+      runId: string;
+      fromStepRunId: string;
+      nextNodeId: string;
+      nextNodeKind: string;
+      attempt: number;
+      stepCount: number;
+      iterationCount: number;
+      workflowRunId: string;
+    }) => {
+      const step = await createStepRunMock({
+        loopRunId: input.runId,
+        nodeId: input.nextNodeId,
+        nodeKind: input.nextNodeKind,
+        attempt: input.attempt,
+      });
+      const advanced = await advanceMock({
+        runId: input.runId,
+        fromStepRunId: input.fromStepRunId,
+        nextNodeId: input.nextNodeId,
+        nextStepRunId: step.id,
+        stepCount: input.stepCount,
+        iterationCount: input.iterationCount,
+        workflowRunId: input.workflowRunId,
+      });
+      return advanced
+        ? { outcome: "advanced" as const, step }
+        : { outcome: "duplicate" as const };
+    },
+  ),
   getAgentLoopStepRunWithContext: getCtxMock,
   getAgentLoopRunWithLoop: getAgentLoopRunWithLoopMock,
   updateAgentLoopRunStatus: updateRunStatusMock,

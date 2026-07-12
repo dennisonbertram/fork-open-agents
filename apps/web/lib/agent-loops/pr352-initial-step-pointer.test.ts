@@ -180,6 +180,10 @@ const getMaxAttemptForNode = mock(async () => 0);
 // Both go through the same module registry key when resolved by Bun from the same dir.
 // We mock both aliases to be safe.
 mock.module("@/lib/agent-loops/store", () => ({
+  isAgentLoopRunSourceLive: mock(async () => true),
+  createAndAdvanceAgentLoopStep: mock(async () => ({
+    outcome: "source_deleted" as const,
+  })),
   createAgentLoopRun,
   hasActiveRunForLoop,
   getOwnedAgentLoop,
@@ -199,6 +203,10 @@ mock.module("@/lib/agent-loops/store", () => ({
 }));
 
 mock.module("./store", () => ({
+  isAgentLoopRunSourceLive: mock(async () => true),
+  createAndAdvanceAgentLoopStep: mock(async () => ({
+    outcome: "source_deleted" as const,
+  })),
   createAgentLoopRun,
   hasActiveRunForLoop,
   getOwnedAgentLoop,

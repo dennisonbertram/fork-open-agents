@@ -46,6 +46,7 @@ import {
   advanceToFailureEdge,
   dispatchStepWorkflow,
   recordAgentLoopEvent,
+  isAgentLoopRunSourceLive,
 } from "./store";
 import type { AgentLoop, AgentLoopRun } from "@/lib/db/schema";
 
@@ -217,6 +218,10 @@ export async function invokeWatchdog(
 
   const loopRunId = loopRun.id;
 
+  if (!(await isAgentLoopRunSourceLive(loopRunId))) {
+    return { invoked: false };
+  }
+
   // (b) Budget pre-check
   const priorRetries = await countWatchdogRetryDecisions({ loopRunId, nodeId });
   const budget = loop.watchdogRetryBudget;
@@ -348,6 +353,10 @@ export async function invokeWatchdog(
     } else {
       parseErrorKind = "watchdog_output_invalid";
     }
+  }
+
+  if (!(await isAgentLoopRunSourceLive(loopRunId))) {
+    return { invoked: false };
   }
 
   // (g) Apply decision
