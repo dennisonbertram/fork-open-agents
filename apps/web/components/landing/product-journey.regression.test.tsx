@@ -22,7 +22,7 @@ const source = [
 
 describe("landing product journey (#967)", () => {
   test("renders one semantic ordered journey with all four actions", () => {
-    const html = renderToStaticMarkup(<ProductJourney />);
+    const html = renderToStaticMarkup(<ProductJourney linked />);
     expect(html).toContain('<ol aria-label="Product journey"');
     for (const label of [
       "Connect GitHub",
@@ -35,12 +35,22 @@ describe("landing product journey (#967)", () => {
   });
 
   test("keeps the signed-out journey informational instead of linking to protected routes", () => {
-    const html = renderToStaticMarkup(<ProductJourney linked={false} />);
+    const html = renderToStaticMarkup(<ProductJourney />);
+    const signedOutHeroSource = readFileSync(
+      join(landingDir, "../auth/signed-out-hero.tsx"),
+      "utf8",
+    );
+    const getStartedSource = readFileSync(
+      join(landingDir, "../../app/get-started/get-started-flow.tsx"),
+      "utf8",
+    );
 
     expect(html).toContain('<ol aria-label="Product journey"');
     expect(html).not.toContain("<a");
     expect(html).toContain("Connect GitHub");
-    expect(renderToStaticMarkup(<ProductJourney />)).toContain(
+    expect(signedOutHeroSource).toContain("<ProductJourney />");
+    expect(getStartedSource).toContain("<ProductJourney dark linked />");
+    expect(renderToStaticMarkup(<ProductJourney linked />)).toContain(
       `href="${PRODUCT_JOURNEY[1].href}"`,
     );
   });

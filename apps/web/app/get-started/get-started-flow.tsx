@@ -79,7 +79,7 @@ export function GetStartedFlow() {
           inspect the resulting Run.
         </p>
         <div className="mt-8 text-white">
-          <ProductJourney dark />
+          <ProductJourney dark linked />
         </div>
       </div>
 
