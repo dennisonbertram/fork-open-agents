@@ -169,4 +169,45 @@ describe("Run detail summary adapters", () => {
     expect(summary.health).toBe("needs_attention");
     expect(summary.attentionReasons).toEqual(["stale"]);
   });
+
+  test("deleted loop source has no Automation or repository link", () => {
+    const data = {
+      run: {
+        id: "run-retained",
+        loopId: null,
+        userId: "user-1",
+        status: "cancelled",
+        definitionSnapshot: { nodes: [], edges: [] },
+        currentNodeId: null,
+        currentStepRunId: null,
+        iterationCount: 0,
+        stepCount: 1,
+        context: {},
+        source: "manual",
+        triggerId: null,
+        idempotencyKey: "key-retained",
+        errorKind: "source_deleted",
+        errorMessage: "Source Automation deleted",
+        workflowRunId: null,
+        requestId: null,
+        startedAt: new Date("2026-07-11T10:01:00.000Z"),
+        finishedAt: new Date("2026-07-11T10:02:00.000Z"),
+        createdAt: new Date("2026-07-11T10:00:00.000Z"),
+        updatedAt: new Date("2026-07-11T10:02:00.000Z"),
+      },
+      loop: null,
+      steps: [],
+      events: [],
+      watchdogRuns: [],
+    } satisfies GetAgentLoopRunDetailResponse;
+
+    const summary = buildLoopRunDetailSummary(data, { variant: "canonical" });
+
+    expect(summary.automation).toEqual({
+      name: "Deleted automation",
+      sourceId: null,
+      href: null,
+    });
+    expect(summary.repository).toBeNull();
+  });
 });

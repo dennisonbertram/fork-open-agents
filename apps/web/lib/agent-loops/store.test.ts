@@ -127,6 +127,22 @@ const txSelectMock = mock((_fields?: unknown) => ({
   })),
 }));
 
+const transactionMock = mock(
+  async (fn: (tx: unknown) => Promise<unknown>) =>
+    fn({
+      insert: txInsertMock,
+      update: txUpdateMock,
+      delete: deleteMock,
+      select: txSelectMock,
+      query: {
+        agentLoops: { findFirst: txFindFirstMock },
+        agentLoopRuns: { findFirst: txFindFirstMock },
+        agentLoopStepRuns: { findFirst: txFindFirstMock },
+        agentLoopWatchdogRuns: { findFirst: txFindFirstMock },
+      },
+    }),
+);
+
 mock.module("@/lib/db/client", () => ({
   db: {
     insert: insertMock,
@@ -155,20 +171,7 @@ mock.module("@/lib/db/client", () => ({
         findFirst: findFirstMock,
       },
     },
-    transaction: mock(async (fn: (tx: unknown) => Promise<unknown>) =>
-      fn({
-        insert: txInsertMock,
-        update: txUpdateMock,
-        delete: deleteMock,
-        select: txSelectMock,
-        query: {
-          agentLoops: { findFirst: txFindFirstMock },
-          agentLoopRuns: { findFirst: txFindFirstMock },
-          agentLoopStepRuns: { findFirst: txFindFirstMock },
-          agentLoopWatchdogRuns: { findFirst: txFindFirstMock },
-        },
-      }),
-    ),
+    transaction: transactionMock,
   },
 }));
 
@@ -209,6 +212,7 @@ function resetMocks() {
   txInsertMock.mockClear();
   txUpdateMock.mockClear();
   txSelectMock.mockClear();
+  transactionMock.mockClear();
   returningMock.mockClear();
   valuesMock.mockClear();
   onConflictDoNothingMock.mockClear();
@@ -400,6 +404,45 @@ describe("deleteAgentLoop", () => {
     const store = await storePromise;
     const result = await store.deleteAgentLoop("user-1", "loop-missing");
     expect(result).toBe(false);
+  });
+
+  test("atomically revokes active Runs and records source deletion before deleting", async () => {
+    try {
+      txFindFirstMock.mockResolvedValueOnce(makeLoop());
+      txUpdateReturningOverride = [
+        makeLoopRun({
+          id: "run-active",
+          status: "cancelled",
+          errorKind: "source_deleted",
+        }),
+      ];
+
+      const store = await storePromise;
+      const result = await store.deleteAgentLoop("user-1", "loop-1");
+
+      expect(result).toBe(true);
+      expect(transactionMock).toHaveBeenCalledTimes(1);
+      expect(txUpdateMock).toHaveBeenCalledTimes(1);
+      expect(txInsertMock).toHaveBeenCalledTimes(1);
+      expect(deleteMock).toHaveBeenCalledTimes(1);
+      const revokedValues = txUpdateMock.mock.calls[0]?.[0];
+      expect(revokedValues).toBe(agentLoopRunsTable);
+      const eventInput = valuesMock.mock.calls.at(-1)?.[0] as
+        | Record<string, unknown>
+        | undefined;
+      expect(eventInput).toMatchObject({
+        loopRunId: "run-active",
+        eventName: "agent-loop.source.revoked",
+        level: "warn",
+        redactionStatus: "passed",
+      });
+    } finally {
+      txFindFirstMock.mockReset();
+      txFindFirstMock.mockImplementation(
+        async () => (queryResult[0] ?? null) as unknown,
+      );
+      txUpdateReturningOverride = null;
+    }
   });
 });
 

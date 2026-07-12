@@ -182,4 +182,26 @@ describe("canonical loop Run detail parity", () => {
     expect(completed).not.toContain("Cancel run");
     expect(failed).not.toContain("ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ123456");
   });
+
+  test("renders retained snapshot evidence but no source links or controls after deletion", async () => {
+    const { RunDetail } = await detailModule;
+    const retained = makeDetail("cancelled");
+    retained.run.loopId = null;
+    retained.run.errorKind = "source_deleted";
+    retained.run.errorMessage = "Source Automation deleted";
+    retained.loop = null;
+
+    const html = renderToStaticMarkup(
+      <RunDetail initialData={retained} variant="canonical" />,
+    );
+
+    expect(html).toContain("Deleted automation");
+    expect(html).toContain("Source deleted; execution history retained.");
+    expect(html).toContain("Run graph");
+    expect(html).toContain("Step timeline");
+    expect(html).toContain("Event log");
+    expect(html).not.toContain(">Resume</button>");
+    expect(html).not.toContain(">Retry</button>");
+    expect(html).not.toContain("/automations/agent-loop/");
+  });
 });

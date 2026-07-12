@@ -114,4 +114,28 @@ describe("owned Run detail loaders", () => {
     ]);
     expect(listAgentLoopComposioEvents).toHaveBeenCalledWith("run-1");
   });
+
+  test("owned retained loop run loads child evidence with a null source", async () => {
+    getOwnedAgentLoopRunWithLoop.mockResolvedValue({
+      run: { id: "run-retained", userId: "user-1", loopId: null },
+      loop: null,
+    });
+    listStepRunsForRun.mockResolvedValue([{ id: "step-retained" }]);
+    listAgentLoopEvents.mockResolvedValue([{ id: "event-retained" }]);
+    listWatchdogRunsForLoopRun.mockResolvedValue([{ id: "watchdog-retained" }]);
+    const { loadOwnedLoopRunDetail } = await loadersModule;
+
+    const result = await loadOwnedLoopRunDetail({
+      userId: "user-1",
+      runId: "run-retained",
+    });
+
+    expect(result).toMatchObject({
+      run: { id: "run-retained", loopId: null },
+      loop: null,
+      steps: [{ id: "step-retained" }],
+      events: [{ id: "event-retained" }],
+      watchdogRuns: [{ id: "watchdog-retained" }],
+    });
+  });
 });

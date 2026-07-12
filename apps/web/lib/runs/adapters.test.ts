@@ -225,4 +225,37 @@ describe("normalized run adapters", () => {
       },
     });
   });
+
+  test("retains a deleted-source loop run without inventing Automation or repository metadata", () => {
+    const run = adaptAgentLoopRun({
+      id: "retained-run-1",
+      loopId: null,
+      triggerId: null,
+      triggerKind: null,
+      title: "Deleted automation",
+      nativeStatus: "cancelled",
+      nativeSource: "manual",
+      repoOwner: null,
+      repoName: null,
+      currentNodeId: "verify",
+      stepCount: 2,
+      failedStepCount: 0,
+      errorKind: "source_deleted",
+      requestId: "request-2",
+      workflowRunId: "workflow-2",
+      createdAt,
+      updatedAt,
+      startedAt: createdAt,
+      finishedAt: updatedAt,
+    });
+
+    expect(run).toMatchObject({
+      id: "agent_loop:retained-run-1",
+      automation: null,
+      automationName: "Deleted automation",
+      repository: null,
+      detailUrl: "/runs/loop/retained-run-1",
+      metadata: { loopId: null, errorKind: "source_deleted" },
+    });
+  });
 });
