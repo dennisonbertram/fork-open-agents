@@ -1511,7 +1511,7 @@ describe("normalized background execution boundary (#966)", () => {
     currentAgent = buildAgent({
       instructions: "live edited instructions",
       checkCommand: "live-check",
-      builtinToolNames: ["write"],
+      builtinToolNames: ["bash", "write"],
       githubActions: { comment_on_pr_or_issue: true },
       modelId: "anthropic/claude-opus-4.6",
     });
@@ -1654,6 +1654,22 @@ describe("normalized background execution boundary (#966)", () => {
     expect(recordedEvent("background-agent.run.failed")).toMatchObject({
       errorKind: "agent_disabled",
     });
+  });
+
+  test("live built-in tool revocation narrows normalized requested policy", async () => {
+    currentRun = buildSnapshotRun(buildAgent({ builtinToolNames: ["bash"] }));
+    currentAgent = buildAgent({ builtinToolNames: [] });
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-normalized-builtin-revoked",
+    });
+
+    expect(
+      normalizedSandboxOutputs[0]?.requestedPolicy.builtinToolNames,
+    ).toEqual(["bash"]);
+    expect(generateCalls[0]?.options.allowedBuiltinToolNames).toEqual([]);
   });
 
   test("preserves the durable background sandbox lifecycle", async () => {

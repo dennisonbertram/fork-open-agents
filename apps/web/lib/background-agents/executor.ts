@@ -109,6 +109,11 @@ import {
 } from "./execution-snapshot";
 import { sha256CanonicalJson } from "@/lib/execution-snapshots/canonical-json";
 import { resolveBackgroundAgentInferenceSnapshot } from "./inference-snapshot";
+import {
+  NormalizedUnattendedInputError,
+  type NormalizedUnattendedStepInputV1,
+} from "@/lib/unattended-runtime/normalized-step-input";
+import { buildNormalizedBackgroundStepInput } from "./normalized-step-input";
 
 const DEFAULT_CHECK_TIMEOUT_MS = 120_000;
 const DEFAULT_AGENT_TIMEOUT_MS = 600_000;
@@ -347,7 +352,17 @@ function intersectWriteScopes(
   };
 }
 
-function buildEffectiveSecurityPolicy(
+type NormalizedBackgroundStepInput = Extract<
+  NormalizedUnattendedStepInputV1,
+  { source: "background_agent" }
+>;
+
+type NormalizedBackgroundSandboxInput = Extract<
+  NormalizedBackgroundStepInput,
+  { executionKind: "background_sandbox" }
+>;
+
+function buildEffectiveSecurityPolicyFromDefinition(
   definition: BackgroundAgentExecutionSnapshotV1,
   liveAgent: import("@/lib/db/schema").BackgroundAgent,
 ) {
@@ -379,13 +394,66 @@ function buildEffectiveSecurityPolicy(
   };
 }
 
+function buildEffectiveSecurityPolicy(
+  normalizedInput: NormalizedBackgroundStepInput,
+  liveAgent: import("@/lib/db/schema").BackgroundAgent,
+) {
+  if (normalizedInput.executionKind === "background_builtin_learnings") {
+    return {
+      githubActionToggles: toGitHubActionToggles({}),
+      allowedBuiltinToolNames: [] as string[],
+      requestedComposioSlugs: [] as string[],
+      effectiveWriteScope: { mode: "this_repo" as const },
+      requireCiGreenForMerge: true,
+      declaredPermissions: {
+        requested: normalizedInput.requestedPolicy,
+        live: liveAgent.permissions,
+      },
+    };
+  }
+
+  return {
+    githubActionToggles: intersectGithubActionToggles(
+      toGitHubActionToggles(normalizedInput.requestedPolicy.github.actions),
+      toGitHubActionToggles(liveAgent.githubActions),
+    ),
+    allowedBuiltinToolNames: intersectStringAllowlist(
+      normalizedInput.requestedPolicy.builtinToolNames,
+      liveAgent.builtinToolNames ?? null,
+    ),
+    requestedComposioSlugs: intersectRequestedSlugs(
+      normalizedInput.requestedPolicy.composioToolkitSlugs,
+      liveAgent.composioToolkitSlugs ?? [],
+    ),
+    effectiveWriteScope: intersectWriteScopes(
+      normalizedInput.requestedPolicy.github.writeScope,
+      liveAgent.writeScope,
+      normalizedInput.repository,
+    ),
+    requireCiGreenForMerge:
+      normalizedInput.requestedPolicy.github.requireCiGreenForMerge ||
+      (liveAgent.requireCiGreenForMerge ?? true),
+    declaredPermissions: {
+      requested: normalizedInput.requestedPolicy.declaredPermissions,
+      live: liveAgent.permissions,
+    },
+  };
+}
+
 async function assertLiveBackgroundExecution(params: {
   runId: string;
   expectedPolicyHash?: string;
+  normalizedInput?: NormalizedBackgroundStepInput;
 }): Promise<{
   row: NonNullable<Awaited<ReturnType<typeof getBackgroundAgentRunWithAgent>>>;
   resolved: ReturnType<typeof resolveBackgroundAgentExecutionDefinition>;
-  policy: ReturnType<typeof buildEffectiveSecurityPolicy>;
+  policy:
+    | ReturnType<typeof buildEffectiveSecurityPolicy>
+    | ReturnType<typeof buildEffectiveSecurityPolicyFromDefinition>;
+  githubAccess: Extract<
+    Awaited<ReturnType<typeof verifyRepoAccess>>,
+    { ok: true }
+  >;
 }> {
   const row = await getBackgroundAgentRunWithAgent(params.runId);
   if (!row) {
@@ -426,9 +494,11 @@ async function assertLiveBackgroundExecution(params: {
       "Background-agent execution is disabled by the live service policy.",
     );
   }
+  const repository =
+    params.normalizedInput?.repository ?? resolved.definition.repository;
   const repoAccess = getBackgroundAgentRepoAccess(
-    resolved.definition.repository.owner,
-    resolved.definition.repository.name,
+    repository.owner,
+    repository.name,
   );
   if (!repoAccess.allowed) {
     throw new BackgroundAgentSnapshotError(
@@ -442,13 +512,19 @@ async function assertLiveBackgroundExecution(params: {
       "Background agent configuration was deleted during execution.",
     );
   }
-  if (resolved.definition.inference.route === "user") {
+  const inference =
+    params.normalizedInput?.executionKind === "background_sandbox"
+      ? params.normalizedInput.model
+      : params.normalizedInput
+        ? null
+        : resolved.definition.inference;
+  if (inference?.route === "user") {
     try {
       await assertInferenceProfileRouteAvailable({
         userId: row.run.userId,
-        inferenceProfileId: resolved.definition.inference.inferenceProfileId,
-        provider: resolved.definition.inference.provider,
-        baseUrl: resolved.definition.inference.baseUrl,
+        inferenceProfileId: inference.inferenceProfileId,
+        provider: inference.provider,
+        baseUrl: inference.baseUrl,
       });
     } catch (error) {
       throw new BackgroundAgentSnapshotError(
@@ -459,7 +535,12 @@ async function assertLiveBackgroundExecution(params: {
       );
     }
   }
-  const policy = buildEffectiveSecurityPolicy(resolved.definition, row.agent);
+  const policy = params.normalizedInput
+    ? buildEffectiveSecurityPolicy(params.normalizedInput, row.agent)
+    : buildEffectiveSecurityPolicyFromDefinition(
+        resolved.definition,
+        row.agent,
+      );
   if (
     params.expectedPolicyHash &&
     sha256CanonicalJson(policy) !== params.expectedPolicyHash
@@ -470,14 +551,16 @@ async function assertLiveBackgroundExecution(params: {
     );
   }
   const requiredUserPermission =
-    resolved.definition.source.builtinKind !== "pr_review_learnings" &&
+    (params.normalizedInput
+      ? params.normalizedInput.executionKind !== "background_builtin_learnings"
+      : resolved.definition.source.builtinKind !== "pr_review_learnings") &&
     hasAnyWriteAction(policy.githubActionToggles)
       ? "write"
       : "read";
   const githubAccess = await verifyRepoAccess({
     userId: row.run.userId,
-    owner: resolved.definition.repository.owner,
-    repo: resolved.definition.repository.name,
+    owner: repository.owner,
+    repo: repository.name,
     requiredUserPermission,
   });
   if (!githubAccess.ok) {
@@ -489,7 +572,7 @@ async function assertLiveBackgroundExecution(params: {
       getRepoAccessErrorMessage(githubAccess.reason),
     );
   }
-  return { row, resolved, policy };
+  return { row, resolved, policy, githubAccess };
 }
 
 function guardToolSet(
@@ -1408,36 +1491,33 @@ async function prepareWorkingBranch(params: {
   }
 }
 
-/**
- * Reconstruct a NormalizedBackgroundTriggerEvent from the stored run columns.
- *
- * The run row persists source, triggerKind, externalId, repoOwner, repoName,
- * prNumber, ref, sha, branch, and payloadSummary (title, url, actor, action).
- * There is no 'merged' column, but for github.pull_request runs that reached
- * this branch the trigger had mergedOnly:true, so the PR was merged when the
- * run was created. We reconstruct merged:true for that kind.
- */
-function reconstructEventFromRun(
-  run: import("@/lib/db/schema").BackgroundAgentRun,
+/** Reconstruct the legacy learnings runner event from accepted V1 input. */
+function reconstructLearningsEvent(
+  input: Extract<
+    NormalizedBackgroundStepInput,
+    { executionKind: "background_builtin_learnings" }
+  >,
 ): NormalizedBackgroundTriggerEvent {
   return {
-    source: run.source,
-    kind: run.triggerKind,
-    externalId: run.externalId,
-    repoOwner: run.repoOwner,
-    repoName: run.repoName,
-    action: run.payloadSummary?.action ?? undefined,
-    ref: run.ref ?? undefined,
-    sha: run.sha ?? undefined,
-    branch: run.branch ?? undefined,
-    prNumber: run.prNumber ?? undefined,
-    issueNumber: run.issueNumber ?? undefined,
-    deploymentUrl: run.deploymentUrl ?? undefined,
-    title: run.payloadSummary?.title ?? undefined,
-    url: run.payloadSummary?.url ?? undefined,
-    actor: run.payloadSummary?.actor ?? undefined,
-    // Runs for github.pull_request with mergedOnly:true were always merged
-    merged: run.triggerKind === "github.pull_request" ? true : undefined,
+    source: "github",
+    kind: input.trigger.kind as NormalizedBackgroundTriggerEvent["kind"],
+    externalId: input.identity.runId,
+    repoOwner: input.repository.owner,
+    repoName: input.repository.name,
+    action: input.trigger.summary.action ?? undefined,
+    ref: input.trigger.ref ?? undefined,
+    sha: input.trigger.sha ?? undefined,
+    branch: input.trigger.branch ?? undefined,
+    prNumber: input.trigger.prNumber ?? undefined,
+    issueNumber: input.trigger.issueNumber ?? undefined,
+    deploymentUrl: input.trigger.deploymentUrl ?? undefined,
+    title: input.trigger.summary.title ?? undefined,
+    url: input.trigger.summary.url ?? undefined,
+    actor: input.trigger.summary.actor ?? undefined,
+    environment: input.trigger.summary.environment ?? undefined,
+    severity: input.trigger.summary.severity ?? undefined,
+    message: input.trigger.summary.message ?? undefined,
+    merged: input.trigger.kind === "github.pull_request" ? true : undefined,
   };
 }
 
@@ -1466,6 +1546,10 @@ async function generateLearnings(prompt: string): Promise<unknown> {
  */
 async function executeLearningsAgentRun(params: {
   run: import("@/lib/db/schema").BackgroundAgentRun;
+  normalizedInput: Extract<
+    NormalizedBackgroundStepInput,
+    { executionKind: "background_builtin_learnings" }
+  >;
   agentId: string;
   installationId: number;
   repositoryId: number;
@@ -1474,6 +1558,7 @@ async function executeLearningsAgentRun(params: {
 }) {
   const {
     run,
+    normalizedInput,
     agentId,
     installationId,
     repositoryId,
@@ -1481,7 +1566,7 @@ async function executeLearningsAgentRun(params: {
     assertLiveAuthorization,
   } = params;
 
-  const event = reconstructEventFromRun(run);
+  const event = reconstructLearningsEvent(normalizedInput);
   const store = createDbLearningsStore();
 
   let result: import("@/lib/learnings/runner").RunLearningsExtractionResult;
@@ -1650,6 +1735,58 @@ export async function executeBackgroundAgentRun(params: {
     return;
   }
 
+  let normalizedInput: NormalizedBackgroundStepInput;
+  try {
+    normalizedInput = buildNormalizedBackgroundStepInput({
+      run,
+      resolvedDefinition,
+      workflowRunId: params.workflowRunId,
+      sandboxName,
+      defaultBranch: initialLiveCheck.githubAccess.defaultBranch,
+    });
+  } catch (error) {
+    const normalizedError =
+      error instanceof NormalizedUnattendedInputError ? error : null;
+    const errorKind = normalizedError?.errorKind ?? "normalized_input_invalid";
+    await recordFailure({
+      runId: run.id,
+      agentId: run.agentId,
+      userId: run.userId,
+      workflowRunId: params.workflowRunId,
+      requestId: run.requestId,
+      sandboxName,
+      errorKind,
+      summary: "Normalized background execution input was rejected.",
+      onTransitionWon: async () => {
+        await recordBackgroundAgentEvent({
+          runId: run.id,
+          agentId: run.agentId,
+          userId: run.userId,
+          eventName: "background-agent.normalized-input.rejected",
+          status: "failed",
+          level: "error",
+          summary: "Normalized background execution input was rejected.",
+          workflowRunId: params.workflowRunId,
+          requestId: run.requestId,
+          sandboxName,
+          errorKind,
+          payload: {
+            runId: run.id,
+            agentId: run.agentId,
+            errorKind,
+            safeFieldPaths:
+              normalizedError?.issues.map((issue) =>
+                issue.path.map(String).join("."),
+              ) ?? [],
+            requestId: run.requestId,
+            workflowRunId: params.workflowRunId,
+          },
+        });
+      },
+    });
+    return;
+  }
+
   const claimed =
     run.status === "running" && run.workflowRunId === params.workflowRunId
       ? run
@@ -1698,21 +1835,47 @@ export async function executeBackgroundAgentRun(params: {
     },
   });
 
+  await recordBackgroundAgentEvent({
+    runId: run.id,
+    agentId: run.agentId,
+    userId: run.userId,
+    eventName: "background-agent.normalized-input.accepted",
+    status: "succeeded",
+    level: "info",
+    summary: "Accepted normalized background execution input.",
+    workflowRunId: params.workflowRunId,
+    requestId: run.requestId,
+    sandboxName,
+    payload: {
+      runId: normalizedInput.identity.runId,
+      agentId: run.agentId,
+      inputVersion: normalizedInput.version,
+      definitionVersion: normalizedInput.provenance.definitionVersion,
+      definitionHash: normalizedInput.provenance.definitionHash,
+      snapshotSource: normalizedInput.provenance.snapshotSource,
+      requestId: normalizedInput.identity.requestId,
+      workflowRunId: normalizedInput.identity.workflowRunId,
+      workspacePolicy: normalizedInput.workspace.policy,
+    },
+  });
+
   const liveAgent = initialLiveCheck.row.agent;
   if (!liveAgent) return;
-  const definition = resolvedDefinition.definition;
   const {
     githubActionToggles,
     allowedBuiltinToolNames,
     requestedComposioSlugs,
     effectiveWriteScope,
     requireCiGreenForMerge,
-  } = initialLiveCheck.policy;
-  const expectedPolicyHash = sha256CanonicalJson(initialLiveCheck.policy);
+  } = buildEffectiveSecurityPolicy(normalizedInput, liveAgent);
+  const expectedPolicyHash = sha256CanonicalJson(
+    buildEffectiveSecurityPolicy(normalizedInput, liveAgent),
+  );
   const assertLiveAuthorization = async () => {
     await assertLiveBackgroundExecution({
       runId: run.id,
       expectedPolicyHash,
+      normalizedInput,
     });
   };
   const ensureLiveAuthorization = async (): Promise<boolean> => {
@@ -1740,37 +1903,7 @@ export async function executeBackgroundAgentRun(params: {
       return false;
     }
   };
-  // The built-in learnings agent never takes GitHub actions (its branch below
-  // bypasses the sandbox + tool loop entirely), so it must not inherit a
-  // write requirement from action toggles — read-only users run it too.
-  const requiredUserPermission =
-    definition.source.builtinKind !== "pr_review_learnings" &&
-    hasAnyWriteAction(githubActionToggles)
-      ? "write"
-      : "read";
-
-  const access = await verifyRepoAccess({
-    userId: run.userId,
-    owner: run.repoOwner,
-    repo: run.repoName,
-    requiredUserPermission,
-  });
-  if (!access.ok) {
-    await recordFailure({
-      runId: run.id,
-      agentId: run.agentId,
-      userId: run.userId,
-      workflowRunId: params.workflowRunId,
-      requestId: run.requestId,
-      sandboxName,
-      errorKind:
-        access.reason === "no_installation" || access.reason === "app_no_access"
-          ? "installation_missing"
-          : "permission_missing",
-      summary: getRepoAccessErrorMessage(access.reason),
-    });
-    return;
-  }
+  const access = initialLiveCheck.githubAccess;
 
   await recordBackgroundAgentEvent({
     runId: run.id,
@@ -1791,10 +1924,13 @@ export async function executeBackgroundAgentRun(params: {
   // ── Built-in learnings agent branch ──────────────────────────────────────
   // Detected by marker in instructions. Runs extraction without sandbox —
   // do not pay sandbox costs for this read-only arc.
-  if (definition.source.builtinKind === "pr_review_learnings") {
+  if (!(await ensureLiveAuthorization())) return;
+
+  if (normalizedInput.executionKind === "background_builtin_learnings") {
     await executeLearningsAgentRun({
       run,
-      agentId: definition.source.definitionId,
+      normalizedInput,
+      agentId: normalizedInput.identity.definitionId,
       installationId: access.installationId,
       repositoryId: access.repositoryId,
       workflowRunId: params.workflowRunId,
@@ -1803,6 +1939,8 @@ export async function executeBackgroundAgentRun(params: {
     return;
   }
 
+  const sandboxInput: NormalizedBackgroundSandboxInput = normalizedInput;
+
   // ── Resolve model selection before paying sandbox costs ──────────────────
   // A misconfigured explicit model selection must fail the run rather than
   // silently fall back — the user chose this model. Failing before sandbox
@@ -1810,8 +1948,8 @@ export async function executeBackgroundAgentRun(params: {
   let resolvedModelSelection: AgentModelSelection;
   try {
     resolvedModelSelection = await resolveBackgroundAgentModel({
-      userId: run.userId,
-      inference: definition.inference,
+      userId: sandboxInput.identity.userId,
+      inference: sandboxInput.model,
     });
   } catch (error) {
     const freshRow = await getBackgroundAgentRunWithAgent(run.id);
@@ -1845,10 +1983,10 @@ export async function executeBackgroundAgentRun(params: {
     sandbox = await connectSandbox({
       state: {
         type: "vercel",
-        sandboxName,
+        sandboxName: sandboxInput.workspace.sandboxName,
         source: {
-          repo: `https://github.com/${run.repoOwner}/${run.repoName}.git`,
-          branch: run.ref ?? run.branch ?? access.defaultBranch,
+          repo: `https://github.com/${sandboxInput.repository.owner}/${sandboxInput.repository.name}.git`,
+          branch: sandboxInput.workspace.initialCheckout.ref,
         },
       },
       options: {
@@ -1858,9 +1996,9 @@ export async function executeBackgroundAgentRun(params: {
         vcpus: DEFAULT_SANDBOX_VCPUS,
         ports: DEFAULT_SANDBOX_PORTS,
         baseSnapshotId: DEFAULT_SANDBOX_BASE_SNAPSHOT_ID,
-        persistent: true,
-        resume: true,
-        createIfMissing: true,
+        persistent: sandboxInput.workspace.policy === "persistent_resume",
+        resume: sandboxInput.workspace.resume,
+        createIfMissing: sandboxInput.workspace.createIfMissing,
       },
     });
   } catch (error) {
@@ -1926,8 +2064,8 @@ export async function executeBackgroundAgentRun(params: {
   let workingBranch: string | null = null;
   if (hasAnyWriteAction(githubActionToggles)) {
     workingBranch = buildBackgroundBranchName({
-      agentName: definition.source.name,
-      runId: run.id,
+      agentName: sandboxInput.prompt.definitionName,
+      runId: sandboxInput.identity.runId,
     });
 
     try {
@@ -1989,8 +2127,8 @@ export async function executeBackgroundAgentRun(params: {
       runId: run.id,
       userId: run.userId,
       slugs: agentToolkitSlugs,
-      repoOwner: run.repoOwner,
-      repoName: run.repoName,
+      repoOwner: sandboxInput.repository.owner,
+      repoName: sandboxInput.repository.name,
     });
 
     if (composioResult.status === "ready") {
@@ -1998,8 +2136,8 @@ export async function executeBackgroundAgentRun(params: {
         try {
           await assertComposioRepoToolkitsStillAllowed({
             userId: run.userId,
-            repoOwner: run.repoOwner,
-            repoName: run.repoName,
+            repoOwner: sandboxInput.repository.owner,
+            repoName: sandboxInput.repository.name,
             toolkitSlugs: composioResult.toolkitSlugs,
           });
         } catch (error) {
@@ -2122,8 +2260,8 @@ export async function executeBackgroundAgentRun(params: {
     workflowRunId: params.workflowRunId,
     installationId: access.installationId,
     repositoryId: access.repositoryId,
-    repoOwner: run.repoOwner,
-    repoName: run.repoName,
+    repoOwner: sandboxInput.repository.owner,
+    repoName: sandboxInput.repository.name,
     defaultBranch: access.defaultBranch,
     sandbox,
     toggles: githubActionToggles,
@@ -2134,7 +2272,10 @@ export async function executeBackgroundAgentRun(params: {
     // Parity with the old ready_pr flow, where the required check ran BEFORE
     // any commit/PR reached GitHub: github_push re-runs this gate inside the
     // tool, so a failing check can never produce a pushed branch or PR.
-    checkCommand: definition.checkCommand,
+    checkCommand:
+      sandboxInput.verification.kind === "command"
+        ? sandboxInput.verification.command
+        : null,
   });
 
   const extraTools = guardToolSet(
@@ -2160,19 +2301,23 @@ export async function executeBackgroundAgentRun(params: {
       sandboxName,
       sandbox,
       prompt: buildBackgroundAgentRunbookPrompt({
-        agentName: definition.source.name,
-        instructions: definition.instructions,
-        triggerKind: run.triggerKind,
-        repoOwner: run.repoOwner,
-        repoName: run.repoName,
-        ref: run.ref,
-        sha: run.sha,
-        branch: run.branch,
-        prNumber: run.prNumber,
-        issueNumber: run.issueNumber,
-        deploymentUrl: run.deploymentUrl,
-        payloadSummary: run.payloadSummary,
-        checkCommand: definition.checkCommand,
+        agentName: sandboxInput.prompt.definitionName,
+        instructions: sandboxInput.prompt.instructions,
+        triggerKind: sandboxInput.trigger
+          .kind as NormalizedBackgroundTriggerEvent["kind"],
+        repoOwner: sandboxInput.repository.owner,
+        repoName: sandboxInput.repository.name,
+        ref: sandboxInput.trigger.ref,
+        sha: sandboxInput.trigger.sha,
+        branch: sandboxInput.trigger.branch,
+        prNumber: sandboxInput.trigger.prNumber,
+        issueNumber: sandboxInput.trigger.issueNumber,
+        deploymentUrl: sandboxInput.trigger.deploymentUrl,
+        payloadSummary: sandboxInput.trigger.summary,
+        checkCommand:
+          sandboxInput.verification.kind === "command"
+            ? sandboxInput.verification.command
+            : null,
         workingBranch,
         enabledGithubActionTools:
           enabledGithubActionToolNames(githubActionToggles),
@@ -2182,7 +2327,7 @@ export async function executeBackgroundAgentRun(params: {
       allowedBuiltinToolNames,
       modelSelection: resolvedModelSelection,
       recordedModelId,
-      inference: definition.inference,
+      inference: sandboxInput.model,
       assertLiveAuthorization,
     });
   } catch (error) {
@@ -2251,7 +2396,7 @@ export async function executeBackgroundAgentRun(params: {
     });
     return;
   }
-  if (definition.checkCommand?.trim()) {
+  if (sandboxInput.verification.kind === "command") {
     const checkResult = await execObservedCommand({
       runId: run.id,
       agentId: run.agentId,
@@ -2261,7 +2406,7 @@ export async function executeBackgroundAgentRun(params: {
       sandboxName,
       sandbox,
       eventName: "background-agent.check",
-      command: definition.checkCommand.trim(),
+      command: sandboxInput.verification.command,
       commandLabel: "required_check",
       timeoutMs: DEFAULT_CHECK_TIMEOUT_MS,
     });

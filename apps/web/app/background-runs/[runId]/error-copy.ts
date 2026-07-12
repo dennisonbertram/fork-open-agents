@@ -47,6 +47,9 @@ export const ALL_KNOWN_BACKGROUND_RUN_ERROR_KINDS = [
   "snapshot_invalid",
   "snapshot_version_unsupported",
   "snapshot_hash_mismatch",
+  "normalized_input_invalid",
+  "normalized_input_version_unsupported",
+  "normalized_input_policy_invalid",
   "permission_missing",
   "installation_missing",
   "sandbox_unavailable",
@@ -113,6 +116,27 @@ function knownCopy(
           "The accepted execution definition failed its integrity check.",
         whatToDo:
           "Do not execute or retry this run. Inspect the audit evidence and create a new run.",
+      };
+    case "normalized_input_invalid":
+      return {
+        whatHappened:
+          "The accepted run inputs could not be normalized safely for execution.",
+        whatToDo:
+          "Do not retry this run. Inspect the normalized-input rejection event and create a new run.",
+      };
+    case "normalized_input_version_unsupported":
+      return {
+        whatHappened:
+          "This run uses a normalized-input version the service cannot execute.",
+        whatToDo:
+          "Create a new run from the current Automation or restore a compatible service version.",
+      };
+    case "normalized_input_policy_invalid":
+      return {
+        whatHappened:
+          "The accepted run inputs requested an invalid execution policy.",
+        whatToDo:
+          "Do not retry this run. Inspect the normalized-input rejection event and update the Automation.",
       };
     case "permission_missing":
       return {
