@@ -2039,6 +2039,33 @@ describe("normalized background execution boundary (#966)", () => {
     expect(runLearningsExtraction).not.toHaveBeenCalled();
   });
 
+  test("blocks learnings extraction when frozen pull-request write is removed live", async () => {
+    const acceptedAgent = buildAgent({
+      instructions:
+        "[builtin:pr-review-learnings] Extract learnings from merged pull requests.",
+      permissions: {
+        github: { contents: "read", pullRequests: "write" },
+      },
+      githubActions: {},
+    });
+    currentRun = buildSnapshotRun(acceptedAgent, {
+      ref: "refs/heads/main",
+    });
+    currentAgent = buildAgent({
+      ...acceptedAgent,
+      permissions: { github: { contents: "read" } },
+    });
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-learnings-write-permission-removed",
+    });
+
+    expect(withScopedInstallationOctokit).not.toHaveBeenCalled();
+    expect(runLearningsExtraction).not.toHaveBeenCalled();
+  });
+
   test("normalizes a persisted checkout before live inference-profile availability work", async () => {
     currentRun = buildRun({ ref: "refs/heads/main" });
     currentAgent = buildAgent({
@@ -2051,6 +2078,24 @@ describe("normalized background execution boundary (#966)", () => {
       workflowRunId: "wf-persisted-ref-inference-order",
     });
 
+    expect(executionBoundaryOrder.indexOf("normalize")).toBeLessThan(
+      executionBoundaryOrder.indexOf("inference_profile_availability"),
+    );
+  });
+
+  test("defers profile availability until after a default-branch checkout is normalized", async () => {
+    currentRun = buildRun({ ref: null, branch: null });
+    currentAgent = buildAgent({
+      modelId: "user-profile:profile-default-branch:glm-4.6",
+    });
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-default-branch-inference-order",
+    });
+
+    expect(executionBoundaryOrder).toContain("verify_repo_access");
     expect(executionBoundaryOrder.indexOf("normalize")).toBeLessThan(
       executionBoundaryOrder.indexOf("inference_profile_availability"),
     );
