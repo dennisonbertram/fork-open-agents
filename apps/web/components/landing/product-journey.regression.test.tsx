@@ -34,14 +34,26 @@ describe("landing product journey (#967)", () => {
 
   test("removes unsupported absolutes and implementation-brand discovery", () => {
     for (const banned of [
-      "autonomously until it&#x27;s done",
+      "autonomously until it's done",
       "instant restore",
       "survive anything",
       "No work is ever lost",
       "production-grade",
       "Workflow SDK",
+      "agent loops",
+      "background agents",
+      "automatic checkpointing",
+      "Reconnect to running workflows",
+      "real infrastructure for real agents",
     ]) {
       expect(source).not.toContain(banned);
+    }
+  });
+
+  test("every landing sign-in CTA returns to the safe GitHub step", () => {
+    for (const file of ["../auth/signed-out-hero.tsx", "nav.tsx", "bento.tsx"]) {
+      const value = readFileSync(join(landingDir, file), "utf8");
+      expect(value).toContain('callbackUrl="/get-started?step=github&amp;next=%2Fsessions"');
     }
   });
 

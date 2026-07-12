@@ -90,6 +90,15 @@ describe("GitHubStatusNotice", () => {
     expect(html).toContain("/retry");
   });
 
+  test("sync_failed is a distinct actionable alert", () => {
+    const html = renderToStaticMarkup(
+      <GitHubStatusNotice status={"sync_failed" as never} retryHref="/retry" />,
+    );
+    expect(html.toLowerCase()).toContain("sync");
+    expect(html).toContain('role="alert"');
+    expect(html).toContain("/retry");
+  });
+
   test("unrecognized/unknown status renders generic forward-compatible copy instead of throwing", () => {
     expect(() =>
       renderToStaticMarkup(
