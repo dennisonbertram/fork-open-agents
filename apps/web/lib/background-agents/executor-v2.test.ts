@@ -65,6 +65,8 @@ type StatusUpdateInput = {
   errorKind?: string | null;
   errorMessage?: string | null;
   outputUrl?: string | null;
+  expectedStatuses?: BackgroundAgentRun["status"][];
+  force?: boolean;
 };
 
 const successfulCommand: ExecResult = {
@@ -81,6 +83,9 @@ let recordedOutputs: OutputRow[] = [];
 let outputIdCounter = 0;
 let accessUserPermission: "read" | "write" = "write";
 let accessRequiredPermissionSeen: string[] = [];
+let beforeStatusUpdate:
+  | ((input: StatusUpdateInput) => void | Promise<void>)
+  | null = null;
 
 const getBackgroundAgentRunWithAgent = mock(async () => ({
   run: currentRun,
@@ -97,15 +102,38 @@ const listBackgroundAgentOutputsMock = mock(
   async (_runId: string): Promise<OutputRow[]> => recordedOutputs,
 );
 const updateBackgroundAgentRunStatus = mock(
-  async (input: StatusUpdateInput): Promise<BackgroundAgentRun> => ({
-    ...currentRun,
-    status: input.status,
-    workflowRunId: input.workflowRunId ?? currentRun.workflowRunId,
-    sandboxName: input.sandboxName ?? currentRun.sandboxName,
-    errorKind: input.errorKind ?? currentRun.errorKind,
-    errorMessage: input.errorMessage ?? currentRun.errorMessage,
-    outputUrl: input.outputUrl ?? currentRun.outputUrl,
-  }),
+  async (input: StatusUpdateInput): Promise<BackgroundAgentRun | null> => {
+    const hook = beforeStatusUpdate;
+    beforeStatusUpdate = null;
+    await hook?.(input);
+
+    const terminalStatuses: BackgroundAgentRun["status"][] = [
+      "succeeded",
+      "failed",
+      "skipped",
+      "cancelled",
+    ];
+    if (!input.force && terminalStatuses.includes(currentRun.status)) {
+      return null;
+    }
+    if (
+      input.expectedStatuses &&
+      !input.expectedStatuses.includes(currentRun.status)
+    ) {
+      return null;
+    }
+
+    currentRun = {
+      ...currentRun,
+      status: input.status,
+      workflowRunId: input.workflowRunId ?? currentRun.workflowRunId,
+      sandboxName: input.sandboxName ?? currentRun.sandboxName,
+      errorKind: input.errorKind ?? currentRun.errorKind,
+      errorMessage: input.errorMessage ?? currentRun.errorMessage,
+      outputUrl: input.outputUrl ?? currentRun.outputUrl,
+    };
+    return currentRun;
+  },
 );
 const listBackgroundAgentEvents = mock(async () => []);
 // #798 P2-1: uncapped, composio-scoped fetch — default empty so existing
@@ -143,9 +171,11 @@ mock.module("./run-summary", () => ({
   ]),
 }));
 
+const persistRunSummary = mock(async () => undefined);
+const recordSummaryFailedEvent = mock(async () => undefined);
 mock.module("./run-summary-persist", () => ({
-  persistRunSummary: mock(async () => undefined),
-  recordSummaryFailedEvent: mock(async () => undefined),
+  persistRunSummary,
+  recordSummaryFailedEvent,
 }));
 
 const recordUsage = mock(async () => undefined);
@@ -467,6 +497,7 @@ beforeEach(() => {
   outputIdCounter = 0;
   accessUserPermission = "write";
   accessRequiredPermissionSeen = [];
+  beforeStatusUpdate = null;
   sanitizerShouldDeny = null;
   inferenceProfileResolutionShouldFail = false;
   generateCalls.length = 0;
@@ -484,6 +515,8 @@ beforeEach(() => {
   recordBackgroundAgentOutput.mockClear();
   listBackgroundAgentOutputsMock.mockClear();
   updateBackgroundAgentRunStatus.mockClear();
+  persistRunSummary.mockClear();
+  recordSummaryFailedEvent.mockClear();
   sandboxExec.mockClear();
   connectSandbox.mockClear();
   verifyRepoAccess.mockClear();
@@ -531,6 +564,81 @@ describe("(a) comment-only agent toolset", () => {
 });
 
 describe("execution snapshot binding", () => {
+  test("terminal retries short-circuit before snapshot validation or authorization", async () => {
+    currentRun = buildSnapshotRun(buildAgent(), {
+      status: "succeeded",
+      definitionHash: "0".repeat(64),
+      resultSummary: { headline: "Keep the completed summary" },
+    });
+    currentAgent = buildAgent({ status: "disabled" });
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-terminal-retry",
+    });
+
+    expect(verifyRepoAccess).not.toHaveBeenCalled();
+    expect(updateBackgroundAgentRunStatus).not.toHaveBeenCalled();
+    expect(recordBackgroundAgentEvent).not.toHaveBeenCalled();
+    expect(persistRunSummary).not.toHaveBeenCalled();
+    expect(currentRun.resultSummary).toEqual({
+      headline: "Keep the completed summary",
+    });
+  });
+
+  test("an invalid-snapshot retry cannot append failure evidence or overwrite its summary", async () => {
+    currentRun = buildSnapshotRun(buildAgent(), {
+      definitionHash: "0".repeat(64),
+    });
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-invalid-retry",
+    });
+    const summaryAfterFailure = currentRun.resultSummary;
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-invalid-retry",
+    });
+
+    expect(
+      recordedEventsNamed("background-agent.snapshot.invalid"),
+    ).toHaveLength(1);
+    expect(recordedEventsNamed("background-agent.run.failed")).toHaveLength(1);
+    expect(persistRunSummary).toHaveBeenCalledTimes(1);
+    expect(currentRun.resultSummary).toBe(summaryAfterFailure);
+  });
+
+  test("a lost failure transition emits no evidence and preserves the winning summary", async () => {
+    currentRun = buildSnapshotRun(buildAgent(), {
+      definitionHash: "0".repeat(64),
+    });
+    const winningSummary = { headline: "Another worker already completed" };
+    beforeStatusUpdate = () => {
+      currentRun = {
+        ...currentRun,
+        status: "succeeded",
+        resultSummary: winningSummary,
+      };
+    };
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-failure-race",
+    });
+
+    expect(
+      recordedEventsNamed("background-agent.snapshot.invalid"),
+    ).toHaveLength(0);
+    expect(recordedEventsNamed("background-agent.run.failed")).toHaveLength(0);
+    expect(persistRunSummary).not.toHaveBeenCalled();
+    expect(currentRun.status).toBe("succeeded");
+    expect(currentRun.resultSummary).toBe(winningSummary);
+  });
+
   test("uses every frozen behavior field after the live source is edited", async () => {
     const accepted = buildAgent({
       name: "Frozen definition",
@@ -736,6 +844,7 @@ describe("execution snapshot binding", () => {
     });
 
     updateBackgroundAgentRunStatus.mockClear();
+    currentRun = buildSnapshotRun(buildAgent());
     currentAgent = buildAgent({ status: "disabled" });
     await executeBackgroundAgentRun({
       runId: currentRun.id,
