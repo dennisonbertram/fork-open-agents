@@ -8,7 +8,7 @@ describe("loop execution snapshot integration contract", () => {
   test("schema and migration keep a strict nullable V1 tuple", () => {
     const schema = readFileSync(join(root, "lib/db/schema.ts"), "utf8");
     const migration = readFileSync(
-      join(root, "lib/db/migrations/0087_agent_loop_execution_snapshot.sql"),
+      join(root, "lib/db/migrations/0087_useful_shen.sql"),
       "utf8",
     );
     for (const source of [schema, migration]) {

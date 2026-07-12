@@ -62,11 +62,13 @@ function makeDetail(
         nodes: [],
         edges: [],
       },
+      definitionVersion: null,
+      definitionHash: null,
+      snapshotSource: "legacy_live_fallback",
       currentNodeId: "start",
       currentStepRunId: "step-1",
       iterationCount: 1,
       stepCount: 1,
-      context: {},
       source: "manual",
       triggerId: null,
       idempotencyKey: "key-1",
@@ -89,6 +91,8 @@ function makeDetail(
       repoOwner: "acme",
       repoName: "shop",
       guardrails: { maxStepsPerRun: 10, maxIterations: 3 },
+      sourceDeleted: false,
+      sourceActive: true,
     },
     steps: [
       {

@@ -161,13 +161,25 @@ let verifyRepoAccessResult: {
   defaultBranch: "main",
 };
 
-const verifyRepoAccessMock = mock(async () => verifyRepoAccessResult);
+const verifyRepoAccessMock = mock(
+  async (_params?: unknown) => verifyRepoAccessResult,
+);
 
 let mintInstallationTokenResult: { token: string } = {
   token: "ghs_SHOULD_NOT_APPEAR_IN_EVENTS",
 };
-const mintInstallationTokenMock = mock(async () => mintInstallationTokenResult);
+const mintInstallationTokenMock = mock(
+  async (_params?: unknown) => mintInstallationTokenResult,
+);
 const revokeInstallationTokenMock = mock(async () => undefined);
+const withScopedInstallationOctokitMock = mock(
+  async (params: {
+    installationId: number;
+    repositoryId: number;
+    permissions: Record<string, string>;
+    operation: (octokit: unknown) => Promise<unknown>;
+  }) => params.operation({ rest: {} }),
+);
 
 mock.module("@/lib/github/access", () => ({
   verifyRepoAccess: verifyRepoAccessMock,
@@ -176,14 +188,7 @@ mock.module("@/lib/github/access", () => ({
 mock.module("@/lib/github/app", () => ({
   mintInstallationToken: mintInstallationTokenMock,
   revokeInstallationToken: revokeInstallationTokenMock,
-  withScopedInstallationOctokit: mock(
-    async (params: {
-      installationId: number;
-      repositoryId: number;
-      permissions: Record<string, string>;
-      operation: (octokit: unknown) => Promise<unknown>;
-    }) => params.operation({ rest: {} }),
-  ),
+  withScopedInstallationOctokit: withScopedInstallationOctokitMock,
 }));
 
 // ── Sandbox mock ──────────────────────────────────────────────────────────────
@@ -553,6 +558,7 @@ function resetMocks() {
   verifyRepoAccessMock.mockClear();
   mintInstallationTokenMock.mockClear();
   revokeInstallationTokenMock.mockClear();
+  withScopedInstallationOctokitMock.mockClear();
   connectSandboxMock.mockClear();
   sandboxMock.readFile.mockClear();
   sandboxMock.exec.mockClear();
@@ -1498,6 +1504,39 @@ describe("BT-S20: agent-loop.step.commit.completed emitted on commit", () => {
     expect(payload?.["branch"]).toBeDefined();
     expect(payload?.["sha"]).toBeDefined();
   });
+
+  test("final GitHub permission removal prevents the scoped commit write", async () => {
+    const allowed = {
+      ok: true as const,
+      installationId: 42,
+      repositoryId: 7,
+      defaultBranch: "main",
+    };
+    verifyRepoAccessMock
+      .mockImplementationOnce(async () => allowed)
+      .mockImplementationOnce(async () => allowed)
+      .mockImplementationOnce(async () => allowed)
+      .mockImplementationOnce(async () => ({
+        ok: false as const,
+        reason: "user_no_write" as const,
+      }));
+
+    const result = await executeAgentStep({
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+      loopRunId: "loop-run-1",
+      node: makeAgentStepNode() as Parameters<
+        typeof executeAgentStep
+      >[0]["node"],
+      loopRun: currentLoopRun,
+      loop: currentLoop,
+      startedAt: Date.now(),
+    });
+
+    expect(result.errorKind).toBe("permission_missing");
+    expect(withScopedInstallationOctokitMock).not.toHaveBeenCalled();
+    expect(createCommitMock).not.toHaveBeenCalled();
+  });
 });
 
 describe("BT-S21: agent-loop.step.check.completed emitted for checkCommand", () => {
@@ -2204,14 +2243,19 @@ describe("BT-S26/S27/S28: agent-loop Composio degradation events (#798)", () => 
     const generateInput = openAgentGenerateMock.mock.calls[0]?.[0] as {
       tools?: Record<string, { execute?: (...args: unknown[]) => unknown }>;
     };
-    await generateInput.tools?.github_create_issue?.execute?.({});
+    assertComposioRepoToolkitsStillAllowedMock.mockRejectedValueOnce(
+      new Error("Repository policy revoked Composio toolkit access"),
+    );
+    await expect(
+      generateInput.tools?.github_create_issue?.execute?.({}),
+    ).rejects.toThrow("revoked");
     expect(assertComposioRepoToolkitsStillAllowedMock).toHaveBeenCalledWith({
       userId: "user-1",
       repoOwner: "acme",
       repoName: "my-repo",
       toolkitSlugs: ["github"],
     });
-    expect(toolExecute).toHaveBeenCalledTimes(1);
+    expect(toolExecute).not.toHaveBeenCalled();
   });
 });
 

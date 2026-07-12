@@ -342,6 +342,9 @@ function makeLoopRun(overrides: Partial<AgentLoopRun> = {}): AgentLoopRun {
         { id: "e3", source: "node-b", target: "end", when: "success" },
       ],
     } as Record<string, unknown>,
+    executionSnapshot: null,
+    definitionVersion: null,
+    definitionHash: null,
     currentNodeId: "node-a",
     currentStepRunId: "step-run-1",
     iterationCount: 0,
@@ -451,6 +454,14 @@ describe("watchdog source deletion race guard", () => {
     expect(pauseLoopRunSystemMock).not.toHaveBeenCalled();
     expect(advanceToFailureEdgeMock).not.toHaveBeenCalled();
     expect(dispatchStepWorkflowMock).not.toHaveBeenCalled();
+    expect(watchdogRunsUpdated).toContainEqual(
+      expect.objectContaining({
+        id: "watchdog-run-1",
+        status: "failed",
+        diagnosis: "Loop execution authorization was revoked.",
+        finishedAt: expect.any(Date),
+      }),
+    );
   });
 });
 

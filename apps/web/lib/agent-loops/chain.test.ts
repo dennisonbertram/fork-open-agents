@@ -615,6 +615,7 @@ function resetAll() {
   workflowStartThrows = null;
   nextStepRunIdCounter = 100;
   workflowRunIdCounter = 200;
+  transitionShouldWin = true;
 
   currentLoop = makeLoop();
   currentLoopRun = makeLoopRun();
@@ -1557,6 +1558,38 @@ describe("source deletion after atomic advance", () => {
       repoName: "my-repo",
     });
     expect(workflowStartCalls).toHaveLength(0);
+    expect(conditionallyTransitionRunStatusMock).toHaveBeenCalledWith({
+      runId: "loop-run-1",
+      toStatus: "failed",
+      fromStatuses: ["queued", "running", "stalled"],
+      errorKind: "execution_revoked",
+      errorMessage:
+        "Loop execution authorization was revoked before dispatch.",
+    });
+    expect(recordedEvents).toContainEqual(
+      expect.objectContaining({
+        eventName: "agent-loop.execution.revoked",
+        payload: { errorKind: "execution_revoked" },
+      }),
+    );
+  });
+
+  test("losing the revocation CAS preserves a concurrent control result", async () => {
+    transitionShouldWin = false;
+    const { runAgentLoopStep } = await chainPromise;
+
+    await runAgentLoopStep({
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+    });
+
+    expect(conditionallyTransitionRunStatusMock).toHaveBeenCalledTimes(1);
+    expect(workflowStartCalls).toHaveLength(0);
+    expect(
+      recordedEvents.some(
+        (event) => event.eventName === "agent-loop.execution.revoked",
+      ),
+    ).toBe(false);
   });
 });
 
@@ -1791,5 +1824,54 @@ describe("BT-C12: watchdog branch — failed step, no failure edge, watchdogEnab
       (u) => u.status === "failed",
     );
     expect(failedUpdate).toBeDefined();
+  });
+
+  test("watchdog live denial terminalizes the run through a winner-only CAS", async () => {
+    invokeWatchdogMock.mockResolvedValue({
+      invoked: false,
+      decision: "retry",
+    });
+
+    const { runAgentLoopStep } = await chainPromise;
+    await runAgentLoopStep({
+      stepRunId: "step-work-wd",
+      workflowRunId: "wf-run-1",
+    });
+
+    expect(conditionallyTransitionRunStatusMock).toHaveBeenCalledWith({
+      runId: "loop-run-1",
+      toStatus: "failed",
+      fromStatuses: ["queued", "running", "stalled"],
+      errorKind: "execution_revoked",
+      errorMessage:
+        "Loop execution authorization was revoked before watchdog action.",
+    });
+    expect(recordedEvents).toContainEqual(
+      expect.objectContaining({
+        eventName: "agent-loop.execution.revoked",
+        payload: { errorKind: "execution_revoked" },
+      }),
+    );
+  });
+
+  test("watchdog live-denial CAS loser emits no contradictory revocation", async () => {
+    invokeWatchdogMock.mockResolvedValue({
+      invoked: false,
+      decision: "retry",
+    });
+    transitionShouldWin = false;
+
+    const { runAgentLoopStep } = await chainPromise;
+    await runAgentLoopStep({
+      stepRunId: "step-work-wd",
+      workflowRunId: "wf-run-1",
+    });
+
+    expect(conditionallyTransitionRunStatusMock).toHaveBeenCalledTimes(1);
+    expect(
+      recordedEvents.some(
+        (event) => event.eventName === "agent-loop.execution.revoked",
+      ),
+    ).toBe(false);
   });
 });

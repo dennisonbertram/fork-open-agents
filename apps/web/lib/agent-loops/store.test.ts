@@ -280,6 +280,9 @@ function makeLoopRun(overrides: Partial<Record<string, unknown>> = {}) {
     userId: "user-1",
     status: "queued",
     definitionSnapshot: { nodes: [], edges: [] },
+    executionSnapshot: null,
+    definitionVersion: null,
+    definitionHash: null,
     currentNodeId: null,
     currentStepRunId: null,
     iterationCount: 0,
@@ -913,6 +916,28 @@ describe("listAgentLoopEvents", () => {
 describe("retryCurrentStep — TOCTOU race protection", () => {
   beforeEach(resetMocks);
 
+  test("inactive source rejects retry before creating another attempt", async () => {
+    const run = makeLoopRun({
+      status: "failed",
+      currentNodeId: "work",
+      currentStepRunId: "step-old",
+    });
+    txSelectResultsQueue = [[run]];
+    txFindFirstMock.mockResolvedValueOnce(null);
+
+    const store = await storePromise;
+    const { RunControlError } = await import("./run-controls-error");
+    const error = await store
+      .retryCurrentStep({ runId: "run-1", userId: "user-1" })
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(RunControlError);
+    if (error instanceof RunControlError) {
+      expect(error.kind).toBe("source_inactive");
+    }
+    expect(txInsertMock).not.toHaveBeenCalled();
+  });
+
   test("BT-P2-12: retryCurrentStep succeeds on the happy path (failed run, no race)", async () => {
     // Set up: findFirst returns a failed run with currentNodeId and currentStepRunId
     const run = makeLoopRun({
@@ -1043,6 +1068,28 @@ describe("retryCurrentStep — TOCTOU race protection", () => {
 // Verifies that the generated + hand-edited migration SQL is idempotent and
 // contains the required check constraint.  Uses file system inspection rather
 // than a live-DB test (no test DB in CI for this kind of check).
+describe("resumeLoopRun - inactive source guard", () => {
+  beforeEach(resetMocks);
+
+  test("inactive source rejects resume before changing run status", async () => {
+    const run = makeLoopRun({ status: "paused" });
+    txSelectResultsQueue = [[run]];
+    txFindFirstMock.mockResolvedValueOnce(null);
+
+    const store = await storePromise;
+    const { RunControlError } = await import("./run-controls-error");
+    const error = await store
+      .resumeLoopRun("run-1", "user-1")
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(RunControlError);
+    if (error instanceof RunControlError) {
+      expect(error.kind).toBe("source_inactive");
+    }
+    expect(txUpdateMock).not.toHaveBeenCalled();
+  });
+});
+
 describe("migration SQL idempotency and check constraint (BT-013)", () => {
   test("migration contains num_nonnulls check and IF NOT EXISTS guards", () => {
     const migrationsDir = join(import.meta.dir, "../../../db/migrations");

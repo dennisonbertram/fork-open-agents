@@ -286,7 +286,9 @@ describe("resolveAgentLoopExecutionDefinition", () => {
   test("fails closed for partial metadata, hash mismatch, graph mismatch, inactive or deleted source", () => {
     const loop = buildLoop();
     const run = buildRun(loop);
-    const cases: Array<[AgentLoopRun, AgentLoop | null, string]> = [
+    const cases: Array<
+      [AgentLoopRun, AgentLoop | null, AgentLoopSnapshotError["errorKind"]]
+    > = [
       [{ ...run, definitionHash: null }, loop, "snapshot_invalid"],
       [{ ...run, definitionHash: "0".repeat(64) }, loop, "snapshot_hash_mismatch"],
       [
@@ -318,7 +320,9 @@ describe("resolveAgentLoopExecutionDefinition", () => {
     });
     const resolved = resolveAgentLoopExecutionDefinition(run, loop);
     expect(resolved.snapshotSource).toBe("legacy_live_fallback");
-    expect(resolved.definition.definition).toEqual(run.definitionSnapshot);
+    expect(resolved.definition.definition).toEqual(
+      loopDefinitionSchema.parse(run.definitionSnapshot),
+    );
     expect(() => resolveAgentLoopExecutionDefinition(run, null)).toThrow(
       AgentLoopSnapshotError,
     );

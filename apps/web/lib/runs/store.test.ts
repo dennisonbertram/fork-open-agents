@@ -1,4 +1,9 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
+import type { AgentLoop } from "@/lib/db/schema";
+import {
+  buildAgentLoopExecutionSnapshot,
+  hashAgentLoopExecutionSnapshot,
+} from "@/lib/agent-loops/execution-snapshot";
 
 mock.module("server-only", () => ({}));
 
@@ -60,6 +65,10 @@ const agentLoopRuns = table("agentLoopRuns", [
   "updatedAt",
   "startedAt",
   "finishedAt",
+  "definitionSnapshot",
+  "executionSnapshot",
+  "definitionVersion",
+  "definitionHash",
 ]);
 const agentLoops = table("agentLoops", [
   "id",
@@ -255,5 +264,130 @@ describe("Runs source loaders", () => {
       automation: null,
       automationName: "Deleted automation",
     });
+  });
+
+  test("retains verified frozen name and repository for a deleted loop", async () => {
+    const now = new Date("2026-07-11T12:00:00.000Z");
+    const definition = {
+      nodes: [
+        {
+          id: "start",
+          kind: "start" as const,
+          label: "Start",
+          position: { x: 0, y: 0 },
+        },
+        {
+          id: "end",
+          kind: "end" as const,
+          label: "End",
+          position: { x: 1, y: 0 },
+        },
+      ],
+      edges: [
+        {
+          id: "edge",
+          source: "start",
+          target: "end",
+          when: "always" as const,
+        },
+      ],
+    };
+    const loop = {
+      id: "deleted-loop",
+      userId: "user-1",
+      name: "Frozen release",
+      description: null,
+      repoOwner: "acme",
+      repoName: "shop",
+      definition,
+      status: "active",
+      guardrails: null,
+      permissions: {},
+      watchdogEnabled: false,
+      watchdogInstructions: null,
+      watchdogRetryBudget: 2,
+      createdAt: now,
+      updatedAt: now,
+    } satisfies AgentLoop;
+    const snapshot = buildAgentLoopExecutionSnapshot(loop);
+    loopRows = [
+      {
+        id: "deleted-run",
+        loopId: null,
+        triggerId: null,
+        triggerKind: null,
+        loopName: null,
+        repoOwner: null,
+        repoName: null,
+        definitionSnapshot: snapshot.definition,
+        executionSnapshot: snapshot,
+        definitionVersion: 1,
+        definitionHash: hashAgentLoopExecutionSnapshot(snapshot),
+        status: "completed",
+        source: "manual",
+        currentNodeId: "end",
+        stepCount: 2,
+        failedStepCount: 0,
+        errorKind: null,
+        requestId: null,
+        workflowRunId: null,
+        createdAt: now,
+        updatedAt: now,
+        startedAt: now,
+        finishedAt: now,
+      },
+    ];
+
+    const { createDbRunSourceLoaders } = await storePromise;
+    const items = await createDbRunSourceLoaders({
+      userId: "user-1",
+    }).agent_loop({ filters: { view: "all" }, limit: 26, now });
+
+    expect(items[0]).toMatchObject({
+      automationName: "Frozen release",
+      repository: { owner: "acme", name: "shop" },
+    });
+  });
+
+  test("corrupt deleted snapshot falls back to a generic label and no repository", async () => {
+    const now = new Date("2026-07-11T12:00:00.000Z");
+    loopRows = [
+      {
+        id: "corrupt-run",
+        loopId: null,
+        triggerId: null,
+        triggerKind: null,
+        loopName: null,
+        repoOwner: null,
+        repoName: null,
+        definitionSnapshot: { nodes: [], edges: [] },
+        executionSnapshot: { source: { name: "Unverified canary" } },
+        definitionVersion: 1,
+        definitionHash: "0".repeat(64),
+        status: "failed",
+        source: "manual",
+        currentNodeId: null,
+        stepCount: 0,
+        failedStepCount: 0,
+        errorKind: "snapshot_hash_mismatch",
+        requestId: null,
+        workflowRunId: null,
+        createdAt: now,
+        updatedAt: now,
+        startedAt: null,
+        finishedAt: now,
+      },
+    ];
+
+    const { createDbRunSourceLoaders } = await storePromise;
+    const items = await createDbRunSourceLoaders({
+      userId: "user-1",
+    }).agent_loop({ filters: { view: "all" }, limit: 26, now });
+
+    expect(items[0]).toMatchObject({
+      automationName: "Deleted automation",
+      repository: null,
+    });
+    expect(JSON.stringify(items)).not.toContain("Unverified canary");
   });
 });

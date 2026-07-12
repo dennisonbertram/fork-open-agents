@@ -201,6 +201,8 @@ describe("REG-350-04: RunControlError has stable kind discriminator", () => {
           return "409";
         case "source_deleted":
           return "409";
+        case "source_inactive":
+          return "409";
       }
     }
 
