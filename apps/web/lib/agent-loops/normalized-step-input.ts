@@ -7,6 +7,7 @@ import type {
 import {
   buildNormalizedLoopStepInput,
   type NormalizedUnattendedStepInputV1,
+  validateNormalizedLoopStepDynamicInput,
 } from "@/lib/unattended-runtime/normalized-step-input";
 import type { ResolvedAgentLoopExecutionDefinition } from "./execution-snapshot";
 import { resolveWorkingBranchIntent } from "./resolve-working-branch";
@@ -116,5 +117,23 @@ export function buildAgentLoopNormalizedStepInput(input: {
       sandboxName: `agent_loop_${input.stepRun.id}`,
       initialCheckout: checkout,
     },
+  });
+}
+
+/** Preflight dynamic Run input before resolving a live default branch. */
+export function validateAgentLoopNormalizedStepDynamicInput(input: {
+  loopRun: AgentLoopRun;
+  stepRun: AgentLoopStepRun;
+}): void {
+  const rawStepInput = (input.stepRun.stepInput ?? {}) as Record<
+    string,
+    unknown
+  >;
+  validateNormalizedLoopStepDynamicInput({
+    promptContext: input.loopRun.context ?? {},
+    watchdogHint:
+      typeof rawStepInput["watchdogHint"] === "string"
+        ? rawStepInput["watchdogHint"]
+        : null,
   });
 }

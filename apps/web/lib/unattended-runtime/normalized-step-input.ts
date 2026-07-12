@@ -831,11 +831,10 @@ export function buildNormalizedLoopStepInput(input: {
   if (!node || node.kind !== "agent_step") {
     invalidPolicy(["identity", "nodeId"], "agent_step_node_missing");
   }
-  const contextResult = validateSafeJson(input.promptContext, {
-    requireObject: true,
-    maxBytes: MAX_DYNAMIC_BYTES,
+  validateNormalizedLoopStepDynamicInput({
+    promptContext: input.promptContext,
+    watchdogHint: input.watchdogHint,
   });
-  if (!contextResult.ok) invalidDynamicValue(contextResult);
   if (node.outputSchema !== undefined) {
     const schemaResult = validateSafeJson(node.outputSchema, {
       maxBytes: MAX_DYNAMIC_BYTES,
@@ -916,4 +915,34 @@ export function buildNormalizedLoopStepInput(input: {
     NormalizedUnattendedStepInputV1,
     { executionKind: "loop_agent_step" }
   >;
+}
+
+/**
+ * Validates accepted dynamic Run input before checkout finalization performs a
+ * credentialed repository lookup. The full builder calls this same function,
+ * so preflight and finalized normalization cannot drift.
+ */
+export function validateNormalizedLoopStepDynamicInput(input: {
+  promptContext: Record<string, unknown>;
+  watchdogHint?: string | null;
+}): void {
+  const contextResult = validateSafeJson(input.promptContext, {
+    requireObject: true,
+    maxBytes: MAX_DYNAMIC_BYTES,
+  });
+  if (!contextResult.ok) invalidDynamicValue(contextResult);
+  const hintResult = z
+    .string()
+    .max(4096)
+    .nullable()
+    .safeParse(nullableValue(input.watchdogHint));
+  if (!hintResult.success) {
+    throw new NormalizedUnattendedInputError(
+      "normalized_input_invalid",
+      safeIssues(hintResult.error).map((issue) => ({
+        ...issue,
+        path: ["watchdogHint", ...issue.path],
+      })),
+    );
+  }
 }

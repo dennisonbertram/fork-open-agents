@@ -137,6 +137,7 @@ export type UpdateAgentLoopStepRunInput = {
   stepOutput?: Record<string, unknown> | null;
   sandboxName?: string | null;
   workflowRunId?: string | null;
+  executionClaimGeneration?: string | null;
   errorKind?: string | null;
   errorMessage?: string | null;
   startedAt?: Date | null;
@@ -144,6 +145,10 @@ export type UpdateAgentLoopStepRunInput = {
   durationMs?: number | null;
   /** Optional compare-and-set guard used when claiming queued work. */
   expectedStatuses?: AgentLoopStepRun["status"][];
+  /** Optional workflow-owner compare-and-set guard for running work. */
+  expectedWorkflowRunId?: string;
+  /** Optional durable execution-generation compare-and-set guard. */
+  expectedExecutionClaimGeneration?: string | null;
 };
 
 export type RecordAgentLoopEventInput = {
@@ -1074,6 +1079,14 @@ export async function updateAgentLoopStepRun(
       ...(params.workflowRunId !== undefined
         ? { workflowRunId: params.workflowRunId }
         : {}),
+      ...(params.executionClaimGeneration !== undefined
+        ? {
+            stepInput:
+              params.executionClaimGeneration === null
+                ? sql`coalesce(${agentLoopStepRuns.stepInput}, '{}'::jsonb) - 'executionClaimGeneration'`
+                : sql`coalesce(${agentLoopStepRuns.stepInput}, '{}'::jsonb) || jsonb_build_object('executionClaimGeneration', ${params.executionClaimGeneration})`,
+          }
+        : {}),
       ...(params.errorKind !== undefined
         ? { errorKind: params.errorKind }
         : {}),
@@ -1096,6 +1109,18 @@ export async function updateAgentLoopStepRun(
         ...(params.expectedStatuses
           ? [inArray(agentLoopStepRuns.status, params.expectedStatuses)]
           : []),
+        ...(params.expectedWorkflowRunId !== undefined
+          ? [eq(agentLoopStepRuns.workflowRunId, params.expectedWorkflowRunId)]
+          : []),
+        ...(params.expectedExecutionClaimGeneration === null
+          ? [
+              sql`not (coalesce(${agentLoopStepRuns.stepInput}, '{}'::jsonb) ? 'executionClaimGeneration')`,
+            ]
+          : params.expectedExecutionClaimGeneration !== undefined
+            ? [
+                sql`${agentLoopStepRuns.stepInput} ->> 'executionClaimGeneration' = ${params.expectedExecutionClaimGeneration}`,
+              ]
+            : []),
         sql`exists (
           select 1 from ${agentLoopRuns}
           where ${agentLoopRuns.id} = ${agentLoopStepRuns.loopRunId}

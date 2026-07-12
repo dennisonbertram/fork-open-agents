@@ -168,6 +168,8 @@ export type AgentStepParams = {
   startedAt: number;
   /** Strict frozen execution input. Omitted only by legacy direct unit callers. */
   normalizedInput?: NormalizedLoopStepInput;
+  /** Durable ownership token acquired before any external side effect. */
+  executionClaimGeneration?: string;
   /** Current source policy, used exclusively to revoke or narrow capability. */
   liveSource?: AgentLoopLiveSourceProjection | null;
   /** Optional watchdog hint from the previous failed attempt (via stepInput.watchdogHint). */
@@ -440,18 +442,29 @@ async function recordAgentStepFailure(params: {
   errorKind: string;
   errorMessage: string;
   payloadExtras?: Record<string, unknown>;
+  executionClaimGeneration?: string;
 }): Promise<StepExecutionResult> {
   const finishedAt = new Date();
   const durationMs = nowMs() - params.startedAt;
 
-  await updateAgentLoopStepRun({
+  const updated = await updateAgentLoopStepRun({
     stepRunId: params.stepRunId,
     status: "failed",
     errorKind: params.errorKind,
     errorMessage: params.errorMessage,
     finishedAt,
     durationMs,
+    ...(params.executionClaimGeneration
+      ? {
+          expectedStatuses: ["running" as const],
+          expectedWorkflowRunId: params.workflowRunId,
+          expectedExecutionClaimGeneration: params.executionClaimGeneration,
+        }
+      : {}),
   });
+  if (updated === null) {
+    return { outcome: "failure", errorKind: "step_ownership_lost" };
+  }
 
   await recordAgentLoopEvent({
     loopRunId: params.loopRunId,
@@ -501,6 +514,7 @@ export async function executeAgentStep(
     watchdogHint,
     stepTimeoutMs = AGENT_STEP_TIMEOUT_MS,
     normalizedInput,
+    executionClaimGeneration,
   } = params;
   const liveSource =
     params.liveSource ??
@@ -594,6 +608,7 @@ export async function executeAgentStep(
     attempt: normalizedInput?.identity.attempt ?? loopRun.iterationCount + 1,
     workflowRunId,
     startedAt,
+    ...(executionClaimGeneration ? { executionClaimGeneration } : {}),
   };
   const getLiveGateDenial = () =>
     getAgentLoopLiveGateDenial({
@@ -1298,14 +1313,24 @@ export async function executeAgentStep(
     });
 
     const finishedAt = new Date();
-    await updateAgentLoopStepRun({
+    const completed = await updateAgentLoopStepRun({
       stepRunId: executionStepRunId,
       status: "succeeded",
       stepOutput: parsedOutput,
       sandboxName,
       finishedAt,
       durationMs: nowMs() - startedAt,
+      ...(executionClaimGeneration
+        ? {
+            expectedStatuses: ["running" as const],
+            expectedWorkflowRunId: workflowRunId,
+            expectedExecutionClaimGeneration: executionClaimGeneration,
+          }
+        : {}),
     });
+    if (completed === null) {
+      return { outcome: "failure", errorKind: "step_ownership_lost" };
+    }
 
     await recordAgentLoopEvent({
       loopRunId: executionLoopRunId,

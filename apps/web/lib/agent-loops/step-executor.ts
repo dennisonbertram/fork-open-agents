@@ -50,6 +50,7 @@ import { AgentLoopSourceDeletedError } from "./source-deleted-error";
 import {
   buildAgentLoopNormalizedStepInput,
   projectAgentLoopLiveSource,
+  validateAgentLoopNormalizedStepDynamicInput,
 } from "./normalized-step-input";
 import {
   resolveAgentLoopExecutionDefinition,
@@ -89,18 +90,29 @@ async function recordStepFailure(params: {
   startedAt: number;
   errorKind: string;
   errorMessage: string;
+  executionClaimGeneration?: string;
 }): Promise<StepExecutionResult> {
   const finishedAt = new Date();
   const durationMs = nowMs() - params.startedAt;
 
-  await updateAgentLoopStepRun({
+  const updated = await updateAgentLoopStepRun({
     stepRunId: params.stepRunId,
     status: "failed",
     errorKind: params.errorKind,
     errorMessage: params.errorMessage,
     finishedAt,
     durationMs,
+    ...(params.executionClaimGeneration
+      ? {
+          expectedStatuses: ["running" as const],
+          expectedWorkflowRunId: params.workflowRunId,
+          expectedExecutionClaimGeneration: params.executionClaimGeneration,
+        }
+      : {}),
   });
+  if (updated === null) {
+    return { outcome: "failure", errorKind: "step_ownership_lost" };
+  }
 
   await recordAgentLoopEvent({
     loopRunId: params.loopRunId,
@@ -307,6 +319,25 @@ async function executeAgentLoopStepDelivery(
     return { outcome: "failure", errorKind: "step_ownership_lost" };
   }
 
+  // A workflow correlation identifies the durable delivery, while this
+  // generation identifies the one process allowed to perform its external
+  // side effects. The absent-generation CAS survives worker boundaries and
+  // deliberately remains on the step attempt after the local lease releases.
+  let executionClaimGeneration: string | undefined;
+  if (node.kind === "agent_step") {
+    executionClaimGeneration = crypto.randomUUID();
+    const claimedExecution = await updateAgentLoopStepRun({
+      stepRunId,
+      expectedStatuses: ["running"],
+      expectedWorkflowRunId: workflowRunId,
+      expectedExecutionClaimGeneration: null,
+      executionClaimGeneration,
+    });
+    if (!claimedExecution) {
+      return { outcome: "failure", errorKind: "step_ownership_lost" };
+    }
+  }
+
   await recordAgentLoopEvent({
     loopRunId,
     stepRunId,
@@ -335,6 +366,7 @@ async function executeAgentLoopStepDelivery(
     attempt: stepRun.attempt,
     workflowRunId,
     startedAt,
+    ...(executionClaimGeneration ? { executionClaimGeneration } : {}),
   };
 
   // ── 5. Dispatch by node kind ────────────────────────────────────────────────
@@ -396,6 +428,11 @@ async function executeAgentLoopStepDelivery(
     // dynamic value before making even a read-only credentialed GitHub lookup.
     // The live default branch is only required when no context branch exists.
     const repository = resolvedDefinition.definition.repository;
+    try {
+      validateAgentLoopNormalizedStepDynamicInput({ loopRun, stepRun });
+    } catch (error) {
+      return rejectNormalizedInput(error);
+    }
     const contextCheckout = resolveWorkingBranchIntent(
       loopRun.context ?? {},
       stepRun.nodeId,
@@ -485,6 +522,7 @@ async function executeAgentLoopStepDelivery(
       liveSource,
       stepTimeoutMs,
       maxAgentTurnsPerStep,
+      executionClaimGeneration,
     });
   }
 
