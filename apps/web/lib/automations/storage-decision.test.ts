@@ -1,14 +1,22 @@
 /**
  * #945 RED decision harness.
  *
- * This deliberately models the smallest tempting physical merge: one
- * untagged definition map, one untagged Run map, one untagged event list, and
- * triggers with only `targetId`. The failing assertions are the migration
- * no-go conditions. A future GREEN design must introduce a tagged union and
- * source-specific side tables (or decide to retain the two storage models).
- * This file performs no database I/O or migration.
+ * The original RED fixture modeled the smallest tempting physical merge: one
+ * untagged common-column map per entity and triggers with only `targetId`.
+ * These tests now exercise the accepted no-go decision: retain both source
+ * models and specify the tagged, lossless invariants a future migration would
+ * have to satisfy. This file performs no database I/O or migration.
  */
 import { describe, expect, test } from "bun:test";
+import {
+  decodeSourceQualifiedStorage,
+  deleteDefinitionPreservingRunHistory,
+  detectSourceLocalIdCollisions,
+  encodeSourceQualifiedStorage,
+  hasExactlyOneLegacyTriggerTarget,
+  readCanonicalAndLegacyForRollback,
+  type StorageDecisionFixtures,
+} from "./storage-decision";
 
 const backgroundDefinition = {
   source: "background_agent" as const,
@@ -247,17 +255,7 @@ const triggers = [
   },
 ];
 
-type SourceFixtures = {
-  definitions: Array<Record<string, unknown>>;
-  runs: Array<Record<string, unknown>>;
-  events: Array<Record<string, unknown>>;
-  outputs: Array<Record<string, unknown>>;
-  steps: Array<Record<string, unknown>>;
-  watchdogRuns: Array<Record<string, unknown>>;
-  triggers: Array<Record<string, unknown>>;
-};
-
-const fixtures: SourceFixtures = {
+const fixtures: StorageDecisionFixtures = {
   definitions: [backgroundDefinition, loopDefinition],
   runs: [backgroundRun, loopRun],
   events: [backgroundEvent, loopEvent],
@@ -267,156 +265,18 @@ const fixtures: SourceFixtures = {
   triggers,
 };
 
-/** The intentionally insufficient untagged/common-column candidate. */
-type UntaggedCanonicalEnvelopeV0 = {
-  definitions: Map<string, Record<string, unknown>>;
-  runs: Map<string, Record<string, unknown>>;
-  events: Map<string, Record<string, unknown>>;
-  triggers: Map<string, { id: string; targetId: string; kind: unknown }>;
-};
-
-function pick(
-  value: Record<string, unknown>,
-  keys: readonly string[],
-): Record<string, unknown> {
-  return Object.fromEntries(
-    keys.filter((key) => key in value).map((key) => [key, value[key]]),
-  );
-}
-
-function encodeUntaggedV0(input: SourceFixtures): UntaggedCanonicalEnvelopeV0 {
-  return {
-    definitions: new Map(
-      input.definitions.map((definition) => [
-        String(definition.id),
-        pick(definition, [
-          "id",
-          "userId",
-          "name",
-          "description",
-          "status",
-          "repoOwner",
-          "repoName",
-          "createdAt",
-          "updatedAt",
-        ]),
-      ]),
-    ),
-    runs: new Map(
-      input.runs.map((run) => [
-        String(run.id),
-        pick(run, [
-          "id",
-          "definitionId",
-          "triggerId",
-          "userId",
-          "status",
-          "idempotencyKey",
-          "executionSnapshot",
-          "definitionVersion",
-          "definitionHash",
-          "requestId",
-          "workflowRunId",
-          "startedAt",
-          "finishedAt",
-        ]),
-      ]),
-    ),
-    events: new Map(
-      input.events.map((event) => [
-        String(event.id),
-        pick(event, [
-          "id",
-          "runId",
-          "eventName",
-          "status",
-          "level",
-          "summary",
-          "payload",
-          "redactionStatus",
-          "requestId",
-          "workflowRunId",
-          "createdAt",
-        ]),
-      ]),
-    ),
-    triggers: new Map(
-      input.triggers.map((trigger) => [
-        String(trigger.id),
-        {
-          id: String(trigger.id),
-          targetId: String(trigger.agentId ?? trigger.loopId),
-          kind: trigger.kind,
-        },
-      ]),
-    ),
-  };
-}
-
-function decodeUntaggedV0(
-  envelope: UntaggedCanonicalEnvelopeV0,
-): SourceFixtures {
-  const definitions = [...envelope.definitions.values()];
-  const runs = [...envelope.runs.values()];
-  const events = [...envelope.events.values()];
-  return {
-    definitions,
-    runs,
-    events,
-    outputs: [],
-    steps: [],
-    watchdogRuns: [],
-    triggers: [...envelope.triggers.values()],
-  };
-}
-
-function detectIdCollisions(_input: SourceFixtures): Array<{
-  namespace: string;
-  id: string;
-  sources: string[];
-}> {
-  // V0 has no source tag or collision ledger, so overwrites are silent.
-  return [];
-}
-
-function deleteDefinitionV0(
-  envelope: UntaggedCanonicalEnvelopeV0,
-  definitionId: string,
-): void {
-  envelope.definitions.delete(definitionId);
-  for (const [runId, run] of envelope.runs) {
-    if (run.definitionId === definitionId) envelope.runs.delete(runId);
-  }
-}
-
-function readCanonicalThenLegacyV0(params: {
-  canonical: Array<Record<string, unknown>>;
-  legacy: Array<Record<string, unknown>>;
-}): Array<Record<string, unknown>> {
-  // An untagged id is incorrectly treated as the global identity.
-  const byId = new Map<string, Record<string, unknown>>();
-  for (const row of params.legacy) byId.set(String(row.id), row);
-  for (const row of params.canonical) byId.set(String(row.id), row);
-  return [...byId.values()];
-}
-
-function hasExactlyOneLegacyTriggerTarget(trigger: {
-  agentId: unknown;
-  loopId: unknown;
-}): boolean {
-  return (
-    Number(trigger.agentId !== null) + Number(trigger.loopId !== null) === 1
-  );
-}
-
-describe("#945 canonical storage decision RED harness", () => {
+describe("#945 canonical storage decision safety harness", () => {
   test("representative definitions round-trip with every source-specific field", () => {
-    const decoded = decodeUntaggedV0(encodeUntaggedV0(fixtures));
+    const decoded = decodeSourceQualifiedStorage(
+      encodeSourceQualifiedStorage(fixtures),
+    );
     expect(decoded.definitions).toEqual(fixtures.definitions);
   });
 
   test("Runs, ordered events, outputs, steps, and watchdog evidence round-trip losslessly", () => {
-    const decoded = decodeUntaggedV0(encodeUntaggedV0(fixtures));
+    const decoded = decodeSourceQualifiedStorage(
+      encodeSourceQualifiedStorage(fixtures),
+    );
     expect(decoded.runs).toEqual(fixtures.runs);
     expect(decoded.events).toEqual(fixtures.events);
     expect(decoded.outputs).toEqual(fixtures.outputs);
@@ -425,7 +285,7 @@ describe("#945 canonical storage decision RED harness", () => {
   });
 
   test("source-local ID collisions are detected before an untagged map can overwrite rows", () => {
-    const colliding: SourceFixtures = {
+    const colliding: StorageDecisionFixtures = {
       ...fixtures,
       definitions: [
         { ...backgroundDefinition, id: "definition-collision" },
@@ -440,7 +300,7 @@ describe("#945 canonical storage decision RED harness", () => {
         { ...loopEvent, id: "event-collision" },
       ],
     };
-    expect(detectIdCollisions(colliding)).toEqual([
+    expect(detectSourceLocalIdCollisions(colliding)).toEqual([
       {
         namespace: "definition",
         id: "definition-collision",
@@ -457,11 +317,17 @@ describe("#945 canonical storage decision RED harness", () => {
         sources: ["agent_loop", "background_agent"],
       },
     ]);
+    const encoded = encodeSourceQualifiedStorage(colliding);
+    expect(encoded.definitions.size).toBe(2);
+    expect(encoded.runs.size).toBe(2);
+    expect(encoded.events.size).toBe(2);
   });
 
   test("trigger migration preserves exactly one tagged target, not only an ambiguous targetId", () => {
     expect(triggers.every(hasExactlyOneLegacyTriggerTarget)).toBe(true);
-    const decoded = decodeUntaggedV0(encodeUntaggedV0(fixtures));
+    const decoded = decodeSourceQualifiedStorage(
+      encodeSourceQualifiedStorage(fixtures),
+    );
     expect(decoded.triggers).toEqual([
       {
         id: "background-trigger-1",
@@ -492,32 +358,50 @@ describe("#945 canonical storage decision RED harness", () => {
   });
 
   test("definition deletion preserves retained Run history and source evidence", () => {
-    const envelope = encodeUntaggedV0(fixtures);
-    deleteDefinitionV0(envelope, backgroundDefinition.id);
-    deleteDefinitionV0(envelope, loopDefinition.id);
+    const envelope = encodeSourceQualifiedStorage(fixtures);
+    deleteDefinitionPreservingRunHistory(envelope, backgroundDefinition);
+    deleteDefinitionPreservingRunHistory(envelope, loopDefinition);
     expect(envelope.definitions.size).toBe(0);
-    expect([...envelope.runs.keys()].sort()).toEqual([
-      backgroundRun.id,
-      loopRun.id,
-    ]);
+    expect([...envelope.runs.values()]).toEqual([backgroundRun, loopRun]);
+    expect(envelope.evidence).toEqual({
+      backgroundAgentOutputs: [backgroundOutput],
+      agentLoopSteps: [loopStep],
+      agentLoopWatchdogRuns: [watchdogRun],
+    });
   });
 
   test("rollback dual reads preserve canonical and legacy rows with colliding local IDs", () => {
     const canonical = [
       {
-        source: "background_agent",
+        source: "background_agent" as const,
         id: "shared-run-id",
         migratedFrom: backgroundRun.id,
       },
     ];
     const legacy = [
-      { source: "background_agent", id: "shared-run-id", legacy: true },
-      { source: "agent_loop", id: "shared-run-id", legacy: true },
+      {
+        source: "background_agent" as const,
+        id: "shared-run-id",
+        legacy: true,
+      },
+      {
+        source: "agent_loop" as const,
+        id: "shared-run-id",
+        legacy: true,
+      },
     ];
-    expect(readCanonicalThenLegacyV0({ canonical, legacy })).toEqual([
+    const rows = readCanonicalAndLegacyForRollback({ canonical, legacy });
+    expect(rows.map(({ row }) => row)).toEqual([
       canonical[0],
       legacy[0],
       legacy[1],
+    ]);
+    expect(rows[0]?.sourceQualifiedId).toBe(rows[1]?.sourceQualifiedId);
+    expect(rows[0]?.sourceQualifiedId).not.toBe(rows[2]?.sourceQualifiedId);
+    expect(rows.map(({ storage }) => storage)).toEqual([
+      "canonical",
+      "legacy",
+      "legacy",
     ]);
   });
 });
