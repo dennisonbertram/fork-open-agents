@@ -177,6 +177,64 @@ describe("AgentLoopExecutionSnapshotV1", () => {
     expect(() =>
       parseAgentLoopExecutionSnapshot({ ...snapshot, triggerPayload: {} }),
     ).toThrow();
+    expect(() =>
+      parseAgentLoopExecutionSnapshot({
+        ...snapshot,
+        repository: { ...snapshot.repository, token: "secret" },
+      }),
+    ).toThrow();
+    expect(() =>
+      parseAgentLoopExecutionSnapshot({
+        ...snapshot,
+        watchdog: { ...snapshot.watchdog, providerConfig: {} },
+      }),
+    ).toThrow();
+    expect(() =>
+      parseAgentLoopExecutionSnapshot({
+        ...snapshot,
+        definition: {
+          ...snapshot.definition,
+          context: { raw: true },
+        },
+      }),
+    ).toThrow();
+    expect(() =>
+      parseAgentLoopExecutionSnapshot({
+        ...snapshot,
+        definition: {
+          ...snapshot.definition,
+          nodes: snapshot.definition.nodes.map((node, index) =>
+            index === 0 ? { ...node, rawPrompt: "secret" } : node,
+          ),
+        },
+      }),
+    ).toThrow();
+  });
+
+  test("freezes embedded guardrails with validated column values winning", () => {
+    const loop = buildLoop({
+      definition: {
+        ...definition,
+        guardrails: {
+          maxStepsPerRun: 17,
+          maxIterations: 9,
+          stepTimeoutMs: 50_000,
+        },
+      },
+      guardrails: {
+        maxStepsPerRun: 23,
+        maxAgentTurnsPerStep: 7,
+      },
+    });
+    const snapshot = buildAgentLoopExecutionSnapshot(loop);
+    expect(snapshot.guardrails).toMatchObject({
+      maxStepsPerRun: 23,
+      maxIterations: 9,
+      stepTimeoutMs: 50_000,
+      maxAgentTurnsPerStep: 7,
+    });
+    expect(snapshot.definition).toEqual(definition);
+    expect(snapshot.definition).not.toHaveProperty("guardrails");
   });
 });
 
