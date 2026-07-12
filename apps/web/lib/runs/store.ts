@@ -152,6 +152,9 @@ function createBackgroundRunLoader(userId: string): RunsSourceLoader {
         agentId: backgroundAgentRuns.agentId,
         triggerId: backgroundAgentRuns.triggerId,
         agentName: backgroundAgents.name,
+        snapshotDefinitionName: sql<
+          string | null
+        >`${backgroundAgentRuns.executionSnapshot} -> 'source' ->> 'name'`,
         status: backgroundAgentRuns.status,
         source: backgroundAgentRuns.source,
         triggerKind: backgroundAgentRuns.triggerKind,
@@ -227,7 +230,11 @@ function createBackgroundRunLoader(userId: string): RunsSourceLoader {
         adaptBackgroundAgentRun(
           {
             ...row,
-            title: redactText(row.agentName, 120) ?? "Deleted automation",
+            title:
+              redactText(row.agentName, 120) ??
+              (redactText(row.snapshotDefinitionName, 120)
+                ? `${redactText(row.snapshotDefinitionName, 120)} (deleted)`
+                : "Deleted automation"),
             nativeStatus: row.status,
             nativeSource: row.source,
           },

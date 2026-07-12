@@ -27,6 +27,8 @@ import {
 } from "./execution-snapshot";
 
 mock.module("server-only", () => ({}));
+process.env.BACKGROUND_AGENTS_ENABLED = "true";
+process.env.BACKGROUND_AGENTS_ALLOWED_REPOS = "*";
 
 type EventInput = {
   runId: string;
@@ -394,6 +396,9 @@ function buildRun(
     startedAt: null,
     finishedAt: null,
     resultSummary: null,
+    executionSnapshot: null,
+    definitionVersion: null,
+    definitionHash: null,
     createdAt: now,
     updatedAt: now,
     ...overrides,
@@ -436,8 +441,7 @@ function buildSnapshotRun(
     ...({
       executionSnapshot,
       definitionVersion: 1,
-      definitionHash:
-        hashBackgroundAgentExecutionSnapshot(executionSnapshot),
+      definitionHash: hashBackgroundAgentExecutionSnapshot(executionSnapshot),
       ...overrides,
     } as unknown as Partial<BackgroundAgentRun>),
   });
@@ -648,7 +652,9 @@ describe("execution snapshot binding", () => {
         status: "failed",
         errorKind,
       });
-      expect(recordedEvent("background-agent.workflow.started")).toBeUndefined();
+      expect(
+        recordedEvent("background-agent.workflow.started"),
+      ).toBeUndefined();
     });
   });
 
@@ -680,14 +686,14 @@ describe("execution snapshot binding", () => {
 
   test("uses the fresh nullable agent id when deletion races initial validation", async () => {
     currentRun = buildSnapshotRun(buildAgent());
+    const acceptedRun = currentRun;
+    const acceptedAgent = currentAgent;
     getBackgroundAgentRunWithAgent.mockImplementationOnce(async () => ({
-      run: currentRun,
-      agent: currentAgent,
+      run: acceptedRun,
+      agent: acceptedAgent,
     }));
-    getBackgroundAgentRunWithAgent.mockImplementationOnce(async () => ({
-      run: { ...currentRun, agentId: null },
-      agent: null,
-    }));
+    currentRun = { ...currentRun, agentId: null };
+    currentAgent = null;
     const { executeBackgroundAgentRun } = await executorModulePromise;
 
     await executeBackgroundAgentRun({
@@ -712,7 +718,9 @@ describe("execution snapshot binding", () => {
     });
 
     expect(generate).toHaveBeenCalledTimes(1);
-    expect(recordedEvent("background-agent.snapshot.legacy_fallback")).toBeTruthy();
+    expect(
+      recordedEvent("background-agent.snapshot.legacy_fallback"),
+    ).toBeTruthy();
   });
 });
 

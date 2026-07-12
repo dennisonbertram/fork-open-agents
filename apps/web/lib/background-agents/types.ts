@@ -43,6 +43,11 @@ export type BackgroundAgentRunStatus =
 export const backgroundAgentErrorKinds = [
   "duplicate_event",
   "agent_disabled",
+  "agent_deleted",
+  "snapshot_missing",
+  "snapshot_invalid",
+  "snapshot_version_unsupported",
+  "snapshot_hash_mismatch",
   "permission_missing",
   "installation_missing",
   "sandbox_unavailable",

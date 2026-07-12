@@ -51,7 +51,7 @@ let mockActionsSummary: MockActionsSummary = {
 };
 
 let mockAgents: Array<{ id: string; name: string }> = [];
-let mockRuns: Array<{ id: string; triggerKind: string }> = [];
+let mockRuns: Array<Record<string, unknown> & { id: string }> = [];
 let mockReadiness = { ready: true, checks: [], missing: [] };
 
 // ---- mocks ----------------------------------------------------------------
@@ -303,5 +303,30 @@ describe("GET /api/repos/[owner]/[repo]/dashboard", () => {
     expect(bodyText).not.toMatch(/ghp_[A-Za-z0-9]{20,}/);
     expect(bodyText).not.toMatch(/ghs_[A-Za-z0-9]{20,}/);
     expect(bodyText).not.toMatch(/"authorization"\s*:/i);
+  });
+
+  test("never exposes private execution snapshots through dashboard runs", async () => {
+    mockRuns = [
+      {
+        id: "run-secret",
+        executionSnapshot: {
+          snapshotVersion: 1,
+          instructions: "instructions-canary-secret",
+        },
+        definitionVersion: 1,
+        definitionHash: "c".repeat(64),
+      },
+    ];
+    const { GET } = await routeModulePromise;
+
+    const response = await GET(
+      new Request("http://localhost/api/repos/acme/widgets/dashboard"),
+      { params: Promise.resolve({ owner: "acme", repo: "widgets" }) },
+    );
+    const bodyText = await response.text();
+
+    expect(bodyText).not.toContain("executionSnapshot");
+    expect(bodyText).not.toContain("instructions-canary-secret");
+    expect(bodyText).toContain('"definitionVersion":1');
   });
 });

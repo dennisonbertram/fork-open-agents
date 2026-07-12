@@ -10,22 +10,40 @@ mock.module("server-only", () => ({}));
 let insertedRunValues: Record<string, unknown> | null = null;
 let persistedRun: Record<string, unknown> | null = null;
 let runInsertWins = true;
+let eventInsertFails = false;
 const recordedEvents: Array<Record<string, unknown>> = [];
 
 const db = {
+  transaction: async (callback: (tx: unknown) => unknown) => {
+    const before = persistedRun;
+    try {
+      return await callback(db);
+    } catch (error) {
+      persistedRun = before;
+      throw error;
+    }
+  },
   insert: (_table: unknown) => ({
     values: (values: Record<string, unknown>) => {
       const isEvent = typeof values.eventName === "string";
-      if (isEvent) recordedEvents.push(values);
+      const persistedValues =
+        isEvent && typeof values.agentId !== "string"
+          ? { ...values, agentId: persistedRun?.agentId ?? null }
+          : values;
+      if (isEvent) recordedEvents.push(persistedValues);
       else insertedRunValues = values;
+      const returning = async () => {
+        if (isEvent) {
+          return eventInsertFails ? [] : [{ ...persistedValues, sequence: 1 }];
+        }
+        if (!runInsertWins) return [];
+        persistedRun = values;
+        return [values];
+      };
       return {
+        returning,
         onConflictDoNothing: () => ({
-          returning: async () => {
-            if (isEvent) return [{ ...values, sequence: 1 }];
-            if (!runInsertWins) return [];
-            persistedRun = values;
-            return [values];
-          },
+          returning,
         }),
       };
     },
@@ -48,9 +66,7 @@ mock.module("nanoid", () => ({ nanoid: () => "run-snapshot-1" }));
 const { createRunForTrigger, recordBackgroundAgentEvent } =
   await import("./store");
 
-function buildAgent(
-  overrides: Partial<BackgroundAgent> = {},
-): BackgroundAgent {
+function buildAgent(overrides: Partial<BackgroundAgent> = {}): BackgroundAgent {
   const now = new Date("2026-07-11T12:00:00.000Z");
   return {
     id: "agent-1",
@@ -108,6 +124,7 @@ beforeEach(() => {
   insertedRunValues = null;
   persistedRun = null;
   runInsertWins = true;
+  eventInsertFails = false;
   recordedEvents.length = 0;
 });
 
@@ -166,7 +183,20 @@ describe("createRunForTrigger execution snapshots", () => {
       "accepted instructions",
     );
     expect(returned.definitionHash).toBe(original.definitionHash);
-    expect(recordedEvents.filter((entry) => entry.eventName === "background-agent.snapshot.frozen")).toHaveLength(1);
+    expect(
+      recordedEvents.filter(
+        (entry) => entry.eventName === "background-agent.snapshot.frozen",
+      ),
+    ).toHaveLength(1);
+  });
+
+  test("rolls back the winning Run when frozen evidence cannot be inserted", async () => {
+    eventInsertFails = true;
+
+    await expect(
+      createRunForTrigger({ agent: buildAgent(), trigger, event }),
+    ).rejects.toThrow("Failed to persist frozen execution snapshot evidence");
+    expect(persistedRun).toBeNull();
   });
 });
 

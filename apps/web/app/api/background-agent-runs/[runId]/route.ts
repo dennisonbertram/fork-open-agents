@@ -4,6 +4,10 @@ import {
   listBackgroundAgentOutputs,
 } from "@/lib/background-agents/store";
 import { requireAuthenticatedUser } from "@/app/api/sessions/_lib/session-context";
+import {
+  toPublicBackgroundAgentRun,
+  toSafeBackgroundAgentEvidence,
+} from "@/lib/background-agents/public-run";
 
 type RouteContext = {
   params: Promise<{ runId: string }>;
@@ -34,15 +38,8 @@ export async function GET(_req: Request, context: RouteContext) {
   ]);
 
   return Response.json({
-    run,
-    agent: agent
-      ? {
-          id: agent.id,
-          name: agent.name,
-          permissions: agent.permissions,
-          checkCommand: agent.checkCommand,
-        }
-      : null,
+    run: toPublicBackgroundAgentRun(run),
+    agent: toSafeBackgroundAgentEvidence(run, agent),
     events,
     outputs,
   });

@@ -38,6 +38,8 @@ import type { BackgroundAgent, BackgroundAgentRun } from "@/lib/db/schema";
 import type { ExecResult, Sandbox } from "@open-agents/sandbox";
 
 mock.module("server-only", () => ({}));
+process.env.BACKGROUND_AGENTS_ENABLED = "true";
+process.env.BACKGROUND_AGENTS_ALLOWED_REPOS = "*";
 
 // ---------------------------------------------------------------------------
 // Type stubs
@@ -368,6 +370,9 @@ function buildRun(
     startedAt: null,
     finishedAt: null,
     resultSummary: null,
+    executionSnapshot: null,
+    definitionVersion: null,
+    definitionHash: null,
     createdAt: now,
     updatedAt: now,
     ...overrides,

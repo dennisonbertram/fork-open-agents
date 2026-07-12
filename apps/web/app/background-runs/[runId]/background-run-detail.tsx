@@ -200,6 +200,22 @@ function buildProofStripRows(
 ): RunMetadataRow[] {
   const rows: RunMetadataRow[] = [
     { key: "status", label: "Status", value: run.status },
+    {
+      key: "definition",
+      label: "Definition",
+      value:
+        run.definitionVersion == null
+          ? "Legacy"
+          : `v${run.definitionVersion} · ${run.definitionHash?.slice(0, 12) ?? "invalid"}`,
+    },
+    {
+      key: "snapshot-source",
+      label: "Snapshot source",
+      value: (run.snapshotSource ?? "legacy_live_fallback").replaceAll(
+        "_",
+        " ",
+      ),
+    },
     { key: "trigger", label: "Trigger", value: run.triggerKind },
     {
       key: "repository",

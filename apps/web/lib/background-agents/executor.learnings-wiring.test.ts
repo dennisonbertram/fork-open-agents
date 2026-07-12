@@ -11,6 +11,8 @@ import { beforeEach, describe, expect, mock, test } from "bun:test";
 import type { BackgroundAgent, BackgroundAgentRun } from "@/lib/db/schema";
 
 mock.module("server-only", () => ({}));
+process.env.BACKGROUND_AGENTS_ENABLED = "true";
+process.env.BACKGROUND_AGENTS_ALLOWED_REPOS = "*";
 
 // ---- Stub helpers ----
 type EventInput = {
@@ -277,6 +279,9 @@ function buildLearningsRun(
     startedAt: null,
     finishedAt: null,
     resultSummary: null,
+    executionSnapshot: null,
+    definitionVersion: null,
+    definitionHash: null,
     createdAt: now,
     updatedAt: now,
     ...overrides,

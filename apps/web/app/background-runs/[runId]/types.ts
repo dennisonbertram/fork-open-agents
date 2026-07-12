@@ -27,6 +27,9 @@ export type SerializedBackgroundRun = {
   startedAt: string | null;
   finishedAt: string | null;
   resultSummary?: RunSummary | null;
+  definitionVersion?: number | null;
+  definitionHash?: string | null;
+  snapshotSource?: "frozen" | "legacy_live_fallback" | "invalid";
 };
 
 export type SerializedBackgroundAgent = {
@@ -34,6 +37,7 @@ export type SerializedBackgroundAgent = {
   name: string;
   permissions: unknown;
   checkCommand: string | null;
+  sourceDeleted?: boolean;
 };
 
 export type SerializedBackgroundEvent = {

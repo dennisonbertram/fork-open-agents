@@ -31,6 +31,8 @@ import {
   getBackgroundAgentRepetitionThreshold,
   getBackgroundAgentStallFinalizeTurns,
   getBackgroundAgentStallGraceTurns,
+  getBackgroundAgentRepoAccess,
+  isBackgroundAgentsEnabled,
 } from "./config";
 import { createProgressBudget } from "./progress-budget";
 import { detectRepetition, hashTurnToolCalls } from "./action-repetition";
@@ -84,7 +86,6 @@ import {
   buildBackgroundBranchName,
 } from "./ready-pr";
 import type { NormalizedBackgroundTriggerEvent } from "./types";
-import { isLearningsAgent } from "@/lib/learnings/builtin-agent";
 import { runLearningsExtraction } from "@/lib/learnings/runner";
 import { createDbLearningsStore } from "@/lib/learnings/store";
 import { generateText, Output } from "ai";
@@ -92,6 +93,12 @@ import { recordUsage } from "@/lib/db/usage";
 import { extractedLearningCandidateSchema } from "@/lib/learnings/types";
 import { parseModelOptionSelection } from "@/lib/inference/model-option-id";
 import { resolveInferenceProfileModelSelection } from "@/lib/inference/profile-resolution";
+import {
+  BackgroundAgentSnapshotError,
+  resolveBackgroundAgentExecutionDefinition,
+  type BackgroundAgentExecutionSnapshotV1,
+} from "./execution-snapshot";
+import { sha256CanonicalJson } from "@/lib/execution-snapshots/canonical-json";
 
 const DEFAULT_CHECK_TIMEOUT_MS = 120_000;
 const DEFAULT_AGENT_TIMEOUT_MS = 600_000;
@@ -265,10 +272,201 @@ function hasAnyWriteAction(toggles: GitHubActionToggles): boolean {
   );
 }
 
-function enabledGithubActionToolNames(
-  actions: BackgroundAgentGithubActions | null | undefined,
-): string[] {
-  const toggles = toGitHubActionToggles(actions);
+function intersectGithubActionToggles(
+  frozen: GitHubActionToggles,
+  live: GitHubActionToggles,
+): GitHubActionToggles {
+  return {
+    openPullRequest: frozen.openPullRequest && live.openPullRequest,
+    commentOnPrOrIssue: frozen.commentOnPrOrIssue && live.commentOnPrOrIssue,
+    approvePullRequest: frozen.approvePullRequest && live.approvePullRequest,
+    requestChanges: frozen.requestChanges && live.requestChanges,
+    mergePullRequest: frozen.mergePullRequest && live.mergePullRequest,
+    push: frozen.push && live.push,
+    deleteBranch: frozen.deleteBranch && live.deleteBranch,
+  };
+}
+
+function intersectStringAllowlist(
+  frozen: string[] | null,
+  live: string[] | null,
+): string[] | null {
+  if (frozen === null) return live;
+  if (live === null) return frozen;
+  const liveSet = new Set(live);
+  return frozen.filter((value) => liveSet.has(value));
+}
+
+function intersectRequestedSlugs(frozen: string[], live: string[]): string[] {
+  const liveSet = new Set(live);
+  return frozen.filter((value) => liveSet.has(value));
+}
+
+function intersectWriteScopes(
+  frozen: BackgroundAgentExecutionSnapshotV1["writeScope"],
+  live: import("@/lib/db/schema").BackgroundAgentWriteScope,
+  boundRepo: { owner: string; name: string },
+): BackgroundAgentExecutionSnapshotV1["writeScope"] {
+  const normalizedLive: BackgroundAgentExecutionSnapshotV1["writeScope"] =
+    live.mode === "specific_repos"
+      ? { mode: "specific_repos", repos: live.repos ?? [] }
+      : { mode: live.mode };
+  if (frozen.mode === "all_repos") return normalizedLive;
+  if (normalizedLive.mode === "all_repos") return frozen;
+  const boundKey = `${boundRepo.owner}/${boundRepo.name}`.toLowerCase();
+  if (frozen.mode === "this_repo" || normalizedLive.mode === "this_repo") {
+    const other = frozen.mode === "this_repo" ? normalizedLive : frozen;
+    if (other.mode !== "specific_repos") return { mode: "this_repo" };
+    const includesBound = other.repos.some(
+      (repo) => `${repo.owner}/${repo.name}`.toLowerCase() === boundKey,
+    );
+    return includesBound
+      ? { mode: "this_repo" }
+      : { mode: "specific_repos", repos: [] };
+  }
+  const liveKeys = new Set(
+    normalizedLive.repos.map((repo) =>
+      `${repo.owner}/${repo.name}`.toLowerCase(),
+    ),
+  );
+  return {
+    mode: "specific_repos",
+    repos: frozen.repos.filter((repo) =>
+      liveKeys.has(`${repo.owner}/${repo.name}`.toLowerCase()),
+    ),
+  };
+}
+
+function buildEffectiveSecurityPolicy(
+  definition: BackgroundAgentExecutionSnapshotV1,
+  liveAgent: import("@/lib/db/schema").BackgroundAgent,
+) {
+  return {
+    githubActionToggles: intersectGithubActionToggles(
+      toGitHubActionToggles(definition.githubActions),
+      toGitHubActionToggles(liveAgent.githubActions),
+    ),
+    allowedBuiltinToolNames: intersectStringAllowlist(
+      definition.builtinToolNames,
+      liveAgent.builtinToolNames ?? null,
+    ),
+    requestedComposioSlugs: intersectRequestedSlugs(
+      definition.composioToolkitSlugs,
+      liveAgent.composioToolkitSlugs ?? [],
+    ),
+    effectiveWriteScope: intersectWriteScopes(
+      definition.writeScope,
+      liveAgent.writeScope,
+      definition.repository,
+    ),
+    requireCiGreenForMerge:
+      definition.requireCiGreenForMerge ||
+      (liveAgent.requireCiGreenForMerge ?? true),
+    // BackgroundAgentPermissions is not yet consumed by the executor. Keep it
+    // in the policy fingerprint so a stricter live edit revokes the accepted
+    // run instead of being silently ignored; #965 will make it executable.
+    declaredPermissions: liveAgent.permissions,
+  };
+}
+
+async function assertLiveBackgroundExecution(params: {
+  runId: string;
+  expectedPolicyHash?: string;
+}): Promise<{
+  row: NonNullable<Awaited<ReturnType<typeof getBackgroundAgentRunWithAgent>>>;
+  resolved: ReturnType<typeof resolveBackgroundAgentExecutionDefinition>;
+  policy: ReturnType<typeof buildEffectiveSecurityPolicy>;
+}> {
+  const row = await getBackgroundAgentRunWithAgent(params.runId);
+  if (!row) {
+    throw new BackgroundAgentSnapshotError(
+      "agent_deleted",
+      "Background Run or source was deleted during execution.",
+    );
+  }
+  const resolved = resolveBackgroundAgentExecutionDefinition(
+    row.run,
+    row.agent,
+  );
+  if (!isBackgroundAgentsEnabled()) {
+    throw new BackgroundAgentSnapshotError(
+      "agent_disabled",
+      "Background-agent execution is disabled by the live service policy.",
+    );
+  }
+  const repoAccess = getBackgroundAgentRepoAccess(
+    resolved.definition.repository.owner,
+    resolved.definition.repository.name,
+  );
+  if (!repoAccess.allowed) {
+    throw new BackgroundAgentSnapshotError(
+      "agent_disabled",
+      `Background-agent repository policy refused execution: ${repoAccess.reason}.`,
+    );
+  }
+  if (!row.agent) {
+    throw new BackgroundAgentSnapshotError(
+      "agent_deleted",
+      "Background agent configuration was deleted during execution.",
+    );
+  }
+  const policy = buildEffectiveSecurityPolicy(resolved.definition, row.agent);
+  if (
+    params.expectedPolicyHash &&
+    sha256CanonicalJson(policy) !== params.expectedPolicyHash
+  ) {
+    throw new BackgroundAgentSnapshotError(
+      "agent_disabled",
+      "Live Automation security policy changed during execution.",
+    );
+  }
+  const requiredUserPermission =
+    resolved.definition.source.builtinKind !== "pr_review_learnings" &&
+    hasAnyWriteAction(policy.githubActionToggles)
+      ? "write"
+      : "read";
+  const githubAccess = await verifyRepoAccess({
+    userId: row.run.userId,
+    owner: resolved.definition.repository.owner,
+    repo: resolved.definition.repository.name,
+    requiredUserPermission,
+  });
+  if (!githubAccess.ok) {
+    throw new BackgroundAgentSnapshotError(
+      githubAccess.reason === "no_installation" ||
+        githubAccess.reason === "app_no_access"
+        ? "installation_missing"
+        : "permission_missing",
+      getRepoAccessErrorMessage(githubAccess.reason),
+    );
+  }
+  return { row, resolved, policy };
+}
+
+function guardToolSet(
+  tools: import("ai").ToolSet | undefined,
+  guard: () => Promise<void>,
+): import("ai").ToolSet | undefined {
+  if (!tools) return undefined;
+  return Object.fromEntries(
+    Object.entries(tools).map(([name, value]) => {
+      const candidate = value as { execute?: (...args: unknown[]) => unknown };
+      if (typeof candidate.execute !== "function") return [name, value];
+      return [
+        name,
+        {
+          ...candidate,
+          execute: async (...args: unknown[]) => {
+            await guard();
+            return candidate.execute?.(...args);
+          },
+        },
+      ];
+    }),
+  ) as import("ai").ToolSet;
+}
+
+function enabledGithubActionToolNames(toggles: GitHubActionToggles): string[] {
   const names: string[] = [];
   if (toggles.openPullRequest)
     names.push(GITHUB_ACTION_TOOL_NAMES.open_pull_request);
@@ -590,6 +788,7 @@ async function runBackgroundAgent(params: {
   modelSelection?: AgentModelSelection;
   /** The model id recorded on usage events / the started event payload. */
   recordedModelId: string;
+  assertLiveAuthorization: () => Promise<void>;
 }) {
   let messages: ModelMessage[] = [
     {
@@ -686,6 +885,7 @@ async function runBackgroundAgent(params: {
   let step = 0;
 
   for (;;) {
+    await params.assertLiveAuthorization();
     step += 1;
     if (hardTurnCap !== null && step > hardTurnCap) {
       throw new BackgroundAgentTurnBudgetExceededError(
@@ -758,6 +958,7 @@ async function runBackgroundAgent(params: {
       ...(params.extraTools ? { tools: params.extraTools } : {}),
       timeout: { totalMs: DEFAULT_AGENT_TIMEOUT_MS },
     });
+    await params.assertLiveAuthorization();
     const durationMs = Date.now() - startedAt;
     const toolCallCount = result.steps.reduce(
       (count, item) => count + item.toolCalls.length,
@@ -1277,15 +1478,47 @@ export async function executeBackgroundAgentRun(params: {
     return;
   }
 
-  const { run, agent } = row;
+  const { run } = row;
   const sandboxName = buildSandboxName(run.id);
 
-  await updateBackgroundAgentRunStatus({
-    runId: run.id,
-    status: "running",
-    workflowRunId: params.workflowRunId,
-    sandboxName,
-  });
+  let resolvedDefinition: ReturnType<
+    typeof resolveBackgroundAgentExecutionDefinition
+  >;
+  let initialLiveCheck: Awaited<
+    ReturnType<typeof assertLiveBackgroundExecution>
+  >;
+  try {
+    initialLiveCheck = await assertLiveBackgroundExecution({ runId: run.id });
+    resolvedDefinition = initialLiveCheck.resolved;
+  } catch (error) {
+    const snapshotError =
+      error instanceof BackgroundAgentSnapshotError ? error : null;
+    const freshRow = await getBackgroundAgentRunWithAgent(run.id);
+    await recordFailure({
+      runId: run.id,
+      agentId: freshRow?.run.agentId ?? null,
+      userId: run.userId,
+      workflowRunId: params.workflowRunId,
+      requestId: run.requestId,
+      sandboxName,
+      errorKind: snapshotError?.errorKind ?? "snapshot_invalid",
+      summary:
+        snapshotError?.message ?? "Background execution snapshot is invalid.",
+    });
+    return;
+  }
+
+  const claimed =
+    run.status === "running" && run.workflowRunId === params.workflowRunId
+      ? run
+      : await updateBackgroundAgentRunStatus({
+          runId: run.id,
+          status: "running",
+          workflowRunId: params.workflowRunId,
+          sandboxName,
+          expectedStatuses: ["queued"],
+        });
+  if (!claimed) return;
   await recordBackgroundAgentEvent({
     runId: run.id,
     agentId: run.agentId,
@@ -1297,26 +1530,55 @@ export async function executeBackgroundAgentRun(params: {
     requestId: run.requestId,
   });
 
-  if (!agent) {
-    await recordFailure({
+  await recordBackgroundAgentEvent({
+    runId: run.id,
+    agentId: run.agentId,
+    userId: run.userId,
+    eventName:
+      resolvedDefinition.snapshotSource === "frozen"
+        ? "background-agent.snapshot.validated"
+        : "background-agent.snapshot.legacy_fallback",
+    status: "succeeded",
+    level: resolvedDefinition.snapshotSource === "frozen" ? "info" : "warn",
+    summary:
+      resolvedDefinition.snapshotSource === "frozen"
+        ? "Validated frozen execution definition."
+        : "Using legacy live Automation fallback.",
+    workflowRunId: params.workflowRunId,
+    requestId: run.requestId,
+    payload: {
       runId: run.id,
       agentId: run.agentId,
-      userId: run.userId,
+      definitionVersion: resolvedDefinition.definitionVersion,
+      definitionHash: resolvedDefinition.definitionHash,
+      snapshotSource: resolvedDefinition.snapshotSource,
       workflowRunId: params.workflowRunId,
-      requestId: run.requestId,
-      sandboxName,
-      errorKind: "agent_disabled",
-      summary: "Background agent configuration was deleted before execution.",
-    });
-    return;
-  }
+    },
+  });
 
-  const githubActionToggles = toGitHubActionToggles(agent.githubActions);
+  const liveAgent = initialLiveCheck.row.agent;
+  if (!liveAgent) return;
+  const definition = resolvedDefinition.definition;
+  const {
+    githubActionToggles,
+    allowedBuiltinToolNames,
+    requestedComposioSlugs,
+    effectiveWriteScope,
+    requireCiGreenForMerge,
+  } = initialLiveCheck.policy;
+  const expectedPolicyHash = sha256CanonicalJson(initialLiveCheck.policy);
+  const assertLiveAuthorization = async () => {
+    await assertLiveBackgroundExecution({
+      runId: run.id,
+      expectedPolicyHash,
+    });
+  };
   // The built-in learnings agent never takes GitHub actions (its branch below
   // bypasses the sandbox + tool loop entirely), so it must not inherit a
   // write requirement from action toggles — read-only users run it too.
   const requiredUserPermission =
-    !isLearningsAgent(agent) && hasAnyWriteAction(githubActionToggles)
+    definition.source.builtinKind !== "pr_review_learnings" &&
+    hasAnyWriteAction(githubActionToggles)
       ? "write"
       : "read";
 
@@ -1362,10 +1624,10 @@ export async function executeBackgroundAgentRun(params: {
   // ── Built-in learnings agent branch ──────────────────────────────────────
   // Detected by marker in instructions. Runs extraction without sandbox —
   // do not pay sandbox costs for this read-only arc.
-  if (isLearningsAgent(agent)) {
+  if (definition.source.builtinKind === "pr_review_learnings") {
     await executeLearningsAgentRun({
       run,
-      agentId: agent.id,
+      agentId: definition.source.definitionId,
       installationId: access.installationId,
       repositoryId: access.repositoryId,
       workflowRunId: params.workflowRunId,
@@ -1381,12 +1643,13 @@ export async function executeBackgroundAgentRun(params: {
   try {
     resolvedModelSelection = await resolveBackgroundAgentModel({
       userId: run.userId,
-      modelId: agent.modelId,
+      modelId: definition.modelId,
     });
   } catch (error) {
+    const freshRow = await getBackgroundAgentRunWithAgent(run.id);
     await recordFailure({
       runId: run.id,
-      agentId: run.agentId,
+      agentId: freshRow?.run.agentId ?? null,
       userId: run.userId,
       workflowRunId: params.workflowRunId,
       requestId: run.requestId,
@@ -1431,9 +1694,10 @@ export async function executeBackgroundAgentRun(params: {
       },
     });
   } catch (error) {
+    const freshRow = await getBackgroundAgentRunWithAgent(run.id);
     await recordFailure({
       runId: run.id,
-      agentId: run.agentId,
+      agentId: freshRow?.run.agentId ?? null,
       userId: run.userId,
       workflowRunId: params.workflowRunId,
       requestId: run.requestId,
@@ -1489,7 +1753,7 @@ export async function executeBackgroundAgentRun(params: {
   let workingBranch: string | null = null;
   if (hasAnyWriteAction(githubActionToggles)) {
     workingBranch = buildBackgroundBranchName({
-      agentName: agent.name,
+      agentName: definition.source.name,
       runId: run.id,
     });
 
@@ -1542,7 +1806,7 @@ export async function executeBackgroundAgentRun(params: {
   // typed { status: "off", reason: "repo_policy_blocked" } outcome without
   // making any external Composio calls.
   let resolvedComposioTools: import("ai").ToolSet | undefined;
-  const agentToolkitSlugs = agent.composioToolkitSlugs ?? [];
+  const agentToolkitSlugs = requestedComposioSlugs;
 
   if (agentToolkitSlugs.length > 0) {
     const composioResult = await resolveComposioToolsForBgRun({
@@ -1672,23 +1936,26 @@ export async function executeBackgroundAgentRun(params: {
     defaultBranch: access.defaultBranch,
     sandbox,
     toggles: githubActionToggles,
-    writeScope: toGitHubToolsWriteScope(agent.writeScope),
-    requireCiGreen: agent.requireCiGreenForMerge ?? true,
+    writeScope: toGitHubToolsWriteScope(effectiveWriteScope),
+    requireCiGreen: requireCiGreenForMerge,
     userPermission: access.userPermission,
     outputKindByAction: buildOutputKindByAction(),
     // Parity with the old ready_pr flow, where the required check ran BEFORE
     // any commit/PR reached GitHub: github_push re-runs this gate inside the
     // tool, so a failing check can never produce a pushed branch or PR.
-    checkCommand: agent.checkCommand,
+    checkCommand: definition.checkCommand,
   });
 
-  const extraTools = mergeExtraTools(
-    resolvedComposioTools,
-    // mergeExtraTools treats a defined-but-empty ToolSet as "has tools" (it
-    // only short-circuits to undefined when BOTH inputs are absent) — pass
-    // undefined instead of {} when no GitHub actions are toggled on so a
-    // comment-only-disabled agent doesn't get a spurious empty tools key.
-    Object.keys(githubActionTools).length > 0 ? githubActionTools : undefined,
+  const extraTools = guardToolSet(
+    mergeExtraTools(
+      resolvedComposioTools,
+      // mergeExtraTools treats a defined-but-empty ToolSet as "has tools" (it
+      // only short-circuits to undefined when BOTH inputs are absent) — pass
+      // undefined instead of {} when no GitHub actions are toggled on so a
+      // comment-only-disabled agent doesn't get a spurious empty tools key.
+      Object.keys(githubActionTools).length > 0 ? githubActionTools : undefined,
+    ),
+    assertLiveAuthorization,
   );
 
   // ── Every run now executes the agent loop ────────────────────────────────
@@ -1702,8 +1969,8 @@ export async function executeBackgroundAgentRun(params: {
       sandboxName,
       sandbox,
       prompt: buildBackgroundAgentRunbookPrompt({
-        agentName: agent.name,
-        instructions: agent.instructions,
+        agentName: definition.source.name,
+        instructions: definition.instructions,
         triggerKind: run.triggerKind,
         repoOwner: run.repoOwner,
         repoName: run.repoName,
@@ -1714,34 +1981,37 @@ export async function executeBackgroundAgentRun(params: {
         issueNumber: run.issueNumber,
         deploymentUrl: run.deploymentUrl,
         payloadSummary: run.payloadSummary,
-        checkCommand: agent.checkCommand,
+        checkCommand: definition.checkCommand,
         workingBranch,
-        enabledGithubActionTools: enabledGithubActionToolNames(
-          agent.githubActions,
-        ),
+        enabledGithubActionTools:
+          enabledGithubActionToolNames(githubActionToggles),
       }),
       githubActionToggles,
       extraTools,
-      allowedBuiltinToolNames: agent.builtinToolNames ?? null,
+      allowedBuiltinToolNames,
       modelSelection: resolvedModelSelection,
       recordedModelId,
+      assertLiveAuthorization,
     });
   } catch (error) {
+    const freshRow = await getBackgroundAgentRunWithAgent(run.id);
     await recordFailure({
       runId: run.id,
-      agentId: run.agentId,
+      agentId: freshRow?.run.agentId ?? null,
       userId: run.userId,
       workflowRunId: params.workflowRunId,
       requestId: run.requestId,
       sandboxName,
       errorKind:
-        error instanceof BackgroundAgentStalledError
-          ? error.trigger === "token_fuse"
-            ? "token_budget_exceeded"
-            : "agent_stalled"
-          : error instanceof BackgroundAgentTurnBudgetExceededError
-            ? "agent_turn_budget_exceeded"
-            : "workflow_failed",
+        error instanceof BackgroundAgentSnapshotError
+          ? error.errorKind
+          : error instanceof BackgroundAgentStalledError
+            ? error.trigger === "token_fuse"
+              ? "token_budget_exceeded"
+              : "agent_stalled"
+            : error instanceof BackgroundAgentTurnBudgetExceededError
+              ? "agent_turn_budget_exceeded"
+              : "workflow_failed",
       summary:
         error instanceof Error ? error.message : "Background agent failed.",
       ...(error instanceof BackgroundAgentStalledError
@@ -1767,7 +2037,29 @@ export async function executeBackgroundAgentRun(params: {
     return;
   }
 
-  if (agent.checkCommand?.trim()) {
+  try {
+    await assertLiveAuthorization();
+  } catch (error) {
+    const freshRow = await getBackgroundAgentRunWithAgent(run.id);
+    await recordFailure({
+      runId: run.id,
+      agentId: freshRow?.run.agentId ?? null,
+      userId: run.userId,
+      workflowRunId: params.workflowRunId,
+      requestId: run.requestId,
+      sandboxName,
+      errorKind:
+        error instanceof BackgroundAgentSnapshotError
+          ? error.errorKind
+          : "workflow_failed",
+      summary:
+        error instanceof Error
+          ? error.message
+          : "Live authorization check failed.",
+    });
+    return;
+  }
+  if (definition.checkCommand?.trim()) {
     const checkResult = await execObservedCommand({
       runId: run.id,
       agentId: run.agentId,
@@ -1777,7 +2069,7 @@ export async function executeBackgroundAgentRun(params: {
       sandboxName,
       sandbox,
       eventName: "background-agent.check",
-      command: agent.checkCommand.trim(),
+      command: definition.checkCommand.trim(),
       timeoutMs: DEFAULT_CHECK_TIMEOUT_MS,
     });
 
@@ -1815,6 +2107,28 @@ export async function executeBackgroundAgentRun(params: {
     (output) => output.status === "created" && output.url,
   );
 
+  try {
+    await assertLiveAuthorization();
+  } catch (error) {
+    const freshRow = await getBackgroundAgentRunWithAgent(run.id);
+    await recordFailure({
+      runId: run.id,
+      agentId: freshRow?.run.agentId ?? null,
+      userId: run.userId,
+      workflowRunId: params.workflowRunId,
+      requestId: run.requestId,
+      sandboxName,
+      errorKind:
+        error instanceof BackgroundAgentSnapshotError
+          ? error.errorKind
+          : "workflow_failed",
+      summary:
+        error instanceof Error
+          ? error.message
+          : "Live authorization check failed.",
+    });
+    return;
+  }
   await updateBackgroundAgentRunStatus({
     runId: run.id,
     status: "succeeded",

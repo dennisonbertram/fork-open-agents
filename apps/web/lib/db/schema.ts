@@ -1404,6 +1404,12 @@ export const backgroundAgentRuns = pgTable(
       jsonb("result_summary").$type<
         import("@/lib/background-agents/run-summary").RunSummary
       >(),
+    executionSnapshot:
+      jsonb("execution_snapshot").$type<
+        import("@/lib/background-agents/execution-snapshot").BackgroundAgentExecutionSnapshotV1
+      >(),
+    definitionVersion: integer("definition_version"),
+    definitionHash: text("definition_hash"),
     requestId: text("request_id"),
     workflowRunId: text("workflow_run_id"),
     startedAt: timestamp("started_at"),
@@ -1434,6 +1440,10 @@ export const backgroundAgentRuns = pgTable(
       table.agentId,
       table.prNumber,
       table.createdAt,
+    ),
+    check(
+      "background_agent_runs_execution_snapshot_all_or_none",
+      sql`num_nonnulls(execution_snapshot, definition_version, definition_hash) in (0, 3) and (num_nonnulls(execution_snapshot, definition_version, definition_hash) = 0 or (definition_version = 1 and definition_hash ~ '^[0-9a-f]{64}$' and execution_snapshot ->> 'snapshotVersion' = definition_version::text))`,
     ),
   ],
 );

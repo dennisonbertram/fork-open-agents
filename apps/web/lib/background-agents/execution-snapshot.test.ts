@@ -5,10 +5,12 @@ import {
   hashBackgroundAgentExecutionSnapshot,
   parseBackgroundAgentExecutionSnapshot,
 } from "./execution-snapshot";
+import {
+  canonicalJson,
+  sha256CanonicalJson,
+} from "@/lib/execution-snapshots/canonical-json";
 
-function buildAgent(
-  overrides: Partial<BackgroundAgent> = {},
-): BackgroundAgent {
+function buildAgent(overrides: Partial<BackgroundAgent> = {}): BackgroundAgent {
   const now = new Date("2026-07-11T12:00:00.000Z");
   return {
     id: "agent-1",
@@ -94,6 +96,36 @@ describe("BackgroundAgentExecutionSnapshotV1", () => {
     expect(hashBackgroundAgentExecutionSnapshot(first)).toMatch(
       /^[a-f0-9]{64}$/,
     );
+  });
+
+  test("canonical JSON recursively sorts nested object keys", () => {
+    const first = { z: 1, nested: { b: 2, a: [{ d: 4, c: 3 }] } };
+    const second = { nested: { a: [{ c: 3, d: 4 }], b: 2 }, z: 1 };
+
+    expect(canonicalJson(first)).toBe(canonicalJson(second));
+    expect(sha256CanonicalJson(first)).toBe(sha256CanonicalJson(second));
+  });
+
+  test("pins the canonical encoding and SHA-256 contract shared with loops", () => {
+    const value = { b: 2, a: [{ d: 4, c: 3 }] };
+
+    expect(canonicalJson(value)).toBe('{"a":[{"c":3,"d":4}],"b":2}');
+    expect(sha256CanonicalJson(value)).toBe(
+      "dfcc3037d858ec890482c2fdaa91e66a257ad17667d6c7b8e255c8cc0f9cd443",
+    );
+  });
+
+  test("canonical JSON rejects values JSON cannot represent safely", () => {
+    for (const value of [
+      undefined,
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+      globalThis.BigInt(1),
+    ]) {
+      expect(() => canonicalJson(value)).toThrow();
+    }
+    expect(() => canonicalJson({ unsafe: undefined })).toThrow();
+    expect(() => canonicalJson(new Date())).toThrow();
   });
 
   test("any behavior change changes the definition hash", () => {

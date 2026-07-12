@@ -45,6 +45,14 @@ import {
   getWebhookPublicIdForUpdatedTrigger,
 } from "./trigger-public-ids";
 import { matchTriggersByIdentity } from "./trigger-upsert";
+import {
+  buildBackgroundAgentExecutionSnapshot,
+  hashBackgroundAgentExecutionSnapshot,
+} from "./execution-snapshot";
+import {
+  toPublicBackgroundAgentRun,
+  type PublicBackgroundAgentRun,
+} from "./public-run";
 
 /**
  * Seeds nextRunAt for a schedule.cron trigger at creation/replacement time.
@@ -453,6 +461,9 @@ export async function createRunForTrigger(params: {
     triggerId: params.trigger.id,
     event: params.event,
   });
+  const executionSnapshot = buildBackgroundAgentExecutionSnapshot(params.agent);
+  const definitionHash =
+    hashBackgroundAgentExecutionSnapshot(executionSnapshot);
 
   const values: NewBackgroundAgentRun = {
     id: nanoid(),
@@ -482,13 +493,48 @@ export async function createRunForTrigger(params: {
       message: params.event.message,
     },
     requestId: params.requestId ?? null,
+    executionSnapshot,
+    definitionVersion: 1,
+    definitionHash,
   };
 
-  const [inserted] = await db
-    .insert(backgroundAgentRuns)
-    .values(values)
-    .onConflictDoNothing({ target: backgroundAgentRuns.idempotencyKey })
-    .returning();
+  const inserted = await db.transaction(async (tx) => {
+    const [winningRun] = await tx
+      .insert(backgroundAgentRuns)
+      .values(values)
+      .onConflictDoNothing({ target: backgroundAgentRuns.idempotencyKey })
+      .returning();
+    if (!winningRun) return null;
+
+    const [freezeEvent] = await tx
+      .insert(backgroundAgentEvents)
+      .values({
+        id: nanoid(),
+        runId: winningRun.id,
+        agentId: winningRun.agentId,
+        userId: winningRun.userId,
+        eventName: "background-agent.snapshot.frozen",
+        status: "succeeded",
+        level: "info",
+        summary: "Frozen background-agent execution definition.",
+        requestId: params.requestId ?? null,
+        payload: redactBackgroundAgentPayload({
+          runId: winningRun.id,
+          agentId: winningRun.agentId,
+          definitionVersion: 1,
+          definitionHash,
+          snapshotSource: "frozen",
+          requestId: params.requestId ?? null,
+        }),
+        redactionStatus: "passed",
+        sequence: 1,
+      })
+      .returning();
+    if (!freezeEvent) {
+      throw new Error("Failed to persist frozen execution snapshot evidence");
+    }
+    return winningRun;
+  });
 
   if (inserted) {
     await recordBackgroundAgentEvent({
@@ -546,7 +592,11 @@ export async function recordBackgroundAgentEvent(
       .values({
         id: nanoid(),
         runId: input.runId,
-        agentId: input.agentId ?? null,
+        // Resolve inside the INSERT statement so ON DELETE SET NULL cannot
+        // race a preceding application read and leave a stale foreign key.
+        agentId: sql<
+          string | null
+        >`(select agent_id from background_agent_runs where id = ${input.runId})`,
         userId: input.userId,
         eventName: input.eventName,
         status: input.status,
@@ -633,6 +683,7 @@ export async function updateBackgroundAgentRunStatus(params: {
    */
   agentId?: string | null;
   userId?: string;
+  expectedStatuses?: BackgroundAgentRunStatus[];
 }): Promise<BackgroundAgentRun | null> {
   const now = new Date();
   const setValues = {
@@ -658,6 +709,9 @@ export async function updateBackgroundAgentRunStatus(params: {
     : and(
         eq(backgroundAgentRuns.id, params.runId),
         notInArray(backgroundAgentRuns.status, TERMINAL_RUN_STATUSES),
+        params.expectedStatuses
+          ? inArray(backgroundAgentRuns.status, params.expectedStatuses)
+          : undefined,
       );
 
   const [run] = await db
@@ -778,7 +832,7 @@ export async function listBackgroundAgentRuns(params: {
   repoOwner?: string;
   repoName?: string;
   limit?: number;
-}): Promise<BackgroundAgentRun[]> {
+}): Promise<PublicBackgroundAgentRun[]> {
   const where = [
     eq(backgroundAgentRuns.userId, params.userId),
     params.repoOwner
@@ -789,11 +843,12 @@ export async function listBackgroundAgentRuns(params: {
       : undefined,
   ].filter(Boolean);
 
-  return db.query.backgroundAgentRuns.findMany({
+  const rows = await db.query.backgroundAgentRuns.findMany({
     where: and(...where),
     orderBy: [desc(backgroundAgentRuns.createdAt)],
     limit: Math.min(Math.max(params.limit ?? 50, 1), 200),
   });
+  return rows.map(toPublicBackgroundAgentRun);
 }
 
 export async function listStaleBackgroundAgentRuns(params: {

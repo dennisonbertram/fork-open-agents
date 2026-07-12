@@ -6,13 +6,8 @@ import {
   updateBackgroundAgent,
 } from "@/lib/background-agents/store";
 import { getBackgroundAgentRepoReadiness } from "@/lib/background-agents/repo-readiness";
-
-/**
- * Stable marker embedded in the built-in PR-review learnings agent instructions.
- * Used to find and identify the agent without a dedicated DB column.
- * DO NOT change — changing breaks find-by-marker for existing rows.
- */
-export const LEARNINGS_AGENT_MARKER = "[builtin:pr-review-learnings]";
+import { LEARNINGS_AGENT_MARKER } from "./builtin-marker";
+export { LEARNINGS_AGENT_MARKER } from "./builtin-marker";
 
 /**
  * Identifies a background agent as the built-in learnings agent by checking
