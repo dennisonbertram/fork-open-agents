@@ -19,6 +19,7 @@ let insertedEvents: Array<Record<string, unknown>>;
 let eventInsertFails: boolean;
 let runInsertWins: boolean;
 let conflictWinner: AgentLoopRun | null;
+let activeRun: AgentLoopRun | null;
 let nextId: number;
 
 const queryTerminal = (rows: unknown[]) => {
@@ -32,6 +33,9 @@ const queryTerminal = (rows: unknown[]) => {
 };
 
 const tx = {
+  query: {
+    agentLoopRuns: { findFirst: async () => activeRun },
+  },
   select: () => ({
     from: () => ({
       where: () => queryTerminal([liveLoop]),
@@ -128,6 +132,7 @@ beforeEach(() => {
   eventInsertFails = false;
   runInsertWins = true;
   conflictWinner = null;
+  activeRun = null;
   nextId = 1;
 });
 
@@ -202,6 +207,22 @@ describe("createAgentLoopRun frozen transaction", () => {
     const loser = await createAgentLoopRun(input);
     expect(loser).toEqual({ run: conflictWinner, created: false });
     expect(loser?.run.definitionHash).toBe(conflictWinner?.definitionHash);
+    expect(insertedEvents).toHaveLength(0);
+  });
+
+  test("serializes distinct idempotency keys behind the source lock and returns the active run", async () => {
+    const first = await createAgentLoopRun(input);
+    activeRun = first?.run ?? null;
+    persistedRun = null;
+    insertedRun = null;
+    insertedEvents = [];
+
+    const second = await createAgentLoopRun({
+      ...input,
+      idempotencyKey: "manual:2",
+    });
+    expect(second).toEqual({ activeRunId: activeRun?.id });
+    expect(insertedRun).toBeNull();
     expect(insertedEvents).toHaveLength(0);
   });
 });
