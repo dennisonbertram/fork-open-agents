@@ -5,7 +5,7 @@
  * BT-002: getSessionFooter — repo mode shows sandbox name
  * BT-003: isSubmitBlocked — requiresVercelChoice alone does NOT block submit
  * BT-004: isSubmitBlocked — actual blocking conditions still block submit
- * BT-005: getButtonLabel — empty mode reads "Start chat", repo mode reads "Start with owner/repo"
+ * BT-005: getButtonLabel — empty mode reads "Start session", repo mode names the repository
  */
 
 import { describe, expect, test } from "bun:test";
@@ -31,16 +31,11 @@ describe("getSessionFooter", () => {
     expect(result).not.toContain("Vercel");
   });
 
-  test("BT-001: empty mode result contains 'instant' or 'no sandbox' messaging", () => {
+  test("BT-001: empty mode explains on-demand sandbox creation", () => {
     const result = getSessionFooter("empty", "Vercel");
-    // Must communicate that no sandbox is provisioned
-    const lower = result.toLowerCase();
-    const hasReassurance =
-      lower.includes("instant") ||
-      lower.includes("no sandbox") ||
-      lower.includes("without a sandbox") ||
-      lower.includes("sandbox-free");
-    expect(hasReassurance).toBe(true);
+    expect(result).toBe(
+      "No sandbox starts immediately. One starts automatically when code execution is needed.",
+    );
   });
 
   test("BT-002: repo mode returns a string containing the sandbox name", () => {
@@ -153,12 +148,12 @@ describe("isSubmitBlocked", () => {
 // BT-005: getButtonLabel
 // ---------------------------------------------------------------------------
 describe("getButtonLabel", () => {
-  test("BT-005: empty mode returns 'Start chat'", () => {
-    expect(getButtonLabel("empty", "", "")).toBe("Start chat");
+  test("BT-005: empty mode returns 'Start session'", () => {
+    expect(getButtonLabel("empty", "", "")).toBe("Start session");
   });
 
-  test("BT-005: repo mode with no repo selected returns 'Start chat'", () => {
-    expect(getButtonLabel("repo", "", "")).toBe("Start chat");
+  test("BT-005: repo mode with no repo selected returns 'Start session'", () => {
+    expect(getButtonLabel("repo", "", "")).toBe("Start session");
   });
 
   test("BT-005: repo mode with owner+repo returns 'Start with owner/repo'", () => {
@@ -232,12 +227,10 @@ describe("REGRESSION — Vercel env-sync choice never hard-blocks submit", () =>
   });
 });
 
-describe("REGRESSION — button label reads 'Start chat' in empty mode", () => {
-  test("REGRESSION-006: getButtonLabel(empty) never returns the old 'Start session' label", () => {
-    // The old text was "Start session". If reverted, this test fails.
+describe("REGRESSION — button label uses Session terminology", () => {
+  test("REGRESSION-006: getButtonLabel(empty) returns 'Start session'", () => {
     const label = getButtonLabel("empty", "", "");
-    expect(label).not.toBe("Start session");
-    expect(label).toBe("Start chat");
+    expect(label).toBe("Start session");
   });
 });
 
@@ -245,9 +238,9 @@ describe("REGRESSION — button label reads 'Start chat' in empty mode", () => {
 // MR-4 (#812): New-Chat runtime picker — getRuntimeModeLabel
 // ---------------------------------------------------------------------------
 describe("getRuntimeModeLabel (MR-4/#812)", () => {
-  test("BT-MR4-001: classic mode reads 'Directly in a sandbox (classic)'", () => {
+  test("BT-MR4-001: classic mode describes its sandbox as on demand", () => {
     expect(getRuntimeModeLabel("classic", "Python 3.12")).toBe(
-      "Directly in a sandbox (classic)",
+      "On-demand sandbox (classic)",
     );
   });
 

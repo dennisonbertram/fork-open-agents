@@ -192,8 +192,8 @@ describe("SessionStarter repo-defaults regression coverage", () => {
 
     expect(html.length).toBeGreaterThan(0);
     // Component structure must include mode switcher
-    expect(html).toContain("New chat");
-    expect(html).toContain("Connect a repo");
+    expect(html).toContain("Standalone session");
+    expect(html).toContain("Repository session");
   });
 
   // REGRESSION-SS-007: Branch defaults apply-once logic is idempotent

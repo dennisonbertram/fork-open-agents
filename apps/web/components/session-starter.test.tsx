@@ -165,7 +165,7 @@ describe("SessionStarter - repo defaults pre-fill", () => {
 
     // Component renders without crash — the mock repoDefaults is wired.
     // Effective values are tested via pure logic in BT-SS-001b and BT-SS-001c.
-    expect(html).toContain("Connect a repo");
+    expect(html).toContain("Repository session");
   });
 
   // BT-SS-001b: Verify effective value computation with repoDefaults > user pref
@@ -382,7 +382,7 @@ describe("SessionStarter - repo defaults pre-fill", () => {
       />,
     );
     expect(html.length).toBeGreaterThan(0);
-    expect(html).toContain("New chat");
+    expect(html).toContain("Standalone session");
   });
 
   // BT-SS-005: The useRepoDefaults hook must be wired into the component.
