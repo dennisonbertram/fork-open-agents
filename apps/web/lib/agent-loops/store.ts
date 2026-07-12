@@ -2087,14 +2087,19 @@ export async function retryCurrentStepForWatchdog(params: {
           : capped;
     }
 
-    // Build stepInput merging the hint
+    // A retry is a new step attempt and must acquire its own execution claim.
+    // Preserve durable caller input, but never copy attempt-local ownership or
+    // stale watchdog guidance into the new queued row.
     const baseStepInput = (currentStepRun.stepInput ?? {}) as Record<
       string,
       unknown
     >;
-    const stepInput: Record<string, unknown> = sanitizedHint
-      ? { ...baseStepInput, watchdogHint: sanitizedHint }
-      : { ...baseStepInput };
+    const stepInput = Object.fromEntries(
+      Object.entries(baseStepInput).filter(
+        ([key]) => key !== "executionClaimGeneration" && key !== "watchdogHint",
+      ),
+    );
+    if (sanitizedHint) stepInput["watchdogHint"] = sanitizedHint;
 
     const [newStepRun] = await tx
       .insert(agentLoopStepRuns)
