@@ -15,6 +15,8 @@ import {
   encodeSourceQualifiedStorage,
   hasExactlyOneLegacyTriggerTarget,
   readCanonicalAndLegacyForRollback,
+  tagLegacyAutomationTrigger,
+  type LegacyAutomationTrigger,
   type StorageDecisionFixtures,
 } from "./storage-decision";
 
@@ -266,6 +268,12 @@ const fixtures: StorageDecisionFixtures = {
 };
 
 describe("#945 canonical storage decision safety harness", () => {
+  test("marks the executable envelope as research-only, not a production migration contract", () => {
+    expect(encodeSourceQualifiedStorage(fixtures)).toMatchObject({
+      decisionScope: "research_only",
+    });
+  });
+
   test("representative definitions round-trip with every source-specific field", () => {
     const decoded = decodeSourceQualifiedStorage(
       encodeSourceQualifiedStorage(fixtures),
@@ -355,6 +363,38 @@ describe("#945 canonical storage decision safety harness", () => {
         loopId: loopDefinition.id,
       }),
     ).toBe(false);
+  });
+
+  test("trigger tagging rejects malformed, empty, both, and missing targets", () => {
+    const invalidTargets: Array<{ agentId: unknown; loopId: unknown }> = [
+      { agentId: undefined, loopId: null },
+      { agentId: null, loopId: undefined },
+      { agentId: undefined, loopId: undefined },
+      { agentId: 42, loopId: null },
+      { agentId: null, loopId: 42 },
+      { agentId: {}, loopId: null },
+      { agentId: null, loopId: {} },
+      { agentId: "", loopId: null },
+      { agentId: "   ", loopId: null },
+      { agentId: null, loopId: "" },
+      { agentId: null, loopId: " \n " },
+      { agentId: null, loopId: null },
+      {
+        agentId: backgroundDefinition.id,
+        loopId: loopDefinition.id,
+      },
+    ];
+
+    for (const target of invalidTargets) {
+      expect(hasExactlyOneLegacyTriggerTarget(target)).toBe(false);
+      expect(() =>
+        tagLegacyAutomationTrigger({
+          id: "invalid-trigger",
+          kind: "github.issue",
+          ...target,
+        } as unknown as LegacyAutomationTrigger),
+      ).toThrow("must target exactly one source");
+    }
   });
 
   test("definition deletion preserves retained Run history and source evidence", () => {
