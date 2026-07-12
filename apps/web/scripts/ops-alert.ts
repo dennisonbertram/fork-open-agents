@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { redactOpsText } from "./ops-redaction";
 
-type AlertState = "open" | "repeated" | "recovered" | "dry_run";
+type AlertState = "open" | "repeated" | "recovered" | "no_op" | "dry_run";
 
 export interface AlertInput {
   source: string;
@@ -14,6 +14,14 @@ export interface AlertInput {
   dryRun?: boolean;
 }
 
+export interface GhResult {
+  status: number | null;
+  stdout: string;
+  stderr: string;
+}
+
+export type GhRunner = (args: string[]) => GhResult;
+
 export function buildAlertKey(
   input: Pick<AlertInput, "source" | "environment">,
 ) {
@@ -21,7 +29,7 @@ export function buildAlertKey(
 }
 
 export function renderAlertTitle(input: AlertInput): string {
-  return `[production-ops] ${input.source} ${input.status} in ${input.environment}`;
+  return `[production-ops] ${input.source} in ${input.environment}`;
 }
 
 export function renderAlertBody(input: AlertInput): string {
@@ -58,9 +66,9 @@ export function renderRecoveryComment(input: AlertInput): string {
 `);
 }
 
-function runGh(args: string[]) {
+const runGh: GhRunner = (args) => {
   return spawnSync("gh", args, { encoding: "utf8", timeout: 20_000 });
-}
+};
 
 function parseArgs(argv: string[]): AlertInput {
   const input: Partial<AlertInput> = {};
@@ -101,7 +109,10 @@ function parseArgs(argv: string[]): AlertInput {
   return input as AlertInput;
 }
 
-export function upsertAlert(input: AlertInput): {
+export function upsertAlert(
+  input: AlertInput,
+  ghRunner: GhRunner = runGh,
+): {
   state: AlertState;
   issueNumber?: string;
   output: string;
@@ -113,7 +124,7 @@ export function upsertAlert(input: AlertInput): {
     return { state: "dry_run", output: `${title}\n\n${body}` };
   }
 
-  const search = runGh([
+  const search = ghRunner([
     "issue",
     "list",
     "--repo",
@@ -127,10 +138,11 @@ export function upsertAlert(input: AlertInput): {
     "--jq",
     ".[0].number",
   ]);
+  if (search.status !== 0) throw new Error(search.stderr);
   const issueNumber = search.stdout.trim();
 
   if (input.status === "recovered" && issueNumber) {
-    const comment = runGh([
+    const comment = ghRunner([
       "issue",
       "comment",
       issueNumber,
@@ -143,8 +155,12 @@ export function upsertAlert(input: AlertInput): {
     return { state: "recovered", issueNumber, output: comment.stdout };
   }
 
+  if (input.status === "recovered") {
+    return { state: "no_op", output: "no open incident" };
+  }
+
   if (issueNumber) {
-    const comment = runGh([
+    const comment = ghRunner([
       "issue",
       "comment",
       issueNumber,
@@ -157,7 +173,7 @@ export function upsertAlert(input: AlertInput): {
     return { state: "repeated", issueNumber, output: comment.stdout };
   }
 
-  const create = runGh([
+  const create = ghRunner([
     "issue",
     "create",
     "--repo",
@@ -177,7 +193,9 @@ export function runAlertCli(argv = process.argv.slice(2)): number {
     console.log(redactOpsText(`${result.state}\n${result.output}`));
     return 0;
   } catch (error) {
-    console.error(error instanceof Error ? error.message : String(error));
+    console.error(
+      redactOpsText(error instanceof Error ? error.message : String(error)),
+    );
     return 1;
   }
 }
