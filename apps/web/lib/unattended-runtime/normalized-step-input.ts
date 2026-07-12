@@ -1,4 +1,6 @@
 import { z } from "zod";
+import type { ResolvedAgentLoopExecutionDefinition } from "@/lib/agent-loops/execution-snapshot";
+import type { ResolvedBackgroundAgentExecutionDefinition } from "@/lib/background-agents/execution-snapshot";
 
 const MAX_DYNAMIC_BYTES = 65_536;
 const MAX_DYNAMIC_DEPTH = 12;
@@ -30,6 +32,24 @@ const forbiddenStructuralKeys = new Set([
 
 function normalizedStructuralKey(value: string): string {
   return value.replaceAll(/[^a-zA-Z0-9]/g, "").toLowerCase();
+}
+
+function isForbiddenStructuralKey(value: string): boolean {
+  const normalized = normalizedStructuralKey(value);
+  return [...forbiddenStructuralKeys].some((key) => normalized.includes(key));
+}
+
+function safePath(path: Array<string | number>): Array<string | number> {
+  return path.map((part) =>
+    typeof part === "string" &&
+    (part.length > 128 || isForbiddenStructuralKey(part))
+      ? "[redacted]"
+      : part,
+  );
+}
+
+function safeDynamicPath(path: Array<string | number>): Array<string | number> {
+  return path.map((part) => (typeof part === "string" ? "[field]" : part));
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -99,7 +119,7 @@ function validateSafeJson(
       }
       for (const [key, item] of entries) {
         const nextPath = [...path, key];
-        if (forbiddenStructuralKeys.has(normalizedStructuralKey(key))) {
+        if (isForbiddenStructuralKey(key)) {
           return { ok: false, code: "forbidden_key", path: nextPath };
         }
         const result = visit(item, nextPath, depth + 1);
@@ -126,6 +146,22 @@ function validateSafeJson(
     return { ok: false, code: "non_json_value", path: [] };
   }
   return { ok: true };
+}
+
+function cloneAndFreezeSafeJson<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return Object.freeze(
+      value.map((item) => cloneAndFreezeSafeJson(item)),
+    ) as T;
+  }
+  if (isPlainObject(value)) {
+    const entries = Object.entries(value).map(([key, item]) => [
+      key,
+      cloneAndFreezeSafeJson(item),
+    ]);
+    return Object.freeze(Object.fromEntries(entries)) as T;
+  }
+  return value;
 }
 
 const nullableId = z.string().min(1).max(256).nullable();
@@ -237,17 +273,21 @@ const triggerSchema = z
   })
   .strict();
 
-const safeJsonValueSchema = z.custom<unknown>(
-  (value) => validateSafeJson(value, { maxBytes: MAX_DYNAMIC_BYTES }).ok,
-);
+const safeJsonValueSchema = z
+  .custom<unknown>(
+    (value) => validateSafeJson(value, { maxBytes: MAX_DYNAMIC_BYTES }).ok,
+  )
+  .transform((value) => cloneAndFreezeSafeJson(value));
 
-const safePromptContextSchema = z.custom<Record<string, unknown>>(
-  (value) =>
-    validateSafeJson(value, {
-      requireObject: true,
-      maxBytes: MAX_DYNAMIC_BYTES,
-    }).ok,
-);
+const safePromptContextSchema = z
+  .custom<Record<string, unknown>>(
+    (value) =>
+      validateSafeJson(value, {
+        requireObject: true,
+        maxBytes: MAX_DYNAMIC_BYTES,
+      }).ok,
+  )
+  .transform((value) => cloneAndFreezeSafeJson(value));
 
 const backgroundIdentitySchema = z
   .object({
@@ -285,7 +325,16 @@ const userProfileModelSchema = z
     provider: z.enum(["anthropic", "openai-compatible"]),
     baseUrl: z.string().url().max(2048).nullable(),
   })
-  .strict();
+  .strict()
+  .superRefine((value, context) => {
+    if (value.provider === "openai-compatible" && !value.baseUrl) {
+      context.addIssue({
+        code: "custom",
+        path: ["baseUrl"],
+        message: "OpenAI-compatible inference routes require a base URL.",
+      });
+    }
+  });
 
 const backgroundModelSchema = z.discriminatedUnion("route", [
   gatewayModelSchema,
@@ -311,7 +360,7 @@ const backgroundRequestedPolicySchema = z
 const loopRequestedPolicySchema = z
   .object({
     declaredPermissions: declaredPermissionsSchema,
-    builtinToolNames: toolNamesSchema,
+    builtinToolNames: toolNamesSchema.nullable(),
     composioToolkitSlugs: toolNamesSchema,
     github: z.object({ kind: z.literal("loop_step_commit") }).strict(),
   })
@@ -487,8 +536,10 @@ export class NormalizedUnattendedInputError extends Error {
 function safeIssues(error: z.ZodError): SafeNormalizedInputIssue[] {
   return error.issues.map((issue) => ({
     code: issue.code,
-    path: issue.path.map((part) =>
-      typeof part === "symbol" ? (part.description ?? "symbol") : part,
+    path: safePath(
+      issue.path.map((part) =>
+        typeof part === "symbol" ? (part.description ?? "symbol") : part,
+      ),
     ),
   }));
 }
@@ -497,8 +548,14 @@ function invalidDynamicValue(result: JsonValidationResult): never {
   throw new NormalizedUnattendedInputError("normalized_input_invalid", [
     {
       code: result.ok ? "invalid_dynamic_value" : result.code,
-      path: result.ok ? [] : result.path,
+      path: result.ok ? [] : safeDynamicPath(result.path),
     },
+  ]);
+}
+
+function invalidPolicy(path: Array<string | number>, code: string): never {
+  throw new NormalizedUnattendedInputError("normalized_input_policy_invalid", [
+    { code, path: safePath(path) },
   ]);
 }
 
@@ -585,76 +642,113 @@ function normalizeTrigger(trigger: {
   };
 }
 
-type CommonBuilderInput = {
-  identity: Record<string, unknown>;
-  provenance: z.input<typeof provenanceSchema>;
-  repository: z.input<typeof repositorySchema>;
+type BackgroundIdentityInput = Omit<
+  z.input<typeof backgroundIdentitySchema>,
+  "definitionId"
+>;
+
+type LoopIdentityInput = Omit<
+  z.input<typeof loopIdentitySchema>,
+  "definitionId"
+>;
+
+type RepositoryIntentInput = {
+  ref?: string | null;
+  sha?: string | null;
+  branch?: string | null;
+  defaultBranch?: string | null;
 };
 
-type BackgroundDefinitionInput = {
-  name: string;
-  instructions: string;
-  builtinKind: "pr_review_learnings" | null;
-  inference: z.input<typeof backgroundModelSchema>;
-  permissions: z.input<typeof declaredPermissionsSchema>;
-  builtinToolNames: string[] | null;
-  composioToolkitSlugs: string[];
-  githubActions: z.input<typeof githubActionsSchema>;
-  writeScope: z.input<typeof writeScopeSchema>;
-  requireCiGreenForMerge: boolean;
-  checkCommand: string | null;
-};
+function resolvedProvenance(
+  resolved:
+    | ResolvedBackgroundAgentExecutionDefinition
+    | ResolvedAgentLoopExecutionDefinition,
+) {
+  return {
+    snapshotSource: resolved.snapshotSource,
+    definitionVersion: resolved.definitionVersion,
+    definitionHash: resolved.definitionHash,
+  };
+}
 
-export function buildNormalizedBackgroundSandboxInput(
-  input: CommonBuilderInput & {
-    identity: z.input<typeof backgroundIdentitySchema>;
-    definition: BackgroundDefinitionInput;
-    trigger: Parameters<typeof normalizeTrigger>[0];
-    workspace: {
-      sandboxName: string;
-      initialCheckout: z.input<
-        typeof backgroundSandboxSchema
-      >["workspace"]["initialCheckout"];
-    };
-  },
-): Extract<
+function resolvedRepository(
+  repository: { owner: string; name: string },
+  intent: RepositoryIntentInput,
+) {
+  return normalizeRepository({
+    owner: repository.owner,
+    name: repository.name,
+    ref: intent.ref,
+    sha: intent.sha,
+    branch: intent.branch,
+    defaultBranch: intent.defaultBranch,
+  });
+}
+
+function hasGitHubPermissions(
+  permissions: z.input<typeof declaredPermissionsSchema> | undefined,
+): permissions is z.input<typeof declaredPermissionsSchema> {
+  return Object.keys(permissions?.github ?? {}).length > 0;
+}
+
+export function buildNormalizedBackgroundSandboxInput(input: {
+  resolvedDefinition: ResolvedBackgroundAgentExecutionDefinition;
+  identity: BackgroundIdentityInput;
+  repositoryIntent: RepositoryIntentInput;
+  trigger: Parameters<typeof normalizeTrigger>[0];
+  workspace: {
+    sandboxName: string;
+    initialCheckout: z.input<
+      typeof backgroundSandboxSchema
+    >["workspace"]["initialCheckout"];
+  };
+}): Extract<
   NormalizedUnattendedStepInputV1,
   { executionKind: "background_sandbox" }
 > {
+  const definition = input.resolvedDefinition.definition;
+  if (definition.source.builtinKind !== null) {
+    invalidPolicy(
+      ["resolvedDefinition", "definition", "source", "builtinKind"],
+      "execution_kind_mismatch",
+    );
+  }
   return parseNormalizedUnattendedStepInputV1({
     version: 1,
     source: "background_agent",
     executionKind: "background_sandbox",
     identity: {
       ...normalizeIdentity(input.identity),
+      definitionId: definition.source.definitionId,
       triggerId: nullableValue(input.identity.triggerId),
     },
-    provenance: input.provenance,
-    repository: normalizeRepository(input.repository),
+    provenance: resolvedProvenance(input.resolvedDefinition),
+    repository: resolvedRepository(
+      definition.repository,
+      input.repositoryIntent,
+    ),
     prompt: {
-      definitionName: input.definition.name,
-      instructions: input.definition.instructions,
+      definitionName: definition.source.name,
+      instructions: definition.instructions,
     },
     trigger: normalizeTrigger(input.trigger),
-    model: input.definition.inference,
+    model: definition.inference,
     requestedPolicy: {
-      declaredPermissions: input.definition.permissions,
+      declaredPermissions: definition.permissions,
       builtinToolNames:
-        input.definition.builtinToolNames === null
+        definition.builtinToolNames === null
           ? null
-          : normalizedSet(input.definition.builtinToolNames),
-      composioToolkitSlugs: normalizedSet(
-        input.definition.composioToolkitSlugs,
-      ),
+          : normalizedSet(definition.builtinToolNames),
+      composioToolkitSlugs: normalizedSet(definition.composioToolkitSlugs),
       github: {
         kind: "background_actions",
-        actions: input.definition.githubActions,
-        writeScope: input.definition.writeScope,
-        requireCiGreenForMerge: input.definition.requireCiGreenForMerge,
+        actions: definition.githubActions,
+        writeScope: definition.writeScope,
+        requireCiGreenForMerge: definition.requireCiGreenForMerge,
       },
     },
-    verification: input.definition.checkCommand?.trim()
-      ? { kind: "command", command: input.definition.checkCommand.trim() }
+    verification: definition.checkCommand?.trim()
+      ? { kind: "command", command: definition.checkCommand.trim() }
       : { kind: "none" },
     output: { kind: "agent_summary" },
     workspace: {
@@ -670,33 +764,39 @@ export function buildNormalizedBackgroundSandboxInput(
   >;
 }
 
-export function buildNormalizedBackgroundLearningsInput(
-  input: CommonBuilderInput & {
-    identity: z.input<typeof backgroundIdentitySchema>;
-    definition: {
-      name: string;
-      instructions: string;
-      builtinKind: "pr_review_learnings";
-    };
-    trigger: Parameters<typeof normalizeTrigger>[0];
-  },
-): Extract<
+export function buildNormalizedBackgroundLearningsInput(input: {
+  resolvedDefinition: ResolvedBackgroundAgentExecutionDefinition;
+  identity: BackgroundIdentityInput;
+  repositoryIntent: RepositoryIntentInput;
+  trigger: Parameters<typeof normalizeTrigger>[0];
+}): Extract<
   NormalizedUnattendedStepInputV1,
   { executionKind: "background_builtin_learnings" }
 > {
+  const definition = input.resolvedDefinition.definition;
+  if (definition.source.builtinKind !== "pr_review_learnings") {
+    invalidPolicy(
+      ["resolvedDefinition", "definition", "source", "builtinKind"],
+      "execution_kind_mismatch",
+    );
+  }
   return parseNormalizedUnattendedStepInputV1({
     version: 1,
     source: "background_agent",
     executionKind: "background_builtin_learnings",
     identity: {
       ...normalizeIdentity(input.identity),
+      definitionId: definition.source.definitionId,
       triggerId: nullableValue(input.identity.triggerId),
     },
-    provenance: input.provenance,
-    repository: normalizeRepository(input.repository),
+    provenance: resolvedProvenance(input.resolvedDefinition),
+    repository: resolvedRepository(
+      definition.repository,
+      input.repositoryIntent,
+    ),
     prompt: {
-      definitionName: input.definition.name,
-      instructions: input.definition.instructions,
+      definitionName: definition.source.name,
+      instructions: definition.instructions,
     },
     trigger: normalizeTrigger(input.trigger),
     requestedPolicy: { kind: "builtin_pr_review_learnings" },
@@ -709,20 +809,11 @@ export function buildNormalizedBackgroundLearningsInput(
 }
 
 export function buildNormalizedLoopStepInput(input: {
-  identity: z.input<typeof loopIdentitySchema>;
-  provenance: z.input<typeof provenanceSchema>;
-  repository: z.input<typeof repositorySchema>;
-  node: {
-    instructions: string;
-    outputSchema?: unknown;
-    checkCommand?: string | null;
-    permissions: z.input<typeof declaredPermissionsSchema>;
-    builtinToolNames: string[];
-    composioToolkitSlugs: string[];
-  };
+  resolvedDefinition: ResolvedAgentLoopExecutionDefinition;
+  identity: LoopIdentityInput;
+  repositoryIntent: RepositoryIntentInput;
   promptContext: Record<string, unknown>;
   watchdogHint?: string | null;
-  budgets: z.input<typeof loopStepSchema>["budgets"];
   workspace: {
     sandboxName: string;
     initialCheckout: z.input<
@@ -733,34 +824,41 @@ export function buildNormalizedLoopStepInput(input: {
   NormalizedUnattendedStepInputV1,
   { executionKind: "loop_agent_step" }
 > {
+  const definition = input.resolvedDefinition.definition;
+  const node = definition.definition.nodes.find(
+    (candidate) => candidate.id === input.identity.nodeId,
+  );
+  if (!node || node.kind !== "agent_step") {
+    invalidPolicy(["identity", "nodeId"], "agent_step_node_missing");
+  }
   const contextResult = validateSafeJson(input.promptContext, {
     requireObject: true,
     maxBytes: MAX_DYNAMIC_BYTES,
   });
   if (!contextResult.ok) invalidDynamicValue(contextResult);
-  if (input.node.outputSchema !== undefined) {
-    const schemaResult = validateSafeJson(input.node.outputSchema, {
+  if (node.outputSchema !== undefined) {
+    const schemaResult = validateSafeJson(node.outputSchema, {
       maxBytes: MAX_DYNAMIC_BYTES,
     });
     if (!schemaResult.ok) invalidDynamicValue(schemaResult);
   }
-  const hasCommand = Boolean(input.node.checkCommand?.trim());
-  const hasSchema = input.node.outputSchema !== undefined;
+  const hasCommand = Boolean(node.checkCommand?.trim());
+  const hasSchema = node.outputSchema !== undefined;
   const verification = hasCommand
     ? hasSchema
       ? {
           kind: "command_and_structured_output" as const,
-          command: input.node.checkCommand?.trim() ?? "",
-          schema: input.node.outputSchema,
+          command: node.checkCommand?.trim() ?? "",
+          schema: node.outputSchema,
         }
       : {
           kind: "command" as const,
-          command: input.node.checkCommand?.trim() ?? "",
+          command: node.checkCommand?.trim() ?? "",
         }
     : hasSchema
       ? {
           kind: "structured_output" as const,
-          schema: input.node.outputSchema,
+          schema: node.outputSchema,
         }
       : { kind: "none" as const };
 
@@ -768,27 +866,41 @@ export function buildNormalizedLoopStepInput(input: {
     version: 1,
     source: "agent_loop_step",
     executionKind: "loop_agent_step",
-    identity: normalizeIdentity(input.identity),
-    provenance: input.provenance,
-    repository: normalizeRepository(input.repository),
+    identity: normalizeIdentity({
+      ...input.identity,
+      definitionId: definition.source.definitionId,
+    }),
+    provenance: resolvedProvenance(input.resolvedDefinition),
+    repository: resolvedRepository(
+      definition.repository,
+      input.repositoryIntent,
+    ),
     prompt: {
-      instructions: input.node.instructions,
+      instructions: node.instructions ?? "",
       context: input.promptContext,
       watchdogHint: nullableValue(input.watchdogHint),
     },
     model: { route: "runtime_default" },
     requestedPolicy: {
-      declaredPermissions: input.node.permissions,
-      builtinToolNames: normalizedSet(input.node.builtinToolNames),
-      composioToolkitSlugs: normalizedSet(input.node.composioToolkitSlugs),
+      declaredPermissions: hasGitHubPermissions(node.permissions)
+        ? node.permissions
+        : definition.permissions,
+      builtinToolNames:
+        node.builtinToolNames == null
+          ? null
+          : normalizedSet(node.builtinToolNames),
+      composioToolkitSlugs: normalizedSet(node.composioToolkitSlugs ?? []),
       github: { kind: "loop_step_commit" },
     },
     verification,
-    budgets: input.budgets,
+    budgets: {
+      timeoutMs: definition.guardrails.stepTimeoutMs,
+      maxTurns: definition.guardrails.maxAgentTurnsPerStep,
+    },
     output: {
       kind: "json_file",
       path: "/tmp/loop-step-output.json",
-      schema: input.node.outputSchema ?? null,
+      schema: node.outputSchema ?? null,
       maxBytes: 65_536,
       requiredBranch: true,
     },

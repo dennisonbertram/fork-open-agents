@@ -24,23 +24,18 @@ const frozenProvenance = {
   definitionHash: "a".repeat(64),
 };
 
-const common = {
-  identity: {
-    runId: "run-1",
-    userId: "user-1",
-    definitionId: "definition-1",
-    requestId: "request-1",
-    workflowRunId: "workflow-1",
-  },
-  provenance: frozenProvenance,
-  repository: {
-    owner: "Example",
-    name: "Repository",
-    ref: "refs/heads/main",
-    sha: "abc123",
-    branch: "main",
-    defaultBranch: "main",
-  },
+const commonIdentity = {
+  runId: "run-1",
+  userId: "user-1",
+  requestId: "request-1",
+  workflowRunId: "workflow-1",
+};
+
+const repositoryIntent = {
+  ref: "refs/heads/main",
+  sha: "abc123",
+  branch: "main",
+  defaultBranch: "main",
 };
 
 const backgroundDefinition = {
@@ -107,7 +102,11 @@ const authoritativeLoopSnapshot = {
         label: "Review",
         position: { x: 100, y: 0 },
         instructions: "Use the frozen loop instructions.",
-        builtinToolNames: null,
+        outputSchema: { fixed: "boolean" },
+        checkCommand: "bun test",
+        permissions: { github: { contents: "write" } },
+        builtinToolNames: ["bash", "fetch", "bash"],
+        composioToolkitSlugs: ["github", "github"],
       },
       {
         id: "end",
@@ -132,11 +131,58 @@ const authoritativeLoopSnapshot = {
   watchdog: { enabled: false, instructions: null, retryBudget: 0 },
 } satisfies AgentLoopExecutionSnapshotV1;
 
+const authoritativeLearningsSnapshot = {
+  ...authoritativeBackgroundSnapshot,
+  source: {
+    ...authoritativeBackgroundSnapshot.source,
+    definitionId: "learnings-definition-1",
+    name: "Learnings",
+    builtinKind: "pr_review_learnings",
+  },
+  instructions: "Collect repository learnings.",
+} satisfies BackgroundAgentExecutionSnapshotV1;
+
+function resolvedBackground(
+  definition: BackgroundAgentExecutionSnapshotV1 = authoritativeBackgroundSnapshot,
+): ResolvedBackgroundAgentExecutionDefinition {
+  return {
+    definition,
+    snapshotSource: "frozen",
+    definitionVersion: 1,
+    definitionHash: "a".repeat(64),
+  };
+}
+
+function resolvedLoop(
+  definition: AgentLoopExecutionSnapshotV1 = authoritativeLoopSnapshot,
+): ResolvedAgentLoopExecutionDefinition {
+  return {
+    definition,
+    snapshotSource: "frozen",
+    definitionVersion: 1,
+    definitionHash: "a".repeat(64),
+  };
+}
+
+function loopSnapshotWithNode(
+  overrides: Partial<AgentStepNode>,
+): AgentLoopExecutionSnapshotV1 {
+  return {
+    ...authoritativeLoopSnapshot,
+    definition: {
+      ...authoritativeLoopSnapshot.definition,
+      nodes: authoritativeLoopSnapshot.definition.nodes.map((node) =>
+        node.id === "review" ? { ...node, ...overrides } : node,
+      ),
+    },
+  } as AgentLoopExecutionSnapshotV1;
+}
+
 function backgroundSandboxFixture() {
   return {
-    ...common,
-    identity: { ...common.identity, triggerId: "trigger-1" },
-    definition: backgroundDefinition,
+    resolvedDefinition: resolvedBackground(),
+    identity: { ...commonIdentity, triggerId: "trigger-1" },
+    repositoryIntent,
     trigger: {
       kind: "github.pull_request",
       ref: "refs/pull/17/head",
@@ -167,21 +213,14 @@ function backgroundSandboxFixture() {
 
 function loopFixture() {
   return {
-    ...common,
+    resolvedDefinition: resolvedLoop(),
     identity: {
-      ...common.identity,
+      ...commonIdentity,
       stepRunId: "step-1",
       nodeId: "review",
       attempt: 2,
     },
-    node: {
-      instructions: "Fix the reviewed issue.",
-      outputSchema: { fixed: "boolean" },
-      checkCommand: "bun test",
-      permissions: { github: { contents: "write" as const } },
-      builtinToolNames: ["bash", "fetch", "bash"],
-      composioToolkitSlugs: ["github", "github"],
-    },
+    repositoryIntent,
     promptContext: {
       trigger: {
         kind: "github.issue",
@@ -194,7 +233,6 @@ function loopFixture() {
       priorSteps: { inspect: { outcome: "needs_fix" } },
     },
     watchdogHint: "Try the smaller change first.",
-    budgets: { timeoutMs: 600_000, maxTurns: 8 },
     workspace: {
       sandboxName: "agent_loop_step-1",
       initialCheckout: { ref: "main", source: "context_branch" as const },
@@ -229,13 +267,9 @@ describe("NormalizedUnattendedStepInputV1", () => {
 
   test("keeps the proven built-in learnings path explicit and sandbox-free", () => {
     const result = buildNormalizedBackgroundLearningsInput({
-      ...common,
-      identity: { ...common.identity, triggerId: "trigger-1" },
-      definition: {
-        name: "Learnings",
-        instructions: "Collect repository learnings.",
-        builtinKind: "pr_review_learnings" as const,
-      },
+      resolvedDefinition: resolvedBackground(authoritativeLearningsSnapshot),
+      identity: { ...commonIdentity, triggerId: "trigger-1" },
+      repositoryIntent,
       trigger: backgroundSandboxFixture().trigger,
     });
 
@@ -379,7 +413,7 @@ describe("NormalizedUnattendedStepInputV1", () => {
     const outputSchema: Record<string, unknown> = { outcome: "string" };
     const result = buildNormalizedLoopStepInput({
       ...loopFixture(),
-      node: { ...loopFixture().node, outputSchema },
+      resolvedDefinition: resolvedLoop(loopSnapshotWithNode({ outputSchema })),
       promptContext,
     });
 
@@ -394,21 +428,20 @@ describe("NormalizedUnattendedStepInputV1", () => {
   });
 
   test("preserves source loop null tool defaults and loop permission fallback", () => {
-    const node = {
-      id: "review",
-      kind: "agent_step",
-      label: "Review",
-      position: { x: 0, y: 0 },
-      instructions: "Fix the reviewed issue.",
-      builtinToolNames: null,
-    } satisfies AgentStepNode;
     const loopPermissions = { github: { issues: "write" as const } };
+    const snapshot = {
+      ...loopSnapshotWithNode({
+        permissions: undefined,
+        builtinToolNames: null,
+        composioToolkitSlugs: undefined,
+      }),
+      permissions: loopPermissions,
+    } satisfies AgentLoopExecutionSnapshotV1;
 
     const result = buildNormalizedLoopStepInput({
       ...loopFixture(),
-      node,
-      loopPermissions,
-    } as never);
+      resolvedDefinition: resolvedLoop(snapshot),
+    });
 
     expect(result.requestedPolicy.builtinToolNames).toBeNull();
     expect(result.requestedPolicy.composioToolkitSlugs).toEqual([]);
@@ -419,10 +452,7 @@ describe("NormalizedUnattendedStepInputV1", () => {
     expect(() =>
       buildNormalizedBackgroundSandboxInput({
         ...backgroundSandboxFixture(),
-        definition: {
-          ...backgroundDefinition,
-          builtinKind: "pr_review_learnings",
-        },
+        resolvedDefinition: resolvedBackground(authoritativeLearningsSnapshot),
       }),
     ).toThrow(NormalizedUnattendedInputError);
   });
@@ -452,19 +482,20 @@ describe("NormalizedUnattendedStepInputV1", () => {
   });
 
   test("rejects an openai-compatible user model without a base URL", () => {
+    const invalidModelSnapshot = {
+      ...authoritativeBackgroundSnapshot,
+      inference: {
+        route: "user",
+        modelId: "custom-model",
+        inferenceProfileId: "profile-1",
+        provider: "openai-compatible",
+        baseUrl: null,
+      },
+    } satisfies BackgroundAgentExecutionSnapshotV1;
     expect(() =>
       buildNormalizedBackgroundSandboxInput({
         ...backgroundSandboxFixture(),
-        definition: {
-          ...backgroundDefinition,
-          inference: {
-            route: "user",
-            modelId: "custom-model",
-            inferenceProfileId: "profile-1",
-            provider: "openai-compatible",
-            baseUrl: null,
-          },
-        },
+        resolvedDefinition: resolvedBackground(invalidModelSnapshot),
       }),
     ).toThrow(NormalizedUnattendedInputError);
   });
@@ -493,7 +524,7 @@ describe("NormalizedUnattendedStepInputV1", () => {
       },
       trigger: backgroundSandboxFixture().trigger,
       workspace: backgroundSandboxFixture().workspace,
-    } as never);
+    });
 
     expect(background.identity.definitionId).toBe(
       authoritativeBackgroundSnapshot.source.definitionId,
@@ -536,7 +567,7 @@ describe("NormalizedUnattendedStepInputV1", () => {
       promptContext: {},
       watchdogHint: null,
       workspace: loopFixture().workspace,
-    } as never);
+    });
 
     expect(loop.identity.definitionId).toBe(
       authoritativeLoopSnapshot.source.definitionId,
@@ -545,9 +576,9 @@ describe("NormalizedUnattendedStepInputV1", () => {
     expect(loop.prompt.instructions).toBe("Use the frozen loop instructions.");
     expect(loop.budgets).toEqual({ timeoutMs: 600_000, maxTurns: 8 });
     expect(loop.requestedPolicy).toMatchObject({
-      declaredPermissions: authoritativeLoopSnapshot.permissions,
-      builtinToolNames: null,
-      composioToolkitSlugs: [],
+      declaredPermissions: { github: { contents: "write" } },
+      builtinToolNames: ["bash", "fetch"],
+      composioToolkitSlugs: ["github"],
     });
   });
 
