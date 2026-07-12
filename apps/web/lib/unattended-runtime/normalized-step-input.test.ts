@@ -209,9 +209,9 @@ describe("NormalizedUnattendedStepInputV1", () => {
       },
     };
 
-    expect(normalizedUnattendedStepInputV1Schema.safeParse(legacy).success).toBe(
-      true,
-    );
+    expect(
+      normalizedUnattendedStepInputV1Schema.safeParse(legacy).success,
+    ).toBe(true);
     expect(
       normalizedUnattendedStepInputV1Schema.safeParse({
         ...frozen,
@@ -349,7 +349,7 @@ describe("NormalizedUnattendedStepInputV1", () => {
 
   test("implementation stays dependency-light and side-effect free", async () => {
     const source = await readFile(
-      new URL("./normalized-step-input.ts", import.meta.url),
+      new URL("normalized-step-input.ts", import.meta.url),
       "utf8",
     );
     const forbidden = [
