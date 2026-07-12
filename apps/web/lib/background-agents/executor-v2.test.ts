@@ -630,9 +630,13 @@ describe("(a) comment-only agent toolset", () => {
 
 describe("execution snapshot binding", () => {
   test("a lost terminal-success CAS emits no completion evidence", async () => {
-    beforeStatusUpdate = (input) => {
-      if (input.status === "succeeded") {
-        currentRun = { ...currentRun, status: "cancelled" };
+    afterEventRecorded = (event) => {
+      if (event.eventName === "background-agent.check.completed") {
+        beforeStatusUpdate = (input) => {
+          if (input.status === "succeeded") {
+            currentRun = { ...currentRun, status: "cancelled" };
+          }
+        };
       }
     };
     const { executeBackgroundAgentRun } = await executorModulePromise;

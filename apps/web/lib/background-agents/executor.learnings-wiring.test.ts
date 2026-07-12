@@ -100,7 +100,11 @@ const recordBackgroundAgentEvent = mock(async (input: EventInput) => input);
 const updateBackgroundAgentRunStatus = mock(
   async (input: StatusUpdateInput): Promise<BackgroundAgentRun | null> => {
     await beforeStatusUpdate?.(input);
-    if (["succeeded", "failed", "skipped", "cancelled"].includes(currentRun.status)) {
+    if (
+      ["succeeded", "failed", "skipped", "cancelled"].includes(
+        currentRun.status,
+      )
+    ) {
       return null;
     }
     currentRun = {

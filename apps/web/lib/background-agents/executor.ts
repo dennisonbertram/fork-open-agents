@@ -1470,20 +1470,30 @@ async function executeLearningsAgentRun(params: {
   installationId: number;
   repositoryId: number;
   workflowRunId: string;
+  assertLiveAuthorization: () => Promise<void>;
 }) {
-  const { run, agentId, installationId, repositoryId, workflowRunId } = params;
+  const {
+    run,
+    agentId,
+    installationId,
+    repositoryId,
+    workflowRunId,
+    assertLiveAuthorization,
+  } = params;
 
   const event = reconstructEventFromRun(run);
   const store = createDbLearningsStore();
 
   let result: import("@/lib/learnings/runner").RunLearningsExtractionResult;
   try {
+    await assertLiveAuthorization();
     result = await withScopedInstallationOctokit({
       installationId,
       repositoryId,
       permissions: { contents: "read", pull_requests: "read" },
-      operation: async (octokit) =>
-        runLearningsExtraction({
+      operation: async (octokit) => {
+        await assertLiveAuthorization();
+        return runLearningsExtraction({
           event,
           userId: run.userId,
           installationId,
@@ -1491,6 +1501,7 @@ async function executeLearningsAgentRun(params: {
           octokit,
           generate: generateLearnings,
           store,
+          assertLiveAuthorization,
           recordEvent: (eventParams) =>
             recordBackgroundAgentEvent({
               ...(eventParams as Parameters<
@@ -1498,59 +1509,66 @@ async function executeLearningsAgentRun(params: {
               >[0]),
               workflowRunId,
             }).then(() => undefined),
-        }),
+        });
+      },
     });
+    await assertLiveAuthorization();
   } catch (error) {
-    await updateBackgroundAgentRunStatus({
-      runId: run.id,
-      status: "failed",
-      workflowRunId,
-      errorKind: "workflow_failed",
-      errorMessage:
-        error instanceof Error ? error.message : "Learnings extraction failed.",
-    });
-    await recordBackgroundAgentEvent({
+    await recordFailure({
       runId: run.id,
       agentId,
       userId: run.userId,
-      eventName: "learnings-agent.run.failed",
-      status: "failed",
-      level: "warn",
-      summary: "Learnings extraction threw an unexpected error.",
       workflowRunId,
       requestId: run.requestId,
-      errorKind: "workflow_failed",
+      errorKind:
+        error instanceof BackgroundAgentSnapshotError
+          ? error.errorKind
+          : "workflow_failed",
+      summary:
+        error instanceof Error ? error.message : "Learnings extraction failed.",
     });
     return;
   }
 
   if (result.errorKind) {
-    await updateBackgroundAgentRunStatus({
-      runId: run.id,
-      status: "failed",
-      workflowRunId,
-      errorKind: result.errorKind,
-    });
-    await recordBackgroundAgentEvent({
+    await recordFailure({
       runId: run.id,
       agentId,
       userId: run.userId,
-      eventName: "learnings-agent.run.failed",
-      status: "failed",
-      level: "warn",
-      summary: `Learnings extraction failed: ${result.errorKind}`,
       workflowRunId,
       requestId: run.requestId,
       errorKind: result.errorKind,
+      summary: `Learnings extraction failed: ${result.errorKind}`,
     });
     return;
   }
 
-  await updateBackgroundAgentRunStatus({
+  try {
+    await assertLiveAuthorization();
+  } catch (error) {
+    await recordFailure({
+      runId: run.id,
+      agentId,
+      userId: run.userId,
+      workflowRunId,
+      requestId: run.requestId,
+      errorKind:
+        error instanceof BackgroundAgentSnapshotError
+          ? error.errorKind
+          : "workflow_failed",
+      summary:
+        error instanceof Error
+          ? error.message
+          : "Live authorization check failed.",
+    });
+    return;
+  }
+  const succeededRun = await updateBackgroundAgentRunStatus({
     runId: run.id,
     status: "succeeded",
     workflowRunId,
   });
+  if (!succeededRun) return;
   await recordBackgroundAgentEvent({
     runId: run.id,
     agentId,
@@ -1697,6 +1715,31 @@ export async function executeBackgroundAgentRun(params: {
       expectedPolicyHash,
     });
   };
+  const ensureLiveAuthorization = async (): Promise<boolean> => {
+    try {
+      await assertLiveAuthorization();
+      return true;
+    } catch (error) {
+      const freshRow = await getBackgroundAgentRunWithAgent(run.id);
+      await recordFailure({
+        runId: run.id,
+        agentId: freshRow?.run.agentId ?? null,
+        userId: run.userId,
+        workflowRunId: params.workflowRunId,
+        requestId: run.requestId,
+        sandboxName,
+        errorKind:
+          error instanceof BackgroundAgentSnapshotError
+            ? error.errorKind
+            : "workflow_failed",
+        summary:
+          error instanceof Error
+            ? error.message
+            : "Live authorization check failed.",
+      });
+      return false;
+    }
+  };
   // The built-in learnings agent never takes GitHub actions (its branch below
   // bypasses the sandbox + tool loop entirely), so it must not inherit a
   // write requirement from action toggles — read-only users run it too.
@@ -1755,6 +1798,7 @@ export async function executeBackgroundAgentRun(params: {
       installationId: access.installationId,
       repositoryId: access.repositoryId,
       workflowRunId: params.workflowRunId,
+      assertLiveAuthorization,
     });
     return;
   }
@@ -1788,6 +1832,7 @@ export async function executeBackgroundAgentRun(params: {
   }
   const recordedModelId = resolvedModelSelection.id;
 
+  if (!(await ensureLiveAuthorization())) return;
   let setupToken: ScopedInstallationToken | undefined;
   let sandbox: Sandbox | undefined;
   try {
@@ -1796,6 +1841,7 @@ export async function executeBackgroundAgentRun(params: {
       repositoryIds: [access.repositoryId],
       permissions: { contents: "read" },
     });
+    if (!(await ensureLiveAuthorization())) return;
     sandbox = await connectSandbox({
       state: {
         type: "vercel",
@@ -1839,6 +1885,7 @@ export async function executeBackgroundAgentRun(params: {
     }
   }
 
+  if (!(await ensureLiveAuthorization())) return;
   await recordBackgroundAgentEvent({
     runId: run.id,
     agentId: run.agentId,
@@ -1857,6 +1904,7 @@ export async function executeBackgroundAgentRun(params: {
     },
   });
 
+  if (!(await ensureLiveAuthorization())) return;
   await execObservedCommand({
     runId: run.id,
     agentId: run.agentId,
@@ -1883,6 +1931,7 @@ export async function executeBackgroundAgentRun(params: {
     });
 
     try {
+      if (!(await ensureLiveAuthorization())) return;
       await prepareWorkingBranch({
         runId: run.id,
         agentId: run.agentId,
@@ -1934,6 +1983,7 @@ export async function executeBackgroundAgentRun(params: {
   const agentToolkitSlugs = requestedComposioSlugs;
 
   if (agentToolkitSlugs.length > 0) {
+    if (!(await ensureLiveAuthorization())) return;
     const composioResult = await resolveComposioToolsForBgRun({
       agentId: run.agentId,
       runId: run.id,
@@ -2272,13 +2322,14 @@ export async function executeBackgroundAgentRun(params: {
     });
     return;
   }
-  await updateBackgroundAgentRunStatus({
+  const succeededRun = await updateBackgroundAgentRunStatus({
     runId: run.id,
     status: "succeeded",
     workflowRunId: params.workflowRunId,
     sandboxName,
     outputUrl: latestOutputWithUrl?.url ?? null,
   });
+  if (!succeededRun) return;
   await recordBackgroundAgentEvent({
     runId: run.id,
     agentId: run.agentId,
