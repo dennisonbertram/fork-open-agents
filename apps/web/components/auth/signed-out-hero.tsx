@@ -77,10 +77,7 @@ export function SignedOutHero() {
               className="mt-6 flex flex-col gap-2 sm:mt-8"
             >
               <div className="flex items-center gap-2">
-                <SignInButton
-                  size="lg"
-                  callbackUrl={PRODUCT_JOURNEY[0].href}
-                />
+                <SignInButton size="lg" callbackUrl={PRODUCT_JOURNEY[0].href} />
                 <GitHubLink>Open Source</GitHubLink>
               </div>
               <p className="text-xs text-(--l-fg-3)">
