@@ -6,7 +6,6 @@ import {
   listStepRunsForRun,
   listWatchdogRunsForLoopRun,
 } from "@/lib/agent-loops/store";
-import { isAgentLoopsEnabled } from "@/lib/agent-loops/config";
 import type { GetAgentLoopRunDetailResponse } from "@/app/api/agent-loops/types";
 import { mergeEventsForSummary } from "./_lib/merge-events-for-summary";
 import {
@@ -34,17 +33,6 @@ export async function GET(_req: Request, ctx: RouteContext): Promise<Response> {
   const authResult = await requireAuthenticatedUser();
   if (!authResult.ok) {
     return authResult.response;
-  }
-
-  if (!isAgentLoopsEnabled()) {
-    return Response.json(
-      {
-        errorKind: "feature_disabled",
-        message:
-          "Agent loops are not enabled. Set AGENT_LOOPS_ENABLED=true to enable.",
-      },
-      { status: 403 },
-    );
   }
 
   const { runId } = await ctx.params;

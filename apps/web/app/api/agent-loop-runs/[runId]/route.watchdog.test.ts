@@ -208,16 +208,17 @@ describe("GET /api/agent-loop-runs/[runId] — watchdog surface", () => {
     expect(firstCallArgs[0]).toBe("run-1");
   });
 
-  // BT-LOOPS-M3-02B-003: 403 (feature disabled) does NOT call listWatchdogRunsForLoopRun
-  test("BT-LOOPS-M3-02B-003: does NOT call listWatchdogRunsForLoopRun when feature disabled (403)", async () => {
+  // BT-LOOPS-M3-02B-003: disabling new execution must not hide retained evidence.
+  test("BT-LOOPS-M3-02B-003: keeps watchdog evidence readable when execution is disabled", async () => {
     isAgentLoopsEnabled.mockImplementation(() => false);
     const { GET } = await routeModulePromise;
     const response = await GET(
       new Request("http://localhost/api/agent-loop-runs/run-1"),
       context(),
     );
-    expect(response.status).toBe(403);
-    expect(listWatchdogRunsForLoopRun.mock.calls.length).toBe(0);
+    expect(response.status).toBe(200);
+    expect((await response.json()).watchdogRuns).toHaveLength(1);
+    expect(listWatchdogRunsForLoopRun.mock.calls.length).toBe(1);
   });
 
   // BT-LOOPS-M3-02B-004: 404 (non-owned run) does NOT call listWatchdogRunsForLoopRun

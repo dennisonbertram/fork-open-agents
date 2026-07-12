@@ -17,7 +17,7 @@ import type {
   AgentLoopStepRun,
   AgentLoopWatchdogRun,
 } from "@/lib/db/schema";
-import { loopDefinitionSchema } from "@/lib/agent-loops/types";
+import { publicLoopGraphSchema } from "@/lib/agent-loops/public-run";
 import { getLoopErrorCopy, sanitizeErrorDetail } from "@/app/loops/error-copy";
 import { getRunCompletionLabel } from "../../run-completion-label";
 import { getTurnBudgetProof } from "./turn-budget-proof";
@@ -363,7 +363,7 @@ export function RunDetail({
   const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
 
   // SNAPSHOT RULE: parse snapshot from the run, never from loop.definition
-  const definitionSnapshotResult = loopDefinitionSchema.safeParse(
+  const definitionSnapshotResult = publicLoopGraphSchema.safeParse(
     run.definitionSnapshot,
   );
   const definitionSnapshot = definitionSnapshotResult.success

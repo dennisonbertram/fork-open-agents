@@ -1,10 +1,7 @@
 import { describe, expect, mock, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { GetAgentLoopRunDetailResponse } from "@/app/api/agent-loops/types";
-import type {
-  AgentLoopRun,
-  AgentLoopWatchdogRun,
-} from "@/lib/db/schema";
+import type { AgentLoopRun, AgentLoopWatchdogRun } from "@/lib/db/schema";
 import { VALID_FIXTURES } from "@/lib/agent-loops/fixtures";
 import {
   toPublicAgentLoopRun,

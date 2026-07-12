@@ -1,5 +1,6 @@
 import type { AgentLoop, AgentLoopRun } from "@/lib/db/schema";
 import { canonicalJson } from "@/lib/execution-snapshots/canonical-json";
+import { z } from "zod";
 import {
   hashAgentLoopExecutionSnapshot,
   parseAgentLoopExecutionSnapshot,
@@ -7,15 +8,41 @@ import {
 } from "./execution-snapshot";
 import {
   loopDefinitionSchema,
-  type LoopEdge,
-  type LoopNode,
+  edgeWhenSchema,
   type ResolvedGuardrails,
 } from "./types";
 
-export type PublicLoopGraph = {
-  nodes: Array<Pick<LoopNode, "id" | "kind" | "label" | "position">>;
-  edges: Array<Pick<LoopEdge, "id" | "source" | "target" | "when">>;
+const publicLoopNodeBase = {
+  id: z.string().min(1),
+  label: z.string(),
+  position: z.object({ x: z.number(), y: z.number() }),
 };
+
+/**
+ * Runtime contract for graph topology exposed to clients. Deliberately omits
+ * instructions, checks, permissions, tool allowlists, and output schemas.
+ */
+export const publicLoopGraphSchema = z.object({
+  nodes: z.array(
+    z.discriminatedUnion("kind", [
+      z.object({ ...publicLoopNodeBase, kind: z.literal("start") }),
+      z.object({ ...publicLoopNodeBase, kind: z.literal("agent_step") }),
+      z.object({ ...publicLoopNodeBase, kind: z.literal("github_check") }),
+      z.object({ ...publicLoopNodeBase, kind: z.literal("condition") }),
+      z.object({ ...publicLoopNodeBase, kind: z.literal("end") }),
+    ]),
+  ),
+  edges: z.array(
+    z.object({
+      id: z.string().min(1),
+      source: z.string().min(1),
+      target: z.string().min(1),
+      when: edgeWhenSchema,
+    }),
+  ),
+});
+
+export type PublicLoopGraph = z.infer<typeof publicLoopGraphSchema>;
 
 export type AgentLoopSnapshotSource =
   | "frozen"
@@ -111,7 +138,7 @@ export function toPublicAgentLoopRun(run: AgentLoopRun): PublicAgentLoopRun {
 function toPublicLoopGraph(value: unknown): PublicLoopGraph {
   const parsed = loopDefinitionSchema.safeParse(value);
   if (!parsed.success) return { nodes: [], edges: [] };
-  return {
+  return publicLoopGraphSchema.parse({
     nodes: parsed.data.nodes.map((node) => ({
       id: node.id,
       kind: node.kind,
@@ -124,7 +151,7 @@ function toPublicLoopGraph(value: unknown): PublicLoopGraph {
       target: edge.target,
       when: edge.when,
     })),
-  };
+  });
 }
 
 export type SafeAgentLoopEvidence = {

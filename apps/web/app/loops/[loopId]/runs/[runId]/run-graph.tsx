@@ -57,7 +57,7 @@ import { useTheme } from "@/app/providers";
 import { definitionToFlow } from "@/app/loops/[loopId]/builder/definition-mapping";
 import { nodeTypes } from "@/app/loops/[loopId]/builder/loop-nodes";
 import { WhenEdge } from "@/app/loops/[loopId]/builder/when-edge";
-import type { LoopDefinition } from "@/lib/agent-loops/types";
+import type { PublicLoopGraph } from "@/lib/agent-loops/public-run";
 import type {
   AgentLoopEvent,
   AgentLoopRun,
@@ -134,7 +134,7 @@ function IterationMeter({
 function useNodeTransitionAnnouncement(
   currentNodeId: string | null,
   graphState: RunGraphState,
-  definition: LoopDefinition,
+  definition: PublicLoopGraph,
 ): string | null {
   const nodeLabel = currentNodeId
     ? (definition.nodes.find((n) => n.id === currentNodeId)?.label ??
@@ -171,7 +171,7 @@ function useNodeTransitionAnnouncement(
 // ── Inner canvas (needs ReactFlow context) ─────────────────────────────────────
 
 type RunGraphInnerProps = {
-  definitionSnapshot: LoopDefinition;
+  definitionSnapshot: PublicLoopGraph;
   graphState: RunGraphState;
   onNodeClick?: (nodeId: string) => void;
 };
@@ -319,7 +319,7 @@ function RunGraphInner({
 // ── Public component ───────────────────────────────────────────────────────────
 
 export type RunGraphProps = {
-  definitionSnapshot: LoopDefinition;
+  definitionSnapshot: PublicLoopGraph;
   steps: AgentLoopStepRun[];
   run: Pick<
     AgentLoopRun,
