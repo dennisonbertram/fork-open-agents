@@ -178,6 +178,25 @@ describe("AgentLoopExecutionSnapshotV1", () => {
       parseAgentLoopExecutionSnapshot({ ...snapshot, triggerPayload: {} }),
     ).toThrow();
     expect(() =>
+      buildAgentLoopExecutionSnapshot(
+        buildLoop({
+          definition: { ...definition, rawContext: { secret: true } },
+        }),
+      ),
+    ).toThrow();
+    expect(() =>
+      buildAgentLoopExecutionSnapshot(
+        buildLoop({
+          definition: {
+            ...definition,
+            nodes: definition.nodes.map((node, index) =>
+              index === 0 ? { ...node, rawPrompt: "secret" } : node,
+            ),
+          },
+        }),
+      ),
+    ).toThrow();
+    expect(() =>
       parseAgentLoopExecutionSnapshot({
         ...snapshot,
         repository: { ...snapshot.repository, token: "secret" },

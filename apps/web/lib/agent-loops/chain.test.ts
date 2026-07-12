@@ -184,6 +184,34 @@ describe("execution snapshot fail-closed boundary", () => {
     );
     expect(executeAgentLoopStepMock).not.toHaveBeenCalled();
   });
+
+  test("losing the terminal CAS does not contradict a concurrent control action", async () => {
+    currentLoopRun = makeLoopRun({ status: "queued" });
+    currentLoop = makeLoop();
+    currentStepRun = makeStepRun();
+    recordedEvents = [];
+    updateAgentLoopStepRunMock.mockClear();
+    transitionShouldWin = false;
+    contextLoadError = new AgentLoopSnapshotError(
+      "source_inactive",
+      "Source Automation is no longer active.",
+      currentLoopRun.id,
+    );
+    try {
+      const { runAgentLoopStep } = await chainPromise;
+      await runAgentLoopStep({
+        stepRunId: currentStepRun.id,
+        workflowRunId: "wf-source-inactive",
+      });
+    } finally {
+      contextLoadError = null;
+      transitionShouldWin = true;
+    }
+
+    expect(updateAgentLoopStepRunMock).not.toHaveBeenCalled();
+    expect(recordedEvents).toHaveLength(0);
+    expect(executeAgentLoopStepMock).not.toHaveBeenCalled();
+  });
 });
 
 // Maps stepRunId → stepRun object
@@ -297,12 +325,14 @@ const getMaxAttemptForNodeMock = mock(
 // conditionallyTransitionRunStatus — new in M1-10 race fix.
 // Returns the updated run (transition succeeded) by default.
 // Tests that need to simulate a race (0 rows) override this mock.
+let transitionShouldWin = true;
 const conditionallyTransitionRunStatusMock = mock(
   async (params: {
     runId: string;
     toStatus: AgentLoopRun["status"];
     fromStatuses: AgentLoopRun["status"][];
   }): Promise<AgentLoopRun | null> => {
+    if (!transitionShouldWin) return null;
     // Record as a status update so existing assertions still pass
     recordedRunStatusUpdates.push({
       runId: params.runId,
@@ -1446,7 +1476,10 @@ describe("source deletion after atomic advance", () => {
 
     expect(recordedStepRunCreations).toHaveLength(1);
     expect(recordedAdvanceCalls).toHaveLength(1);
-    expect(isAgentLoopRunSourceLiveMock).toHaveBeenCalledWith("loop-run-1");
+    expect(isAgentLoopRunSourceLiveMock).toHaveBeenCalledWith("loop-run-1", {
+      repoOwner: "acme",
+      repoName: "my-repo",
+    });
     expect(workflowStartCalls).toHaveLength(0);
   });
 });
