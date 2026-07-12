@@ -381,8 +381,9 @@ export function SessionsRouteShell({
   const shellContextValue = useMemo(
     () => ({
       openNewSessionDialog,
+      activeSessionCount: sessions.length,
     }),
-    [openNewSessionDialog],
+    [openNewSessionDialog, sessions.length],
   );
 
   // Workspace settings render as a full view inside the content area (not a
