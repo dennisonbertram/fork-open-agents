@@ -9,7 +9,7 @@ import {
 import { formatRunTimestamp } from "@/lib/date/format-run-timestamp";
 import { getServerSession } from "@/lib/session/get-server-session";
 import { cn } from "@/lib/utils";
-import type { BackgroundAgentRun } from "@/lib/db/schema";
+import type { PublicBackgroundAgentRun } from "@/lib/background-agents/public-run";
 import { RepoAgentsDashboard } from "./repo-agents-dashboard";
 import { AgentCard } from "./agent-card";
 
@@ -47,8 +47,8 @@ function formatDate(value: Date | null) {
 
 function findLatestRunForAgent(
   agentId: string,
-  runs: BackgroundAgentRun[],
-): BackgroundAgentRun | null {
+  runs: PublicBackgroundAgentRun[],
+): PublicBackgroundAgentRun | null {
   return runs.find((r) => r.agentId === agentId) ?? null;
 }
 

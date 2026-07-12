@@ -7,7 +7,8 @@ import {
 describe("background runtime observability", () => {
   test("builds compact command observations for timeline evidence", () => {
     const observation = buildBackgroundCommandObservation({
-      command: "bun test",
+      command: "bun test --token=private-command-canary",
+      commandLabel: "required_check",
       startedAt: new Date("2026-05-27T10:00:00.000Z"),
       finishedAt: new Date("2026-05-27T10:00:01.500Z"),
       result: {
@@ -20,7 +21,8 @@ describe("background runtime observability", () => {
     });
 
     expect(observation).toEqual({
-      command: "bun test",
+      commandLabel: "required_check",
+      commandHash: expect.stringMatching(/^[0-9a-f]{64}$/),
       status: "failed",
       exitCode: 1,
       durationMs: 1500,
@@ -28,6 +30,7 @@ describe("background runtime observability", () => {
       stderr: "failed",
       truncated: false,
     });
+    expect(JSON.stringify(observation)).not.toContain("private-command-canary");
   });
 
   test("keeps the tail of long command output", () => {

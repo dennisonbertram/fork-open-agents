@@ -158,6 +158,114 @@ const mergedPREvent: NormalizedBackgroundTriggerEvent = {
 };
 
 describe("runLearningsExtraction", () => {
+  test("rechecks live authorization immediately before provider, model, and store boundaries", async () => {
+    const operations: string[] = [];
+    const store = makeFakeStore();
+    const guardedStore: LearningsStore = {
+      findForDedup: async (params) => {
+        operations.push("store.findForDedup");
+        return store.findForDedup(params);
+      },
+      createLearning: async (learning) => {
+        operations.push("store.createLearning");
+        return store.createLearning(learning);
+      },
+      updateLearning: async (id, updates) => {
+        operations.push("store.updateLearning");
+        return store.updateLearning(id, updates);
+      },
+      recordExtractionRun: async (run) => {
+        operations.push("store.recordExtractionRun");
+        return store.recordExtractionRun(run);
+      },
+    };
+    const octokit = makeFakeOctokit();
+    const guardedOctokit = {
+      rest: {
+        pulls: {
+          get: async (...args: Parameters<typeof octokit.rest.pulls.get>) => {
+            operations.push("github.get");
+            return octokit.rest.pulls.get(...args);
+          },
+          listFiles: async (
+            ...args: Parameters<typeof octokit.rest.pulls.listFiles>
+          ) => {
+            operations.push("github.listFiles");
+            return octokit.rest.pulls.listFiles(...args);
+          },
+        },
+      },
+      request: async (...args: Parameters<typeof octokit.request>) => {
+        operations.push("github.request");
+        return octokit.request(...args);
+      },
+    };
+
+    await runLearningsExtraction({
+      event: mergedPREvent,
+      userId: "user-123",
+      installationId: 99,
+      backgroundAgentRunId: "run-guard-order",
+      octokit: guardedOctokit,
+      generate: async (prompt) => {
+        operations.push("model.generate");
+        return makeFakeGenerate()(prompt);
+      },
+      store: guardedStore,
+      recordEvent: async () => {
+        operations.push("event.record");
+      },
+      assertLiveAuthorization: async () => {
+        operations.push("authorize");
+      },
+    });
+
+    for (const [index, operation] of operations.entries()) {
+      if (
+        operation === "model.generate" ||
+        operation.startsWith("store.") ||
+        operation === "event.record"
+      ) {
+        expect(operations[index - 1]).toBe("authorize");
+      }
+    }
+    const firstGithubOperation = operations.findIndex((operation) =>
+      operation.startsWith("github."),
+    );
+    expect(firstGithubOperation).toBeGreaterThan(0);
+    expect(operations[firstGithubOperation - 1]).toBe("authorize");
+    expect(operations.at(-1)).toBe("authorize");
+  });
+
+  test("stops before a persistent store write when live authorization is revoked", async () => {
+    const store = makeFakeStore();
+    let modelCompleted = false;
+
+    await expect(
+      runLearningsExtraction({
+        event: mergedPREvent,
+        userId: "user-123",
+        installationId: 99,
+        backgroundAgentRunId: "run-revoked-before-store",
+        octokit: makeFakeOctokit() as unknown as Parameters<
+          typeof runLearningsExtraction
+        >[0]["octokit"],
+        generate: async (prompt) => {
+          const result = await makeFakeGenerate()(prompt);
+          modelCompleted = true;
+          return result;
+        },
+        store,
+        recordEvent: async () => undefined,
+        assertLiveAuthorization: async () => {
+          if (modelCompleted) throw new Error("authorization revoked");
+        },
+      }),
+    ).rejects.toThrow("authorization revoked");
+    expect(store.learnings).toHaveLength(0);
+    expect(store.runs).toHaveLength(0);
+  });
+
   // BT-016: merged-PR drives extraction, persists one learning (single-source confidence="medium"), one extraction-run summary (accepted=1), emits redacted event
   test("merged PR event: persists one learning with confidence medium and one extraction run with accepted=1", async () => {
     const store = makeFakeStore();

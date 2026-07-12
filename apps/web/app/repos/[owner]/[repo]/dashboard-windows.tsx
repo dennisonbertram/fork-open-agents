@@ -1,7 +1,7 @@
 import { Clock3, ExternalLink } from "lucide-react";
 import Link from "next/link";
 import type { BackgroundAgentWithTriggers } from "@/lib/background-agents/store";
-import type { BackgroundAgentRun } from "@/lib/db/schema";
+import type { PublicBackgroundAgentRun } from "@/lib/background-agents/public-run";
 import { DashboardStatusPill } from "./dashboard-status-pill";
 import {
   INSTRUCTION_PREVIEW_CAP,
@@ -10,7 +10,7 @@ import {
 } from "./truncate-preview";
 
 // Type aliases for consumers of these window components.
-export type DashboardRun = BackgroundAgentRun;
+export type DashboardRun = PublicBackgroundAgentRun;
 export type DashboardAgent = BackgroundAgentWithTriggers;
 
 function formatDate(value: Date | null) {

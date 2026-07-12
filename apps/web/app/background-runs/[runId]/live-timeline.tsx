@@ -10,7 +10,7 @@ import {
 import type { SerializedBackgroundEvent } from "./types";
 
 function CommandOutput({ event }: { event: SerializedBackgroundEvent }) {
-  const command = stringifyPayloadValue(event.payload.command);
+  const command = stringifyPayloadValue(event.payload.commandLabel);
   const stdout = stringifyPayloadValue(event.payload.stdout);
   const stderr = stringifyPayloadValue(event.payload.stderr);
 

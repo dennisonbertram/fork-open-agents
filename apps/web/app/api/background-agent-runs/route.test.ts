@@ -103,4 +103,32 @@ describe("GET /api/background-agent-runs", () => {
       limit: 50,
     });
   });
+
+  test("never serializes the private execution snapshot in list responses", async () => {
+    runs = [
+      {
+        id: "run-secret",
+        status: "queued",
+        executionSnapshot: {
+          snapshotVersion: 1,
+          instructions: "instructions-canary-secret",
+        },
+        definitionVersion: 1,
+        definitionHash: "a".repeat(64),
+      },
+    ];
+    const { GET } = await routeModulePromise;
+
+    const response = await GET(
+      new Request("http://localhost/api/background-agent-runs"),
+    );
+    const body = await response.json();
+
+    expect(JSON.stringify(body)).not.toContain("executionSnapshot");
+    expect(JSON.stringify(body)).not.toContain("instructions-canary-secret");
+    expect(body.runs[0]).toMatchObject({
+      definitionVersion: 1,
+      definitionHash: "a".repeat(64),
+    });
+  });
 });

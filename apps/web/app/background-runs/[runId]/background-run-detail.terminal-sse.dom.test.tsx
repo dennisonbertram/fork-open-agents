@@ -61,7 +61,12 @@ const initialData: BackgroundRunDetailData = {
     startedAt: "2026-07-11T10:01:00.000Z",
     finishedAt: null,
   },
-  agent: { id: "agent-1", name: "Review", permissions: {}, checkCommand: null },
+  agent: {
+    id: "agent-1",
+    name: "Review",
+    permissions: {},
+    checkConfigured: false,
+  },
   events: [],
   outputs: [],
 };

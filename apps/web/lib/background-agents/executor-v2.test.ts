@@ -21,8 +21,14 @@ import {
 } from "bun:test";
 import type { BackgroundAgent, BackgroundAgentRun } from "@/lib/db/schema";
 import type { ExecResult, Sandbox } from "@open-agents/sandbox";
+import {
+  buildBackgroundAgentExecutionSnapshot,
+  hashBackgroundAgentExecutionSnapshot,
+} from "./execution-snapshot";
 
 mock.module("server-only", () => ({}));
+process.env.BACKGROUND_AGENTS_ENABLED = "true";
+process.env.BACKGROUND_AGENTS_ALLOWED_REPOS = "*";
 
 type EventInput = {
   runId: string;
@@ -59,6 +65,8 @@ type StatusUpdateInput = {
   errorKind?: string | null;
   errorMessage?: string | null;
   outputUrl?: string | null;
+  expectedStatuses?: BackgroundAgentRun["status"][];
+  force?: boolean;
 };
 
 const successfulCommand: ExecResult = {
@@ -75,12 +83,20 @@ let recordedOutputs: OutputRow[] = [];
 let outputIdCounter = 0;
 let accessUserPermission: "read" | "write" = "write";
 let accessRequiredPermissionSeen: string[] = [];
+let beforeStatusUpdate:
+  | ((input: StatusUpdateInput) => void | Promise<void>)
+  | null = null;
+let afterEventRecorded: ((input: EventInput) => void | Promise<void>) | null =
+  null;
 
 const getBackgroundAgentRunWithAgent = mock(async () => ({
   run: currentRun,
   agent: currentAgent,
 }));
-const recordBackgroundAgentEvent = mock(async (input: EventInput) => input);
+const recordBackgroundAgentEvent = mock(async (input: EventInput) => {
+  await afterEventRecorded?.(input);
+  return input;
+});
 const recordBackgroundAgentOutput = mock(async (input: OutputInput) => {
   outputIdCounter += 1;
   const row: OutputRow = { ...input, id: `output-${outputIdCounter}` };
@@ -91,15 +107,38 @@ const listBackgroundAgentOutputsMock = mock(
   async (_runId: string): Promise<OutputRow[]> => recordedOutputs,
 );
 const updateBackgroundAgentRunStatus = mock(
-  async (input: StatusUpdateInput): Promise<BackgroundAgentRun> => ({
-    ...currentRun,
-    status: input.status,
-    workflowRunId: input.workflowRunId ?? currentRun.workflowRunId,
-    sandboxName: input.sandboxName ?? currentRun.sandboxName,
-    errorKind: input.errorKind ?? currentRun.errorKind,
-    errorMessage: input.errorMessage ?? currentRun.errorMessage,
-    outputUrl: input.outputUrl ?? currentRun.outputUrl,
-  }),
+  async (input: StatusUpdateInput): Promise<BackgroundAgentRun | null> => {
+    const hook = beforeStatusUpdate;
+    beforeStatusUpdate = null;
+    await hook?.(input);
+
+    const terminalStatuses: BackgroundAgentRun["status"][] = [
+      "succeeded",
+      "failed",
+      "skipped",
+      "cancelled",
+    ];
+    if (!input.force && terminalStatuses.includes(currentRun.status)) {
+      return null;
+    }
+    if (
+      input.expectedStatuses &&
+      !input.expectedStatuses.includes(currentRun.status)
+    ) {
+      return null;
+    }
+
+    currentRun = {
+      ...currentRun,
+      status: input.status,
+      workflowRunId: input.workflowRunId ?? currentRun.workflowRunId,
+      sandboxName: input.sandboxName ?? currentRun.sandboxName,
+      errorKind: input.errorKind ?? currentRun.errorKind,
+      errorMessage: input.errorMessage ?? currentRun.errorMessage,
+      outputUrl: input.outputUrl ?? currentRun.outputUrl,
+    };
+    return currentRun;
+  },
 );
 const listBackgroundAgentEvents = mock(async () => []);
 // #798 P2-1: uncapped, composio-scoped fetch — default empty so existing
@@ -137,9 +176,11 @@ mock.module("./run-summary", () => ({
   ]),
 }));
 
+const persistRunSummary = mock(async () => undefined);
+const recordSummaryFailedEvent = mock(async () => undefined);
 mock.module("./run-summary-persist", () => ({
-  persistRunSummary: mock(async () => undefined),
-  recordSummaryFailedEvent: mock(async () => undefined),
+  persistRunSummary,
+  recordSummaryFailedEvent,
 }));
 
 const recordUsage = mock(async () => undefined);
@@ -162,8 +203,13 @@ const fakeSandbox = {
   }),
 } as unknown as Sandbox;
 
+let afterSandboxConnected: (() => void | Promise<void>) | null = null;
+const connectSandbox = mock(async () => {
+  await afterSandboxConnected?.();
+  return fakeSandbox;
+});
 mock.module("@open-agents/sandbox", () => ({
-  connectSandbox: mock(async () => fakeSandbox),
+  connectSandbox,
   getCurrentBranch: mock(async () => "main"),
   getStagedDiff: mock(async () => "diff content"),
   hasUncommittedChanges: mock(async () => true),
@@ -265,6 +311,34 @@ mock.module("@/lib/github/users", () => ({
   })),
 }));
 
+type LearningsRunnerParams = {
+  assertLiveAuthorization?: () => Promise<void>;
+};
+let learningsRunImpl: (
+  params: LearningsRunnerParams,
+) => Promise<Record<string, unknown>> = async () => ({
+  candidatesExtracted: 0,
+  accepted: 0,
+  merged: 0,
+  rejected: 0,
+});
+const runLearningsExtraction = mock((params: LearningsRunnerParams) =>
+  learningsRunImpl(params),
+);
+mock.module("@/lib/learnings/runner", () => ({ runLearningsExtraction }));
+mock.module("@/lib/learnings/store", () => ({
+  createDbLearningsStore: mock(() => ({})),
+}));
+
+const resolveComposioToolsForBgRun = mock(async () => ({
+  status: "off" as const,
+  reason: "no_slugs_selected" as const,
+}));
+mock.module("./composio-tools", () => ({
+  assertComposioRepoToolkitsStillAllowed: mock(async () => undefined),
+  resolveComposioToolsForBgRun,
+}));
+
 // ---------------------------------------------------------------------------
 // sanitizeUnattendedToolCalls — real-ish fake honoring the documented
 // contract: returns the SAME reference when nothing needed fixing, or a NEW
@@ -328,6 +402,9 @@ mock.module("@open-agents/agent", () => ({
 }));
 
 let inferenceProfileResolutionShouldFail = false;
+let inferenceRouteAvailabilityFailureAt: number | null = null;
+let inferenceRouteAvailabilityCalls = 0;
+const inferenceResolutionCalls: Array<Record<string, unknown>> = [];
 mock.module("@/lib/inference/model-option-id", () => ({
   USER_INFERENCE_OPTION_PREFIX: "user-profile:",
   parseModelOptionSelection: (optionId: string) => {
@@ -342,8 +419,18 @@ mock.module("@/lib/inference/model-option-id", () => ({
     modelId ?? "",
 }));
 mock.module("@/lib/inference/profile-resolution", () => ({
+  assertInferenceProfileRouteAvailable: mock(async () => {
+    inferenceRouteAvailabilityCalls += 1;
+    if (
+      inferenceRouteAvailabilityFailureAt !== null &&
+      inferenceRouteAvailabilityCalls >= inferenceRouteAvailabilityFailureAt
+    ) {
+      throw new Error("Selected inference profile changed after queueing.");
+    }
+  }),
   resolveInferenceProfileModelSelection: mock(
-    async (params: { selection: unknown }) => {
+    async (params: { selection: unknown } & Record<string, unknown>) => {
+      inferenceResolutionCalls.push(params);
       if (inferenceProfileResolutionShouldFail) {
         throw new Error(
           "Selected inference profile is unavailable. Choose another User model or switch back to Vercel AI Gateway.",
@@ -389,6 +476,9 @@ function buildRun(
     startedAt: null,
     finishedAt: null,
     resultSummary: null,
+    executionSnapshot: null,
+    definitionVersion: null,
+    definitionHash: null,
     createdAt: now,
     updatedAt: now,
     ...overrides,
@@ -421,6 +511,24 @@ function buildAgent(overrides: Partial<BackgroundAgent> = {}): BackgroundAgent {
   };
 }
 
+function buildSnapshotRun(
+  acceptedAgent: BackgroundAgent,
+  overrides: Record<string, unknown> = {},
+): BackgroundAgentRun {
+  const executionSnapshot =
+    (overrides.executionSnapshot as ReturnType<
+      typeof buildBackgroundAgentExecutionSnapshot
+    >) ?? buildBackgroundAgentExecutionSnapshot(acceptedAgent);
+  return buildRun({
+    ...({
+      executionSnapshot,
+      definitionVersion: 1,
+      definitionHash: hashBackgroundAgentExecutionSnapshot(executionSnapshot),
+      ...overrides,
+    } as unknown as Partial<BackgroundAgentRun>),
+  });
+}
+
 function recordedEvents() {
   return recordBackgroundAgentEvent.mock.calls.map(([input]) => input);
 }
@@ -441,8 +549,14 @@ beforeEach(() => {
   outputIdCounter = 0;
   accessUserPermission = "write";
   accessRequiredPermissionSeen = [];
+  beforeStatusUpdate = null;
+  afterEventRecorded = null;
+  afterSandboxConnected = null;
   sanitizerShouldDeny = null;
   inferenceProfileResolutionShouldFail = false;
+  inferenceRouteAvailabilityFailureAt = null;
+  inferenceRouteAvailabilityCalls = 0;
+  inferenceResolutionCalls.length = 0;
   generateCalls.length = 0;
   generateImpl = async () => ({
     finishReason: "stop",
@@ -452,13 +566,22 @@ beforeEach(() => {
     usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
     totalUsage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
   });
+  learningsRunImpl = async () => ({
+    candidatesExtracted: 0,
+    accepted: 0,
+    merged: 0,
+    rejected: 0,
+  });
 
   getBackgroundAgentRunWithAgent.mockClear();
   recordBackgroundAgentEvent.mockClear();
   recordBackgroundAgentOutput.mockClear();
   listBackgroundAgentOutputsMock.mockClear();
   updateBackgroundAgentRunStatus.mockClear();
+  persistRunSummary.mockClear();
+  recordSummaryFailedEvent.mockClear();
   sandboxExec.mockClear();
+  connectSandbox.mockClear();
   verifyRepoAccess.mockClear();
   mintInstallationToken.mockClear();
   revokeInstallationToken.mockClear();
@@ -470,6 +593,8 @@ beforeEach(() => {
   getMergeReadinessViaInstallation.mockClear();
   generate.mockClear();
   recordUsage.mockClear();
+  runLearningsExtraction.mockClear();
+  resolveComposioToolsForBgRun.mockClear();
 });
 
 afterEach(() => {
@@ -500,6 +625,463 @@ describe("(a) comment-only agent toolset", () => {
     const call = generateCalls[0];
     const toolNames = Object.keys(call?.tools ?? {});
     expect(toolNames).toEqual(["github_comment_on_pr_or_issue"]);
+  });
+});
+
+describe("execution snapshot binding", () => {
+  test("a lost terminal-success CAS emits no completion evidence", async () => {
+    afterEventRecorded = (event) => {
+      if (event.eventName === "background-agent.check.completed") {
+        beforeStatusUpdate = (input) => {
+          if (input.status === "succeeded") {
+            currentRun = { ...currentRun, status: "cancelled" };
+          }
+        };
+      }
+    };
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-success-race",
+    });
+
+    expect(currentRun.status).toBe("cancelled");
+    expect(recordedEvent("background-agent.run.completed")).toBeUndefined();
+  });
+
+  test("rechecks live authorization before sandbox connection", async () => {
+    afterEventRecorded = (event) => {
+      if (event.eventName === "background-agent.github.installation.resolved") {
+        currentAgent = currentAgent
+          ? { ...currentAgent, status: "disabled" }
+          : null;
+      }
+    };
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-before-sandbox",
+    });
+
+    expect(connectSandbox).not.toHaveBeenCalled();
+    expect(recordedEvent("background-agent.run.failed")).toMatchObject({
+      errorKind: "agent_disabled",
+    });
+  });
+
+  test("rechecks live authorization after sandbox connection before mutation", async () => {
+    afterSandboxConnected = () => {
+      currentAgent = currentAgent
+        ? { ...currentAgent, status: "disabled" }
+        : null;
+    };
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-after-sandbox",
+    });
+
+    expect(connectSandbox).toHaveBeenCalledTimes(1);
+    expect(sandboxExec).not.toHaveBeenCalled();
+    expect(recordedEvent("background-agent.run.failed")).toMatchObject({
+      errorKind: "agent_disabled",
+    });
+  });
+
+  test("rechecks live authorization before Composio session resolution", async () => {
+    currentAgent = buildAgent({ composioToolkitSlugs: ["github"] });
+    afterEventRecorded = (event) => {
+      if (event.eventName === "background-agent.git.context.completed") {
+        currentAgent = currentAgent
+          ? { ...currentAgent, status: "disabled" }
+          : null;
+      }
+    };
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-before-composio",
+    });
+
+    expect(resolveComposioToolsForBgRun).not.toHaveBeenCalled();
+    expect(recordedEvent("background-agent.run.failed")).toMatchObject({
+      errorKind: "agent_disabled",
+    });
+  });
+
+  test("rechecks live authorization before working-branch mutation", async () => {
+    currentAgent = buildAgent({ githubActions: { push: true } });
+    afterEventRecorded = (event) => {
+      if (event.eventName === "background-agent.git.context.completed") {
+        currentAgent = currentAgent
+          ? { ...currentAgent, status: "disabled" }
+          : null;
+      }
+    };
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-before-branch",
+    });
+
+    expect(
+      sandboxExec.mock.calls.some(([command]) =>
+        (command as string).includes("git checkout"),
+      ),
+    ).toBe(false);
+    expect(recordedEvent("background-agent.run.failed")).toMatchObject({
+      errorKind: "agent_disabled",
+    });
+  });
+
+  test("terminal retries short-circuit before snapshot validation or authorization", async () => {
+    const completedSummary = {
+      headline: "Keep the completed summary",
+      checked: [],
+      changed: [],
+      blocked: [],
+      artifacts: [],
+      next: [],
+      warnings: [],
+    };
+    currentRun = buildSnapshotRun(buildAgent(), {
+      status: "succeeded",
+      definitionHash: "0".repeat(64),
+      resultSummary: completedSummary,
+    });
+    currentAgent = buildAgent({ status: "disabled" });
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-terminal-retry",
+    });
+
+    expect(verifyRepoAccess).not.toHaveBeenCalled();
+    expect(updateBackgroundAgentRunStatus).not.toHaveBeenCalled();
+    expect(recordBackgroundAgentEvent).not.toHaveBeenCalled();
+    expect(persistRunSummary).not.toHaveBeenCalled();
+    expect(currentRun.resultSummary).toBe(completedSummary);
+  });
+
+  test("an invalid-snapshot retry cannot append failure evidence or overwrite its summary", async () => {
+    currentRun = buildSnapshotRun(buildAgent(), {
+      definitionHash: "0".repeat(64),
+    });
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-invalid-retry",
+    });
+    const summaryAfterFailure = currentRun.resultSummary;
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-invalid-retry",
+    });
+
+    expect(
+      recordedEventsNamed("background-agent.snapshot.invalid"),
+    ).toHaveLength(1);
+    expect(recordedEventsNamed("background-agent.run.failed")).toHaveLength(1);
+    expect(persistRunSummary).toHaveBeenCalledTimes(1);
+    expect(currentRun.resultSummary).toBe(summaryAfterFailure);
+  });
+
+  test("a lost failure transition emits no evidence and preserves the winning summary", async () => {
+    currentRun = buildSnapshotRun(buildAgent(), {
+      definitionHash: "0".repeat(64),
+    });
+    const winningSummary = {
+      headline: "Another worker already completed",
+      checked: [],
+      changed: [],
+      blocked: [],
+      artifacts: [],
+      next: [],
+      warnings: [],
+    };
+    beforeStatusUpdate = () => {
+      currentRun = {
+        ...currentRun,
+        status: "succeeded",
+        resultSummary: winningSummary,
+      };
+    };
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-failure-race",
+    });
+
+    expect(
+      recordedEventsNamed("background-agent.snapshot.invalid"),
+    ).toHaveLength(0);
+    expect(recordedEventsNamed("background-agent.run.failed")).toHaveLength(0);
+    expect(persistRunSummary).not.toHaveBeenCalled();
+    expect(currentRun.status).toBe("succeeded");
+    expect(currentRun.resultSummary).toBe(winningSummary);
+  });
+
+  test("uses every frozen behavior field after the live source is edited", async () => {
+    const accepted = buildAgent({
+      name: "Frozen definition",
+      instructions: "FROZEN-INSTRUCTIONS-CANARY",
+      checkCommand: null,
+      composioToolkitSlugs: [],
+      builtinToolNames: ["bash"],
+      githubActions: { comment_on_pr_or_issue: true },
+      writeScope: { mode: "this_repo" },
+      requireCiGreenForMerge: true,
+      modelId: "anthropic/claude-haiku-4.5",
+    });
+    currentRun = buildSnapshotRun(accepted);
+    currentAgent = buildAgent({
+      name: "Edited definition",
+      instructions: "MUTATED-INSTRUCTIONS-CANARY",
+      builtinToolNames: ["bash"],
+      githubActions: { comment_on_pr_or_issue: true },
+      writeScope: { mode: "this_repo" },
+      requireCiGreenForMerge: true,
+      modelId: null,
+    });
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-snapshot",
+    });
+
+    const call = generateCalls[0];
+    expect(JSON.stringify(call?.messages)).toContain(
+      "FROZEN-INSTRUCTIONS-CANARY",
+    );
+    expect(JSON.stringify(call?.messages)).not.toContain(
+      "MUTATED-INSTRUCTIONS-CANARY",
+    );
+    expect(call?.options.allowedBuiltinToolNames).toEqual(["bash"]);
+    expect(call?.options.model).toMatchObject({
+      id: "anthropic/claude-haiku-4.5",
+    });
+    expect(Object.keys(call?.tools ?? {})).toEqual([
+      "github_comment_on_pr_or_issue",
+    ]);
+  });
+
+  test("live security edits may revoke frozen GitHub actions", async () => {
+    currentRun = buildSnapshotRun(
+      buildAgent({ githubActions: { comment_on_pr_or_issue: true } }),
+    );
+    currentAgent = buildAgent({ githubActions: {} });
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-live-revoke",
+    });
+
+    expect(Object.keys(generateCalls[0]?.tools ?? {})).toEqual([]);
+  });
+
+  test("later live expansion never grants more than frozen intent", async () => {
+    currentRun = buildSnapshotRun(buildAgent({ githubActions: {} }));
+    currentAgent = buildAgent({ githubActions: { push: true } });
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-live-expand",
+    });
+
+    expect(Object.keys(generateCalls[0]?.tools ?? {})).toEqual([]);
+    expect(
+      sandboxExec.mock.calls.some(([command]) =>
+        (command as string).includes("git checkout"),
+      ),
+    ).toBe(false);
+  });
+
+  test("executes a frozen private check command without persisting it in events", async () => {
+    const privateCommand = "bun test --token=private-check-command-canary";
+    currentRun = buildSnapshotRun(buildAgent({ checkCommand: privateCommand }));
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-private-check",
+    });
+
+    expect(sandboxExec).toHaveBeenCalledWith(
+      privateCommand,
+      "/workspace/widgets",
+      expect.any(Number),
+    );
+    expect(JSON.stringify(recordedEvents())).not.toContain(
+      "private-check-command-canary",
+    );
+    expect(recordedEvent("background-agent.check.completed")).toMatchObject({
+      payload: {
+        commandLabel: "required_check",
+        commandHash: expect.stringMatching(/^[0-9a-f]{64}$/),
+      },
+    });
+  });
+
+  const invalidCases: Array<{
+    label: string;
+    overrides: Record<string, unknown>;
+    errorKind: string;
+  }> = [
+    {
+      label: "partial tuple",
+      overrides: { definitionHash: null },
+      errorKind: "snapshot_invalid",
+    },
+    {
+      label: "unsupported version",
+      overrides: { definitionVersion: 2 },
+      errorKind: "snapshot_version_unsupported",
+    },
+    {
+      label: "hash mismatch",
+      overrides: { definitionHash: "0".repeat(64) },
+      errorKind: "snapshot_hash_mismatch",
+    },
+    {
+      label: "repository mismatch",
+      overrides: { repoName: "different-repo" },
+      errorKind: "snapshot_invalid",
+    },
+    {
+      label: "unsafe corrupted metadata",
+      overrides: {
+        definitionVersion: 1_000_001,
+        definitionHash: "secret-looking-corrupt-hash-value",
+      },
+      errorKind: "snapshot_version_unsupported",
+    },
+  ];
+
+  invalidCases.forEach(({ label, overrides, errorKind }) => {
+    test(`fails ${label} before running or allocating a sandbox`, async () => {
+      currentRun = buildSnapshotRun(buildAgent(), overrides);
+      const { executeBackgroundAgentRun } = await executorModulePromise;
+
+      await executeBackgroundAgentRun({
+        runId: currentRun.id,
+        workflowRunId: "wf-invalid",
+      });
+
+      expect(connectSandbox).not.toHaveBeenCalled();
+      expect(generate).not.toHaveBeenCalled();
+      expect(updateBackgroundAgentRunStatus.mock.calls[0]?.[0]).toMatchObject({
+        status: "failed",
+        errorKind,
+      });
+      expect(
+        recordedEvent("background-agent.workflow.started"),
+      ).toBeUndefined();
+      const invalidEvent = recordedEvent("background-agent.snapshot.invalid");
+      expect(invalidEvent).toMatchObject({
+        status: "failed",
+        level: "error",
+        errorKind,
+        payload: {
+          definitionVersion:
+            typeof currentRun.definitionVersion === "number" &&
+            Number.isSafeInteger(currentRun.definitionVersion) &&
+            currentRun.definitionVersion >= 0 &&
+            currentRun.definitionVersion <= 1000
+              ? currentRun.definitionVersion
+              : null,
+          definitionHash:
+            typeof currentRun.definitionHash === "string" &&
+            /^[0-9a-f]{64}$/.test(currentRun.definitionHash)
+              ? currentRun.definitionHash
+              : null,
+        },
+      });
+      expect(JSON.stringify(invalidEvent)).not.toContain("instructions");
+      expect(JSON.stringify(invalidEvent)).not.toContain(
+        "secret-looking-corrupt-hash-value",
+      );
+      expect(recordedEvents().map((event) => event.eventName)).toEqual([
+        "background-agent.snapshot.invalid",
+        "background-agent.run.failed",
+      ]);
+    });
+  });
+
+  test("distinguishes deleted from disabled sources before sandbox cost", async () => {
+    currentRun = buildSnapshotRun(buildAgent());
+    currentAgent = null;
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-deleted",
+    });
+
+    expect(connectSandbox).not.toHaveBeenCalled();
+    expect(updateBackgroundAgentRunStatus.mock.calls[0]?.[0]).toMatchObject({
+      errorKind: "agent_deleted",
+    });
+
+    updateBackgroundAgentRunStatus.mockClear();
+    currentRun = buildSnapshotRun(buildAgent());
+    currentAgent = buildAgent({ status: "disabled" });
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-disabled",
+    });
+    expect(updateBackgroundAgentRunStatus.mock.calls[0]?.[0]).toMatchObject({
+      errorKind: "agent_disabled",
+    });
+  });
+
+  test("uses the fresh nullable agent id when deletion races initial validation", async () => {
+    currentRun = buildSnapshotRun(buildAgent());
+    const acceptedRun = currentRun;
+    const acceptedAgent = currentAgent;
+    getBackgroundAgentRunWithAgent.mockImplementationOnce(async () => ({
+      run: acceptedRun,
+      agent: acceptedAgent,
+    }));
+    currentRun = { ...currentRun, agentId: null };
+    currentAgent = null;
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-delete-race",
+    });
+
+    expect(connectSandbox).not.toHaveBeenCalled();
+    expect(recordedEvent("background-agent.run.failed")).toMatchObject({
+      agentId: null,
+      errorKind: "agent_deleted",
+    });
+  });
+
+  test("legacy rows use an explicit observable live fallback", async () => {
+    currentRun = buildRun();
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-legacy",
+    });
+
+    expect(generate).toHaveBeenCalledTimes(1);
+    expect(
+      recordedEvent("background-agent.snapshot.legacy_fallback"),
+    ).toBeTruthy();
   });
 });
 
@@ -567,6 +1149,27 @@ describe("(b) required-permission derivation per toggle set", () => {
 });
 
 describe("(c) model resolution", () => {
+  test("uses the concrete default frozen at queue time after the live source changes", async () => {
+    const acceptedAgent = buildAgent({ modelId: null });
+    currentRun = buildSnapshotRun(acceptedAgent, {
+      executionSnapshot: buildBackgroundAgentExecutionSnapshot(acceptedAgent, {
+        route: "gateway",
+        modelId: "anthropic/claude-haiku-4.5",
+      }),
+    });
+    currentAgent = buildAgent({ modelId: "anthropic/claude-opus-4.6" });
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-1",
+    });
+
+    expect(generateCalls[0]?.options.model).toMatchObject({
+      id: "anthropic/claude-haiku-4.5",
+    });
+  });
+
   test("passes the agent's plain gateway modelId as options.model and records it on usage", async () => {
     currentAgent = buildAgent({ modelId: "anthropic/claude-haiku-4.5" });
     const { executeBackgroundAgentRun } = await executorModulePromise;
@@ -587,9 +1190,21 @@ describe("(c) model resolution", () => {
   });
 
   test("resolves a user-profile: selection via resolveInferenceProfileModelSelection", async () => {
-    currentAgent = buildAgent({
+    const acceptedAgent = buildAgent({
       modelId: "user-profile:profile-1:glm-4.6",
     });
+    const executionSnapshot = buildBackgroundAgentExecutionSnapshot(
+      acceptedAgent,
+      {
+        route: "user",
+        modelId: "glm-4.6",
+        inferenceProfileId: "profile-1",
+        provider: "anthropic",
+        baseUrl: "https://inference.example.com/v1",
+      },
+    );
+    currentRun = buildSnapshotRun(acceptedAgent, { executionSnapshot });
+    currentAgent = acceptedAgent;
     const { executeBackgroundAgentRun } = await executorModulePromise;
 
     await executeBackgroundAgentRun({
@@ -603,6 +1218,46 @@ describe("(c) model resolution", () => {
       "user-v2",
       expect.objectContaining({ model: "glm-4.6" }),
     );
+    expect(inferenceResolutionCalls[0]).toMatchObject({
+      inferenceProfileId: "profile-1",
+      expectedRoute: {
+        provider: "anthropic",
+        baseUrl: "https://inference.example.com/v1",
+      },
+    });
+  });
+
+  test("revokes an accepted user route when the live profile changes before the model turn", async () => {
+    const acceptedAgent = buildAgent({
+      modelId: "user-profile:profile-1:glm-4.6",
+    });
+    const executionSnapshot = buildBackgroundAgentExecutionSnapshot(
+      acceptedAgent,
+      {
+        route: "user",
+        modelId: "glm-4.6",
+        inferenceProfileId: "profile-1",
+        provider: "anthropic",
+        baseUrl: "https://inference.example.com/v1",
+      },
+    );
+    currentRun = buildSnapshotRun(acceptedAgent, { executionSnapshot });
+    currentAgent = acceptedAgent;
+    // Initial validation passes. The mocked model resolver does not perform
+    // its own DB check, so the second call is the executor guard immediately
+    // before the first model turn.
+    inferenceRouteAvailabilityFailureAt = 2;
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-1",
+    });
+
+    expect(generate).not.toHaveBeenCalled();
+    expect(recordedEvent("background-agent.run.failed")).toMatchObject({
+      errorKind: "model_resolution_failed",
+    });
   });
 
   test("fails the run with model_resolution_failed instead of silently falling back", async () => {

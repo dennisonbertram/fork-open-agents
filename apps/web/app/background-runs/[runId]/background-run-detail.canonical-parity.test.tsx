@@ -54,7 +54,7 @@ function makeDetail(): BackgroundRunDetailData {
       id: "agent-1",
       name: "Review pull requests",
       permissions: { github: { contents: "write", checks: "read" } },
-      checkCommand: "bun --bun run ci",
+      checkConfigured: true,
     },
     events: [
       {

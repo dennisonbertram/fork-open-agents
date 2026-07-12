@@ -42,6 +42,11 @@ export type BackgroundRunErrorCopy = {
 export const ALL_KNOWN_BACKGROUND_RUN_ERROR_KINDS = [
   "duplicate_event",
   "agent_disabled",
+  "agent_deleted",
+  "snapshot_missing",
+  "snapshot_invalid",
+  "snapshot_version_unsupported",
+  "snapshot_hash_mismatch",
   "permission_missing",
   "installation_missing",
   "sandbox_unavailable",
@@ -75,6 +80,39 @@ function knownCopy(
         whatHappened: "This background agent is turned off.",
         whatToDo:
           "Re-enable the agent in the repo agents dashboard, then retry.",
+      };
+    case "agent_deleted":
+      return {
+        whatHappened:
+          "The source Automation was deleted before this run could continue.",
+        whatToDo:
+          "The preserved evidence remains available. Create a new Automation before running this work again.",
+      };
+    case "snapshot_missing":
+      return {
+        whatHappened: "This run is missing its accepted execution definition.",
+        whatToDo:
+          "Do not retry this run. Create a new run from the current Automation.",
+      };
+    case "snapshot_invalid":
+      return {
+        whatHappened: "The accepted execution definition is malformed.",
+        whatToDo:
+          "Do not retry this run. Inspect the snapshot validation event and create a new run.",
+      };
+    case "snapshot_version_unsupported":
+      return {
+        whatHappened:
+          "This run uses an execution-definition version the service cannot execute.",
+        whatToDo:
+          "Create a new run from the current Automation or restore a compatible service version.",
+      };
+    case "snapshot_hash_mismatch":
+      return {
+        whatHappened:
+          "The accepted execution definition failed its integrity check.",
+        whatToDo:
+          "Do not execute or retry this run. Inspect the audit evidence and create a new run.",
       };
     case "permission_missing":
       return {

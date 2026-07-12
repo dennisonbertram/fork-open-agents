@@ -86,11 +86,14 @@ export function buildBackgroundRunDetailSummary(
     source: "background_agent",
     runId: run.id,
     automation: {
-      name: agent?.name ?? "Deleted Automation",
+      name: agent?.sourceDeleted
+        ? `${agent.name} (deleted)`
+        : (agent?.name ?? "Deleted Automation"),
       sourceId: agent?.id ?? null,
-      href: agent
-        ? `/repos/${encodeURIComponent(run.repoOwner)}/${encodeURIComponent(run.repoName)}/agents/${encodeURIComponent(agent.id)}`
-        : null,
+      href:
+        agent && !agent.sourceDeleted
+          ? `/repos/${encodeURIComponent(run.repoOwner)}/${encodeURIComponent(run.repoName)}/agents/${encodeURIComponent(agent.id)}`
+          : null,
     },
     repository: {
       owner: run.repoOwner,

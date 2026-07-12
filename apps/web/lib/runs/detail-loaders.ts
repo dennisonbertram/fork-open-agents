@@ -15,6 +15,10 @@ import {
   listBackgroundAgentEvents,
   listBackgroundAgentOutputs,
 } from "@/lib/background-agents/store";
+import {
+  getBackgroundAgentSnapshotSource,
+  toSafeBackgroundAgentEvidence,
+} from "@/lib/background-agents/public-run";
 
 type OwnedRunParams = {
   userId: string;
@@ -62,19 +66,15 @@ export async function loadOwnedBackgroundRunDetail({
       errorKind: run.errorKind,
       errorMessage: run.errorMessage,
       resultSummary: run.resultSummary ?? null,
+      definitionVersion: run.definitionVersion,
+      definitionHash: run.definitionHash,
+      snapshotSource: getBackgroundAgentSnapshotSource(run),
       createdAt: run.createdAt.toISOString(),
       updatedAt: run.updatedAt.toISOString(),
       startedAt: serializeDate(run.startedAt),
       finishedAt: serializeDate(run.finishedAt),
     },
-    agent: agent
-      ? {
-          id: agent.id,
-          name: agent.name,
-          permissions: agent.permissions,
-          checkCommand: agent.checkCommand,
-        }
-      : null,
+    agent: toSafeBackgroundAgentEvidence(run, agent),
     events: events.map((event) => ({
       id: event.id,
       eventName: event.eventName,

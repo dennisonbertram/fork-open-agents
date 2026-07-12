@@ -6,6 +6,7 @@ import {
   listBackgroundAgentRuns,
   listRepoBackgroundAgents,
 } from "@/lib/background-agents/store";
+import { toPublicBackgroundAgentRun } from "@/lib/background-agents/public-run";
 import { getBackgroundAgentReadinessWithGitHubAppMetadata } from "@/lib/background-agents/readiness";
 import { getBackgroundAgentRepoReadiness } from "@/lib/background-agents/repo-readiness";
 import { getRepoDashboardData } from "@/lib/github/repo-dashboard";
@@ -125,7 +126,16 @@ export async function GET(_request: Request, context: RouteContext) {
     // Safe fallbacks for local data sources
     const agents =
       agentsResult.status === "fulfilled" ? agentsResult.value : [];
-    const runs = runsResult.status === "fulfilled" ? runsResult.value : [];
+    const runs =
+      runsResult.status === "fulfilled"
+        ? runsResult.value.map((run) =>
+            "executionSnapshot" in run
+              ? toPublicBackgroundAgentRun(
+                  run as Parameters<typeof toPublicBackgroundAgentRun>[0],
+                )
+              : run,
+          )
+        : [];
     const readiness =
       readinessResult.status === "fulfilled"
         ? readinessResult.value
