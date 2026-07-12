@@ -240,6 +240,8 @@ describe("REG-350-05: pause route — non-owned run (RunControlError not_found) 
 
   mock.module("@/lib/agent-loops/config", () => ({
     isAgentLoopsEnabled,
+    getAgentLoopRepoAccess: () => ({ allowed: true }),
+    isAgentLoopRepoAllowed: () => true,
   }));
 
   const pauseRoutePromise =

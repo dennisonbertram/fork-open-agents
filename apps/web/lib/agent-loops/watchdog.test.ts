@@ -965,6 +965,34 @@ describe("WD-06: pause decision → run paused + watchdog.decided emitted", () =
     const payload = decidedEvent?.payload as Record<string, unknown>;
     expect(payload?.["decision"]).toBe("pause");
   });
+
+  test("chain failure during diagnosis cannot be resurrected to paused", async () => {
+    const { invokeWatchdog } = await watchdogPromise;
+    pauseTransitionWins = false;
+    mockAgentDecision = { decision: "pause", diagnosis: "Pause it" };
+
+    const result = await invokeWatchdog({
+      loop: makeLoop({ watchdogEnabled: true }),
+      loopRun: makeLoopRun(),
+      stepRunId: "step-run-1",
+      nodeId: "node-a",
+      nodeKind: "agent_step",
+      attempt: 1,
+      errorKind: "step_failed",
+      errorMessage: "Step failed",
+      workflowRunId: "wf-1",
+    });
+
+    expect(result).toEqual({ invoked: false });
+    expect(
+      recordedEvents.some(
+        (event) => event.eventName === "agent-loop.watchdog.decided",
+      ),
+    ).toBe(false);
+    expect(watchdogRunsUpdated).toContainEqual(
+      expect.objectContaining({ status: "failed" }),
+    );
+  });
 });
 
 describe("WD-07: unparseable/invalid decision → pause with watchdog_output_invalid", () => {
