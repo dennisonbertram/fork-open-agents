@@ -7,7 +7,9 @@ function renderDashboard(
   props: React.ComponentProps<typeof RepositoryDashboardView>,
 ) {
   return renderToStaticMarkup(
-    <SessionsShellProvider value={{ openNewSessionDialog: () => undefined }}>
+    <SessionsShellProvider
+      value={{ activeSessionCount: 0, openNewSessionDialog: () => undefined }}
+    >
       <RepositoryDashboardView {...props} />
     </SessionsShellProvider>,
   );

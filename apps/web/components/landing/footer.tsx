@@ -58,7 +58,7 @@ export function LandingFooter() {
             </div>
             <div className="mt-4 flex flex-col gap-2">
               <a
-                href="https://github.com/vercel-labs/open-agents"
+                href="https://github.com/dennisonbertram/fork-open-agents"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-sm text-(--l-fg-2) transition-colors hover:text-(--l-fg)"

@@ -140,7 +140,7 @@ agent-browser console
 For high-risk changes, inspect recent production errors:
 
 ```bash
-vercel logs --project open-agents --environment production --status-code 500,502,503,504 --since 5m
+vercel logs --scope <team-or-org-id> --project <project-id> --environment production --status-code 500,502,503,504 --since 5m
 ```
 
 ## Production Ops Snapshot
@@ -156,8 +156,8 @@ The report includes live deployment metadata when Vercel access is available,
 public smoke status, recent 5xx log samples, open PR blockers, latest
 Production Smoke check state, explicit source gaps, and the next safe action.
 It does not print env values, cookies, auth headers, prompts, or provider
-tokens. Add `--strict` when a degraded public smoke or 5xx signal should fail
-the command.
+tokens. Add `--strict` when any blocked, degraded, unknown, or otherwise
+non-healthy proof source should fail the command.
 
 ## Recurring Production Monitors
 
@@ -272,9 +272,13 @@ bun run ops:alert -- \
   --summary "route /api/models failed"
 ```
 
+Incident titles are status-neutral (`[production-ops] <source> in
+<environment>`) so the title remains accurate across the alert lifecycle.
 Repeated failures comment on the existing open alert. Recovery runs add a
-recovery comment. The helper redacts secret-like text before issue bodies or
-comments are printed.
+recovery comment only when a matching open incident exists; recovery without
+an open incident is a no-op and does not create an issue. Recovered issues stay
+open as the dedupe target for later observations. The helper redacts
+secret-like text before issue bodies, comments, or command errors are printed.
 
 ## Branch Safety Gates
 
@@ -310,7 +314,7 @@ back first and debug second.
 ```bash
 vercel rollback
 vercel rollback status
-vercel logs --project open-agents --environment production --status-code 500,502,503,504 --since 5m
+vercel logs --scope <team-or-org-id> --project <project-id> --environment production --status-code 500,502,503,504 --since 5m
 ```
 
 On plans that support rolling back to a specific deployment:

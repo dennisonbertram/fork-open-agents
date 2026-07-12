@@ -35,7 +35,7 @@ export function getSessionFooter(
   sandboxName: string,
 ): string {
   if (mode === "empty") {
-    return "Starts instantly — no sandbox. Add one later if the agent needs to run code.";
+    return "No sandbox starts immediately. One starts automatically when code execution is needed.";
   }
   return `Using ${sandboxName} sandbox`;
 }
@@ -68,7 +68,7 @@ export function isSubmitBlocked({
 /**
  * Returns the label for the primary submit button.
  *
- * - empty mode or repo mode with no repo selected: "Start chat"
+ * - empty mode or repo mode with no repo selected: "Start session"
  * - repo mode with owner + repo:                   "Start with {owner}/{repo}"
  */
 export function getButtonLabel(
@@ -79,7 +79,7 @@ export function getButtonLabel(
   if (mode === "repo" && selectedOwner && selectedRepo) {
     return `Start with ${selectedOwner}/${selectedRepo}`;
   }
-  return "Start chat";
+  return "Start session";
 }
 
 // ---------------------------------------------------------------------------
@@ -98,7 +98,7 @@ export function getRuntimeModeLabel(
   profileDisplayName: string,
 ): string {
   if (runtimeMode === "classic") {
-    return "Directly in a sandbox (classic)";
+    return "Vercel sandbox (classic)";
   }
   return `Through a verified environment (managed): ${profileDisplayName}`;
 }

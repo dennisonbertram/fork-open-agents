@@ -5,6 +5,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 // copy and the conditional GitHub-connect CTA.
 
 let hasGitHubInstallations = true;
+let activeSessionCount = 0;
 
 mock.module("@/hooks/use-session", () => ({
   useSession: () => ({
@@ -21,6 +22,7 @@ mock.module("@/hooks/use-session", () => ({
 mock.module("./sessions-shell-context", () => ({
   useSessionsShell: () => ({
     openNewSessionDialog: mock(() => {}),
+    activeSessionCount,
   }),
 }));
 
@@ -33,12 +35,22 @@ mock.module("@/components/ui/sidebar", () => ({
 const { SessionsIndexShell } = await import("./sessions-index-shell");
 
 describe("SessionsIndexShell", () => {
-  test("explains what a session is and offers a New Session CTA", () => {
+  test("explains the first session when the user has no active sessions", () => {
     hasGitHubInstallations = true;
+    activeSessionCount = 0;
     const html = renderToStaticMarkup(<SessionsIndexShell />);
 
-    expect(html).toContain("session");
+    expect(html).toContain("Start your first session");
     expect(html).toContain("New Session");
+  });
+
+  test("invites an existing user to choose or create a session", () => {
+    hasGitHubInstallations = true;
+    activeSessionCount = 9;
+    const html = renderToStaticMarkup(<SessionsIndexShell />);
+
+    expect(html).toContain("Choose a session or start a new one");
+    expect(html).not.toContain("Start your first session");
   });
 
   test("shows a GitHub-connect CTA when the user has no GitHub installations", () => {

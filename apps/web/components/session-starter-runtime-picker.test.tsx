@@ -3,7 +3,7 @@
  * discarding dialog input.
  *
  * BT: the New Chat dialog shows a runtime picker labeled per plain-language
- *     copy ("Directly in a sandbox (classic)" / "Through a verified
+ *     copy ("Vercel sandbox (classic)" / "Through a verified
  *     environment (managed): <profile>"), prefilled from the Preferences
  *     default.
  * BT: clicking "Change" no longer navigates away via a bare <a href> —
@@ -103,13 +103,13 @@ describe("SessionStarter runtime picker (MR-4/#812)", () => {
   });
 
   // BT: New Chat dialog renders a runtime picker with the classic label.
-  test("MR-4/#812: renders 'Directly in a sandbox (classic)' runtime option", async () => {
+  test("MR-4/#812: renders a lifecycle-neutral classic runtime option", async () => {
     const { SessionStarter } = await modulePromise;
     const html = renderToStaticMarkup(
       <SessionStarter onSubmit={() => {}} isLoading={false} lastRepo={null} />,
     );
 
-    expect(html).toContain("Directly in a sandbox (classic)");
+    expect(html).toContain("Vercel sandbox (classic)");
   });
 
   // BT: clicking "Change" must not be a bare navigate-away <Link> in the

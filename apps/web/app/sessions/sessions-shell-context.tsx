@@ -6,6 +6,7 @@ import type { SessionDialogRepository } from "./session-dialog-repository";
 
 type SessionsShellContextValue = {
   openNewSessionDialog: (repository?: SessionDialogRepository) => void;
+  activeSessionCount: number;
 };
 
 const SessionsShellContext = createContext<

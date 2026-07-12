@@ -30,6 +30,16 @@ Start with the read-only status snapshot:
 bun run ops:status -- --since 30m
 ```
 
+`ops:status` resolves its Vercel target from paired explicit `--scope` and
+`--project` values, then paired `VERCEL_ORG_ID` and `VERCEL_PROJECT_ID`
+values, then the paired IDs in `.vercel/project.json`. It never combines
+values from different sources or falls back to the Vercel CLI's ambient global
+team. If the checkout is not linked, pass both values explicitly:
+
+```bash
+bun run ops:status -- --scope <team-or-org-id> --project <project-id> --since 30m
+```
+
 Check dev or preview backing-service isolation without printing raw env values:
 
 ```bash
@@ -94,7 +104,7 @@ the production deployment, then run:
 ```bash
 bun run ops:status -- --since 30m
 DEPLOYMENT_URL=https://open-agents-azure-xi.vercel.app bun run --cwd apps/web preview:smoke
-vercel logs --project open-agents --environment production --status-code 500,502,503,504 --since 30m
+vercel logs --scope <team-or-org-id> --project <project-id> --environment production --status-code 500,502,503,504 --since 30m
 ```
 
 Do not claim production is agent-ready unless public smoke, authenticated canary

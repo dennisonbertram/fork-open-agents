@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { redactOpsText } from "./ops-redaction";
 
@@ -44,6 +45,134 @@ export interface OpsStatusSnapshot {
 
 const defaultProductionUrl = "https://open-agents-azure-xi.vercel.app";
 const repoRoot = join(import.meta.dirname, "../../..");
+
+interface VercelTarget {
+  scope: string;
+  project: string;
+}
+
+type VercelTargetResolution =
+  | (VercelTarget & {
+      status: "resolved";
+      source: "explicit" | "environment" | "linked-project";
+    })
+  | { status: "blocked"; sourceGap: string };
+
+interface LinkedVercelProject {
+  orgId?: string;
+  projectId?: string;
+}
+
+function nonEmpty(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+export function resolveVercelTarget(params: {
+  explicit?: { scope?: string; project?: string };
+  env?: Record<string, string | undefined>;
+  linkedProject?: LinkedVercelProject | null;
+}): VercelTargetResolution {
+  const explicitScope = nonEmpty(params.explicit?.scope);
+  const explicitProject = nonEmpty(params.explicit?.project);
+  if (explicitScope || explicitProject) {
+    return explicitScope && explicitProject
+      ? {
+          status: "resolved",
+          scope: explicitScope,
+          project: explicitProject,
+          source: "explicit",
+        }
+      : {
+          status: "blocked",
+          sourceGap: "Both --scope and --project are required together.",
+        };
+  }
+
+  const envScope = nonEmpty(params.env?.VERCEL_ORG_ID);
+  const envProject = nonEmpty(params.env?.VERCEL_PROJECT_ID);
+  if (envScope || envProject) {
+    return envScope && envProject
+      ? {
+          status: "resolved",
+          scope: envScope,
+          project: envProject,
+          source: "environment",
+        }
+      : {
+          status: "blocked",
+          sourceGap:
+            "VERCEL_ORG_ID and VERCEL_PROJECT_ID are required together.",
+        };
+  }
+
+  const linkedScope = nonEmpty(params.linkedProject?.orgId);
+  const linkedProject = nonEmpty(params.linkedProject?.projectId);
+  if (linkedScope || linkedProject) {
+    return linkedScope && linkedProject
+      ? {
+          status: "resolved",
+          scope: linkedScope,
+          project: linkedProject,
+          source: "linked-project",
+        }
+      : {
+          status: "blocked",
+          sourceGap:
+            "Linked .vercel/project.json must include both orgId and projectId.",
+        };
+  }
+
+  return {
+    status: "blocked",
+    sourceGap:
+      "Vercel target unavailable. Pass --scope and --project, set VERCEL_ORG_ID and VERCEL_PROJECT_ID, or run vercel link.",
+  };
+}
+
+function readLinkedVercelProject(): LinkedVercelProject | null {
+  try {
+    const parsed = JSON.parse(
+      readFileSync(join(repoRoot, ".vercel/project.json"), "utf8"),
+    ) as unknown;
+    const record = asRecord(parsed);
+    if (!record) return null;
+    return {
+      ...(typeof record.orgId === "string" ? { orgId: record.orgId } : {}),
+      ...(typeof record.projectId === "string"
+        ? { projectId: record.projectId }
+        : {}),
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function buildVercelInspectArgs(
+  productionUrl: string,
+  target: VercelTarget,
+): string[] {
+  return ["inspect", productionUrl, "--scope", target.scope, "--json"];
+}
+
+export function buildVercelLogsArgs(
+  since: string,
+  target: VercelTarget,
+): string[] {
+  return [
+    "logs",
+    "--scope",
+    target.scope,
+    "--project",
+    target.project,
+    "--environment",
+    "production",
+    "--status-code",
+    "500,502,503,504",
+    "--since",
+    since,
+  ];
+}
 
 function runCommand(command: string, args: string[]): CommandResult {
   const result = spawnSync(command, args, {
@@ -136,6 +265,40 @@ export function parseGhRuns(output: string): string | undefined {
   return `Production Smoke ${status}/${conclusion}${url ? ` (${url})` : ""}`;
 }
 
+export function parseLatestProductionDeploymentSha(
+  output: string,
+): string | undefined {
+  const payload = readJsonPayload(output);
+  if (!Array.isArray(payload)) return undefined;
+  const deployment = asRecord(payload[0]);
+  return typeof deployment?.sha === "string" ? deployment.sha : undefined;
+}
+
+export function buildGithubStatus(
+  prResult: CommandResult,
+  runResult: CommandResult,
+): OpsStatusSnapshot["github"] {
+  if (prResult.status !== 0) {
+    return {
+      status: "blocked",
+      openPrBlockers: [],
+      sourceGap: redactOpsText(prResult.stderr || "GitHub access unavailable."),
+    };
+  }
+  if (runResult.status !== 0) {
+    return {
+      status: "blocked",
+      openPrBlockers: parsePrBlockers(prResult.stdout),
+      sourceGap: redactOpsText(runResult.stderr || "GitHub run read failed."),
+    };
+  }
+  return {
+    status: "healthy",
+    openPrBlockers: parsePrBlockers(prResult.stdout),
+    latestProductionSmoke: parseGhRuns(runResult.stdout),
+  };
+}
+
 export function formatOpsStatus(snapshot: OpsStatusSnapshot): string {
   const lines = [
     "Production ops status",
@@ -190,16 +353,25 @@ export async function collectOpsStatusSnapshot(params?: {
   since?: string;
   run?: (command: string, args: string[]) => CommandResult;
   now?: Date;
+  vercelTarget?: { scope?: string; project?: string };
 }): Promise<OpsStatusSnapshot> {
   const productionUrl =
     params?.productionUrl ?? process.env.PRODUCTION_URL ?? defaultProductionUrl;
   const since = params?.since ?? "30m";
   const run = params?.run ?? runCommand;
   const requestedAt = (params?.now ?? new Date()).toISOString();
+  const target = resolveVercelTarget({
+    explicit: params?.vercelTarget,
+    env: process.env,
+    linkedProject: readLinkedVercelProject(),
+  });
 
-  const deploymentResult = run("vercel", ["inspect", productionUrl, "--json"]);
-  const deployment =
-    deploymentResult.status === 0
+  const deploymentResult =
+    target.status === "resolved"
+      ? run("vercel", buildVercelInspectArgs(productionUrl, target))
+      : null;
+  const parsedDeployment =
+    deploymentResult?.status === 0
       ? {
           status: "healthy" as const,
           ...parseVercelInspect(deploymentResult.stdout),
@@ -207,9 +379,27 @@ export async function collectOpsStatusSnapshot(params?: {
       : {
           status: "blocked" as const,
           sourceGap: redactOpsText(
-            deploymentResult.stderr || "Vercel inspect access unavailable.",
+            deploymentResult?.stderr ||
+              (target.status === "blocked"
+                ? target.sourceGap
+                : "Vercel inspect access unavailable."),
           ),
         };
+
+  const githubDeploymentResult = run("gh", [
+    "api",
+    "repos/dennisonbertram/fork-open-agents/deployments?environment=Production&per_page=1",
+  ]);
+  const fallbackCommitSha =
+    githubDeploymentResult.status === 0
+      ? parseLatestProductionDeploymentSha(githubDeploymentResult.stdout)
+      : undefined;
+  const deployment = {
+    ...parsedDeployment,
+    ...(!("commitSha" in parsedDeployment) && fallbackCommitSha
+      ? { commitSha: fallbackCommitSha }
+      : {}),
+  };
 
   const smokeResult = await runPreviewSmoke(productionUrl);
   const publicSmoke =
@@ -223,20 +413,13 @@ export async function collectOpsStatusSnapshot(params?: {
           sourceGap: redactOpsText(smokeResult.stderr || smokeResult.stdout),
         };
 
-  const logsResult = run("vercel", [
-    "logs",
-    "--project",
-    "open-agents",
-    "--environment",
-    "production",
-    "--status-code",
-    "500,502,503,504",
-    "--since",
-    since,
-  ]);
-  const parsedLogs = parseVercelLogs(logsResult.stdout);
+  const logsResult =
+    target.status === "resolved"
+      ? run("vercel", buildVercelLogsArgs(since, target))
+      : null;
+  const parsedLogs = parseVercelLogs(logsResult?.stdout ?? "");
   const logs =
-    logsResult.status === 0
+    logsResult?.status === 0
       ? {
           status:
             parsedLogs.errorCount > 0
@@ -251,7 +434,10 @@ export async function collectOpsStatusSnapshot(params?: {
           errorCount: 0,
           samples: [],
           sourceGap: redactOpsText(
-            logsResult.stderr || "Vercel logs access unavailable.",
+            logsResult?.stderr ||
+              (target.status === "blocked"
+                ? target.sourceGap
+                : "Vercel logs access unavailable."),
           ),
         };
 
@@ -277,33 +463,12 @@ export async function collectOpsStatusSnapshot(params?: {
     "--json",
     "status,conclusion,url",
   ]);
-  const github =
-    prResult.status === 0
-      ? {
-          status: "healthy" as const,
-          openPrBlockers: parsePrBlockers(prResult.stdout),
-          latestProductionSmoke:
-            runResult.status === 0 ? parseGhRuns(runResult.stdout) : undefined,
-          ...(runResult.status !== 0
-            ? {
-                sourceGap: redactOpsText(
-                  runResult.stderr || "GitHub run read failed.",
-                ),
-              }
-            : {}),
-        }
-      : {
-          status: "blocked" as const,
-          openPrBlockers: [],
-          sourceGap: redactOpsText(
-            prResult.stderr || "GitHub access unavailable.",
-          ),
-        };
+  const github = buildGithubStatus(prResult, runResult);
 
   const degraded =
     deployment.status !== "healthy" ||
     publicSmoke.status !== "healthy" ||
-    logs.status === "degraded" ||
+    logs.status !== "healthy" ||
     github.status !== "healthy";
 
   return {
@@ -315,7 +480,9 @@ export async function collectOpsStatusSnapshot(params?: {
     logs,
     github,
     nextAction: degraded
-      ? "Inspect the named source gap, then run vercel logs --project open-agents --environment production --status-code 500,502,503,504 --since 30m."
+      ? target.status === "resolved"
+        ? `Inspect the named source gap, then run vercel logs --scope ${target.scope} --project ${target.project} --environment production --status-code 500,502,503,504 --since ${since}.`
+        : "Inspect the named source gap, then rerun ops:status with paired --scope and --project values."
       : "Production public status looks healthy; run ops:authenticated-canary for product-path proof.",
   };
 }
@@ -358,6 +525,8 @@ function parseArgs(argv: string[]) {
   let since = "30m";
   let json = false;
   let strict = false;
+  let scope: string | undefined;
+  let project: string | undefined;
   for (let index = 0; index < argv.length; index++) {
     const arg = argv[index];
     const next = argv[index + 1];
@@ -381,9 +550,36 @@ function parseArgs(argv: string[]) {
       strict = true;
       continue;
     }
+    if (arg === "--scope") {
+      if (!next) throw new Error("--scope requires a value.");
+      scope = next;
+      index++;
+      continue;
+    }
+    if (arg === "--project") {
+      if (!next) throw new Error("--project requires a value.");
+      project = next;
+      index++;
+      continue;
+    }
     throw new Error(`Unknown argument: ${arg}`);
   }
-  return { productionUrl, since, json, strict };
+  return {
+    productionUrl,
+    since,
+    json,
+    strict,
+    vercelTarget: { scope, project },
+  };
+}
+
+export function isOpsStatusHealthy(snapshot: OpsStatusSnapshot): boolean {
+  return (
+    snapshot.deployment.status === "healthy" &&
+    snapshot.publicSmoke.status === "healthy" &&
+    snapshot.logs.status === "healthy" &&
+    snapshot.github.status === "healthy"
+  );
 }
 
 export async function runOpsStatus(
@@ -395,11 +591,7 @@ export async function runOpsStatus(
     console.log(
       args.json ? JSON.stringify(snapshot, null, 2) : formatOpsStatus(snapshot),
     );
-    const unhealthy =
-      snapshot.publicSmoke.status === "degraded" ||
-      snapshot.logs.status === "degraded" ||
-      snapshot.deployment.status === "degraded";
-    return args.strict && unhealthy ? 1 : 0;
+    return args.strict && !isOpsStatusHealthy(snapshot) ? 1 : 0;
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
     return 1;
