@@ -18,7 +18,23 @@ const loop = {
   description: null,
   repoOwner: "acme",
   repoName: "widgets",
-  definition: { nodes: [], edges: [] },
+  definition: {
+    nodes: [
+      {
+        id: "agent",
+        kind: "agent_step",
+        label: "Private step",
+        position: { x: 10, y: 20 },
+        instructions: "instructions-canary",
+        checkCommand: "check-command-canary",
+        permissions: { github: { issues: "write" } },
+        composioToolkitSlugs: ["composio-canary"],
+        builtinToolNames: ["builtin-canary"],
+        outputSchema: { secretOutput: { type: "string" } },
+      },
+    ],
+    edges: [],
+  },
   status: "active",
   guardrails: null,
   permissions: {},
@@ -42,7 +58,7 @@ const run = {
   currentStepRunId: null,
   iterationCount: 0,
   stepCount: 0,
-  context: {},
+  context: { trigger: { token: "private-context" } },
   source: "manual",
   triggerId: null,
   idempotencyKey: "manual:1",
@@ -60,6 +76,31 @@ describe("public loop run evidence", () => {
   test("omits the private snapshot and exposes safe provenance", () => {
     const publicRun = toPublicAgentLoopRun(run);
     expect(publicRun).not.toHaveProperty("executionSnapshot");
+    expect(publicRun).not.toHaveProperty("context");
+    expect(JSON.stringify(publicRun)).not.toContain("private-context");
+    expect(JSON.stringify(publicRun)).not.toContain("private guidance");
+    const serialized = JSON.stringify(publicRun);
+    for (const canary of [
+      "instructions-canary",
+      "check-command-canary",
+      "issues",
+      "composio-canary",
+      "builtin-canary",
+      "secretOutput",
+    ]) {
+      expect(serialized).not.toContain(canary);
+    }
+    expect(publicRun.definitionSnapshot).toEqual({
+      nodes: [
+        {
+          id: "agent",
+          kind: "agent_step",
+          label: "Private step",
+          position: { x: 10, y: 20 },
+        },
+      ],
+      edges: [],
+    });
     expect(publicRun.snapshotSource).toBe("frozen");
     expect(publicRun.definitionVersion).toBe(1);
     expect(publicRun.definitionHash).toMatch(/^[0-9a-f]{64}$/);

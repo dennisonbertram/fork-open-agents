@@ -18,6 +18,7 @@ let insertedRun: Record<string, unknown> | null;
 let insertedEvents: Array<Record<string, unknown>>;
 let eventInsertFails: boolean;
 let runInsertWins: boolean;
+let conflictWinner: AgentLoopRun | null;
 let nextId: number;
 
 const queryTerminal = (rows: unknown[]) => {
@@ -45,7 +46,10 @@ const tx = {
           return [values];
         }
         insertedRun = values;
-        if (!runInsertWins) return [];
+        if (!runInsertWins) {
+          persistedRun = conflictWinner;
+          return [];
+        }
         persistedRun = values as unknown as AgentLoopRun;
         return [persistedRun];
       };
@@ -123,6 +127,7 @@ beforeEach(() => {
   insertedEvents = [];
   eventInsertFails = false;
   runInsertWins = true;
+  conflictWinner = null;
   nextId = 1;
 });
 
@@ -184,5 +189,19 @@ describe("createAgentLoopRun frozen transaction", () => {
       "Failed to persist frozen loop execution snapshot evidence",
     );
     expect(persistedRun).toBeNull();
+  });
+
+  test("transaction-time idempotency loser returns the authoritative winner without a second event", async () => {
+    const accepted = await createAgentLoopRun(input);
+    conflictWinner = accepted?.run ?? null;
+    persistedRun = null;
+    insertedEvents = [];
+    runInsertWins = false;
+    liveLoop = source({ name: "stale contender" });
+
+    const loser = await createAgentLoopRun(input);
+    expect(loser).toEqual({ run: conflictWinner, created: false });
+    expect(loser?.run.definitionHash).toBe(conflictWinner?.definitionHash);
+    expect(insertedEvents).toHaveLength(0);
   });
 });
