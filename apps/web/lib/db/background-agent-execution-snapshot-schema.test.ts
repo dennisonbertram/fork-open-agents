@@ -17,6 +17,10 @@ describe("background_agent_runs execution snapshot schema", () => {
     );
     expect(schema).toContain("definition_version = 1");
     expect(schema).toContain("definition_hash ~ '^[0-9a-f]{64}$'");
+    expect(schema).toContain("jsonb_typeof(execution_snapshot) = 'object'");
+    expect(schema).toContain(
+      "(execution_snapshot ->> 'snapshotVersion') is not null",
+    );
     expect(schema).toContain(
       "execution_snapshot ->> 'snapshotVersion' = definition_version::text",
     );
@@ -38,6 +42,10 @@ describe("background_agent_runs execution snapshot schema", () => {
     expect(sql).toContain('ADD COLUMN IF NOT EXISTS "definition_hash"');
     expect(sql).toContain("definition_version = 1");
     expect(sql).toContain("definition_hash ~ '^[0-9a-f]{64}$'");
+    expect(sql).toContain("jsonb_typeof(execution_snapshot) = 'object'");
+    expect(sql).toContain(
+      "(execution_snapshot ->> 'snapshotVersion') IS NOT NULL",
+    );
     expect(sql).toContain(
       "execution_snapshot ->> 'snapshotVersion' = definition_version::text",
     );
