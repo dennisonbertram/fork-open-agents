@@ -1,5 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import { readFile } from "node:fs/promises";
+import type { AgentStepNode } from "@/lib/agent-loops/types";
+import type {
+  AgentLoopExecutionSnapshotV1,
+  ResolvedAgentLoopExecutionDefinition,
+} from "@/lib/agent-loops/execution-snapshot";
+import type {
+  BackgroundAgentExecutionSnapshotV1,
+  ResolvedBackgroundAgentExecutionDefinition,
+} from "@/lib/background-agents/execution-snapshot";
 import {
   buildNormalizedBackgroundLearningsInput,
   buildNormalizedBackgroundSandboxInput,
@@ -55,6 +64,73 @@ const backgroundDefinition = {
   requireCiGreenForMerge: true,
   checkCommand: "bun --bun run ci",
 };
+
+const authoritativeBackgroundSnapshot = {
+  snapshotVersion: 1,
+  source: {
+    definitionId: "background-definition-1",
+    name: backgroundDefinition.name,
+    updatedAt: "2026-07-12T00:00:00.000Z",
+    builtinKind: null,
+  },
+  repository: { owner: "SnapshotOwner", name: "SnapshotRepository" },
+  instructions: backgroundDefinition.instructions,
+  permissions: backgroundDefinition.permissions,
+  checkCommand: backgroundDefinition.checkCommand,
+  composioToolkitSlugs: backgroundDefinition.composioToolkitSlugs,
+  builtinToolNames: backgroundDefinition.builtinToolNames,
+  githubActions: backgroundDefinition.githubActions,
+  writeScope: backgroundDefinition.writeScope,
+  requireCiGreenForMerge: backgroundDefinition.requireCiGreenForMerge,
+  inference: backgroundDefinition.inference,
+} satisfies BackgroundAgentExecutionSnapshotV1;
+
+const authoritativeLoopSnapshot = {
+  snapshotVersion: 1,
+  source: {
+    definitionId: "loop-definition-1",
+    name: "Loop definition",
+    updatedAt: "2026-07-12T00:00:00.000Z",
+  },
+  repository: { owner: "SnapshotOwner", name: "SnapshotRepository" },
+  definition: {
+    nodes: [
+      {
+        id: "start",
+        kind: "start",
+        label: "Start",
+        position: { x: 0, y: 0 },
+      },
+      {
+        id: "review",
+        kind: "agent_step",
+        label: "Review",
+        position: { x: 100, y: 0 },
+        instructions: "Use the frozen loop instructions.",
+        builtinToolNames: null,
+      },
+      {
+        id: "end",
+        kind: "end",
+        label: "End",
+        position: { x: 200, y: 0 },
+      },
+    ],
+    edges: [
+      { id: "start-review", source: "start", target: "review", when: "always" },
+      { id: "review-end", source: "review", target: "end", when: "success" },
+    ],
+  },
+  guardrails: {
+    maxStepsPerRun: 20,
+    maxIterations: 5,
+    maxRunDurationMs: 3_600_000,
+    stepTimeoutMs: 600_000,
+    maxAgentTurnsPerStep: 8,
+  },
+  permissions: { github: { issues: "write" } },
+  watchdog: { enabled: false, instructions: null, retryBudget: 0 },
+} satisfies AgentLoopExecutionSnapshotV1;
 
 function backgroundSandboxFixture() {
   return {
@@ -279,6 +355,200 @@ describe("NormalizedUnattendedStepInputV1", () => {
         NormalizedUnattendedInputError,
       );
     }
+  });
+
+  test("rejects provider-prefixed secret and runtime-handle keys", () => {
+    const disguisedKeys = [
+      { githubAccessToken: "private-token" },
+      { sandboxHandle: { id: "sandbox-1" } },
+      { sessionId: "session-1" },
+    ];
+
+    for (const promptContext of disguisedKeys) {
+      expect(() =>
+        buildNormalizedLoopStepInput({
+          ...loopFixture(),
+          promptContext,
+        }),
+      ).toThrow(NormalizedUnattendedInputError);
+    }
+  });
+
+  test("returns detached dynamic JSON that cannot be mutated after validation", () => {
+    const promptContext: Record<string, unknown> = { note: "before" };
+    const outputSchema: Record<string, unknown> = { outcome: "string" };
+    const result = buildNormalizedLoopStepInput({
+      ...loopFixture(),
+      node: { ...loopFixture().node, outputSchema },
+      promptContext,
+    });
+
+    expect(result.prompt.context).not.toBe(promptContext);
+    expect(result.output.schema).not.toBe(outputSchema);
+
+    promptContext.token = "injected-after-validation";
+    outputSchema.callback = () => true;
+
+    expect(result.prompt.context).toEqual({ note: "before" });
+    expect(result.output.schema).toEqual({ outcome: "string" });
+  });
+
+  test("preserves source loop null tool defaults and loop permission fallback", () => {
+    const node = {
+      id: "review",
+      kind: "agent_step",
+      label: "Review",
+      position: { x: 0, y: 0 },
+      instructions: "Fix the reviewed issue.",
+      builtinToolNames: null,
+    } satisfies AgentStepNode;
+    const loopPermissions = { github: { issues: "write" as const } };
+
+    const result = buildNormalizedLoopStepInput({
+      ...loopFixture(),
+      node,
+      loopPermissions,
+    } as never);
+
+    expect(result.requestedPolicy.builtinToolNames).toBeNull();
+    expect(result.requestedPolicy.composioToolkitSlugs).toEqual([]);
+    expect(result.requestedPolicy.declaredPermissions).toEqual(loopPermissions);
+  });
+
+  test("rejects a learnings definition passed to the sandbox builder", () => {
+    expect(() =>
+      buildNormalizedBackgroundSandboxInput({
+        ...backgroundSandboxFixture(),
+        definition: {
+          ...backgroundDefinition,
+          builtinKind: "pr_review_learnings",
+        },
+      }),
+    ).toThrow(NormalizedUnattendedInputError);
+  });
+
+  test("redacts and bounds attacker-controlled dynamic error paths", () => {
+    const privatePathSegment = `ghp_${"private".repeat(10_000)}`;
+
+    try {
+      buildNormalizedLoopStepInput({
+        ...loopFixture(),
+        promptContext: {
+          [privatePathSegment]: { token: "rejected" },
+        },
+      });
+      throw new Error("expected validation to fail");
+    } catch (error) {
+      expect(error).toBeInstanceOf(NormalizedUnattendedInputError);
+      const normalizedError = error as NormalizedUnattendedInputError;
+      expect(JSON.stringify(normalizedError)).not.toContain(privatePathSegment);
+      for (const issue of normalizedError.issues) {
+        for (const part of issue.path) {
+          if (typeof part === "string")
+            expect(part.length).toBeLessThanOrEqual(128);
+        }
+      }
+    }
+  });
+
+  test("rejects an openai-compatible user model without a base URL", () => {
+    expect(() =>
+      buildNormalizedBackgroundSandboxInput({
+        ...backgroundSandboxFixture(),
+        definition: {
+          ...backgroundDefinition,
+          inference: {
+            route: "user",
+            modelId: "custom-model",
+            inferenceProfileId: "profile-1",
+            provider: "openai-compatible",
+            baseUrl: null,
+          },
+        },
+      }),
+    ).toThrow(NormalizedUnattendedInputError);
+  });
+
+  test("derives frozen fields from one verified authoritative snapshot envelope", () => {
+    const resolvedBackground = {
+      definition: authoritativeBackgroundSnapshot,
+      snapshotSource: "frozen",
+      definitionVersion: 1,
+      definitionHash: "b".repeat(64),
+    } satisfies ResolvedBackgroundAgentExecutionDefinition;
+    const background = buildNormalizedBackgroundSandboxInput({
+      resolvedDefinition: resolvedBackground,
+      identity: {
+        runId: "background-run-1",
+        userId: "user-1",
+        triggerId: "trigger-1",
+        requestId: "request-1",
+        workflowRunId: "workflow-1",
+      },
+      repositoryIntent: {
+        ref: "refs/pull/17/head",
+        sha: "abc123",
+        branch: "feature/contract",
+        defaultBranch: "main",
+      },
+      trigger: backgroundSandboxFixture().trigger,
+      workspace: backgroundSandboxFixture().workspace,
+    } as never);
+
+    expect(background.identity.definitionId).toBe(
+      authoritativeBackgroundSnapshot.source.definitionId,
+    );
+    expect(background.repository).toMatchObject(
+      authoritativeBackgroundSnapshot.repository,
+    );
+    expect(background.prompt.instructions).toBe(
+      authoritativeBackgroundSnapshot.instructions,
+    );
+    expect(background.provenance).toEqual({
+      snapshotSource: "frozen",
+      definitionVersion: 1,
+      definitionHash: "b".repeat(64),
+    });
+
+    const resolvedLoop = {
+      definition: authoritativeLoopSnapshot,
+      snapshotSource: "frozen",
+      definitionVersion: 1,
+      definitionHash: "c".repeat(64),
+    } satisfies ResolvedAgentLoopExecutionDefinition;
+    const loop = buildNormalizedLoopStepInput({
+      resolvedDefinition: resolvedLoop,
+      identity: {
+        runId: "loop-run-1",
+        userId: "user-1",
+        stepRunId: "step-1",
+        nodeId: "review",
+        attempt: 1,
+        requestId: "request-1",
+        workflowRunId: "workflow-1",
+      },
+      repositoryIntent: {
+        ref: null,
+        sha: null,
+        branch: "main",
+        defaultBranch: "main",
+      },
+      promptContext: {},
+      watchdogHint: null,
+      workspace: loopFixture().workspace,
+    } as never);
+
+    expect(loop.identity.definitionId).toBe(
+      authoritativeLoopSnapshot.source.definitionId,
+    );
+    expect(loop.repository).toMatchObject(authoritativeLoopSnapshot.repository);
+    expect(loop.prompt.instructions).toBe("Use the frozen loop instructions.");
+    expect(loop.budgets).toEqual({ timeoutMs: 600_000, maxTurns: 8 });
+    expect(loop.requestedPolicy).toMatchObject({
+      declaredPermissions: authoritativeLoopSnapshot.permissions,
+      builtinToolNames: null,
+      composioToolkitSlugs: [],
+    });
   });
 
   test("bounds dynamic summaries, context, hints, arrays, depth, and container entries", () => {
