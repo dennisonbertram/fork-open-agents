@@ -13,6 +13,10 @@ function functionBody(name: string, nextName: string): string {
   return storeSource.slice(start, end === -1 ? undefined : end);
 }
 
+function sourceInterpolation(expression: string): string {
+  return `\${${expression}}`;
+}
+
 describe("source deletion write guards", () => {
   test("deletion terminalizes only active step and watchdog evidence", () => {
     const body = functionBody("deleteAgentLoop", "listAgentLoops");
@@ -50,17 +54,16 @@ describe("source deletion write guards", () => {
   });
 
   test("in-flight step writes require a live parent Run", () => {
-    const body = functionBody(
-      "updateAgentLoopStepRun",
-      "recordAgentLoopEvent",
-    );
+    const body = functionBody("updateAgentLoopStepRun", "recordAgentLoopEvent");
 
     expect(body).toContain("eq(agentLoopStepRuns.id, params.stepRunId)");
     expect(body).toContain("sql`exists (");
     expect(body).toContain(
-      "where ${agentLoopRuns.id} = ${agentLoopStepRuns.loopRunId}",
+      `where ${sourceInterpolation("agentLoopRuns.id")} = ${sourceInterpolation("agentLoopStepRuns.loopRunId")}`,
     );
-    expect(body).toContain("and ${agentLoopRuns.loopId} is not null");
+    expect(body).toContain(
+      `and ${sourceInterpolation("agentLoopRuns.loopId")} is not null`,
+    );
   });
 
   test("resume and retry reject a retained run with a typed source_deleted error", () => {

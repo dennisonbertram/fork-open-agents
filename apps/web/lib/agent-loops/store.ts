@@ -918,7 +918,16 @@ export async function updateAgentLoopStepRun(
         ? { finishedAt: params.finishedAt ?? now }
         : {}),
     })
-    .where(eq(agentLoopStepRuns.id, params.stepRunId))
+    .where(
+      and(
+        eq(agentLoopStepRuns.id, params.stepRunId),
+        sql`exists (
+          select 1 from ${agentLoopRuns}
+          where ${agentLoopRuns.id} = ${agentLoopStepRuns.loopRunId}
+            and ${agentLoopRuns.loopId} is not null
+        )`,
+      ),
+    )
     .returning();
 
   return step ?? null;
