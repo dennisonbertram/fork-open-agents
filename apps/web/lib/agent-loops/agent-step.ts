@@ -102,6 +102,8 @@ import {
   updateAgentLoopRunContext,
   isAgentLoopRunSourceLive,
 } from "./store";
+import * as agentLoopStore from "./store";
+import { getAgentLoopRepoAccess, isAgentLoopsEnabled } from "./config";
 import { buildLoopStepPrompt } from "./loop-step-prompt";
 import type { ModelMessage } from "ai";
 import type { AgentLoopRun } from "@/lib/db/schema";
@@ -182,6 +184,75 @@ function buildSandboxName(stepRunId: string): string {
 
 function nowMs(): number {
   return Date.now();
+}
+
+type AgentLoopLiveGateErrorKind =
+  | "source_deleted"
+  | "source_inactive"
+  | "feature_disabled"
+  | "repo_not_allowed";
+
+type AgentLoopLiveGateDenial = {
+  errorKind: AgentLoopLiveGateErrorKind;
+  errorMessage: string;
+};
+
+class AgentLoopLiveGateError extends Error {
+  constructor(readonly denial: AgentLoopLiveGateDenial) {
+    super(denial.errorMessage);
+    this.name = "AgentLoopLiveGateError";
+  }
+}
+
+async function getAgentLoopLiveGateDenial(params: {
+  loopRunId: string;
+  repoOwner: string;
+  repoName: string;
+}): Promise<AgentLoopLiveGateDenial | null> {
+  if (
+    await isAgentLoopRunSourceLive(params.loopRunId, {
+      repoOwner: params.repoOwner,
+      repoName: params.repoName,
+    })
+  ) {
+    return null;
+  }
+
+  const current = await agentLoopStore.getAgentLoopRunWithLoop(
+    params.loopRunId,
+  );
+  if (!current?.loop) {
+    return {
+      errorKind: "source_deleted",
+      errorMessage: "Source Automation was deleted during execution.",
+    };
+  }
+  if (current.loop.status !== "active") {
+    return {
+      errorKind: "source_inactive",
+      errorMessage: "Source Automation became inactive during execution.",
+    };
+  }
+  if (!isAgentLoopsEnabled()) {
+    return {
+      errorKind: "feature_disabled",
+      errorMessage: "Agent loop execution was disabled during execution.",
+    };
+  }
+  if (!getAgentLoopRepoAccess(params.repoOwner, params.repoName).allowed) {
+    return {
+      errorKind: "repo_not_allowed",
+      errorMessage: "The accepted repository is no longer allowed.",
+    };
+  }
+
+  // The aggregate live check can only be false for the gates above. If state
+  // changes again between its query and this diagnostic query, fail closed
+  // without incorrectly claiming that the source was deleted.
+  return {
+    errorKind: "source_inactive",
+    errorMessage: "Loop execution authorization changed during execution.",
+  };
 }
 
 function guardToolSet(
@@ -434,18 +505,19 @@ export async function executeAgentStep(
     workflowRunId,
     startedAt,
   };
-  const isExecutionAllowed = () =>
-    isAgentLoopRunSourceLive(loopRunId, {
+  const getLiveGateDenial = () =>
+    getAgentLoopLiveGateDenial({
+      loopRunId,
       repoOwner: loop.repoOwner,
       repoName: loop.repoName,
     });
 
-  if (!(await isExecutionAllowed())) {
-    return {
-      outcome: "failure",
-      errorKind: "source_deleted",
-      errorMessage: "Source Automation deleted",
-    };
+  const initialLiveGateDenial = await getLiveGateDenial();
+  if (initialLiveGateDenial) {
+    return recordAgentStepFailure({
+      ...failureCtx,
+      ...initialLiveGateDenial,
+    });
   }
 
   // ── 1. Verify repo access (write required for agent_step commit/push) ────────
@@ -504,13 +576,13 @@ export async function executeAgentStep(
     accessResult.defaultBranch,
   );
 
-  if (!(await isExecutionAllowed())) {
+  const sandboxLiveGateDenial = await getLiveGateDenial();
+  if (sandboxLiveGateDenial) {
     await revokeInstallationToken(cloneToken).catch(() => undefined);
-    return {
-      outcome: "failure",
-      errorKind: "source_deleted",
-      errorMessage: "Source Automation deleted",
-    };
+    return recordAgentStepFailure({
+      ...failureCtx,
+      ...sandboxLiveGateDenial,
+    });
   }
 
   // ── 4. Connect sandbox ────────────────────────────────────────────────────────
@@ -640,8 +712,9 @@ export async function executeAgentStep(
       });
       if (composioResult.status === "ready") {
         composioTools = guardToolSet(composioResult.tools, async () => {
-          if (!(await isExecutionAllowed())) {
-            throw new Error("Loop execution authorization was revoked.");
+          const denial = await getLiveGateDenial();
+          if (denial) {
+            throw new AgentLoopLiveGateError(denial);
           }
           await assertComposioRepoToolkitsStillAllowed({
             userId: loopRun.userId,
@@ -772,12 +845,12 @@ export async function executeAgentStep(
           ...(composioTools ? { tools: composioTools } : {}),
         } as Parameters<typeof openAgent.generate>[0]);
 
-        if (!(await isExecutionAllowed())) {
-          return {
-            outcome: "failure",
-            errorKind: "source_deleted",
-            errorMessage: "Source Automation deleted",
-          };
+        const turnLiveGateDenial = await getLiveGateDenial();
+        if (turnLiveGateDenial) {
+          return await recordAgentStepFailure({
+            ...failureCtx,
+            ...turnLiveGateDenial,
+          });
         }
 
         // Append model response messages so tool results are visible next turn.
@@ -832,6 +905,12 @@ export async function executeAgentStep(
         }
       }
     } catch (err) {
+      if (err instanceof AgentLoopLiveGateError) {
+        return await recordAgentStepFailure({
+          ...failureCtx,
+          ...err.denial,
+        });
+      }
       const isAbort =
         err instanceof Error &&
         (err.name === "AbortError" || err.message.includes("aborted"));
@@ -1002,12 +1081,12 @@ export async function executeAgentStep(
       });
 
       if (intentResult.ok) {
-        if (!(await isExecutionAllowed())) {
-          return {
-            outcome: "failure",
-            errorKind: "source_deleted",
-            errorMessage: "Source Automation deleted",
-          };
+        const commitLiveGateDenial = await getLiveGateDenial();
+        if (commitLiveGateDenial) {
+          return await recordAgentStepFailure({
+            ...failureCtx,
+            ...commitLiveGateDenial,
+          });
         }
         const finalCommitAccess = await verifyRepoAccess({
           userId: loopRun.userId,

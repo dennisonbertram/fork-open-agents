@@ -123,12 +123,26 @@ const updateAgentLoopRunContextMock = mock(async (input: RunContextInput) => {
 });
 
 let sourceLiveResults: boolean[] = [];
+let liveSourceState: "deleted" | "inactive" | "active" = "deleted";
+let agentLoopsEnabled = true;
+let repoAllowed = true;
 const isAgentLoopRunSourceLiveMock = mock(
   async () => sourceLiveResults.shift() ?? true,
 );
+const getAgentLoopRunWithLoopMock = mock(async () => ({
+  run: currentLoopRun,
+  loop:
+    liveSourceState === "deleted"
+      ? null
+      : {
+          ...currentLoop,
+          status: liveSourceState === "active" ? "active" : "inactive",
+        },
+}));
 
 mock.module("./store", () => ({
   isAgentLoopRunSourceLive: isAgentLoopRunSourceLiveMock,
+  getAgentLoopRunWithLoop: getAgentLoopRunWithLoopMock,
   createAndAdvanceAgentLoopStep: mock(async () => ({
     outcome: "source_deleted" as const,
   })),
@@ -144,6 +158,14 @@ mock.module("./store", () => ({
   conditionallyTransitionRunStatus: mock(async () => null),
   findStalledLoopRunCandidates: mock(async () => []),
   retryCurrentStep: mock(async () => undefined),
+}));
+
+mock.module("./config", () => ({
+  isAgentLoopsEnabled: () => agentLoopsEnabled,
+  getAgentLoopRepoAccess: () =>
+    repoAllowed
+      ? { allowed: true as const }
+      : { allowed: false as const, reason: "repo_not_allowed" as const },
 }));
 
 // ── GitHub access + app mocks ─────────────────────────────────────────────────
@@ -505,6 +527,9 @@ function resetMocks() {
   recordedStepUpdates = [];
   recordedContextUpdates = [];
   sourceLiveResults = [];
+  liveSourceState = "deleted";
+  agentLoopsEnabled = true;
+  repoAllowed = true;
 
   sandboxConnectShouldThrow = null;
   sandboxReadFileResult = JSON.stringify({ result: "done" });
@@ -555,6 +580,7 @@ function resetMocks() {
   recordAgentLoopEventMock.mockClear();
   updateAgentLoopRunContextMock.mockClear();
   isAgentLoopRunSourceLiveMock.mockClear();
+  getAgentLoopRunWithLoopMock.mockClear();
   verifyRepoAccessMock.mockClear();
   mintInstallationTokenMock.mockClear();
   revokeInstallationTokenMock.mockClear();
@@ -619,9 +645,64 @@ describe("source deletion race guards", () => {
     const result = await execute();
 
     expect(result.errorKind).toBe("source_deleted");
+    expect(recordedStepUpdates.at(-1)).toMatchObject({
+      status: "failed",
+      errorKind: "source_deleted",
+    });
+    expect(recordedEvents.at(-1)).toMatchObject({
+      eventName: "agent-loop.step.failed",
+      payload: expect.objectContaining({ errorKind: "source_deleted" }),
+    });
     expect(verifyRepoAccessMock).not.toHaveBeenCalled();
     expect(connectSandboxMock).not.toHaveBeenCalled();
     expect(createCommitMock).not.toHaveBeenCalled();
+  });
+
+  test("inactive source reports its exact cause and closes the step", async () => {
+    sourceLiveResults = [false];
+    liveSourceState = "inactive";
+
+    const result = await execute();
+
+    expect(result.errorKind).toBe("source_inactive");
+    expect(recordedStepUpdates.at(-1)).toMatchObject({
+      status: "failed",
+      errorKind: "source_inactive",
+    });
+    expect(verifyRepoAccessMock).not.toHaveBeenCalled();
+    expect(connectSandboxMock).not.toHaveBeenCalled();
+  });
+
+  test("feature kill switch reports its exact cause and closes the step", async () => {
+    sourceLiveResults = [false];
+    liveSourceState = "active";
+    agentLoopsEnabled = false;
+
+    const result = await execute();
+
+    expect(result.errorKind).toBe("feature_disabled");
+    expect(recordedStepUpdates.at(-1)).toMatchObject({
+      status: "failed",
+      errorKind: "feature_disabled",
+    });
+    expect(verifyRepoAccessMock).not.toHaveBeenCalled();
+    expect(connectSandboxMock).not.toHaveBeenCalled();
+  });
+
+  test("repository allowlist revocation reports its exact cause", async () => {
+    sourceLiveResults = [false];
+    liveSourceState = "active";
+    repoAllowed = false;
+
+    const result = await execute();
+
+    expect(result.errorKind).toBe("repo_not_allowed");
+    expect(recordedStepUpdates.at(-1)).toMatchObject({
+      status: "failed",
+      errorKind: "repo_not_allowed",
+    });
+    expect(verifyRepoAccessMock).not.toHaveBeenCalled();
+    expect(connectSandboxMock).not.toHaveBeenCalled();
   });
 
   test("deletion after setup prevents sandbox allocation", async () => {
