@@ -1,6 +1,14 @@
 import { makeAutomationId } from "./identity";
 import type { AutomationSource } from "./types";
 
+/**
+ * NON-PRODUCTION RESEARCH ARTIFACT FOR DECISION #945.
+ *
+ * These in-memory helpers make storage-consolidation safety invariants
+ * executable. They are not database codecs, migration utilities, deletion
+ * operations, shadow-read infrastructure, or an approved canonical schema.
+ */
+
 export type SourceQualifiedStorageRecord = Record<string, unknown> & {
   source: AutomationSource;
   id: string;
@@ -8,8 +16,8 @@ export type SourceQualifiedStorageRecord = Record<string, unknown> & {
 
 export type LegacyAutomationTrigger = Record<string, unknown> & {
   id: string;
-  agentId: string | null;
-  loopId: string | null;
+  agentId: unknown;
+  loopId: unknown;
   kind: unknown;
 };
 
@@ -32,6 +40,7 @@ export type StorageDecisionFixtures = {
 };
 
 export type SourceQualifiedStorageEnvelope = {
+  decisionScope: "research_only";
   definitions: Map<string, SourceQualifiedStorageRecord>;
   runs: Map<string, SourceQualifiedStorageRecord>;
   events: Map<string, SourceQualifiedStorageRecord>;
@@ -66,6 +75,7 @@ export function encodeSourceQualifiedStorage(
   input: StorageDecisionFixtures,
 ): SourceQualifiedStorageEnvelope {
   return {
+    decisionScope: "research_only",
     definitions: toSourceQualifiedMap(input.definitions),
     runs: toSourceQualifiedMap(input.runs),
     events: toSourceQualifiedMap(input.events),
@@ -114,37 +124,46 @@ export function hasExactlyOneLegacyTriggerTarget(trigger: {
   loopId: unknown;
 }): boolean {
   return (
-    Number(trigger.agentId !== null) + Number(trigger.loopId !== null) === 1
+    (isNonEmptyString(trigger.agentId) && trigger.loopId === null) ||
+    (trigger.agentId === null && isNonEmptyString(trigger.loopId))
   );
 }
 
 export function tagLegacyAutomationTrigger(
   trigger: LegacyAutomationTrigger,
 ): TaggedAutomationTrigger {
-  if (!hasExactlyOneLegacyTriggerTarget(trigger)) {
-    throw new Error(
-      `Automation trigger ${trigger.id} must target exactly one source`,
-    );
+  if (isNonEmptyString(trigger.agentId) && trigger.loopId === null) {
+    return {
+      id: trigger.id,
+      target: {
+        source: "background_agent",
+        definitionId: trigger.agentId,
+      },
+      kind: trigger.kind,
+    };
   }
 
-  return {
-    id: trigger.id,
-    target:
-      trigger.agentId !== null
-        ? {
-            source: "background_agent",
-            definitionId: trigger.agentId,
-          }
-        : {
-            source: "agent_loop",
-            definitionId: trigger.loopId as string,
-          },
-    kind: trigger.kind,
-  };
+  if (trigger.agentId === null && isNonEmptyString(trigger.loopId)) {
+    return {
+      id: trigger.id,
+      target: {
+        source: "agent_loop",
+        definitionId: trigger.loopId,
+      },
+      kind: trigger.kind,
+    };
+  }
+
+  throw new Error(
+    `Automation trigger ${trigger.id} must target exactly one source`,
+  );
 }
 
-/** Remove only the definition. Retained runs and native evidence stay intact. */
-export function deleteDefinitionPreservingRunHistory(
+/**
+ * Simulate one research invariant by removing a fixture definition only.
+ * This is not the complete production deletion behavior for either source.
+ */
+export function simulateDefinitionRemovalPreservingFixtureHistory(
   envelope: SourceQualifiedStorageEnvelope,
   definition: { source: AutomationSource; id: string },
 ): void {
@@ -154,13 +173,13 @@ export function deleteDefinitionPreservingRunHistory(
 }
 
 /**
- * Return both storage lanes during a reversible shadow-read period.
+ * Model both storage lanes for the rollback fixture in this decision harness.
  *
- * The lane is part of the audit identity, so canonical and legacy copies can
- * be compared. Source qualification prevents equal local IDs from different
- * executors from being collapsed.
+ * This does not implement a production shadow-read or reconciliation path. The
+ * lane is part of the fixture identity so copies can be compared without
+ * collapsing equal local IDs from different executors.
  */
-export function readCanonicalAndLegacyForRollback<
+export function modelCanonicalAndLegacyRollbackRead<
   Canonical extends SourceQualifiedStorageRecord,
   Legacy extends SourceQualifiedStorageRecord,
 >(params: {
@@ -211,4 +230,8 @@ function makeRollbackReadEntry<T extends SourceQualifiedStorageRecord>(
     sourceQualifiedId: makeAutomationId(row.source, row.id),
     row,
   };
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
 }

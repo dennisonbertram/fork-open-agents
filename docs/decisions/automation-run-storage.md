@@ -38,10 +38,14 @@ The audit reviewed schemas, source stores, executors, routes, deletion paths,
 read adapters, snapshots, triggers, and representative evidence. The executable
 safety harness is
 [`storage-decision.test.ts`](../../apps/web/lib/automations/storage-decision.test.ts).
-Its production pure helpers live in
+Its research-only pure modeling helpers live in
 [`storage-decision.ts`](../../apps/web/lib/automations/storage-decision.ts).
 The harness is deliberately in-memory: it specifies prerequisites without
 creating a shadow schema that might be mistaken for an approved migration.
+Those helpers are not production migration codecs, deletion implementations,
+or dual-read infrastructure. In particular, the fixture definition-removal
+simulation proves only that modeled history remains present; production source
+deletion must continue to use the mature source-specific lifecycle paths.
 
 ## Evidence
 
@@ -174,12 +178,19 @@ The migration must be additive and reversible:
 7. Repoint triggers atomically only after parity is proven.
 8. Soak in development/preview, then production, with dashboards and alerts for
    divergence.
-9. Stop legacy writes only after the soak. Retain legacy tables through the
-   rollback window and at least one verified point-in-time recovery exercise.
-10. Drop legacy storage only in a later migration after explicit approval.
+9. Keep dual writes enabled throughout the soak and rollback window. Before
+   ending dual writes, quiesce mutations, reconcile both directions against the
+   journal, verify zero unexplained deltas, and require explicit approval.
+10. If rollback is required after any canonical-only writes, first quiesce
+    mutations, backfill and verify every canonical delta into legacy storage,
+    and only then switch reads and writes back to legacy.
+11. Drop legacy storage only in a later migration after explicit approval and
+    at least one verified point-in-time recovery exercise.
 
-Rollback is a feature-flag switch back to legacy reads and writes, followed by
-reconciliation from the migration journal. A rollback that depends on reverse
+While dual writes remain verified, rollback is a feature-flag switch back to
+legacy reads and writes. Once canonical-only writes exist, rollback is not a
+flag flip: writes must be quiesced and canonical deltas reconciled into legacy
+before switching. A rollback that loses canonical deltas or depends on reverse
 engineering canonical JSON is not acceptable.
 
 ## Estimate

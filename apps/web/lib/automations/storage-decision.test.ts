@@ -10,13 +10,12 @@
 import { describe, expect, test } from "bun:test";
 import {
   decodeSourceQualifiedStorage,
-  deleteDefinitionPreservingRunHistory,
   detectSourceLocalIdCollisions,
   encodeSourceQualifiedStorage,
   hasExactlyOneLegacyTriggerTarget,
-  readCanonicalAndLegacyForRollback,
+  modelCanonicalAndLegacyRollbackRead,
+  simulateDefinitionRemovalPreservingFixtureHistory,
   tagLegacyAutomationTrigger,
-  type LegacyAutomationTrigger,
   type StorageDecisionFixtures,
 } from "./storage-decision";
 
@@ -392,15 +391,18 @@ describe("#945 canonical storage decision safety harness", () => {
           id: "invalid-trigger",
           kind: "github.issue",
           ...target,
-        } as unknown as LegacyAutomationTrigger),
+        }),
       ).toThrow("must target exactly one source");
     }
   });
 
-  test("definition deletion preserves retained Run history and source evidence", () => {
+  test("fixture definition removal preserves retained Run history and source evidence", () => {
     const envelope = encodeSourceQualifiedStorage(fixtures);
-    deleteDefinitionPreservingRunHistory(envelope, backgroundDefinition);
-    deleteDefinitionPreservingRunHistory(envelope, loopDefinition);
+    simulateDefinitionRemovalPreservingFixtureHistory(
+      envelope,
+      backgroundDefinition,
+    );
+    simulateDefinitionRemovalPreservingFixtureHistory(envelope, loopDefinition);
     expect(envelope.definitions.size).toBe(0);
     expect([...envelope.runs.values()]).toEqual([backgroundRun, loopRun]);
     expect(envelope.evidence).toEqual({
@@ -430,7 +432,7 @@ describe("#945 canonical storage decision safety harness", () => {
         legacy: true,
       },
     ];
-    const rows = readCanonicalAndLegacyForRollback({ canonical, legacy });
+    const rows = modelCanonicalAndLegacyRollbackRead({ canonical, legacy });
     expect(rows.map(({ row }) => row)).toEqual([
       canonical[0],
       legacy[0],
