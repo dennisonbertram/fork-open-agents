@@ -238,9 +238,9 @@ describe("REGRESSION — button label uses Session terminology", () => {
 // MR-4 (#812): New-Chat runtime picker — getRuntimeModeLabel
 // ---------------------------------------------------------------------------
 describe("getRuntimeModeLabel (MR-4/#812)", () => {
-  test("BT-MR4-001: classic mode describes its sandbox as on demand", () => {
+  test("BT-MR4-001: classic mode uses a lifecycle-neutral sandbox label", () => {
     expect(getRuntimeModeLabel("classic", "Python 3.12")).toBe(
-      "On-demand sandbox (classic)",
+      "Vercel sandbox (classic)",
     );
   });
 

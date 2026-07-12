@@ -98,7 +98,7 @@ export function getRuntimeModeLabel(
   profileDisplayName: string,
 ): string {
   if (runtimeMode === "classic") {
-    return "On-demand sandbox (classic)";
+    return "Vercel sandbox (classic)";
   }
   return `Through a verified environment (managed): ${profileDisplayName}`;
 }
