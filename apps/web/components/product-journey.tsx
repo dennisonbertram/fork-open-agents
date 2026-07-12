@@ -4,7 +4,10 @@ import { cn } from "@/lib/utils";
 
 export function ProductJourney({ dark = false }: { dark?: boolean }) {
   return (
-    <ol className="grid gap-px border border-current/15 sm:grid-cols-2 lg:grid-cols-4">
+    <ol
+      aria-label="Product journey"
+      className="grid gap-px border border-current/15 sm:grid-cols-2 lg:grid-cols-4"
+    >
       {PRODUCT_JOURNEY.map((step, index) => (
         <li key={step.id} className="p-4">
           <span className="text-xs tabular-nums opacity-60">{index + 1}.</span>

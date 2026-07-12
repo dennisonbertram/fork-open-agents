@@ -1,4 +1,5 @@
 import { SignInButton } from "@/components/auth/sign-in-button";
+import { PRODUCT_JOURNEY } from "@/lib/product-journey";
 
 type BentoItem = {
   readonly id: string;
@@ -85,7 +86,7 @@ export function LandingBento() {
               coding tasks, and inspect what actually ran.
             </p>
             <div className="mt-6">
-              <SignInButton callbackUrl="/get-started?step=github&amp;next=%2Fsessions" />
+              <SignInButton callbackUrl={PRODUCT_JOURNEY[0].href} />
             </div>
           </div>
         </div>

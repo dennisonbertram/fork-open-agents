@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { SignInButton } from "@/components/auth/sign-in-button";
+import { PRODUCT_JOURNEY } from "@/lib/product-journey";
 import { cn } from "@/lib/utils";
 import { GitHubLink } from "./github-link";
 import { Logo } from "./logo";
@@ -53,7 +54,7 @@ export function LandingNav({
             <SignInButton
               size="sm"
               className="h-10 sm:h-8"
-              callbackUrl="/get-started?step=github&amp;next=%2Fsessions"
+              callbackUrl={PRODUCT_JOURNEY[0].href}
             />
           </div>
         </div>

@@ -12,6 +12,7 @@ import { LandingFooter } from "@/components/landing/footer";
 import { LandingNav } from "@/components/landing/nav";
 import { Stage } from "@/components/landing/stage";
 import { ProductJourney } from "@/components/product-journey";
+import { PRODUCT_JOURNEY } from "@/lib/product-journey";
 
 /**
  * Renders when the Vercel OAuth flow redirects back with `?error=<code>`
@@ -78,7 +79,7 @@ export function SignedOutHero() {
               <div className="flex items-center gap-2">
                 <SignInButton
                   size="lg"
-                  callbackUrl="/get-started?step=github&amp;next=%2Fsessions"
+                  callbackUrl={PRODUCT_JOURNEY[0].href}
                 />
                 <GitHubLink>Open Source</GitHubLink>
               </div>
