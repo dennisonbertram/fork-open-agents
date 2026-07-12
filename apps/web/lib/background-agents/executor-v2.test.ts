@@ -678,6 +678,30 @@ describe("execution snapshot binding", () => {
     });
   });
 
+  test("uses the fresh nullable agent id when deletion races initial validation", async () => {
+    currentRun = buildSnapshotRun(buildAgent());
+    getBackgroundAgentRunWithAgent.mockImplementationOnce(async () => ({
+      run: currentRun,
+      agent: currentAgent,
+    }));
+    getBackgroundAgentRunWithAgent.mockImplementationOnce(async () => ({
+      run: { ...currentRun, agentId: null },
+      agent: null,
+    }));
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-delete-race",
+    });
+
+    expect(connectSandbox).not.toHaveBeenCalled();
+    expect(recordedEvent("background-agent.run.failed")).toMatchObject({
+      agentId: null,
+      errorKind: "agent_deleted",
+    });
+  });
+
   test("legacy rows use an explicit observable live fallback", async () => {
     currentRun = buildRun();
     const { executeBackgroundAgentRun } = await executorModulePromise;
