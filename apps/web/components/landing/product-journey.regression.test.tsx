@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import { SignedOutHero } from "@/components/auth/signed-out-hero";
+import { ProductJourney } from "@/components/product-journey";
 
 const landingDir = import.meta.dir;
 const source = [
@@ -20,7 +20,7 @@ const source = [
 
 describe("landing product journey (#967)", () => {
   test("renders one semantic ordered journey with all four actions", () => {
-    const html = renderToStaticMarkup(<SignedOutHero />);
+    const html = renderToStaticMarkup(<ProductJourney />);
     expect(html).toContain("<ol");
     for (const label of [
       "Connect GitHub",
@@ -51,14 +51,22 @@ describe("landing product journey (#967)", () => {
   });
 
   test("every landing sign-in CTA returns to the safe GitHub step", () => {
-    for (const file of ["../auth/signed-out-hero.tsx", "nav.tsx", "bento.tsx"]) {
+    for (const file of [
+      "../auth/signed-out-hero.tsx",
+      "nav.tsx",
+      "bento.tsx",
+    ]) {
       const value = readFileSync(join(landingDir, file), "utf8");
-      expect(value).toContain('callbackUrl="/get-started?step=github&amp;next=%2Fsessions"');
+      expect(value).toContain(
+        'callbackUrl="/get-started?step=github&amp;next=%2Fsessions"',
+      );
     }
   });
 
   test("labels every simulated activity as an illustrative example", () => {
-    expect(source.match(/Illustrative example/g)?.length ?? 0).toBeGreaterThanOrEqual(4);
+    expect(
+      source.match(/Illustrative example/g)?.length ?? 0,
+    ).toBeGreaterThanOrEqual(4);
     expect(source).not.toMatch(/\$0\.0[02]\/m/);
   });
 

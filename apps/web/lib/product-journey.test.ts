@@ -15,8 +15,14 @@ describe("shared product journey (#967)", () => {
       "/automations",
       "/runs",
     ]);
-    expect(PRODUCT_JOURNEY[1].description).toMatch(/durable.*repository.*branch.*sandbox/i);
-    expect(PRODUCT_JOURNEY[2].description).toMatch(/manual.*github.*schedule.*permissions.*readiness/i);
-    expect(PRODUCT_JOURNEY[3].description).toMatch(/status.*trigger.*evidence.*recovery/i);
+    expect(PRODUCT_JOURNEY[1].description).toMatch(
+      /durable.*repository.*branch.*sandbox/i,
+    );
+    expect(PRODUCT_JOURNEY[2].description).toMatch(
+      /manual.*github.*schedule.*permissions.*readiness/i,
+    );
+    expect(PRODUCT_JOURNEY[3].description).toMatch(
+      /status.*trigger.*evidence.*recovery/i,
+    );
   });
 });

@@ -6,7 +6,11 @@ registerDomTestHooks();
 
 function Probe() {
   const reduced = usePrefersReducedMotion();
-  return <output>{reduced === null ? "unknown" : reduced ? "reduced" : "full"}</output>;
+  return (
+    <output>
+      {reduced === null ? "unknown" : reduced ? "reduced" : "full"}
+    </output>
+  );
 }
 
 describe("usePrefersReducedMotion", () => {
@@ -18,7 +22,9 @@ describe("usePrefersReducedMotion", () => {
         removeEventListener: () => undefined,
       }) as unknown as MediaQueryList;
     const { container } = render(<Probe />);
-    expect(["unknown", "reduced"]).toContain(within(container).getByRole("status").textContent);
+    expect(["unknown", "reduced"]).toContain(
+      within(container).getByRole("status").textContent,
+    );
     expect(container.textContent).not.toContain("full");
   });
 });
