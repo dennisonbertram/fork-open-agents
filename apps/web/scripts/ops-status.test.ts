@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   buildVercelInspectArgs,
   buildVercelLogsArgs,
+  buildGithubStatus,
   formatOpsStatus,
   isOpsStatusHealthy,
   parseGhRuns,
@@ -161,6 +162,19 @@ describe("ops status", () => {
         },
       }),
     ).toBe(false);
+  });
+
+  test("blocks strict proof when Production Smoke history cannot be read", () => {
+    const github = buildGithubStatus(
+      { status: 0, stdout: "[]", stderr: "" },
+      { status: 1, stdout: "", stderr: "GitHub run access unavailable" },
+    );
+
+    expect(github).toEqual({
+      status: "blocked",
+      openPrBlockers: [],
+      sourceGap: "GitHub run access unavailable",
+    });
   });
 
   test("parses deployment metadata from vercel inspect json", () => {

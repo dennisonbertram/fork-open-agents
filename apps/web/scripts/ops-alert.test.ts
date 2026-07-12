@@ -58,6 +58,19 @@ describe("ops alert", () => {
     expect(body).toContain("[redacted]");
   });
 
+  test("renders only explicitly scoped Vercel diagnostics", () => {
+    const body = renderAlertBody({
+      source: "public-smoke",
+      environment: "production",
+      status: "failing",
+      summary: "home failed",
+    });
+
+    expect(body).not.toContain("vercel logs --project open-agents");
+    expect(body).toContain("vercel logs --scope <team-or-org-id>");
+    expect(body).toContain("--project <project-id>");
+  });
+
   test("does not create an issue for recovery without an open incident", () => {
     const recorder = commandRecorder([{ status: 0, stdout: "\n", stderr: "" }]);
 

@@ -274,6 +274,31 @@ export function parseLatestProductionDeploymentSha(
   return typeof deployment?.sha === "string" ? deployment.sha : undefined;
 }
 
+export function buildGithubStatus(
+  prResult: CommandResult,
+  runResult: CommandResult,
+): OpsStatusSnapshot["github"] {
+  if (prResult.status !== 0) {
+    return {
+      status: "blocked",
+      openPrBlockers: [],
+      sourceGap: redactOpsText(prResult.stderr || "GitHub access unavailable."),
+    };
+  }
+  if (runResult.status !== 0) {
+    return {
+      status: "blocked",
+      openPrBlockers: parsePrBlockers(prResult.stdout),
+      sourceGap: redactOpsText(runResult.stderr || "GitHub run read failed."),
+    };
+  }
+  return {
+    status: "healthy",
+    openPrBlockers: parsePrBlockers(prResult.stdout),
+    latestProductionSmoke: parseGhRuns(runResult.stdout),
+  };
+}
+
 export function formatOpsStatus(snapshot: OpsStatusSnapshot): string {
   const lines = [
     "Production ops status",
@@ -438,28 +463,7 @@ export async function collectOpsStatusSnapshot(params?: {
     "--json",
     "status,conclusion,url",
   ]);
-  const github =
-    prResult.status === 0
-      ? {
-          status: "healthy" as const,
-          openPrBlockers: parsePrBlockers(prResult.stdout),
-          latestProductionSmoke:
-            runResult.status === 0 ? parseGhRuns(runResult.stdout) : undefined,
-          ...(runResult.status !== 0
-            ? {
-                sourceGap: redactOpsText(
-                  runResult.stderr || "GitHub run read failed.",
-                ),
-              }
-            : {}),
-        }
-      : {
-          status: "blocked" as const,
-          openPrBlockers: [],
-          sourceGap: redactOpsText(
-            prResult.stderr || "GitHub access unavailable.",
-          ),
-        };
+  const github = buildGithubStatus(prResult, runResult);
 
   const degraded =
     deployment.status !== "healthy" ||

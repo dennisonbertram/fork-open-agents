@@ -52,7 +52,7 @@ ${input.summary}
 
 \`\`\`bash
 bun run ops:status -- --since 30m
-vercel logs --project open-agents --environment production --status-code 500,502,503,504 --since 30m
+vercel logs --scope <team-or-org-id> --project <project-id> --environment production --status-code 500,502,503,504 --since 30m
 \`\`\`
 `);
 }
