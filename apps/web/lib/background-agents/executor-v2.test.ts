@@ -67,6 +67,7 @@ type StatusUpdateInput = {
   errorMessage?: string | null;
   outputUrl?: string | null;
   expectedStatuses?: BackgroundAgentRun["status"][];
+  expectedWorkflowRunId?: string;
   force?: boolean;
 };
 
@@ -126,6 +127,12 @@ const updateBackgroundAgentRunStatus = mock(
     if (
       input.expectedStatuses &&
       !input.expectedStatuses.includes(currentRun.status)
+    ) {
+      return null;
+    }
+    if (
+      input.expectedWorkflowRunId &&
+      currentRun.workflowRunId !== input.expectedWorkflowRunId
     ) {
       return null;
     }

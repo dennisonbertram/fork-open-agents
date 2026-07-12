@@ -37,7 +37,7 @@ export function buildNormalizedBackgroundStepInput(params: {
   resolvedDefinition: ResolvedBackgroundAgentExecutionDefinition;
   workflowRunId: string;
   sandboxName: string;
-  defaultBranch: string;
+  defaultBranch?: string | null;
 }): NormalizedBackgroundStepInput {
   const identity = {
     runId: params.run.id,
@@ -71,7 +71,7 @@ export function buildNormalizedBackgroundStepInput(params: {
     : params.run.branch
       ? { ref: params.run.branch, source: "event_branch" as const }
       : {
-          ref: params.defaultBranch,
+          ref: params.defaultBranch ?? "",
           source: "live_default_branch" as const,
         };
 
