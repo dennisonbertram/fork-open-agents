@@ -3,6 +3,8 @@ import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { ProductJourney } from "@/components/product-journey";
+import { buildGitHubConnectUrl } from "@/lib/github/urls";
+import { PRODUCT_JOURNEY } from "@/lib/product-journey";
 
 const landingDir = import.meta.dir;
 const source = [
@@ -21,7 +23,7 @@ const source = [
 describe("landing product journey (#967)", () => {
   test("renders one semantic ordered journey with all four actions", () => {
     const html = renderToStaticMarkup(<ProductJourney />);
-    expect(html).toContain("<ol");
+    expect(html).toContain('<ol aria-label="Product journey"');
     for (const label of [
       "Connect GitHub",
       "Start a Session",
@@ -50,16 +52,17 @@ describe("landing product journey (#967)", () => {
     }
   });
 
-  test("every landing sign-in CTA returns to the safe GitHub step", () => {
+  test("every landing sign-in CTA consumes the shared safe GitHub URL", () => {
+    expect(PRODUCT_JOURNEY[0].href).toBe(buildGitHubConnectUrl("/sessions"));
+
     for (const file of [
       "../auth/signed-out-hero.tsx",
       "nav.tsx",
       "bento.tsx",
     ]) {
       const value = readFileSync(join(landingDir, file), "utf8");
-      expect(value).toContain(
-        'callbackUrl="/get-started?step=github&amp;next=%2Fsessions"',
-      );
+      expect(value).toContain("callbackUrl={PRODUCT_JOURNEY[0].href}");
+      expect(value).not.toContain("/get-started?step=github");
     }
   });
 
