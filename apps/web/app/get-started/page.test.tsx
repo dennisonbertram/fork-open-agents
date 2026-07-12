@@ -78,7 +78,9 @@ describe("GetStartedPage loop-freedom", () => {
     redirect.mockClear();
     const { default: GetStartedPage } = await import("./page");
     await expect(
-      GetStartedPage({ searchParams: Promise.resolve({ next: ["/runs", "//evil"] }) }),
+      GetStartedPage({
+        searchParams: Promise.resolve({ next: ["/runs", "//evil"] }),
+      }),
     ).rejects.toThrow("redirect:/sessions");
   });
 

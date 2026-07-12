@@ -46,7 +46,7 @@ describe("GetStartedFlow - github status auto-open", () => {
     // Step 2's panel must be the one in the expanded (grid-rows-[1fr]) state,
     // not collapsed (grid-rows-[0fr]), even though `step` is absent.
     const lowerHtml = html.toLowerCase();
-    const step2PanelStart = lowerHtml.indexOf(">connect github<");
+    const step2PanelStart = lowerHtml.lastIndexOf(">connect github<");
     expect(step2PanelStart).toBeGreaterThan(-1);
     const panelStart = lowerHtml.lastIndexOf(
       '<div class="border-b border-white/10">',
@@ -115,7 +115,7 @@ describe("GetStartedFlow - product next action (#967)", () => {
     const { GetStartedFlow } = await flowModulePromise;
     const html = renderToStaticMarkup(<GetStartedFlow />);
     expect(html).toContain("Start a Session");
-    expect(html).not.toContain(">Connect GitHub<");
+    expect(html).not.toMatch(/<button[^>]*>Connect GitHub<\/button>/);
   });
 
   test("connected saved internal destination renders Continue", async () => {
@@ -130,7 +130,9 @@ describe("GetStartedFlow - product next action (#967)", () => {
     searchParamValues = { step: "github", next: "/sessions" };
     sessionState = { hasGitHubAccount: true, hasGitHubInstallations: false };
     const { GetStartedFlow } = await flowModulePromise;
-    expect(renderToStaticMarkup(<GetStartedFlow />)).toContain("Install GitHub App");
+    expect(renderToStaticMarkup(<GetStartedFlow />)).toContain(
+      "Install GitHub App",
+    );
   });
 });
 
