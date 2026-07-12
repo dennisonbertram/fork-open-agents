@@ -105,15 +105,18 @@ const listBackgroundAgentOutputsMock = mock(
   async (_runId: string): Promise<OutputRow[]> => recordedOutputs,
 );
 const updateBackgroundAgentRunStatus = mock(
-  async (input: StatusUpdateInput): Promise<BackgroundAgentRun> => ({
-    ...currentRun,
-    status: input.status,
-    workflowRunId: input.workflowRunId ?? currentRun.workflowRunId,
-    sandboxName: input.sandboxName ?? currentRun.sandboxName,
-    errorKind: input.errorKind ?? currentRun.errorKind,
-    errorMessage: input.errorMessage ?? currentRun.errorMessage,
-    outputUrl: input.outputUrl ?? currentRun.outputUrl,
-  }),
+  async (input: StatusUpdateInput): Promise<BackgroundAgentRun> => {
+    currentRun = {
+      ...currentRun,
+      status: input.status,
+      workflowRunId: input.workflowRunId ?? currentRun.workflowRunId,
+      sandboxName: input.sandboxName ?? currentRun.sandboxName,
+      errorKind: input.errorKind ?? currentRun.errorKind,
+      errorMessage: input.errorMessage ?? currentRun.errorMessage,
+      outputUrl: input.outputUrl ?? currentRun.outputUrl,
+    };
+    return currentRun;
+  },
 );
 
 const sandboxExec = mock(async (command: string): Promise<ExecResult> => {

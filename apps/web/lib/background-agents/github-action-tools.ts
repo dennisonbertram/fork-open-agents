@@ -5,6 +5,7 @@ import type { ToolSet } from "ai";
 import { z } from "zod";
 import type { Sandbox } from "@open-agents/sandbox";
 import type { NewBackgroundAgentOutput } from "@/lib/db/schema";
+import type { GitHubInstallationTokenPermissions } from "@/lib/github/app";
 import { verifyRepoAccess } from "@/lib/github/access";
 import { withScopedInstallationOctokit } from "@/lib/github/app";
 import { createCommit } from "@/lib/github/commit";
@@ -91,6 +92,8 @@ export type GitHubActionToolsContext = {
   writeScope: BackgroundAgentWriteScope;
   requireCiGreen: boolean;
   userPermission: "read" | "write";
+  /** Optional normalized/live permission ceiling for per-action tokens. */
+  permissionCeiling?: GitHubInstallationTokenPermissions | null;
   /**
    * The agent's configured required check command. When set, github_push
    * runs it in the sandbox BEFORE committing and refuses with
@@ -267,10 +270,14 @@ async function runGitHubAction(params: RunActionParams): Promise<ActionResult> {
     operation: (octokit: unknown) => Promise<T>,
   ): Promise<T> => {
     try {
+      const scopedPermissions = applyPermissionCeiling(
+        permissions,
+        ctx.permissionCeiling,
+      );
       return await withScopedInstallationOctokit({
         installationId: ctx.installationId,
         repositoryId: ctx.repositoryId,
-        permissions,
+        permissions: scopedPermissions,
         // Wrap operation-phase errors so the outer catch can tell them apart
         // from mint-phase failures: a throw AFTER a successful mint is a
         // GitHub API/network failure and must be audited as github_api_error,
@@ -362,6 +369,25 @@ class TokenMintError extends Error {
     super(message);
     this.name = "TokenMintError";
   }
+}
+
+function applyPermissionCeiling(
+  requested: Record<string, "read" | "write">,
+  ceiling: GitHubInstallationTokenPermissions | null | undefined,
+): Record<string, "read" | "write"> {
+  if (!ceiling) return requested;
+  const scoped: Record<string, "read" | "write"> = {};
+  for (const [key, requestedValue] of Object.entries(requested)) {
+    const ceilingValue =
+      ceiling[key as keyof GitHubInstallationTokenPermissions];
+    if (requestedValue === "write" && ceilingValue === "read") {
+      throw new TokenMintError(
+        `Normalized permission policy refused ${key}:write token scope.`,
+      );
+    }
+    scoped[key] = requestedValue;
+  }
+  return scoped;
 }
 
 /**

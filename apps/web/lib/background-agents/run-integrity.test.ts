@@ -44,12 +44,14 @@ mock.module("nanoid", () => ({
 // notInArray() call targets.
 const runsIdColumn = "runId.id";
 const runsStatusColumn = "runId.status";
+const runsWorkflowRunIdColumn = "runId.workflowRunId";
 const eventsRunIdColumn = "eventId.runId";
 const eventsSequenceColumn = "eventId.sequence";
 
-const runsTableSymbol: { id: string; status: string } = {
+const runsTableSymbol: { id: string; status: string; workflowRunId: string } = {
   id: runsIdColumn,
   status: runsStatusColumn,
+  workflowRunId: runsWorkflowRunIdColumn,
 };
 const eventsTableSymbol: { runId: string; sequence: string } = {
   runId: eventsRunIdColumn,
@@ -90,6 +92,7 @@ function evalCond(cond: FakeCond | undefined, row: FakeRunRow): boolean {
   if ("_eq" in cond) {
     const [col, value] = cond._eq;
     if (col === "runId.id") return row.id === value;
+    if (col === "runId.workflowRunId") return row.workflowRunId === value;
     return true;
   }
   if ("_notInArray" in cond) {
@@ -301,6 +304,23 @@ describe("#743 terminal-status guard: updateBackgroundAgentRunStatus", () => {
     expect(result).toBeNull();
     expect(runsTable[0]?.status).toBe("running");
     expect(eventsTable).toHaveLength(0);
+  });
+
+  test("expectedWorkflowRunId refuses a stale workflow owner", async () => {
+    const row = seedRun("running");
+    row.workflowRunId = "workflow-new-owner";
+    const { updateBackgroundAgentRunStatus } = await storePromise;
+
+    const result = await updateBackgroundAgentRunStatus({
+      runId: "run-1",
+      status: "failed",
+      expectedStatuses: ["running"],
+      expectedWorkflowRunId: "workflow-stale-owner",
+    });
+
+    expect(result).toBeNull();
+    expect(runsTable[0]?.status).toBe("running");
+    expect(runsTable[0]?.workflowRunId).toBe("workflow-new-owner");
   });
 });
 

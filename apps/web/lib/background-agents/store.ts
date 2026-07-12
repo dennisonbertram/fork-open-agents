@@ -700,6 +700,7 @@ export async function updateBackgroundAgentRunStatus(params: {
   agentId?: string | null;
   userId?: string;
   expectedStatuses?: BackgroundAgentRunStatus[];
+  expectedWorkflowRunId?: string;
 }): Promise<BackgroundAgentRun | null> {
   const now = new Date();
   const setValues = {
@@ -727,6 +728,9 @@ export async function updateBackgroundAgentRunStatus(params: {
         notInArray(backgroundAgentRuns.status, TERMINAL_RUN_STATUSES),
         params.expectedStatuses
           ? inArray(backgroundAgentRuns.status, params.expectedStatuses)
+          : undefined,
+        params.expectedWorkflowRunId
+          ? eq(backgroundAgentRuns.workflowRunId, params.expectedWorkflowRunId)
           : undefined,
       );
 

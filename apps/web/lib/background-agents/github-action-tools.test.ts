@@ -766,6 +766,25 @@ describe("github_comment_on_pr_or_issue execute", () => {
     ]);
   });
 
+  test("permission ceiling refuses a wider per-action token scope", async () => {
+    const tools = resolveGitHubActionTools(
+      buildCtx({ permissionCeiling: { issues: "read" } }),
+    );
+    const tool = tools.github_comment_on_pr_or_issue as unknown as ToolExecutor;
+
+    const result = (await tool.execute({
+      issueOrPrNumber: 42,
+      body: "Looks good.",
+    })) as { ok: false; error: string };
+
+    expect(result.ok).toBe(false);
+    expect(mintInstallationToken).not.toHaveBeenCalled();
+    expect(
+      recordedEvents().find((event) => event.eventName.endsWith(".failed"))
+        ?.errorKind,
+    ).toBe("token_mint_failed");
+  });
+
   test("no assertNotPullRequest guard: comments on a PR number without a preflight GET", async () => {
     const issuesGet = mock(async () => ({ data: {} }));
     mockOctokit = {
