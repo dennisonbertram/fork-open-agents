@@ -18,6 +18,7 @@ export type RunLearningsExtractionParams = {
   generate: (prompt: string) => Promise<unknown>;
   store: LearningsStore;
   recordEvent: (params: unknown) => Promise<void>;
+  assertLiveAuthorization?: () => Promise<void>;
 };
 
 export type RunLearningsExtractionResult = {

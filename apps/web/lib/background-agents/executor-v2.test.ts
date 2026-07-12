@@ -86,12 +86,17 @@ let accessRequiredPermissionSeen: string[] = [];
 let beforeStatusUpdate:
   | ((input: StatusUpdateInput) => void | Promise<void>)
   | null = null;
+let afterEventRecorded: ((input: EventInput) => void | Promise<void>) | null =
+  null;
 
 const getBackgroundAgentRunWithAgent = mock(async () => ({
   run: currentRun,
   agent: currentAgent,
 }));
-const recordBackgroundAgentEvent = mock(async (input: EventInput) => input);
+const recordBackgroundAgentEvent = mock(async (input: EventInput) => {
+  await afterEventRecorded?.(input);
+  return input;
+});
 const recordBackgroundAgentOutput = mock(async (input: OutputInput) => {
   outputIdCounter += 1;
   const row: OutputRow = { ...input, id: `output-${outputIdCounter}` };
@@ -198,7 +203,11 @@ const fakeSandbox = {
   }),
 } as unknown as Sandbox;
 
-const connectSandbox = mock(async () => fakeSandbox);
+let afterSandboxConnected: (() => void | Promise<void>) | null = null;
+const connectSandbox = mock(async () => {
+  await afterSandboxConnected?.();
+  return fakeSandbox;
+});
 mock.module("@open-agents/sandbox", () => ({
   connectSandbox,
   getCurrentBranch: mock(async () => "main"),
@@ -300,6 +309,34 @@ mock.module("@/lib/github/users", () => ({
     username: "mona",
     externalUserId: "1",
   })),
+}));
+
+type LearningsRunnerParams = {
+  assertLiveAuthorization?: () => Promise<void>;
+};
+let learningsRunImpl: (
+  params: LearningsRunnerParams,
+) => Promise<Record<string, unknown>> = async () => ({
+  candidatesExtracted: 0,
+  accepted: 0,
+  merged: 0,
+  rejected: 0,
+});
+const runLearningsExtraction = mock((params: LearningsRunnerParams) =>
+  learningsRunImpl(params),
+);
+mock.module("@/lib/learnings/runner", () => ({ runLearningsExtraction }));
+mock.module("@/lib/learnings/store", () => ({
+  createDbLearningsStore: mock(() => ({})),
+}));
+
+const resolveComposioToolsForBgRun = mock(async () => ({
+  status: "off" as const,
+  reason: "no_slugs_selected" as const,
+}));
+mock.module("./composio-tools", () => ({
+  assertComposioRepoToolkitsStillAllowed: mock(async () => undefined),
+  resolveComposioToolsForBgRun,
 }));
 
 // ---------------------------------------------------------------------------
@@ -513,6 +550,8 @@ beforeEach(() => {
   accessUserPermission = "write";
   accessRequiredPermissionSeen = [];
   beforeStatusUpdate = null;
+  afterEventRecorded = null;
+  afterSandboxConnected = null;
   sanitizerShouldDeny = null;
   inferenceProfileResolutionShouldFail = false;
   inferenceRouteAvailabilityFailureAt = null;
@@ -526,6 +565,12 @@ beforeEach(() => {
     steps: [],
     usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
     totalUsage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+  });
+  learningsRunImpl = async () => ({
+    candidatesExtracted: 0,
+    accepted: 0,
+    merged: 0,
+    rejected: 0,
   });
 
   getBackgroundAgentRunWithAgent.mockClear();
@@ -548,6 +593,8 @@ beforeEach(() => {
   getMergeReadinessViaInstallation.mockClear();
   generate.mockClear();
   recordUsage.mockClear();
+  runLearningsExtraction.mockClear();
+  resolveComposioToolsForBgRun.mockClear();
 });
 
 afterEach(() => {
@@ -582,6 +629,112 @@ describe("(a) comment-only agent toolset", () => {
 });
 
 describe("execution snapshot binding", () => {
+  test("a lost terminal-success CAS emits no completion evidence", async () => {
+    beforeStatusUpdate = (input) => {
+      if (input.status === "succeeded") {
+        currentRun = { ...currentRun, status: "cancelled" };
+      }
+    };
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-success-race",
+    });
+
+    expect(currentRun.status).toBe("cancelled");
+    expect(recordedEvent("background-agent.run.completed")).toBeUndefined();
+  });
+
+  test("rechecks live authorization before sandbox connection", async () => {
+    afterEventRecorded = (event) => {
+      if (event.eventName === "background-agent.github.installation.resolved") {
+        currentAgent = currentAgent
+          ? { ...currentAgent, status: "disabled" }
+          : null;
+      }
+    };
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-before-sandbox",
+    });
+
+    expect(connectSandbox).not.toHaveBeenCalled();
+    expect(recordedEvent("background-agent.run.failed")).toMatchObject({
+      errorKind: "agent_disabled",
+    });
+  });
+
+  test("rechecks live authorization after sandbox connection before mutation", async () => {
+    afterSandboxConnected = () => {
+      currentAgent = currentAgent
+        ? { ...currentAgent, status: "disabled" }
+        : null;
+    };
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-after-sandbox",
+    });
+
+    expect(connectSandbox).toHaveBeenCalledTimes(1);
+    expect(sandboxExec).not.toHaveBeenCalled();
+    expect(recordedEvent("background-agent.run.failed")).toMatchObject({
+      errorKind: "agent_disabled",
+    });
+  });
+
+  test("rechecks live authorization before Composio session resolution", async () => {
+    currentAgent = buildAgent({ composioToolkitSlugs: ["github"] });
+    afterEventRecorded = (event) => {
+      if (event.eventName === "background-agent.git.context.completed") {
+        currentAgent = currentAgent
+          ? { ...currentAgent, status: "disabled" }
+          : null;
+      }
+    };
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-before-composio",
+    });
+
+    expect(resolveComposioToolsForBgRun).not.toHaveBeenCalled();
+    expect(recordedEvent("background-agent.run.failed")).toMatchObject({
+      errorKind: "agent_disabled",
+    });
+  });
+
+  test("rechecks live authorization before working-branch mutation", async () => {
+    currentAgent = buildAgent({ githubActions: { push: true } });
+    afterEventRecorded = (event) => {
+      if (event.eventName === "background-agent.git.context.completed") {
+        currentAgent = currentAgent
+          ? { ...currentAgent, status: "disabled" }
+          : null;
+      }
+    };
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-before-branch",
+    });
+
+    expect(
+      sandboxExec.mock.calls.some(([command]) =>
+        (command as string).includes("git checkout"),
+      ),
+    ).toBe(false);
+    expect(recordedEvent("background-agent.run.failed")).toMatchObject({
+      errorKind: "agent_disabled",
+    });
+  });
+
   test("terminal retries short-circuit before snapshot validation or authorization", async () => {
     const completedSummary = {
       headline: "Keep the completed summary",
