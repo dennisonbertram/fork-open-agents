@@ -58,6 +58,7 @@ import {
   createAndAdvanceAgentLoopStep,
   countStepRunsForNode,
   getMaxAttemptForNode,
+  isAgentLoopRunSourceLive,
 } from "./store";
 import { executeAgentLoopStep } from "./step-executor";
 import { invokeWatchdog } from "./watchdog";
@@ -820,6 +821,10 @@ async function advanceLoopRun(params: AdvanceParams): Promise<void> {
   }
 
   // ── 7h. Dispatch next step workflow ────────────────────────────────────────
+
+  if (!(await isAgentLoopRunSourceLive(loopRunId))) {
+    return;
+  }
 
   try {
     // Dynamic import breaks the cycle: chain.ts ← agent-loop-step.ts ← chain.ts.

@@ -290,6 +290,8 @@ export async function deleteAgentLoop(
     const now = new Date();
 
     if (activeRuns.length > 0) {
+      const activeRunIds = activeRuns.map((run) => run.id);
+
       await tx
         .update(agentLoopRuns)
         .set({
@@ -303,11 +305,39 @@ export async function deleteAgentLoop(
           and(
             eq(agentLoopRuns.loopId, loopId),
             eq(agentLoopRuns.userId, userId),
-            inArray(
-              agentLoopRuns.id,
-              activeRuns.map((run) => run.id),
-            ),
+            inArray(agentLoopRuns.id, activeRunIds),
             inArray(agentLoopRuns.status, activeStatuses),
+          ),
+        );
+
+      await tx
+        .update(agentLoopStepRuns)
+        .set({
+          status: "skipped",
+          errorKind: "source_deleted",
+          errorMessage: "Source Automation deleted",
+          finishedAt: now,
+        })
+        .where(
+          and(
+            inArray(agentLoopStepRuns.loopRunId, activeRunIds),
+            inArray(agentLoopStepRuns.status, ["queued", "running"]),
+          ),
+        );
+
+      await tx
+        .update(agentLoopWatchdogRuns)
+        .set({
+          status: "failed",
+          decision: null,
+          diagnosis: "Source Automation deleted",
+          decisionPayload: null,
+          finishedAt: now,
+        })
+        .where(
+          and(
+            inArray(agentLoopWatchdogRuns.loopRunId, activeRunIds),
+            inArray(agentLoopWatchdogRuns.status, ["pending", "running"]),
           ),
         );
 

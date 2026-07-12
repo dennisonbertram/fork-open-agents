@@ -107,14 +107,14 @@ const txUpdateMock = mock((table: unknown) => ({
   set: mock((setVals: unknown) => {
     transactionUpdates.push({ table, values: setVals });
     return {
-    where: mock(() => ({
-      returning: mock(() => {
-        if (txUpdateReturningOverride !== null) {
-          return txUpdateReturningOverride;
-        }
-        return [{ ...(insertedValues[0] as object), ...(setVals as object) }];
-      }),
-    })),
+      where: mock(() => ({
+        returning: mock(() => {
+          if (txUpdateReturningOverride !== null) {
+            return txUpdateReturningOverride;
+          }
+          return [{ ...(insertedValues[0] as object), ...(setVals as object) }];
+        }),
+      })),
     };
   }),
 }));
@@ -478,7 +478,9 @@ describe("deleteAgentLoop", () => {
             table: agentLoopWatchdogRunsTable,
             values: expect.objectContaining({
               status: "failed",
+              decision: null,
               diagnosis: "Source Automation deleted",
+              decisionPayload: null,
               finishedAt: expect.any(Date),
             }),
           }),
