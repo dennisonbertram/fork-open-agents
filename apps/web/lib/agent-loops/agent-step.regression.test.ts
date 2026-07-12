@@ -279,6 +279,7 @@ const resolveComposioToolsForBgRunRegressionMock = mock(
 
 mock.module("@/lib/background-agents/composio-tools", () => ({
   resolveComposioToolsForBgRun: resolveComposioToolsForBgRunRegressionMock,
+  assertComposioRepoToolkitsStillAllowed: mock(async () => undefined),
 }));
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
