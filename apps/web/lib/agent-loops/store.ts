@@ -31,9 +31,17 @@ import {
 } from "@/lib/db/schema";
 import { redactBackgroundAgentPayload } from "@/lib/background-agents/redaction";
 import { RunControlError } from "./run-controls-error";
-import { AgentLoopSourceDeletedError } from "./source-deleted-error";
 import type { LoopValidationError } from "./types";
 import { validateLoopDefinition } from "./validation";
+import { getAgentLoopRepoAccess, isAgentLoopsEnabled } from "./config";
+import {
+  AgentLoopSnapshotError,
+  buildAgentLoopExecutionSnapshot,
+  hashAgentLoopExecutionSnapshot,
+  toAgentLoopExecutionPolicy,
+  type AgentLoopExecutionPolicy,
+} from "./execution-snapshot";
+import { toPublicAgentLoopRun, type PublicAgentLoopRun } from "./public-run";
 
 // ── Public types ───────────────────────────────────────────────────────────────
 
@@ -95,7 +103,8 @@ export type UpdateAgentLoopInput = Partial<
 export type CreateAgentLoopRunInput = {
   loopId: string;
   userId: string;
-  definitionSnapshot: Record<string, unknown>;
+  /** @deprecated The authoritative graph is loaded under lock from loopId. */
+  definitionSnapshot?: Record<string, unknown>;
   source: NewAgentLoopRun["source"];
   idempotencyKey: string;
   triggerId?: string | null;
@@ -476,10 +485,17 @@ export async function hasActiveRunForLoop(
 
 // ── agentLoopRuns ─────────────────────────────────────────────────────────────
 
-export type CreateAgentLoopRunResult = {
-  run: AgentLoopRun;
-  created: boolean;
-};
+export type CreateAgentLoopRunResult =
+  | {
+      run: AgentLoopRun;
+      created: boolean;
+      activeRunId?: undefined;
+    }
+  | {
+      run: AgentLoopRun;
+      created: false;
+      activeRunId: string;
+    };
 
 /**
  * Creates a new agent loop run. Returns null when the loop does not exist or
@@ -490,46 +506,122 @@ export type CreateAgentLoopRunResult = {
 export async function createAgentLoopRun(
   input: CreateAgentLoopRunInput,
 ): Promise<CreateAgentLoopRunResult | null> {
-  // Verify loop ownership before inserting — prevents a caller from creating a
-  // run against a loop owned by another user (independent FK would allow it).
-  const ownedLoop = await getOwnedAgentLoop({
-    userId: input.userId,
-    loopId: input.loopId,
+  // Return the accepted winner before consulting the mutable source. This
+  // preserves idempotency even when the source was subsequently edited/deleted.
+  const existing = await db.query.agentLoopRuns.findFirst({
+    where: and(
+      eq(agentLoopRuns.idempotencyKey, input.idempotencyKey),
+      eq(agentLoopRuns.userId, input.userId),
+    ),
   });
-  if (!ownedLoop) {
-    return null;
+  if (existing) {
+    return { run: existing, created: false };
   }
 
-  const [inserted] = await db
-    .insert(agentLoopRuns)
-    .values({
-      id: nanoid(),
-      loopId: input.loopId,
-      userId: input.userId,
-      status: "queued",
-      definitionSnapshot: input.definitionSnapshot,
-      source: input.source,
-      idempotencyKey: input.idempotencyKey,
-      triggerId: input.triggerId ?? null,
-      requestId: input.requestId ?? null,
-      ...(input.context !== undefined ? { context: input.context } : {}),
-    })
-    .onConflictDoNothing({ target: agentLoopRuns.idempotencyKey })
-    .returning();
+  const inserted = await db.transaction(async (tx) => {
+    const [ownedLoop] = await tx
+      .select()
+      .from(agentLoops)
+      .where(
+        and(
+          eq(agentLoops.id, input.loopId),
+          eq(agentLoops.userId, input.userId),
+          eq(agentLoops.status, "active"),
+        ),
+      )
+      .for("update")
+      .limit(1);
+    if (!ownedLoop) return null;
+
+    const idempotentWinner = await tx.query.agentLoopRuns.findFirst({
+      where: and(
+        eq(agentLoopRuns.idempotencyKey, input.idempotencyKey),
+        eq(agentLoopRuns.userId, input.userId),
+      ),
+    });
+    if (idempotentWinner) {
+      return { run: idempotentWinner, created: false } as const;
+    }
+
+    const activeRun = await tx.query.agentLoopRuns.findFirst({
+      where: and(
+        eq(agentLoopRuns.loopId, ownedLoop.id),
+        inArray(agentLoopRuns.status, ["queued", "running", "paused"]),
+      ),
+      orderBy: [desc(agentLoopRuns.createdAt)],
+    });
+    if (activeRun) {
+      return {
+        run: activeRun,
+        created: false,
+        activeRunId: activeRun.id,
+      } as const;
+    }
+
+    const executionSnapshot = buildAgentLoopExecutionSnapshot(ownedLoop);
+    const definitionHash = hashAgentLoopExecutionSnapshot(executionSnapshot);
+    const [winningRun] = await tx
+      .insert(agentLoopRuns)
+      .values({
+        id: nanoid(),
+        loopId: ownedLoop.id,
+        userId: input.userId,
+        status: "queued",
+        definitionSnapshot: executionSnapshot.definition,
+        executionSnapshot,
+        definitionVersion: 1,
+        definitionHash,
+        source: input.source,
+        idempotencyKey: input.idempotencyKey,
+        triggerId: input.triggerId ?? null,
+        requestId: input.requestId ?? null,
+        ...(input.context !== undefined ? { context: input.context } : {}),
+      })
+      .onConflictDoNothing({ target: agentLoopRuns.idempotencyKey })
+      .returning();
+    if (!winningRun) return null;
+
+    const [freezeEvent] = await tx
+      .insert(agentLoopEvents)
+      .values({
+        id: nanoid(),
+        loopRunId: winningRun.id,
+        eventName: "agent-loop.snapshot.frozen",
+        status: "succeeded",
+        level: "info",
+        summary: "Frozen loop execution definition.",
+        payload: redactBackgroundAgentPayload({
+          runId: winningRun.id,
+          loopId: ownedLoop.id,
+          definitionVersion: 1,
+          definitionHash,
+          snapshotSource: "frozen",
+          requestId: input.requestId ?? null,
+        }),
+        redactionStatus: "passed",
+        requestId: input.requestId ?? null,
+      })
+      .returning();
+    if (!freezeEvent) {
+      throw new Error(
+        "Failed to persist frozen loop execution snapshot evidence",
+      );
+    }
+    return { run: winningRun, created: true } as const;
+  });
 
   if (inserted) {
-    return { run: inserted, created: true };
+    return inserted;
   }
 
-  // Conflict suppressed — fetch the existing run.
-  const existing = await db.query.agentLoopRuns.findFirst({
-    where: eq(agentLoopRuns.idempotencyKey, input.idempotencyKey),
+  // A concurrent idempotent insert may have won after the early lookup.
+  const winner = await db.query.agentLoopRuns.findFirst({
+    where: and(
+      eq(agentLoopRuns.idempotencyKey, input.idempotencyKey),
+      eq(agentLoopRuns.userId, input.userId),
+    ),
   });
-  if (!existing) {
-    throw new Error("Failed to create or load agent loop run");
-  }
-
-  return { run: existing, created: false };
+  return winner ? { run: winner, created: false } : null;
 }
 
 export async function getAgentLoopRunWithLoop(
@@ -547,11 +639,26 @@ export async function getAgentLoopRunWithLoop(
 
 export async function isAgentLoopRunSourceLive(
   runId: string,
+  policy?: { repoOwner: string; repoName: string },
 ): Promise<boolean> {
+  if (
+    policy &&
+    (!isAgentLoopsEnabled() ||
+      !getAgentLoopRepoAccess(policy.repoOwner, policy.repoName).allowed)
+  ) {
+    return false;
+  }
   const [row] = await db
     .select({ id: agentLoopRuns.id })
     .from(agentLoopRuns)
-    .where(and(eq(agentLoopRuns.id, runId), isNotNull(agentLoopRuns.loopId)))
+    .innerJoin(agentLoops, eq(agentLoops.id, agentLoopRuns.loopId))
+    .where(
+      and(
+        eq(agentLoopRuns.id, runId),
+        isNotNull(agentLoopRuns.loopId),
+        eq(agentLoops.status, "active"),
+      ),
+    )
     .limit(1);
   return Boolean(row);
 }
@@ -582,7 +689,7 @@ export async function getOwnedAgentLoopRunWithLoop(params: {
 }
 
 /** An AgentLoopRun extended with the count of its failed step runs (#767). */
-export type AgentLoopRunWithFailedStepCount = AgentLoopRun & {
+export type AgentLoopRunWithFailedStepCount = PublicAgentLoopRun & {
   failedStepCount: number;
 };
 
@@ -619,7 +726,7 @@ export async function listAgentLoopRuns(params: {
     .limit(Math.min(Math.max(params.limit ?? 50, 1), 200));
 
   return rows.map((row) => ({
-    ...row.run,
+    ...toPublicAgentLoopRun(row.run),
     failedStepCount: Number(row.failedStepCount),
   }));
 }
@@ -761,8 +868,54 @@ export async function setInitialStepPointer(params: {
 export type AgentLoopStepRunWithContext = {
   stepRun: AgentLoopStepRun;
   loopRun: AgentLoopRun;
-  loop: AgentLoop;
+  loop: AgentLoopExecutionPolicy;
+  snapshotSource: "frozen" | "legacy_live_fallback";
+  definitionVersion: number | null;
+  definitionHash: string | null;
 };
+
+export type AgentLoopRunExecutionContext = {
+  loopRun: AgentLoopRun;
+  loop: AgentLoopExecutionPolicy;
+  snapshotSource: "frozen" | "legacy_live_fallback";
+  definitionVersion: number | null;
+  definitionHash: string | null;
+};
+
+export async function getAgentLoopRunExecutionContext(
+  runId: string,
+): Promise<AgentLoopRunExecutionContext | null> {
+  const row = await getAgentLoopRunWithLoop(runId);
+  if (!row) return null;
+  try {
+    const policy = toAgentLoopExecutionPolicy(row.run, row.loop);
+    if (!isAgentLoopsEnabled()) {
+      throw new AgentLoopSnapshotError(
+        "feature_disabled",
+        "Agent loop execution is disabled.",
+      );
+    }
+    if (
+      !getAgentLoopRepoAccess(policy.loop.repoOwner, policy.loop.repoName)
+        .allowed
+    ) {
+      throw new AgentLoopSnapshotError(
+        "repo_not_allowed",
+        "The accepted repository is no longer allowed.",
+      );
+    }
+    return { loopRun: row.run, ...policy };
+  } catch (error) {
+    if (error instanceof AgentLoopSnapshotError) {
+      throw new AgentLoopSnapshotError(
+        error.errorKind,
+        error.message,
+        row.run.id,
+      );
+    }
+    throw error;
+  }
+}
 
 /**
  * Loads a step run together with its parent loop run and the loop definition
@@ -779,13 +932,11 @@ export async function getAgentLoopStepRunWithContext(
     return null;
   }
 
-  const row = await getAgentLoopRunWithLoop(stepRun.loopRunId);
-  if (!row) {
+  const context = await getAgentLoopRunExecutionContext(stepRun.loopRunId);
+  if (!context) {
     return null;
   }
-  if (!row.loop) throw new AgentLoopSourceDeletedError(row.run.id);
-
-  return { stepRun, loopRun: row.run, loop: row.loop };
+  return { stepRun, ...context };
 }
 
 export async function createAgentLoopStepRun(
@@ -1235,6 +1386,19 @@ export async function resumeLoopRun(
         `Cannot resume run ${runId}: source Automation was deleted`,
       );
     }
+    const activeSource = await tx.query.agentLoops.findFirst({
+      where: and(
+        eq(agentLoops.id, existing.loopId),
+        eq(agentLoops.userId, userId),
+        eq(agentLoops.status, "active"),
+      ),
+    });
+    if (!activeSource) {
+      throw new RunControlError(
+        "source_inactive",
+        `Cannot resume run ${runId}: source Automation is no longer active`,
+      );
+    }
     if (existing.status !== "paused") {
       throw new RunControlError(
         "illegal_transition",
@@ -1256,13 +1420,18 @@ export async function resumeLoopRun(
           eq(agentLoopRuns.userId, userId),
           eq(agentLoopRuns.status, "paused"),
           isNotNull(agentLoopRuns.loopId),
+          sql`exists (
+            select 1 from ${agentLoops}
+            where ${agentLoops.id} = ${agentLoopRuns.loopId}
+              and ${agentLoops.status} = 'active'
+          )`,
         ),
       )
       .returning();
     if (!run) {
       throw new RunControlError(
-        "source_deleted",
-        `Cannot resume run ${runId}: source Automation was deleted`,
+        "source_inactive",
+        `Cannot resume run ${runId}: source Automation is no longer active`,
       );
     }
     return run;
@@ -1317,6 +1486,20 @@ export async function retryCurrentStep(params: {
       throw new RunControlError(
         "source_deleted",
         `Cannot retry run ${params.runId}: source Automation was deleted`,
+      );
+    }
+
+    const activeSource = await tx.query.agentLoops.findFirst({
+      where: and(
+        eq(agentLoops.id, run.loopId),
+        eq(agentLoops.userId, params.userId),
+        eq(agentLoops.status, "active"),
+      ),
+    });
+    if (!activeSource) {
+      throw new RunControlError(
+        "source_inactive",
+        `Cannot retry run ${params.runId}: source Automation is no longer active`,
       );
     }
 
@@ -1383,6 +1566,11 @@ export async function retryCurrentStep(params: {
             inArray(agentLoopRuns.status, ["failed", "stalled"]),
             eq(agentLoopRuns.currentStepRunId, observedStepRunId),
             isNotNull(agentLoopRuns.loopId),
+            sql`exists (
+              select 1 from ${agentLoops}
+              where ${agentLoops.id} = ${agentLoopRuns.loopId}
+                and ${agentLoops.status} = 'active'
+            )`,
           ),
         )
         .returning();
@@ -1462,6 +1650,11 @@ export async function retryCurrentStep(params: {
           inArray(agentLoopRuns.status, ["failed", "stalled"]),
           eq(agentLoopRuns.currentStepRunId, observedStepRunId),
           isNotNull(agentLoopRuns.loopId),
+          sql`exists (
+            select 1 from ${agentLoops}
+            where ${agentLoops.id} = ${agentLoopRuns.loopId}
+              and ${agentLoops.status} = 'active'
+          )`,
         ),
       )
       .returning();

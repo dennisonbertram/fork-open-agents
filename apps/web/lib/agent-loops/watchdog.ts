@@ -48,16 +48,20 @@ import {
   recordAgentLoopEvent,
   isAgentLoopRunSourceLive,
 } from "./store";
-import type { AgentLoop, AgentLoopRun } from "@/lib/db/schema";
+import type { AgentLoopRun } from "@/lib/db/schema";
+import type { AgentLoopExecutionPolicy } from "./execution-snapshot";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export type InvokeWatchdogParams = {
-  loop: AgentLoop & {
-    watchdogEnabled: boolean;
-    watchdogInstructions: string | null;
-    watchdogRetryBudget: number;
-  };
+  loop: Pick<
+    AgentLoopExecutionPolicy,
+    | "repoOwner"
+    | "repoName"
+    | "watchdogEnabled"
+    | "watchdogInstructions"
+    | "watchdogRetryBudget"
+  >;
   loopRun: AgentLoopRun;
   stepRunId: string;
   nodeId: string;
@@ -217,8 +221,13 @@ export async function invokeWatchdog(
   }
 
   const loopRunId = loopRun.id;
+  const isExecutionAllowed = () =>
+    isAgentLoopRunSourceLive(loopRunId, {
+      repoOwner: loop.repoOwner,
+      repoName: loop.repoName,
+    });
 
-  if (!(await isAgentLoopRunSourceLive(loopRunId))) {
+  if (!(await isExecutionAllowed())) {
     return { invoked: false };
   }
 
@@ -355,7 +364,13 @@ export async function invokeWatchdog(
     }
   }
 
-  if (!(await isAgentLoopRunSourceLive(loopRunId))) {
+  if (!(await isExecutionAllowed())) {
+    await updateAgentLoopWatchdogRun({
+      id: watchdogRow.id,
+      status: "failed",
+      diagnosis: "Loop execution authorization was revoked.",
+      finishedAt: new Date(),
+    });
     return { invoked: false };
   }
 

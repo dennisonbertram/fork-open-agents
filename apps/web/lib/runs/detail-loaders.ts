@@ -19,6 +19,10 @@ import {
   getBackgroundAgentSnapshotSource,
   toSafeBackgroundAgentEvidence,
 } from "@/lib/background-agents/public-run";
+import {
+  toPublicAgentLoopRun,
+  toSafeAgentLoopEvidence,
+} from "@/lib/agent-loops/public-run";
 
 type OwnedRunParams = {
   userId: string;
@@ -114,16 +118,19 @@ export async function loadOwnedLoopRunDetail({
       listWatchdogRunsForLoopRun(runId),
     ],
   );
+  const safeLoop = toSafeAgentLoopEvidence(row.run, row.loop);
 
   return {
-    run: row.run,
-    loop: row.loop
+    run: toPublicAgentLoopRun(row.run),
+    loop: safeLoop
       ? {
-          id: row.loop.id,
-          name: row.loop.name,
-          repoOwner: row.loop.repoOwner,
-          repoName: row.loop.repoName,
-          guardrails: row.loop.guardrails,
+          id: safeLoop.id,
+          name: safeLoop.name,
+          repoOwner: safeLoop.repoOwner,
+          repoName: safeLoop.repoName,
+          guardrails: safeLoop.guardrails,
+          sourceDeleted: safeLoop.sourceDeleted,
+          sourceActive: safeLoop.sourceActive,
         }
       : null,
     steps,

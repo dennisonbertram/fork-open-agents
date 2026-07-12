@@ -15,7 +15,9 @@ describe("loop execution snapshot integration contract", () => {
       expect(source).toContain("execution_snapshot");
       expect(source).toContain("definition_version");
       expect(source).toContain("definition_hash");
-      expect(source).toContain("agent_loop_runs_execution_snapshot_all_or_none");
+      expect(source).toContain(
+        "agent_loop_runs_execution_snapshot_all_or_none",
+      );
       expect(source).toContain("snapshotVersion");
     }
   });
@@ -29,7 +31,10 @@ describe("loop execution snapshot integration contract", () => {
       join(root, "app/api/agent-loop-runs/[runId]/route.ts"),
       "utf8",
     );
-    const detail = readFileSync(join(root, "lib/runs/detail-loaders.ts"), "utf8");
+    const detail = readFileSync(
+      join(root, "lib/runs/detail-loaders.ts"),
+      "utf8",
+    );
     expect(apiTypes).toContain("PublicAgentLoopRun");
     expect(route).toContain("toPublicAgentLoopRun");
     expect(detail).toContain("toPublicAgentLoopRun");
@@ -40,8 +45,8 @@ describe("loop execution snapshot integration contract", () => {
       join(root, "lib/agent-loops/dispatcher-bridge.ts"),
       "utf8",
     );
-    expect(dispatcher).toContain(
-      "loopDefinitionSchema.safeParse(result.run.definitionSnapshot)",
+    expect(dispatcher).toMatch(
+      /loopDefinitionSchema\.safeParse\(\s*result\.run\.definitionSnapshot,?\s*\)/,
     );
   });
 });

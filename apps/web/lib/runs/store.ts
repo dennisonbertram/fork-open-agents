@@ -1,6 +1,7 @@
 import "server-only";
 
 import { and, desc, eq, inArray, lt, or, type SQL, sql } from "drizzle-orm";
+import { getSafeFrozenAgentLoopEvidence } from "@/lib/agent-loops/public-run";
 import { db } from "@/lib/db/client";
 import {
   agentLoopRuns,
@@ -262,6 +263,10 @@ function createLoopRunLoader(userId: string): RunsSourceLoader {
         loopName: agentLoops.name,
         repoOwner: agentLoops.repoOwner,
         repoName: agentLoops.repoName,
+        definitionSnapshot: agentLoopRuns.definitionSnapshot,
+        executionSnapshot: agentLoopRuns.executionSnapshot,
+        definitionVersion: agentLoopRuns.definitionVersion,
+        definitionHash: agentLoopRuns.definitionHash,
         status: agentLoopRuns.status,
         source: agentLoopRuns.source,
         currentNodeId: agentLoopRuns.currentNodeId,
@@ -325,18 +330,27 @@ function createLoopRunLoader(userId: string): RunsSourceLoader {
       .limit(query.limit);
 
     return rows
-      .map((row) =>
-        adaptAgentLoopRun(
+      .map((row) => {
+        const frozenEvidence = getSafeFrozenAgentLoopEvidence({
+          loopId: row.loopId,
+          definitionSnapshot: row.definitionSnapshot,
+          executionSnapshot: row.executionSnapshot,
+          definitionVersion: row.definitionVersion,
+          definitionHash: row.definitionHash,
+        });
+        return adaptAgentLoopRun(
           {
             id: row.id,
             loopId: row.loopId,
             triggerId: row.triggerId,
             triggerKind: row.triggerKind,
-            title: redactText(row.loopName, 120) ?? "Deleted automation",
+            title:
+              redactText(row.loopName ?? frozenEvidence?.name, 120) ??
+              "Deleted automation",
             nativeStatus: row.status,
             nativeSource: row.source,
-            repoOwner: row.repoOwner,
-            repoName: row.repoName,
+            repoOwner: row.repoOwner ?? frozenEvidence?.repoOwner ?? null,
+            repoName: row.repoName ?? frozenEvidence?.repoName ?? null,
             currentNodeId: row.currentNodeId,
             stepCount: row.stepCount,
             totalStepCount: null,
@@ -350,8 +364,8 @@ function createLoopRunLoader(userId: string): RunsSourceLoader {
             finishedAt: row.finishedAt,
           },
           { now: query.now },
-        ),
-      )
+        );
+      })
       .filter((run) => matchesView(run, query.filters));
   };
 }

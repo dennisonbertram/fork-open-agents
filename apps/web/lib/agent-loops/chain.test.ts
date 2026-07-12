@@ -1292,10 +1292,7 @@ describe("BT-C05: guardrails", () => {
       currentNodeId: "work",
       currentStepRunId: "step-frozen-guardrails",
     });
-    currentStepRun = makeStepRunForNode(
-      "work",
-      "step-frozen-guardrails",
-    );
+    currentStepRun = makeStepRunForNode("work", "step-frozen-guardrails");
     currentLoop = toAgentLoopExecutionPolicy(
       currentLoopRun,
       makeLoop({
@@ -1563,8 +1560,7 @@ describe("source deletion after atomic advance", () => {
       toStatus: "failed",
       fromStatuses: ["queued", "running", "stalled"],
       errorKind: "execution_revoked",
-      errorMessage:
-        "Loop execution authorization was revoked before dispatch.",
+      errorMessage: "Loop execution authorization was revoked before dispatch.",
     });
     expect(recordedEvents).toContainEqual(
       expect.objectContaining({

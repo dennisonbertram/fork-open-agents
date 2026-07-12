@@ -14,7 +14,8 @@
 export type RunControlErrorKind =
   | "not_found"
   | "illegal_transition"
-  | "source_deleted";
+  | "source_deleted"
+  | "source_inactive";
 
 export class RunControlError extends Error {
   readonly kind: RunControlErrorKind;

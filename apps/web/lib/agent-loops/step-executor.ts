@@ -42,7 +42,7 @@ import {
   getAgentLoopStepRunWithContext,
   updateAgentLoopStepRun,
   recordAgentLoopEvent,
-  updateAgentLoopRunStatus,
+  conditionallyTransitionRunStatus,
   updateAgentLoopRunContext,
 } from "./store";
 import { executeAgentStep } from "./agent-step";
@@ -343,10 +343,12 @@ export async function executeAgentLoopStep(params: {
   if (node.kind === "end") {
     const finishedAt = new Date();
 
-    await updateAgentLoopRunStatus({
+    const completed = await conditionallyTransitionRunStatus({
       runId: loopRunId,
-      status: "completed",
+      toStatus: "completed",
+      fromStatuses: ["queued", "running"],
     });
+    if (!completed) return { outcome: "success" };
 
     await recordAgentLoopEvent({
       loopRunId,

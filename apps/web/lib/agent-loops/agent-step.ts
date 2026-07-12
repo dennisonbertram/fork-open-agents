@@ -92,7 +92,10 @@ import {
   effectiveStepPermissions,
   permissionsToInstallationToken,
 } from "./token-permissions";
-import { resolveComposioToolsForBgRun } from "@/lib/background-agents/composio-tools";
+import {
+  assertComposioRepoToolkitsStillAllowed,
+  resolveComposioToolsForBgRun,
+} from "@/lib/background-agents/composio-tools";
 import {
   updateAgentLoopStepRun,
   recordAgentLoopEvent,
@@ -101,7 +104,8 @@ import {
 } from "./store";
 import { buildLoopStepPrompt } from "./loop-step-prompt";
 import type { ModelMessage } from "ai";
-import type { AgentLoop, AgentLoopRun } from "@/lib/db/schema";
+import type { AgentLoopRun } from "@/lib/db/schema";
+import type { AgentLoopExecutionPolicy } from "./execution-snapshot";
 import { GUARDRAIL_CEILINGS, GUARDRAIL_DEFAULTS } from "./types";
 import type { AgentStepNode } from "./types";
 import type { StepExecutionResult } from "./step-executor";
@@ -147,7 +151,10 @@ export type AgentStepParams = {
   loopRunId: string;
   node: AgentStepNode;
   loopRun: AgentLoopRun;
-  loop: AgentLoop;
+  loop: Pick<
+    AgentLoopExecutionPolicy,
+    "repoOwner" | "repoName" | "permissions"
+  >;
   startedAt: number;
   /** Optional watchdog hint from the previous failed attempt (via stepInput.watchdogHint). */
   watchdogHint?: string;
@@ -175,6 +182,29 @@ function buildSandboxName(stepRunId: string): string {
 
 function nowMs(): number {
   return Date.now();
+}
+
+function guardToolSet(
+  tools: import("ai").ToolSet | undefined,
+  guard: () => Promise<void>,
+): import("ai").ToolSet | undefined {
+  if (!tools) return undefined;
+  return Object.fromEntries(
+    Object.entries(tools).map(([name, value]) => {
+      const candidate = value as { execute?: (...args: unknown[]) => unknown };
+      if (typeof candidate.execute !== "function") return [name, value];
+      return [
+        name,
+        {
+          ...candidate,
+          execute: async (...args: unknown[]) => {
+            await guard();
+            return candidate.execute?.(...args);
+          },
+        },
+      ];
+    }),
+  ) as import("ai").ToolSet;
 }
 
 /**
@@ -404,8 +434,13 @@ export async function executeAgentStep(
     workflowRunId,
     startedAt,
   };
+  const isExecutionAllowed = () =>
+    isAgentLoopRunSourceLive(loopRunId, {
+      repoOwner: loop.repoOwner,
+      repoName: loop.repoName,
+    });
 
-  if (!(await isAgentLoopRunSourceLive(loopRunId))) {
+  if (!(await isExecutionAllowed())) {
     return {
       outcome: "failure",
       errorKind: "source_deleted",
@@ -469,7 +504,7 @@ export async function executeAgentStep(
     accessResult.defaultBranch,
   );
 
-  if (!(await isAgentLoopRunSourceLive(loopRunId))) {
+  if (!(await isExecutionAllowed())) {
     await revokeInstallationToken(cloneToken).catch(() => undefined);
     return {
       outcome: "failure",
@@ -604,7 +639,17 @@ export async function executeAgentStep(
         repoName: loop.repoName,
       });
       if (composioResult.status === "ready") {
-        composioTools = composioResult.tools;
+        composioTools = guardToolSet(composioResult.tools, async () => {
+          if (!(await isExecutionAllowed())) {
+            throw new Error("Loop execution authorization was revoked.");
+          }
+          await assertComposioRepoToolkitsStillAllowed({
+            userId: loopRun.userId,
+            repoOwner: loop.repoOwner,
+            repoName: loop.repoName,
+            toolkitSlugs: composioResult.toolkitSlugs,
+          });
+        });
 
         if (composioResult.disconnectedToolkits.length > 0) {
           await recordAgentLoopEvent({
@@ -706,6 +751,19 @@ export async function executeAgentStep(
         // result before re-sending history — otherwise the provider rejects the
         // request ("Tool result is missing for tool call …") and fails the run.
         agentMessages = sanitizeUnattendedToolCalls(agentMessages);
+        const liveModelAccess = await verifyRepoAccess({
+          userId: loopRun.userId,
+          owner: loop.repoOwner,
+          repo: loop.repoName,
+          requiredUserPermission: "write",
+        });
+        if (!liveModelAccess.ok) {
+          return await recordAgentStepFailure({
+            ...failureCtx,
+            errorKind: "permission_missing",
+            errorMessage: "Repository access was revoked during execution.",
+          });
+        }
         const turnStartedAt = Date.now();
         agentResult = await openAgent.generate({
           messages: agentMessages,
@@ -714,7 +772,7 @@ export async function executeAgentStep(
           ...(composioTools ? { tools: composioTools } : {}),
         } as Parameters<typeof openAgent.generate>[0]);
 
-        if (!(await isAgentLoopRunSourceLive(loopRunId))) {
+        if (!(await isExecutionAllowed())) {
           return {
             outcome: "failure",
             errorKind: "source_deleted",
@@ -882,10 +940,10 @@ export async function executeAgentStep(
         status: checkResult.success ? "succeeded" : "failed",
         level: checkResult.success ? "info" : "warn",
         summary: checkResult.success
-          ? `Check passed: ${node.checkCommand}`
-          : `Check failed: ${node.checkCommand}`,
+          ? "Configured check passed"
+          : "Configured check failed",
         payload: {
-          command: node.checkCommand,
+          checkConfigured: true,
           exitCode: checkResult.exitCode,
           durationMs: checkDurationMs,
           stdout: truncateOutput(checkResult.stdout, 2000),
@@ -899,7 +957,7 @@ export async function executeAgentStep(
         return await recordAgentStepFailure({
           ...failureCtx,
           errorKind: "checks_failed",
-          errorMessage: `checkCommand exited with code ${checkResult.exitCode}: ${node.checkCommand}`,
+          errorMessage: `Configured check exited with code ${checkResult.exitCode}`,
         });
       }
     }
@@ -918,31 +976,57 @@ export async function executeAgentStep(
 
     if (hasChanges) {
       await stageAll(sandbox);
+      const commitAccess = await verifyRepoAccess({
+        userId: loopRun.userId,
+        owner: loop.repoOwner,
+        repo: loop.repoName,
+        requiredUserPermission: "write",
+      });
+      if (!commitAccess.ok) {
+        return await recordAgentStepFailure({
+          ...failureCtx,
+          errorKind: "permission_missing",
+          errorMessage: "Repository access was revoked before commit.",
+        });
+      }
       const coAuthor = await buildCoAuthor(loopRun.userId);
       const intentResult = await buildCommitIntentFromSandbox({
         sandbox,
         owner: loop.repoOwner,
         repo: loop.repoName,
-        repositoryId: accessResult.repositoryId,
-        installationId: accessResult.installationId,
+        repositoryId: commitAccess.repositoryId,
+        installationId: commitAccess.installationId,
         branch: outputBranch,
         message: "chore: agent_step changes",
         ...(coAuthor ? { coAuthor } : {}),
       });
 
       if (intentResult.ok) {
-        if (!(await isAgentLoopRunSourceLive(loopRunId))) {
+        if (!(await isExecutionAllowed())) {
           return {
             outcome: "failure",
             errorKind: "source_deleted",
             errorMessage: "Source Automation deleted",
           };
         }
+        const finalCommitAccess = await verifyRepoAccess({
+          userId: loopRun.userId,
+          owner: loop.repoOwner,
+          repo: loop.repoName,
+          requiredUserPermission: "write",
+        });
+        if (!finalCommitAccess.ok) {
+          return await recordAgentStepFailure({
+            ...failureCtx,
+            errorKind: "permission_missing",
+            errorMessage: "Repository access was revoked before commit.",
+          });
+        }
         let commitResult: Awaited<ReturnType<typeof createCommit>>;
         try {
           commitResult = (await withScopedInstallationOctokit({
-            installationId: accessResult.installationId,
-            repositoryId: accessResult.repositoryId,
+            installationId: finalCommitAccess.installationId,
+            repositoryId: finalCommitAccess.repositoryId,
             permissions: { contents: "write" },
             operation: async (octokit) =>
               createCommit({

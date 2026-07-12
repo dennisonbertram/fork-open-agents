@@ -18,7 +18,7 @@ export type RunDetailShellSummary = {
   source: AutomationRunSource;
   runId: string;
   automation: { name: string; sourceId: string | null; href: string | null };
-  repository: { owner: string; name: string; href: string } | null;
+  repository: { owner: string; name: string; href: string | null } | null;
   trigger: {
     id: string | null;
     source: AutomationTriggerSource;
@@ -127,6 +127,7 @@ export function buildLoopRunDetailSummary(
   options: SummaryOptions = {},
 ): RunDetailShellSummary {
   const { run, loop, steps } = detail;
+  const sourceActive = Boolean(loop?.sourceActive && !loop.sourceDeleted);
   const status = normalizeRunStatus({
     source: "agent_loop",
     nativeStatus: run.status,
@@ -138,19 +139,25 @@ export function buildLoopRunDetailSummary(
     source: "agent_loop",
     runId: run.id,
     automation: {
-      name: loop?.name ?? "Deleted automation",
-      sourceId: loop?.id ?? null,
-      href: loop
-        ? options.variant === "canonical"
-          ? canonicalLoopAutomationDetailUrl(loop.id)
-          : `/loops/${encodeURIComponent(loop.id)}`
-        : null,
+      name:
+        loop && !sourceActive
+          ? `${loop.name} (${loop.sourceDeleted ? "deleted" : "inactive"})`
+          : (loop?.name ?? "Deleted automation"),
+      sourceId: sourceActive && loop ? loop.id : null,
+      href:
+        sourceActive && loop
+          ? options.variant === "canonical"
+            ? canonicalLoopAutomationDetailUrl(loop.id)
+            : `/loops/${encodeURIComponent(loop.id)}`
+          : null,
     },
     repository: loop
       ? {
           owner: loop.repoOwner,
           name: loop.repoName,
-          href: `/repos/${encodeURIComponent(loop.repoOwner)}/${encodeURIComponent(loop.repoName)}`,
+          href: sourceActive
+            ? `/repos/${encodeURIComponent(loop.repoOwner)}/${encodeURIComponent(loop.repoName)}`
+            : null,
         }
       : null,
     trigger: {

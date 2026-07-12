@@ -100,9 +100,7 @@ const graph = {
     },
     { id: "end", kind: "end", label: "End", position: { x: 1, y: 0 } },
   ],
-  edges: [
-    { id: "edge", source: "start", target: "end", when: "always" },
-  ],
+  edges: [{ id: "edge", source: "start", target: "end", when: "always" }],
 };
 
 function source(overrides: Partial<AgentLoop> = {}): AgentLoop {

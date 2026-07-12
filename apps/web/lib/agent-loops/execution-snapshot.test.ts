@@ -148,7 +148,7 @@ describe("AgentLoopExecutionSnapshotV1", () => {
     const loop = buildLoop();
     const accepted = buildAgentLoopExecutionSnapshot(loop);
     const reordered = parseAgentLoopExecutionSnapshot(
-      JSON.parse(JSON.stringify(accepted)) as unknown,
+      structuredClone(accepted),
     );
     expect(hashAgentLoopExecutionSnapshot(reordered)).toBe(
       hashAgentLoopExecutionSnapshot(accepted),
@@ -290,7 +290,11 @@ describe("resolveAgentLoopExecutionDefinition", () => {
       [AgentLoopRun, AgentLoop | null, AgentLoopSnapshotError["errorKind"]]
     > = [
       [{ ...run, definitionHash: null }, loop, "snapshot_invalid"],
-      [{ ...run, definitionHash: "0".repeat(64) }, loop, "snapshot_hash_mismatch"],
+      [
+        { ...run, definitionHash: "0".repeat(64) },
+        loop,
+        "snapshot_hash_mismatch",
+      ],
       [
         { ...run, definitionSnapshot: { nodes: [], edges: [] } },
         loop,

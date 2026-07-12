@@ -267,6 +267,9 @@ function makeLoop(overrides: Partial<Record<string, unknown>> = {}) {
     status: "draft",
     guardrails: null,
     permissions: {},
+    watchdogEnabled: false,
+    watchdogInstructions: null,
+    watchdogRetryBudget: 2,
     createdAt: new Date(),
     updatedAt: new Date(),
     ...overrides,
@@ -600,9 +603,12 @@ describe("createAgentLoopRun", () => {
   test("BT-006: inserts a run with the correct loopId and userId, returns {run, created:true}", async () => {
     const loop = makeLoop();
     const run = makeLoopRun();
-    // First findFirst call is the ownership check (returns owned loop)
-    findFirstMock.mockResolvedValueOnce(loop);
-    returningMock.mockImplementationOnce(() => [run]);
+    const event = { id: "event-1", loopRunId: run.id };
+    findFirstMock.mockResolvedValueOnce(null);
+    txSelectResultsQueue = [[loop]];
+    returningMock
+      .mockImplementationOnce(() => [run])
+      .mockImplementationOnce(() => [event]);
 
     const store = await storePromise;
     const result = await store.createAgentLoopRun({
@@ -617,12 +623,12 @@ describe("createAgentLoopRun", () => {
     expect(result!.run.loopId).toBe("loop-1");
     expect(result!.run.userId).toBe("user-1");
     expect(result!.created).toBe(true);
-    expect(insertMock).toHaveBeenCalledTimes(1);
+    expect(txInsertMock).toHaveBeenCalledTimes(2);
   });
 
   test("BT-006b: returns null when loop is not owned by userId (cross-tenant rejection)", async () => {
-    // Ownership check returns null — loop belongs to another user
     findFirstMock.mockResolvedValueOnce(null);
+    txSelectResultsQueue = [[]];
 
     const store = await storePromise;
     const result = await store.createAgentLoopRun({
@@ -635,17 +641,11 @@ describe("createAgentLoopRun", () => {
 
     expect(result).toBeNull();
     // Must NOT have attempted to insert
-    expect(insertMock).not.toHaveBeenCalled();
+    expect(txInsertMock).not.toHaveBeenCalled();
   });
 
   test("BT-006c: returns {run, created:false} when idempotencyKey already exists (duplicate suppressed)", async () => {
-    const loop = makeLoop();
     const existingRun = makeLoopRun({ idempotencyKey: "idem-dup" });
-    // Ownership check passes
-    findFirstMock.mockResolvedValueOnce(loop);
-    // onConflictDoNothing returns empty (conflict suppressed)
-    returningMock.mockImplementationOnce(() => []);
-    // Fetch of existing run by idempotency key
     findFirstMock.mockResolvedValueOnce(existingRun);
 
     const store = await storePromise;
@@ -662,25 +662,21 @@ describe("createAgentLoopRun", () => {
     expect(result?.run.idempotencyKey).toBe("idem-dup");
   });
 
-  test("BT-006d: throws when insert returns nothing AND no existing run found (corrupted state)", async () => {
+  test("BT-006d: returns null when insert loses without an idempotent winner", async () => {
     const loop = makeLoop();
-    // Ownership check passes
-    findFirstMock.mockResolvedValueOnce(loop);
-    // onConflictDoNothing returns empty
+    findFirstMock.mockResolvedValueOnce(null).mockResolvedValueOnce(null);
+    txSelectResultsQueue = [[loop]];
     returningMock.mockImplementationOnce(() => []);
-    // No existing run found either
-    findFirstMock.mockResolvedValueOnce(null);
 
     const store = await storePromise;
-    await expect(
-      store.createAgentLoopRun({
-        loopId: "loop-1",
-        userId: "user-1",
-        definitionSnapshot: { nodes: [], edges: [] },
-        source: "manual",
-        idempotencyKey: "idem-corrupt",
-      }),
-    ).rejects.toThrow();
+    const result = await store.createAgentLoopRun({
+      loopId: "loop-1",
+      userId: "user-1",
+      definitionSnapshot: { nodes: [], edges: [] },
+      source: "manual",
+      idempotencyKey: "idem-corrupt",
+    });
+    expect(result).toBeNull();
   });
 });
 
