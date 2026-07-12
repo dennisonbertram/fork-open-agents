@@ -606,8 +606,21 @@ describe("source deletion race guards", () => {
     expect(createCommitMock).not.toHaveBeenCalled();
   });
 
-  test("deletion after the model returns prevents commit preparation", async () => {
+  test("deletion after setup prevents sandbox allocation", async () => {
     sourceLiveResults = [true, false];
+
+    const result = await execute();
+
+    expect(result.errorKind).toBe("source_deleted");
+    expect(verifyRepoAccessMock).toHaveBeenCalledTimes(1);
+    expect(connectSandboxMock).not.toHaveBeenCalled();
+    expect(revokeInstallationTokenMock).toHaveBeenCalledTimes(1);
+    expect(openAgentGenerateMock).not.toHaveBeenCalled();
+    expect(createCommitMock).not.toHaveBeenCalled();
+  });
+
+  test("deletion after the model returns prevents commit preparation", async () => {
+    sourceLiveResults = [true, true, false];
 
     const result = await execute();
 
@@ -618,7 +631,7 @@ describe("source deletion race guards", () => {
   });
 
   test("deletion immediately before commit prevents the GitHub write", async () => {
-    sourceLiveResults = [true, true, false];
+    sourceLiveResults = [true, true, true, false];
 
     const result = await execute();
 
