@@ -635,6 +635,35 @@ describe("WD-03: retry decision → retryCurrentStepForWatchdog called", () => {
     expect(lastRetryHint).toBe("Try a different approach");
   });
 
+  test("retry decision requires the failed step id in the store compare-and-set", async () => {
+    const { invokeWatchdog } = await watchdogPromise;
+    const loop = makeLoop({ watchdogEnabled: true, watchdogRetryBudget: 2 });
+    const loopRun = makeLoopRun({ currentStepRunId: "step-run-1" });
+    mockAgentDecision = {
+      decision: "retry",
+      diagnosis: "Retry this step",
+      hint: "Try a different approach",
+    };
+
+    await invokeWatchdog({
+      loop,
+      loopRun,
+      stepRunId: "step-run-1",
+      nodeId: "node-a",
+      nodeKind: "agent_step",
+      attempt: 1,
+      errorKind: "step_failed",
+      errorMessage: "Step failed",
+      workflowRunId: "wf-1",
+    });
+
+    expect(retryCurrentStepForWatchdogMock).toHaveBeenCalledWith({
+      runId: loopRun.id,
+      expectedStepRunId: "step-run-1",
+      hint: "Try a different approach",
+    });
+  });
+
   test("retry decision emits watchdog.decided event at info level", async () => {
     const { invokeWatchdog } = await watchdogPromise;
     const loop = makeLoop({ watchdogEnabled: true, watchdogRetryBudget: 2 });
