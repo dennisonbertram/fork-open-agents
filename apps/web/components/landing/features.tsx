@@ -74,12 +74,12 @@ export function LandingFeatures() {
         <div>
           <Spotlight
             tone="slate"
-            title="Agents that ship real code."
-            description="Each agent gets a full sandbox environment with filesystem, network, and runtime access. Describe what to build and let the agent work autonomously until it's done."
+            title="Start a durable coding Session."
+            description="A Session keeps repository, branch, sandbox, and conversation context together while you direct and review the coding work."
             bullets={[
               "File ops, search, shell, and task delegation built in",
-              "Explorer and executor subagents for parallel work",
-              "Multi-model support with AI Gateway",
+              "Helper roles can explore and implement scoped work",
+              "Choose from configured models",
             ]}
             window={<FeatureAgent />}
           />
@@ -90,7 +90,7 @@ export function LandingFeatures() {
             description="Every session runs in an isolated Vercel sandbox with its own branch. Changes stay on that branch until you commit — turn on auto commit & push in Settings if you'd rather it happen automatically."
             bullets={[
               "Ephemeral environments with full git integration",
-              "Auto-hibernate on inactivity, instant restore",
+              "Inactivity can hibernate the sandbox; snapshots support recovery",
               "Snapshot and restore filesystem state",
             ]}
             flip
@@ -99,12 +99,12 @@ export function LandingFeatures() {
 
           <Spotlight
             tone="iron"
-            title="Durable workflows that survive anything."
-            description="Agent loops run as durable workflows that survive restarts, retry on failure, and coordinate multi-step operations over time. No work is ever lost mid-run."
+            title="Create an Automation, then inspect its Run."
+            description="Automations coordinate configured coding steps and triggers. Each attempt creates an inspectable Run with status and available evidence."
             bullets={[
-              "Resumable agent loops with automatic checkpointing",
-              "Post-finish: usage tracking, diff caching, auto-commit",
-              "Reconnect to running workflows from any client",
+              "Manual, GitHub webhook, and scheduled triggers",
+              "Configured permissions and readiness gates apply",
+              "Run history exposes status, evidence, and recovery controls",
             ]}
             window={<FeatureWorkflow />}
           />

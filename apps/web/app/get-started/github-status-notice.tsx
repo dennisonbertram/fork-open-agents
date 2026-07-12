@@ -102,6 +102,14 @@ function contentFor(
         description: "Something interrupted the GitHub connection. Try again.",
         showRetry: true,
       };
+    case "sync_failed":
+      return {
+        severity: "recoverable",
+        title: "GitHub installation sync failed",
+        description:
+          "We could not refresh repository access. Try syncing again.",
+        showRetry: true,
+      };
     default:
       return {
         severity: "unknown",

@@ -1,3 +1,5 @@
+import Link from "next/link";
+import { PRODUCT_JOURNEY } from "@/lib/product-journey";
 import { ThemeToggle } from "./theme-toggle";
 
 export function LandingFooter() {
@@ -20,41 +22,33 @@ export function LandingFooter() {
 
           <div className="px-6 pt-14 md:px-10 md:py-18">
             <div className="font-mono text-xs uppercase tracking-widest text-(--l-fg-3)">
-              Product
+              Journey
             </div>
             <div className="mt-4 flex flex-col gap-2">
-              <a
-                href="https://ai-sdk.dev/"
-                target="_blank"
-                rel="noopener noreferrer"
+              <Link
+                href={PRODUCT_JOURNEY[0].href}
                 className="font-sans text-sm text-(--l-fg-2) transition-colors hover:text-(--l-fg)"
               >
-                AI SDK
-              </a>
-              <a
-                href="https://vercel.com/ai-gateway"
-                target="_blank"
-                rel="noopener noreferrer"
+                Connect GitHub
+              </Link>
+              <Link
+                href="/sessions"
                 className="font-sans text-sm text-(--l-fg-2) transition-colors hover:text-(--l-fg)"
               >
-                AI Gateway
-              </a>
-              <a
-                href="https://vercel.com/sandbox"
-                target="_blank"
-                rel="noopener noreferrer"
+                Sessions
+              </Link>
+              <Link
+                href="/automations"
                 className="font-sans text-sm text-(--l-fg-2) transition-colors hover:text-(--l-fg)"
               >
-                Sandbox
-              </a>
-              <a
-                href="https://useworkflow.dev/"
-                target="_blank"
-                rel="noopener noreferrer"
+                Automations
+              </Link>
+              <Link
+                href="/runs"
                 className="font-sans text-sm text-(--l-fg-2) transition-colors hover:text-(--l-fg)"
               >
-                Workflow SDK
-              </a>
+                Runs
+              </Link>
             </div>
           </div>
 

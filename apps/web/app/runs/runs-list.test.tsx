@@ -193,4 +193,26 @@ describe("RunsList", () => {
     const html = renderToStaticMarkup(<RunsList searchParams="view=active" />);
     expect(html).toContain(expected);
   });
+
+  test("unfiltered empty state offers Automations without implying a Run exists", async () => {
+    swrState = {
+      data: { items: [], sourceStatus: [], allSourcesFailed: false },
+      isLoading: false,
+    };
+    const { RunsList } = await componentPromise;
+    const html = renderToStaticMarkup(<RunsList searchParams="" />);
+    expect(html).toContain("No runs yet");
+    expect(html).toContain('href="/automations"');
+  });
+
+  test("filtered empty state keeps clear filters", async () => {
+    swrState = {
+      data: { items: [], sourceStatus: [], allSourcesFailed: false },
+      isLoading: false,
+    };
+    const { RunsList } = await componentPromise;
+    const html = renderToStaticMarkup(<RunsList searchParams="view=active" />);
+    expect(html).toContain("No runs found");
+    expect(html).toContain("Clear filters");
+  });
 });

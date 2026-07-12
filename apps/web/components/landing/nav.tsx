@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { SignInButton } from "@/components/auth/sign-in-button";
+import { PRODUCT_JOURNEY } from "@/lib/product-journey";
 import { cn } from "@/lib/utils";
 import { GitHubLink } from "./github-link";
 import { Logo } from "./logo";
@@ -50,7 +51,11 @@ export function LandingNav({
               size="sm"
               aria-label="Open Agents on GitHub (opens in a new tab)"
             />
-            <SignInButton size="sm" className="h-10 sm:h-8" />
+            <SignInButton
+              size="sm"
+              className="h-10 sm:h-8"
+              callbackUrl={PRODUCT_JOURNEY[0].href}
+            />
           </div>
         </div>
       </div>
