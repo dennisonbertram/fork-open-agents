@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { usePrefersReducedMotion } from "@/hooks/use-prefers-reduced-motion";
 
 type FakeSession = {
   readonly title: string;
@@ -117,10 +118,15 @@ function SummaryBar({ session: s }: { readonly session: FakeSession }) {
 }
 
 export function AppMockup() {
+  const reducedMotion = usePrefersReducedMotion();
   const [activeIndex, setActiveIndex] = useState(0);
   const [justSwitched, setJustSwitched] = useState(false);
   const active = sessions[activeIndex]!;
-  const typedSummary = useTypewriter(active.summary, justSwitched, 14);
+  const typedSummary = useTypewriter(
+    active.summary,
+    justSwitched && reducedMotion === false,
+    14,
+  );
 
   const handleSwitch = (index: number) => {
     if (index === activeIndex) return;
@@ -129,13 +135,13 @@ export function AppMockup() {
   };
 
   useEffect(() => {
-    if (!justSwitched) return;
+    if (!justSwitched || reducedMotion !== false) return;
     const timeout = setTimeout(
       () => setJustSwitched(false),
       active.summary.length * 14 + 200,
     );
     return () => clearTimeout(timeout);
-  }, [justSwitched, active.summary.length]);
+  }, [justSwitched, active.summary.length, reducedMotion]);
 
   return (
     <div
@@ -201,6 +207,9 @@ export function AppMockup() {
           <span className="size-2 rounded-full bg-(--l-panel-dot)" />
         </div>
         <div className="flex items-center gap-2">
+          <span className="text-[10px] text-(--l-panel-fg-4)">
+            Illustrative example
+          </span>
           <span className="hidden rounded-full bg-(--l-panel-surface) px-2 py-0.5 text-[10px] text-(--l-panel-fg-2) sm:inline">
             active
           </span>
@@ -317,7 +326,7 @@ export function AppMockup() {
                 <div className="flex items-center justify-between px-2.5 pb-1.5 sm:px-3 sm:pb-2">
                   <div className="flex items-center gap-2">
                     <span className="text-[10px] text-(--l-panel-fg-4)">
-                      Claude Opus 4.6
+                      Configured model
                     </span>
                     <span className="text-[10px] text-(--l-panel-fg-5)">
                       1%

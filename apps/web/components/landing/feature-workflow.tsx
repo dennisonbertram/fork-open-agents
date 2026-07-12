@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { usePrefersReducedMotion } from "@/hooks/use-prefers-reduced-motion";
 
 const steps = [
   { label: "convert messages", ms: 700 },
@@ -12,6 +13,7 @@ const steps = [
 ] as const;
 
 export function FeatureWorkflow() {
+  const reducedMotion = usePrefersReducedMotion();
   const [active, setActive] = useState(-1);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -37,19 +39,27 @@ export function FeatureWorkflow() {
   }, []);
 
   useEffect(() => {
+    if (reducedMotion !== false) {
+      clear();
+      setActive(steps.length);
+      return clear;
+    }
     timerRef.current = setTimeout(() => tick(0), 500);
     return clear;
-  }, [tick, clear]);
+  }, [tick, clear, reducedMotion]);
 
   const done = active >= steps.length;
 
   return (
     <div className="flex h-[280px] flex-col bg-(--l-code-bg)">
       <div className="flex-1 px-5 py-4">
+        <p className="mb-3 text-[10px] text-(--l-panel-fg-4)">
+          Illustrative example
+        </p>
         <div className="flex items-center gap-3 font-mono text-[12px]">
-          <span className="text-(--l-panel-fg-3)">workflow</span>
-          <span className="text-(--l-panel-fg-2)">chat</span>
-          <span className="text-(--l-panel-fg-4)">durable</span>
+          <span className="text-(--l-panel-fg-3)">automation</span>
+          <span className="text-(--l-panel-fg-2)">run</span>
+          <span className="text-(--l-panel-fg-4)">inspectable</span>
         </div>
 
         <div className="mt-5 space-y-[2px]">
@@ -88,7 +98,7 @@ export function FeatureWorkflow() {
           className="mt-5 font-mono text-[11px] text-(--l-panel-fg-3) transition-opacity duration-500"
           style={{ opacity: done ? 1 : 0 }}
         >
-          complete · {steps.length} steps · resumable
+          example complete · {steps.length} steps recorded
         </div>
       </div>
     </div>

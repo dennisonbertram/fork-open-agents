@@ -212,6 +212,9 @@ export function RunsList({ searchParams }: { searchParams: string }) {
   );
   const currentView = new URLSearchParams(searchParams).get("view") ?? "all";
   const currentParams = new URLSearchParams(searchParams);
+  const isFiltered = [...currentParams.entries()].some(
+    ([key, value]) => value && !(key === "view" && value === "all"),
+  );
 
   async function loadMore() {
     if (!nextCursor || loadingMore) return;
@@ -356,12 +359,18 @@ export function RunsList({ searchParams }: { searchParams: string }) {
       ) : null}
       {response && !response.allSourcesFailed && items.length === 0 ? (
         <div className="rounded-md border border-dashed border-border p-10 text-center">
-          <h2 className="text-balance text-sm font-semibold">No runs found</h2>
+          <h2 className="text-balance text-sm font-semibold">
+            {isFiltered ? "No runs found" : "No runs yet"}
+          </h2>
           <p className="mt-1 text-pretty text-sm text-muted-foreground">
-            Try another status or clear the repository and trigger filters.
+            {isFiltered
+              ? "Try another status or clear the repository and trigger filters."
+              : "Create an Automation and run it before execution history appears here."}
           </p>
           <Button asChild variant="outline" size="sm" className="mt-4">
-            <Link href="/runs">Clear filters</Link>
+            <Link href={isFiltered ? "/runs" : "/automations"}>
+              {isFiltered ? "Clear filters" : "Create an Automation"}
+            </Link>
           </Button>
         </div>
       ) : null}
