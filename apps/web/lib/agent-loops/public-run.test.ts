@@ -6,6 +6,7 @@ import {
 } from "./execution-snapshot";
 import {
   getAgentLoopSnapshotSource,
+  publicLoopGraphSchema,
   toPublicAgentLoopRun,
   toSafeAgentLoopEvidence,
 } from "./public-run";
@@ -73,6 +74,13 @@ const run = {
 } satisfies AgentLoopRun;
 
 describe("public loop run evidence", () => {
+  test("the public graph runtime contract accepts topology-only agent nodes", () => {
+    const publicRun = toPublicAgentLoopRun(run);
+    expect(publicLoopGraphSchema.parse(publicRun.definitionSnapshot)).toEqual(
+      publicRun.definitionSnapshot,
+    );
+  });
+
   test("omits the private snapshot and exposes safe provenance", () => {
     const publicRun = toPublicAgentLoopRun(run);
     expect(publicRun).not.toHaveProperty("executionSnapshot");

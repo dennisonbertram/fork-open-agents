@@ -1,11 +1,29 @@
 import { describe, expect, mock, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { GetAgentLoopRunDetailResponse } from "@/app/api/agent-loops/types";
-import type { AgentLoopWatchdogRun } from "@/lib/db/schema";
+import type {
+  AgentLoopRun,
+  AgentLoopWatchdogRun,
+} from "@/lib/db/schema";
 import { VALID_FIXTURES } from "@/lib/agent-loops/fixtures";
+import {
+  toPublicAgentLoopRun,
+  type PublicLoopGraph,
+} from "@/lib/agent-loops/public-run";
 
 mock.module("./run-graph", () => ({
-  RunGraph: () => <div>Native graph canvas</div>,
+  RunGraph: ({
+    definitionSnapshot,
+  }: {
+    definitionSnapshot: PublicLoopGraph;
+  }) => (
+    <div>
+      Native graph canvas
+      {definitionSnapshot.nodes.map((node) => (
+        <span key={node.id}>{node.label}</span>
+      ))}
+    </div>
+  ),
 }));
 
 mock.module("swr", () => ({
@@ -136,6 +154,39 @@ function makeDetail(
 }
 
 describe("canonical loop Run detail parity", () => {
+  test("renders an agent node from the serializer's topology-only graph", async () => {
+    const detail = makeDetail("running");
+    const { snapshotSource: _snapshotSource, ...publicRunFields } = detail.run;
+    const privateRun = {
+      ...publicRunFields,
+      context: { private: "context-canary" },
+      executionSnapshot: null,
+      definitionSnapshot: {
+        nodes: [
+          {
+            id: "agent-node",
+            kind: "agent_step" as const,
+            label: "Serialized agent node",
+            position: { x: 100, y: 50 },
+            instructions: "private-instructions-canary",
+          },
+        ],
+        edges: [],
+      },
+    } satisfies AgentLoopRun;
+    detail.run = toPublicAgentLoopRun(privateRun);
+    const { RunDetail } = await detailModule;
+
+    const html = renderToStaticMarkup(
+      <RunDetail initialData={detail} variant="canonical" />,
+    );
+
+    expect(html).toContain("Run graph");
+    expect(html).toContain("Serialized agent node");
+    expect(html).not.toContain("private-instructions-canary");
+    expect(html).not.toContain("context-canary");
+  });
+
   test("keeps graph, steps, events, warnings, watchdog, and correlation evidence", async () => {
     const { RunDetail } = await detailModule;
     const html = renderToStaticMarkup(

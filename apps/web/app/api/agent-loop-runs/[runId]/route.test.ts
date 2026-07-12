@@ -165,14 +165,20 @@ describe("GET /api/agent-loop-runs/[runId]", () => {
     expect(response.status).toBe(401);
   });
 
-  test("BT-040: returns 403 when feature flag disabled", async () => {
+  test("BT-040: retained owned run detail remains readable when execution is disabled", async () => {
     isAgentLoopsEnabled.mockImplementation(() => false);
     const { GET } = await routeModulePromise;
     const response = await GET(
       new Request("http://localhost/api/agent-loop-runs/run-1"),
       context(),
     );
-    expect(response.status).toBe(403);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      run: { id: "run-1" },
+      loop: { id: "loop-1" },
+      steps: expect.any(Array),
+      events: expect.any(Array),
+    });
   });
 
   test("BT-041: returns run+loop summary+steps+events for owned run", async () => {
