@@ -18,7 +18,7 @@ export type RunDetailShellSummary = {
   source: AutomationRunSource;
   runId: string;
   automation: { name: string; sourceId: string | null; href: string | null };
-  repository: { owner: string; name: string; href: string };
+  repository: { owner: string; name: string; href: string } | null;
   trigger: {
     id: string | null;
     source: AutomationTriggerSource;
@@ -135,18 +135,21 @@ export function buildLoopRunDetailSummary(
     source: "agent_loop",
     runId: run.id,
     automation: {
-      name: loop.name,
-      sourceId: loop.id,
-      href:
-        options.variant === "canonical"
+      name: loop?.name ?? "Deleted automation",
+      sourceId: loop?.id ?? null,
+      href: loop
+        ? options.variant === "canonical"
           ? canonicalLoopAutomationDetailUrl(loop.id)
-          : `/loops/${encodeURIComponent(loop.id)}`,
+          : `/loops/${encodeURIComponent(loop.id)}`
+        : null,
     },
-    repository: {
-      owner: loop.repoOwner,
-      name: loop.repoName,
-      href: `/repos/${encodeURIComponent(loop.repoOwner)}/${encodeURIComponent(loop.repoName)}`,
-    },
+    repository: loop
+      ? {
+          owner: loop.repoOwner,
+          name: loop.repoName,
+          href: `/repos/${encodeURIComponent(loop.repoOwner)}/${encodeURIComponent(loop.repoName)}`,
+        }
+      : null,
     trigger: {
       id: run.triggerId,
       source: triggerSource(run.source),

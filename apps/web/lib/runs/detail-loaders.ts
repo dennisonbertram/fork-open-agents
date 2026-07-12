@@ -117,13 +117,15 @@ export async function loadOwnedLoopRunDetail({
 
   return {
     run: row.run,
-    loop: {
-      id: row.loop.id,
-      name: row.loop.name,
-      repoOwner: row.loop.repoOwner,
-      repoName: row.loop.repoName,
-      guardrails: row.loop.guardrails,
-    },
+    loop: row.loop
+      ? {
+          id: row.loop.id,
+          name: row.loop.name,
+          repoOwner: row.loop.repoOwner,
+          repoName: row.loop.repoName,
+          guardrails: row.loop.guardrails,
+        }
+      : null,
     steps,
     events: mergeEventsForSummary(cappedEvents, composioEvents),
     watchdogRuns,

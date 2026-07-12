@@ -46,7 +46,7 @@ export interface BackgroundAgentRunAdapterInput extends BaseRunAdapterInput {
 }
 
 export interface AgentLoopRunAdapterInput extends BaseRunAdapterInput {
-  loopId: string;
+  loopId: string | null;
   triggerId?: string | null;
   triggerKind?: string | null;
   nativeSource: string;

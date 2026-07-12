@@ -75,13 +75,15 @@ export async function GET(_req: Request, ctx: RouteContext): Promise<Response> {
 
   const body: GetAgentLoopRunDetailResponse = {
     run: row.run,
-    loop: {
-      id: row.loop.id,
-      name: row.loop.name,
-      repoOwner: row.loop.repoOwner,
-      repoName: row.loop.repoName,
-      guardrails: row.loop.guardrails,
-    },
+    loop: row.loop
+      ? {
+          id: row.loop.id,
+          name: row.loop.name,
+          repoOwner: row.loop.repoOwner,
+          repoName: row.loop.repoName,
+          guardrails: row.loop.guardrails,
+        }
+      : null,
     steps,
     events,
     watchdogRuns,

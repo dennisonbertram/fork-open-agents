@@ -11,7 +11,10 @@
  * Mirrors the WorkflowCatalogError pattern in lib/workflows/catalog.ts.
  */
 
-export type RunControlErrorKind = "not_found" | "illegal_transition";
+export type RunControlErrorKind =
+  | "not_found"
+  | "illegal_transition"
+  | "source_deleted";
 
 export class RunControlError extends Error {
   readonly kind: RunControlErrorKind;

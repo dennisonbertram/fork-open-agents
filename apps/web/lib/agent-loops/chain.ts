@@ -55,13 +55,13 @@ import {
   conditionallyTransitionRunStatus,
   updateAgentLoopStepRun,
   recordAgentLoopEvent,
-  createAgentLoopStepRun,
-  advanceRunToNextStep,
+  createAndAdvanceAgentLoopStep,
   countStepRunsForNode,
   getMaxAttemptForNode,
 } from "./store";
 import { executeAgentLoopStep } from "./step-executor";
 import { invokeWatchdog } from "./watchdog";
+import { AgentLoopSourceDeletedError } from "./source-deleted-error";
 
 // ── Public types ───────────────────────────────────────────────────────────────
 
@@ -126,7 +126,13 @@ export async function runAgentLoopStep(
 
   // ── 1. Load context ────────────────────────────────────────────────────────
 
-  const ctx = await getAgentLoopStepRunWithContext(stepRunId);
+  let ctx: Awaited<ReturnType<typeof getAgentLoopStepRunWithContext>>;
+  try {
+    ctx = await getAgentLoopStepRunWithContext(stepRunId);
+  } catch (error) {
+    if (error instanceof AgentLoopSourceDeletedError) return;
+    throw error;
+  }
   if (!ctx) {
     // Cannot do anything useful without the DB row — log and bail.
     console.error(`[agent-loop.chain] Step run not found: ${stepRunId}`);
@@ -689,13 +695,17 @@ async function advanceLoopRun(params: AdvanceParams): Promise<void> {
   });
   const nextAttempt = maxAttemptSoFar + 1;
 
-  let nextStepRun: Awaited<ReturnType<typeof createAgentLoopStepRun>>;
+  let advanceResult: Awaited<ReturnType<typeof createAndAdvanceAgentLoopStep>>;
   try {
-    nextStepRun = await createAgentLoopStepRun({
-      loopRunId,
-      nodeId: nextNodeId,
-      nodeKind: nextNodeKind,
+    advanceResult = await createAndAdvanceAgentLoopStep({
+      runId: loopRunId,
+      fromStepRunId: stepRunId,
+      nextNodeId,
+      nextNodeKind,
       attempt: nextAttempt,
+      stepCount: newStepCount,
+      iterationCount: newIterationCount,
+      workflowRunId,
     });
   } catch (insertErr) {
     // Unique-constraint violation on (loopRunId, nodeId, attempt):
@@ -729,17 +739,11 @@ async function advanceLoopRun(params: AdvanceParams): Promise<void> {
 
   // ── 7f. Atomic advance (anti-double-dispatch) ─────────────────────────────
 
-  const advanced = await advanceRunToNextStep({
-    runId: loopRunId,
-    fromStepRunId: stepRunId,
-    nextNodeId,
-    nextStepRunId: nextStepRun.id,
-    stepCount: newStepCount,
-    iterationCount: newIterationCount,
-    workflowRunId,
-  });
+  if (advanceResult.outcome === "source_deleted") {
+    return;
+  }
 
-  if (!advanced) {
+  if (advanceResult.outcome === "duplicate") {
     // Another invocation already advanced from this step — do not dispatch
     await recordAgentLoopEvent({
       loopRunId,
@@ -754,6 +758,8 @@ async function advanceLoopRun(params: AdvanceParams): Promise<void> {
     });
     return;
   }
+
+  const nextStepRun = advanceResult.step;
 
   // ── 7g. Pause mid-execution: bookkeeping done, skip dispatch ─────────────
   //

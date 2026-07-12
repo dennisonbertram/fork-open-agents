@@ -71,6 +71,7 @@ let recordedStepRunCreations: {
   attempt: number;
 }[] = [];
 let workflowStartCalls: Array<{ stepRunId: string }> = [];
+let atomicAdvanceSourceDeleted = false;
 
 // ── Store mock state ──────────────────────────────────────────────────────────
 
@@ -275,6 +276,41 @@ const conditionallyTransitionRunStatusMock = mock(
 );
 
 mock.module("./store", () => ({
+  isAgentLoopRunSourceLive: mock(async () => true),
+  createAndAdvanceAgentLoopStep: mock(
+    async (input: {
+      runId: string;
+      fromStepRunId: string;
+      nextNodeId: string;
+      nextNodeKind: string;
+      attempt: number;
+      stepCount: number;
+      iterationCount: number;
+      workflowRunId: string;
+    }) => {
+      if (atomicAdvanceSourceDeleted) {
+        return { outcome: "source_deleted" as const };
+      }
+      const step = await createAgentLoopStepRunMock({
+        loopRunId: input.runId,
+        nodeId: input.nextNodeId,
+        nodeKind: input.nextNodeKind,
+        attempt: input.attempt,
+      });
+      const advanced = await advanceRunToNextStepMock({
+        runId: input.runId,
+        fromStepRunId: input.fromStepRunId,
+        nextNodeId: input.nextNodeId,
+        nextStepRunId: step.id,
+        stepCount: input.stepCount,
+        iterationCount: input.iterationCount,
+        workflowRunId: input.workflowRunId,
+      });
+      return advanced
+        ? { outcome: "advanced" as const, step }
+        : { outcome: "duplicate" as const };
+    },
+  ),
   getAgentLoopStepRunWithContext: getAgentLoopStepRunWithContextMock,
   getAgentLoopRunWithLoop: getAgentLoopRunWithLoopMock,
   updateAgentLoopRunStatus: updateAgentLoopRunStatusMock,
@@ -484,6 +520,7 @@ function resetAll() {
   recordedAdvanceCalls = [];
   recordedStepRunCreations = [];
   workflowStartCalls = [];
+  atomicAdvanceSourceDeleted = false;
   executedNodeIds = [];
   stepRunIdToNodeId = {};
   stepRunIdToStepRun = {};
@@ -1305,6 +1342,39 @@ describe("BT-C08: double-advance — conditional update returns 0 rows → no se
     // Check that the reason indicates duplicate_advance
     const payload = skipEvent?.payload as Record<string, unknown> | undefined;
     expect(payload?.["reason"]).toBe("duplicate_advance");
+  });
+});
+
+describe("source deletion during atomic advance", () => {
+  beforeEach(() => {
+    resetAll();
+    currentLoopRun = makeLoopRun({
+      status: "running",
+      currentStepRunId: "step-run-1",
+    });
+    executorOutcomes["start"] = { outcome: "success" };
+    atomicAdvanceSourceDeleted = true;
+  });
+
+  test("does not create, dispatch, or mislabel a duplicate step", async () => {
+    const { runAgentLoopStep } = await chainPromise;
+
+    await runAgentLoopStep({
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+    });
+
+    expect(recordedStepRunCreations).toHaveLength(0);
+    expect(recordedAdvanceCalls).toHaveLength(0);
+    expect(workflowStartCalls).toHaveLength(0);
+    expect(
+      recordedEvents.some(
+        (event) =>
+          event.eventName === "agent-loop.chain.skipped" &&
+          (event.payload as { reason?: string } | null)?.reason ===
+            "duplicate_advance",
+      ),
+    ).toBe(false);
   });
 });
 

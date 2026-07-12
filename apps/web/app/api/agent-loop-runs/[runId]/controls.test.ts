@@ -253,7 +253,9 @@ describe("POST /api/agent-loop-runs/[runId]/resume", () => {
     );
 
     expect(response.status).toBe(409);
-    expect(await response.json()).toMatchObject({ errorKind: "source_deleted" });
+    expect(await response.json()).toMatchObject({
+      errorKind: "source_deleted",
+    });
   });
 
   test("BT-059: returns 502 with success:false, errorKind:dispatch_failed when the execution backend rejects the dispatch (issue #763)", async () => {

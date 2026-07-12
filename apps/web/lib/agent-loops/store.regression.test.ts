@@ -74,7 +74,10 @@ const whereMockLeft = mock(() => ({
 const leftJoinMock = mock(() => ({ where: whereMockLeft }));
 const fromMock = mock(() => ({
   leftJoin: leftJoinMock,
-  where: mock(() => ({ limit: limitMockLeft })),
+  where: mock(() => ({
+    limit: limitMockLeft,
+    for: mock(() => ({ limit: limitMockLeft })),
+  })),
 }));
 const selectMock = mock((_fields?: unknown) => ({ from: fromMock }));
 
@@ -106,6 +109,7 @@ mock.module("@/lib/db/client", () => ({
         insert: insertMock,
         update: txUpdateMock,
         delete: deleteMock,
+        select: selectMock,
         query: {
           agentLoops: { findFirst: txFindFirstMock },
           agentLoopRuns: { findFirst: txFindFirstMock },
@@ -248,15 +252,10 @@ describe("REGRESSION-002: deleteAgentLoop returns false when userId doesn't own 
   beforeEach(resetMocks);
 
   test("returns false when delete returns empty (wrong owner)", async () => {
-    deleteMock.mockReturnValueOnce({
-      where: mock(() => ({
-        returning: mock(() => []),
-      })),
-    });
-
     const store = await storePromise;
     const result = await store.deleteAgentLoop("attacker-user", "loop-victim");
     expect(result).toBe(false);
+    expect(deleteMock).not.toHaveBeenCalled();
   });
 });
 
@@ -603,6 +602,7 @@ describe("REGRESSION-ST: createAgentLoopWatchdogRun startedAt persistence (M3-01
   beforeEach(resetMocks);
 
   test("ST-1: startedAt: new Date() is included in the insert values", async () => {
+    queryResult = [{ id: "run-1", loopId: "loop-1" }];
     const now = new Date();
     const watchdogRow = {
       id: "wd-1",
@@ -642,6 +642,7 @@ describe("REGRESSION-ST: createAgentLoopWatchdogRun startedAt persistence (M3-01
   });
 
   test("ST-2: without startedAt → inserted row does NOT include startedAt (or has undefined/null)", async () => {
+    queryResult = [{ id: "run-1", loopId: "loop-1" }];
     const watchdogRow = {
       id: "wd-2",
       loopRunId: "run-1",

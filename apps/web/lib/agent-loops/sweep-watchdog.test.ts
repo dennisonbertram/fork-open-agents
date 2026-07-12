@@ -124,6 +124,10 @@ const getAgentLoopRunWithLoop = mock(async (runId: string) => {
 });
 
 mock.module("@/lib/agent-loops/store", () => ({
+  isAgentLoopRunSourceLive: mock(async () => true),
+  createAndAdvanceAgentLoopStep: mock(async () => ({
+    outcome: "source_deleted" as const,
+  })),
   findStalledLoopRunCandidates,
   conditionallyTransitionRunStatus,
   recordAgentLoopEvent,

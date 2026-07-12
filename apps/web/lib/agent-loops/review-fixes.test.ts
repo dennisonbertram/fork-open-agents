@@ -370,6 +370,10 @@ const f3f4UpdateRunContextMock = mock(async (input: RunContextInput) => {
 });
 
 mock.module("./store", () => ({
+  isAgentLoopRunSourceLive: mock(async () => true),
+  createAndAdvanceAgentLoopStep: mock(async () => ({
+    outcome: "source_deleted" as const,
+  })),
   getAgentLoopStepRunWithContext: f3f4GetStepRunMock,
   updateAgentLoopStepRun: f3f4UpdateStepRunMock,
   recordAgentLoopEvent: f3f4RecordEventMock,

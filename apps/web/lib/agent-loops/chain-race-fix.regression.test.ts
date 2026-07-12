@@ -218,6 +218,30 @@ const createAgentLoopStepRunMock = mock(
 const updateAgentLoopStepRunMock = mock(async () => currentStepRun);
 
 mock.module("./store", () => ({
+  isAgentLoopRunSourceLive: mock(async () => true),
+  createAndAdvanceAgentLoopStep: mock(
+    async (input: {
+      runId: string;
+      fromStepRunId: string;
+      nextNodeId: string;
+      nextNodeKind: string;
+      attempt: number;
+      stepCount: number;
+      iterationCount: number;
+      workflowRunId: string;
+    }) => {
+      const step = await createAgentLoopStepRunMock({
+        loopRunId: input.runId,
+        nodeId: input.nextNodeId,
+        nodeKind: input.nextNodeKind,
+        attempt: input.attempt,
+      });
+      const advanced = await advanceRunToNextStepMock();
+      return advanced
+        ? { outcome: "advanced" as const, step }
+        : { outcome: "duplicate" as const };
+    },
+  ),
   getAgentLoopStepRunWithContext: getAgentLoopStepRunWithContextMock,
   getAgentLoopRunWithLoop: getAgentLoopRunWithLoopMock,
   updateAgentLoopRunStatus: updateAgentLoopRunStatusMock,

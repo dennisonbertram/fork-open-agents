@@ -93,7 +93,7 @@ const eventsFixture: AgentLoopEvent[] = [
 ];
 
 const getAgentLoopRunWithLoop = mock(
-  async (): Promise<typeof runAndLoopFixture | null> => runAndLoopFixture,
+  async (): Promise<unknown> => runAndLoopFixture,
 );
 const listStepRunsForRun = mock(async () => stepRunsFixture);
 const listAgentLoopEvents = mock(

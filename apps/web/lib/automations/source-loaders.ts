@@ -212,6 +212,7 @@ export async function loadLoopAutomationSource(
   for (const run of latestRuns) {
     if (
       run.userId !== userId ||
+      !run.loopId ||
       !loopIdSet.has(run.loopId) ||
       latestRunByLoopId.has(run.loopId)
     ) {

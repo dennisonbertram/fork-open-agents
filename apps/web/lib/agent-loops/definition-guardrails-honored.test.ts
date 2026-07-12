@@ -115,6 +115,10 @@ let currentStepRun: AgentLoopStepRun;
 // ── Store mock: capture createAgentLoopRun's definitionSnapshot input ──────────
 
 mock.module("./store", () => ({
+  isAgentLoopRunSourceLive: mock(async () => true),
+  createAndAdvanceAgentLoopStep: mock(async () => ({
+    outcome: "source_deleted" as const,
+  })),
   getOwnedAgentLoop: mock(
     async (_params: { userId: string; loopId: string }) => fixtureLoop,
   ),

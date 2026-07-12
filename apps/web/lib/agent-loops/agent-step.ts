@@ -97,6 +97,7 @@ import {
   updateAgentLoopStepRun,
   recordAgentLoopEvent,
   updateAgentLoopRunContext,
+  isAgentLoopRunSourceLive,
 } from "./store";
 import { buildLoopStepPrompt } from "./loop-step-prompt";
 import type { ModelMessage } from "ai";
@@ -404,6 +405,14 @@ export async function executeAgentStep(
     startedAt,
   };
 
+  if (!(await isAgentLoopRunSourceLive(loopRunId))) {
+    return {
+      outcome: "failure",
+      errorKind: "source_deleted",
+      errorMessage: "Source Automation deleted",
+    };
+  }
+
   // ── 1. Verify repo access (write required for agent_step commit/push) ────────
 
   const accessResult = await verifyRepoAccess({
@@ -696,6 +705,14 @@ export async function executeAgentStep(
           ...(composioTools ? { tools: composioTools } : {}),
         } as Parameters<typeof openAgent.generate>[0]);
 
+        if (!(await isAgentLoopRunSourceLive(loopRunId))) {
+          return {
+            outcome: "failure",
+            errorKind: "source_deleted",
+            errorMessage: "Source Automation deleted",
+          };
+        }
+
         // Append model response messages so tool results are visible next turn.
         if (agentResult.response?.messages?.length) {
           agentMessages.push(...agentResult.response.messages);
@@ -905,6 +922,13 @@ export async function executeAgentStep(
       });
 
       if (intentResult.ok) {
+        if (!(await isAgentLoopRunSourceLive(loopRunId))) {
+          return {
+            outcome: "failure",
+            errorKind: "source_deleted",
+            errorMessage: "Source Automation deleted",
+          };
+        }
         let commitResult: Awaited<ReturnType<typeof createCommit>>;
         try {
           commitResult = (await withScopedInstallationOctokit({

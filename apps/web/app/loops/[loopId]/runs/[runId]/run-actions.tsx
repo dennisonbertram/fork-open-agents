@@ -28,8 +28,9 @@ import { getRunControlToastMessage } from "./run-control-toast-message";
 
 type RunActionsProps = {
   runId: string;
-  loopId: string;
+  loopId: string | null;
   status: string;
+  sourceAvailable?: boolean;
   /** Present when a previous "Run now" returned 409 active_run — render a notice */
   activeRunId?: string;
   onActionComplete?: () => void;
@@ -70,12 +71,15 @@ export function RunActions({
   runId,
   loopId,
   status,
+  sourceAvailable = true,
   activeRunId,
   onActionComplete,
 }: RunActionsProps) {
   const [loading, setLoading] = useState<string | null>(null);
   const isRetryable = RETRYABLE_STATUSES.has(status);
   const isNonTerminal = NON_TERMINAL_STATUSES.has(status);
+
+  if (!sourceAvailable || loopId === null) return null;
 
   async function handleAction(action: string, label: string) {
     setLoading(action);

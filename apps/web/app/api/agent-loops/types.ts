@@ -112,7 +112,7 @@ export type RunLoopSummary = {
  */
 export type GetAgentLoopRunDetailResponse = {
   run: AgentLoopRun;
-  loop: RunLoopSummary;
+  loop: RunLoopSummary | null;
   steps: AgentLoopStepRun[];
   events: AgentLoopEvent[];
   watchdogRuns: AgentLoopWatchdogRun[];
