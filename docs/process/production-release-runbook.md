@@ -272,9 +272,13 @@ bun run ops:alert -- \
   --summary "route /api/models failed"
 ```
 
+Incident titles are status-neutral (`[production-ops] <source> in
+<environment>`) so the title remains accurate across the alert lifecycle.
 Repeated failures comment on the existing open alert. Recovery runs add a
-recovery comment. The helper redacts secret-like text before issue bodies or
-comments are printed.
+recovery comment only when a matching open incident exists; recovery without
+an open incident is a no-op and does not create an issue. Recovered issues stay
+open as the dedupe target for later observations. The helper redacts
+secret-like text before issue bodies, comments, or command errors are printed.
 
 ## Branch Safety Gates
 
