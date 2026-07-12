@@ -49,7 +49,7 @@ export type BackgroundRunDetailResponse = {
     id: string;
     name: string;
     permissions: unknown;
-    checkCommand: string | null;
+    checkConfigured: boolean;
   } | null;
   events: SerializedBackgroundEvent[];
   outputs: SerializedBackgroundOutput[];

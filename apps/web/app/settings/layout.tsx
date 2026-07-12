@@ -1,12 +1,15 @@
 "use client";
 
-import { ArrowLeft, LogOut, Menu } from "lucide-react";
-import Link from "next/link";
+import { LogOut, Menu } from "lucide-react";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { signOut } from "@/lib/auth/actions";
 import { useSession } from "@/hooks/use-session";
 import { AuthGuard } from "@/components/auth/auth-guard";
+import {
+  getActiveWorkspaceNavigationItem,
+  WorkspaceNavigation,
+} from "@/components/workspace-navigation";
 import {
   Sheet,
   SheetContent,
@@ -20,13 +23,14 @@ import { ComposioSectionSkeleton } from "./composio-section";
 import { InferenceProfilesSectionSkeleton } from "./inference-profiles-section";
 import { LeaderboardSectionSkeleton } from "./leaderboard-section";
 import { ModelVariantsSectionSkeleton } from "./model-variants-section";
-import { findActiveNavItem } from "./nav-items";
+import {
+  findActiveNavItem,
+  resolveSettingsFallbackRouteId,
+  visibleNavGroups,
+} from "./nav-items";
 import { PreferencesSectionSkeleton } from "./preferences-section";
 import { SettingsPageHeader } from "./_components/page-header";
-import {
-  getSettingsRouteMetadata,
-  type SettingsRouteId,
-} from "./settings-routes";
+import { getSettingsRouteMetadata } from "./settings-routes";
 import { SettingsNav } from "./settings-nav";
 import { SkillsSectionSkeleton } from "./skills/skills-section";
 
@@ -93,13 +97,20 @@ function SettingsLayout({
   isAdmin: boolean;
 }) {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
-  const activeItem = findActiveNavItem(pathname);
+  const mobileTriggerRef = useRef<HTMLButtonElement>(null);
+  const activeItem = findActiveNavItem(pathname, visibleNavGroups(isAdmin));
+  const activeWorkspaceItem = getActiveWorkspaceNavigationItem(pathname);
+
+  function closeMobileSidebar() {
+    setMobileSidebarOpen(false);
+    requestAnimationFrame(() => mobileTriggerRef.current?.focus());
+  }
 
   const navItems = (
     <SettingsNav
       pathname={pathname}
       isAdmin={isAdmin}
-      onNavigate={() => setMobileSidebarOpen(false)}
+      onNavigate={closeMobileSidebar}
     />
   );
 
@@ -107,16 +118,12 @@ function SettingsLayout({
     <div className="flex h-screen bg-background text-foreground">
       <aside className="hidden w-64 shrink-0 border-r border-border md:flex">
         <div className="flex h-full w-full flex-col overflow-y-auto">
-          <div className="flex items-center gap-4 px-6 py-4">
-            <Link
-              href="/sessions"
-              className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
-            >
-              <ArrowLeft className="h-4 w-4" />
-              Back
-            </Link>
+          <div className="border-b border-border p-2">
+            <WorkspaceNavigation mode="expanded" pathname={pathname} />
           </div>
-          <nav className="flex-1 px-2 py-2">{navItems}</nav>
+          <nav aria-label="Settings navigation" className="flex-1 px-2 py-2">
+            {navItems}
+          </nav>
           <div className="border-t border-border px-2 py-3">
             <button
               type="button"
@@ -130,22 +137,32 @@ function SettingsLayout({
         </div>
       </aside>
 
-      <Sheet open={mobileSidebarOpen} onOpenChange={setMobileSidebarOpen}>
+      <Sheet
+        open={mobileSidebarOpen}
+        onOpenChange={(open) => {
+          setMobileSidebarOpen(open);
+          if (!open) {
+            closeMobileSidebar();
+          }
+        }}
+      >
         <SheetContent side="left" className="flex w-64 flex-col p-0">
           <SheetHeader className="sr-only">
             <SheetTitle>Settings navigation</SheetTitle>
           </SheetHeader>
-          <div className="flex items-center gap-4 px-6 py-4">
-            <Link
-              href="/sessions"
-              onClick={() => setMobileSidebarOpen(false)}
-              className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
-            >
-              <ArrowLeft className="h-4 w-4" />
-              Back
-            </Link>
+          <div className="border-b border-border p-2">
+            <WorkspaceNavigation
+              mode="mobile"
+              pathname={pathname}
+              onNavigate={closeMobileSidebar}
+            />
           </div>
-          <nav className="flex-1 px-2 py-2">{navItems}</nav>
+          <nav
+            aria-label="Settings navigation"
+            className="min-h-0 flex-1 overflow-y-auto px-2 py-2"
+          >
+            {navItems}
+          </nav>
           <div className="border-t border-border px-2 py-3">
             <button
               type="button"
@@ -163,13 +180,17 @@ function SettingsLayout({
         <div className="flex items-center gap-3 border-b border-border px-4 py-3 md:hidden">
           <button
             type="button"
+            ref={mobileTriggerRef}
             onClick={() => setMobileSidebarOpen(true)}
-            className="text-muted-foreground hover:text-foreground"
+            className="rounded text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            aria-label="Open workspace navigation"
           >
             <Menu className="h-4 w-4" />
           </button>
           <span className="flex-1 truncate text-sm font-medium">
-            {activeItem?.label ?? "Settings"}
+            {activeWorkspaceItem?.id === "automations"
+              ? activeWorkspaceItem.label
+              : (activeItem?.label ?? "Settings")}
           </span>
         </div>
         <div className="mx-auto max-w-5xl space-y-6 px-3 py-8 md:px-4 md:py-10">
@@ -183,11 +204,12 @@ function SettingsLayout({
 export default function Layout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { isAdmin } = useSession();
-  const activeItem = findActiveNavItem(pathname);
-  const fallbackRouteId =
-    activeItem?.id && activeItem.id !== "loops"
-      ? (activeItem.id as SettingsRouteId)
-      : "profile";
+  const fallbackGroups = visibleNavGroups(false);
+  const activeItem = findActiveNavItem(pathname, fallbackGroups);
+  const fallbackRouteId = resolveSettingsFallbackRouteId(
+    pathname,
+    fallbackGroups,
+  );
   const fallbackRoute = getSettingsRouteMetadata(fallbackRouteId);
   const fallbackContent =
     activeItem?.id === "connections" ? (

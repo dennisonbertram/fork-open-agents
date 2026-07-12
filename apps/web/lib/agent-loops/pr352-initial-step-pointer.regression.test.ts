@@ -32,9 +32,30 @@ let runRow: RunRow = {
 // ── Store mocks ───────────────────────────────────────────────────────────────
 
 let createRunResult: {
-  run: { id: string; status: string };
+  run: {
+    id: string;
+    status: string;
+    definitionSnapshot: Record<string, unknown>;
+  };
   created: boolean;
-} | null = { run: { id: "loop-run-reg", status: "queued" }, created: true };
+} | null = {
+  run: {
+    id: "loop-run-reg",
+    status: "queued",
+    definitionSnapshot: {
+      nodes: [
+        {
+          id: "s1",
+          kind: "start",
+          label: "Start",
+          position: { x: 0, y: 0 },
+        },
+      ],
+      edges: [],
+    },
+  },
+  created: true,
+};
 
 let hasActiveRun = false;
 let stepRunIdCtr = 1;
@@ -96,6 +117,10 @@ const setInitialStepPointer = mock(
 );
 
 mock.module("@/lib/agent-loops/store", () => ({
+  isAgentLoopRunSourceLive: mock(async () => true),
+  createAndAdvanceAgentLoopStep: mock(async () => ({
+    outcome: "source_deleted" as const,
+  })),
   createAgentLoopRun,
   hasActiveRunForLoop,
   getOwnedAgentLoop,
@@ -126,6 +151,7 @@ mock.module("@/app/workflows/agent-loop-step", () => ({
 
 mock.module("@/lib/agent-loops/config", () => ({
   isAgentLoopsEnabled: () => true,
+  getAgentLoopRepoAccess: () => ({ allowed: true }),
   isAgentLoopRepoAllowed: () => true,
 }));
 
@@ -183,7 +209,11 @@ const event = {
 function reset() {
   runRow = { id: "loop-run-reg", currentStepRunId: null, currentNodeId: null };
   createRunResult = {
-    run: { id: "loop-run-reg", status: "queued" },
+    run: {
+      id: "loop-run-reg",
+      status: "queued",
+      definitionSnapshot: validDef,
+    },
     created: true,
   };
   hasActiveRun = false;
@@ -336,7 +366,11 @@ describe("REG-352: setInitialStepPointer called on every successful dispatch", (
      * setInitialStepPointer must not be called on the existing run again.
      */
     createRunResult = {
-      run: { id: "loop-run-existing", status: "queued" },
+      run: {
+        id: "loop-run-existing",
+        status: "queued",
+        definitionSnapshot: validDef,
+      },
       created: false,
     };
     const { dispatchLoopRunForTrigger } = await bridgePromise;

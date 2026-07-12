@@ -6,6 +6,7 @@ import {
   listWorkflows,
 } from "@/lib/workflows/catalog";
 import type { WorkflowDefinition } from "@/lib/workflows/catalog";
+import { isProductSurfaceExposed } from "@/lib/product-surfaces/config";
 
 // ── Response types ────────────────────────────────────────────────────────────
 
@@ -39,9 +40,13 @@ export interface WorkflowCatalogResponse {
  * errorKind values:
  *   - catalog_unavailable: registry build or list failed unexpectedly.
  *   - context_unsupported: (reserved for v2; not triggered in v1 static catalog)
+ *   - product_surface_disabled: catalog discovery is not exposed.
  */
 export interface WorkflowCatalogErrorResponse {
-  errorKind: "catalog_unavailable" | "context_unsupported";
+  errorKind:
+    | "catalog_unavailable"
+    | "context_unsupported"
+    | "product_surface_disabled";
   message: string;
 }
 
@@ -91,6 +96,16 @@ export async function GET(): Promise<Response> {
   const authResult = await requireAuthenticatedUser();
   if (!authResult.ok) {
     return authResult.response;
+  }
+
+  if (!isProductSurfaceExposed("workflowCatalog")) {
+    return Response.json(
+      {
+        errorKind: "product_surface_disabled",
+        message: "The workflow catalog is not available.",
+      } satisfies WorkflowCatalogErrorResponse,
+      { status: 404 },
+    );
   }
 
   try {

@@ -56,25 +56,32 @@ interface SessionStarterProps {
   }) => void;
   isLoading?: boolean;
   lastRepo: { owner: string; repo: string } | null;
+  initialRepository?: { owner: string; repo: string } | null;
 }
 
 export function SessionStarter({
   onSubmit,
   isLoading,
   lastRepo,
+  initialRepository,
 }: SessionStarterProps) {
+  const repositorySeed = initialRepository ?? lastRepo;
   const [sessionTitle, setSessionTitle] = useState("");
   // Default to a lightweight sandbox-free "New Chat" — even for returning users
   // who have a lastRepo — so chats start instantly without provisioning a
   // sandbox. lastRepo still pre-fills the repo fields below for one-click opt-in
   // to repo mode.
-  const [mode, setMode] = useState<SessionMode>("empty");
-  const [selectedOwner, setSelectedOwner] = useState(
-    () => lastRepo?.owner ?? "",
+  const [mode, setMode] = useState<SessionMode>(() =>
+    initialRepository ? "repo" : "empty",
   );
-  const [selectedRepo, setSelectedRepo] = useState(() => lastRepo?.repo ?? "");
+  const [selectedOwner, setSelectedOwner] = useState(
+    () => repositorySeed?.owner ?? "",
+  );
+  const [selectedRepo, setSelectedRepo] = useState(
+    () => repositorySeed?.repo ?? "",
+  );
   const [selectedBranch, setSelectedBranch] = useState<string | null>(null);
-  const [isNewBranch, setIsNewBranch] = useState(!!lastRepo);
+  const [isNewBranch, setIsNewBranch] = useState(Boolean(repositorySeed));
   const [vercelProjectChoice, setVercelProjectChoice] = useState<
     string | null | undefined
   >(undefined);

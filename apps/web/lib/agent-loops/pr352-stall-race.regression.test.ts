@@ -234,6 +234,38 @@ const rcWorkflowStartMock = mock(
 );
 
 mock.module("./store", () => ({
+  isAgentLoopRunSourceLive: mock(async () => true),
+  createAndAdvanceAgentLoopStep: mock(
+    async (input: {
+      runId: string;
+      fromStepRunId: string;
+      nextNodeId: string;
+      nextNodeKind: string;
+      attempt: number;
+      stepCount: number;
+      iterationCount: number;
+      workflowRunId: string;
+    }) => {
+      const step = await createAgentLoopStepRunMock({
+        loopRunId: input.runId,
+        nodeId: input.nextNodeId,
+        nodeKind: input.nextNodeKind,
+        attempt: input.attempt,
+      });
+      const advanced = await advanceRunToNextStepMock({
+        runId: input.runId,
+        fromStepRunId: input.fromStepRunId,
+        nextNodeId: input.nextNodeId,
+        nextStepRunId: step.id,
+        stepCount: input.stepCount,
+        iterationCount: input.iterationCount,
+        workflowRunId: input.workflowRunId,
+      });
+      return advanced
+        ? { outcome: "advanced" as const, step }
+        : { outcome: "duplicate" as const };
+    },
+  ),
   getAgentLoopStepRunWithContext: getAgentLoopStepRunWithContextMock,
   getAgentLoopRunWithLoop: getAgentLoopRunWithLoopMock,
   updateAgentLoopRunStatus: updateAgentLoopRunStatusMock,
@@ -343,6 +375,9 @@ function makeLoopRun(overrides: Partial<AgentLoopRun> = {}): AgentLoopRun {
     userId: "user-1",
     status: "running",
     definitionSnapshot: simpleDefinition as Record<string, unknown>,
+    executionSnapshot: null,
+    definitionVersion: null,
+    definitionHash: null,
     currentNodeId: "work",
     currentStepRunId: null,
     iterationCount: 0,

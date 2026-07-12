@@ -115,6 +115,10 @@ let currentStepRun: AgentLoopStepRun;
 // ── Store mock: capture createAgentLoopRun's definitionSnapshot input ──────────
 
 mock.module("./store", () => ({
+  isAgentLoopRunSourceLive: mock(async () => true),
+  createAndAdvanceAgentLoopStep: mock(async () => ({
+    outcome: "source_deleted" as const,
+  })),
   getOwnedAgentLoop: mock(
     async (_params: { userId: string; loopId: string }) => fixtureLoop,
   ),
@@ -137,6 +141,9 @@ mock.module("./store", () => ({
         userId: input.userId,
         status: "queued",
         definitionSnapshot: input.definitionSnapshot,
+        executionSnapshot: null,
+        definitionVersion: null,
+        definitionHash: null,
         currentNodeId: null,
         currentStepRunId: null,
         iterationCount: 0,
@@ -253,6 +260,7 @@ mock.module("@/app/workflows/agent-loop-step", () => ({
 
 mock.module("./config", () => ({
   isAgentLoopsEnabled: () => true,
+  getAgentLoopRepoAccess: () => ({ allowed: true }),
   isAgentLoopRepoAllowed: () => true,
 }));
 

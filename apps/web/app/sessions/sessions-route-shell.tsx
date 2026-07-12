@@ -25,6 +25,7 @@ import {
   SidebarInset,
   SidebarProvider,
   SidebarRail,
+  SidebarTrigger,
 } from "@/components/ui/sidebar";
 import { useBackgroundChatNotifications } from "@/hooks/use-background-chat-notifications";
 import { useSessions, type SessionWithUnread } from "@/hooks/use-sessions";
@@ -32,7 +33,12 @@ import { useUserPreferences } from "@/hooks/use-user-preferences";
 import { DEFAULT_SANDBOX_TYPE } from "@/components/sandbox-selector-compact";
 import { toCreateSessionErrorInfo } from "@/lib/sessions/create-session-error";
 import type { Session as AuthSession } from "@/lib/session/types";
+import { getActiveWorkspaceNavigationItem } from "@/components/workspace-navigation";
 import { SessionsShellProvider } from "./sessions-shell-context";
+import {
+  nextSessionDialogRepository,
+  type SessionDialogRepository,
+} from "./session-dialog-repository";
 import {
   type WorkspaceSettingsTarget,
   useWorkspaceSettings,
@@ -72,6 +78,7 @@ const RouteContentShell = memo(function RouteContentShell({
 
   return (
     <SidebarInset className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
+      <WorkspaceMobileNavigationTrigger />
       {children}
       {target ? (
         <div
@@ -114,6 +121,27 @@ const RouteContentShell = memo(function RouteContentShell({
   );
 });
 
+export function WorkspaceMobileNavigationTrigger() {
+  const pathname = usePathname();
+  const activeItem = getActiveWorkspaceNavigationItem(pathname);
+
+  if (activeItem?.id === "sessions") {
+    return null;
+  }
+
+  return (
+    <div className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2 sidebar:hidden">
+      <SidebarTrigger
+        className="shrink-0"
+        aria-label="Open workspace navigation"
+      />
+      <span className="truncate text-sm font-medium">
+        {activeItem?.label ?? "Workspace"}
+      </span>
+    </div>
+  );
+}
+
 export function SessionsRouteShell({
   children,
   currentUser,
@@ -125,6 +153,8 @@ export function SessionsRouteShell({
   const routeSessionId =
     typeof params.sessionId === "string" ? params.sessionId : null;
   const [newSessionOpen, setNewSessionOpen] = useState(false);
+  const [newSessionRepository, setNewSessionRepository] =
+    useState<SessionDialogRepository | null>(null);
   const [optimisticActiveSessionId, setOptimisticActiveSessionId] = useState<
     string | null
   >(null);
@@ -155,8 +185,23 @@ export function SessionsRouteShell({
 
   const { preferences } = useUserPreferences();
 
-  const openNewSessionDialog = useCallback(() => {
-    setNewSessionOpen(true);
+  const openNewSessionDialog = useCallback(
+    (repository?: SessionDialogRepository) => {
+      setNewSessionRepository((current) =>
+        nextSessionDialogRepository(current, { type: "open", repository }),
+      );
+      setNewSessionOpen(true);
+    },
+    [],
+  );
+
+  const handleNewSessionOpenChange = useCallback((open: boolean) => {
+    setNewSessionOpen(open);
+    if (!open) {
+      setNewSessionRepository((current) =>
+        nextSessionDialogRepository(current, { type: "close" }),
+      );
+    }
   }, []);
 
   const handleSessionClick = useCallback(
@@ -405,9 +450,15 @@ export function SessionsRouteShell({
         </SidebarProvider>
 
         <NewSessionDialog
+          key={
+            newSessionRepository
+              ? `${newSessionRepository.owner}/${newSessionRepository.repo}`
+              : "generic"
+          }
           open={newSessionOpen}
-          onOpenChange={setNewSessionOpen}
+          onOpenChange={handleNewSessionOpenChange}
           lastRepo={lastRepo}
+          initialRepository={newSessionRepository}
           createSession={createSession}
         />
       </WorkspaceSettingsProvider>

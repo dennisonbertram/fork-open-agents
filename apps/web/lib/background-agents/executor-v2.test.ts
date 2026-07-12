@@ -21,8 +21,15 @@ import {
 } from "bun:test";
 import type { BackgroundAgent, BackgroundAgentRun } from "@/lib/db/schema";
 import type { ExecResult, Sandbox } from "@open-agents/sandbox";
+import {
+  buildBackgroundAgentExecutionSnapshot,
+  hashBackgroundAgentExecutionSnapshot,
+} from "./execution-snapshot";
+import * as normalizedRuntime from "@/lib/unattended-runtime/normalized-step-input";
 
 mock.module("server-only", () => ({}));
+process.env.BACKGROUND_AGENTS_ENABLED = "true";
+process.env.BACKGROUND_AGENTS_ALLOWED_REPOS = "*";
 
 type EventInput = {
   runId: string;
@@ -59,6 +66,9 @@ type StatusUpdateInput = {
   errorKind?: string | null;
   errorMessage?: string | null;
   outputUrl?: string | null;
+  expectedStatuses?: BackgroundAgentRun["status"][];
+  expectedWorkflowRunId?: string;
+  force?: boolean;
 };
 
 const successfulCommand: ExecResult = {
@@ -75,12 +85,21 @@ let recordedOutputs: OutputRow[] = [];
 let outputIdCounter = 0;
 let accessUserPermission: "read" | "write" = "write";
 let accessRequiredPermissionSeen: string[] = [];
+const executionBoundaryOrder: string[] = [];
+let beforeStatusUpdate:
+  | ((input: StatusUpdateInput) => void | Promise<void>)
+  | null = null;
+let afterEventRecorded: ((input: EventInput) => void | Promise<void>) | null =
+  null;
 
 const getBackgroundAgentRunWithAgent = mock(async () => ({
   run: currentRun,
   agent: currentAgent,
 }));
-const recordBackgroundAgentEvent = mock(async (input: EventInput) => input);
+const recordBackgroundAgentEvent = mock(async (input: EventInput) => {
+  await afterEventRecorded?.(input);
+  return input;
+});
 const recordBackgroundAgentOutput = mock(async (input: OutputInput) => {
   outputIdCounter += 1;
   const row: OutputRow = { ...input, id: `output-${outputIdCounter}` };
@@ -91,15 +110,44 @@ const listBackgroundAgentOutputsMock = mock(
   async (_runId: string): Promise<OutputRow[]> => recordedOutputs,
 );
 const updateBackgroundAgentRunStatus = mock(
-  async (input: StatusUpdateInput): Promise<BackgroundAgentRun> => ({
-    ...currentRun,
-    status: input.status,
-    workflowRunId: input.workflowRunId ?? currentRun.workflowRunId,
-    sandboxName: input.sandboxName ?? currentRun.sandboxName,
-    errorKind: input.errorKind ?? currentRun.errorKind,
-    errorMessage: input.errorMessage ?? currentRun.errorMessage,
-    outputUrl: input.outputUrl ?? currentRun.outputUrl,
-  }),
+  async (input: StatusUpdateInput): Promise<BackgroundAgentRun | null> => {
+    const hook = beforeStatusUpdate;
+    beforeStatusUpdate = null;
+    await hook?.(input);
+
+    const terminalStatuses: BackgroundAgentRun["status"][] = [
+      "succeeded",
+      "failed",
+      "skipped",
+      "cancelled",
+    ];
+    if (!input.force && terminalStatuses.includes(currentRun.status)) {
+      return null;
+    }
+    if (
+      input.expectedStatuses &&
+      !input.expectedStatuses.includes(currentRun.status)
+    ) {
+      return null;
+    }
+    if (
+      input.expectedWorkflowRunId &&
+      currentRun.workflowRunId !== input.expectedWorkflowRunId
+    ) {
+      return null;
+    }
+
+    currentRun = {
+      ...currentRun,
+      status: input.status,
+      workflowRunId: input.workflowRunId ?? currentRun.workflowRunId,
+      sandboxName: input.sandboxName ?? currentRun.sandboxName,
+      errorKind: input.errorKind ?? currentRun.errorKind,
+      errorMessage: input.errorMessage ?? currentRun.errorMessage,
+      outputUrl: input.outputUrl ?? currentRun.outputUrl,
+    };
+    return currentRun;
+  },
 );
 const listBackgroundAgentEvents = mock(async () => []);
 // #798 P2-1: uncapped, composio-scoped fetch — default empty so existing
@@ -137,9 +185,11 @@ mock.module("./run-summary", () => ({
   ]),
 }));
 
+const persistRunSummary = mock(async () => undefined);
+const recordSummaryFailedEvent = mock(async () => undefined);
 mock.module("./run-summary-persist", () => ({
-  persistRunSummary: mock(async () => undefined),
-  recordSummaryFailedEvent: mock(async () => undefined),
+  persistRunSummary,
+  recordSummaryFailedEvent,
 }));
 
 const recordUsage = mock(async () => undefined);
@@ -162,8 +212,13 @@ const fakeSandbox = {
   }),
 } as unknown as Sandbox;
 
+let afterSandboxConnected: (() => void | Promise<void>) | null = null;
+const connectSandbox = mock(async (_input: unknown) => {
+  await afterSandboxConnected?.();
+  return fakeSandbox;
+});
 mock.module("@open-agents/sandbox", () => ({
-  connectSandbox: mock(async () => fakeSandbox),
+  connectSandbox,
   getCurrentBranch: mock(async () => "main"),
   getStagedDiff: mock(async () => "diff content"),
   hasUncommittedChanges: mock(async () => true),
@@ -179,6 +234,7 @@ mock.module("@/lib/sandbox/config", () => ({
 
 const verifyRepoAccess = mock(
   async (params: { requiredUserPermission?: string }) => {
+    executionBoundaryOrder.push("verify_repo_access");
     accessRequiredPermissionSeen.push(params.requiredUserPermission ?? "read");
     return {
       ok: true,
@@ -265,6 +321,80 @@ mock.module("@/lib/github/users", () => ({
   })),
 }));
 
+type LearningsRunnerParams = {
+  assertLiveAuthorization?: () => Promise<void>;
+  event?: {
+    source?: string;
+    externalId?: string;
+  };
+};
+let learningsRunImpl: (
+  params: LearningsRunnerParams,
+) => Promise<Record<string, unknown>> = async () => ({
+  candidatesExtracted: 0,
+  accepted: 0,
+  merged: 0,
+  rejected: 0,
+});
+const runLearningsExtraction = mock((params: LearningsRunnerParams) =>
+  learningsRunImpl(params),
+);
+mock.module("@/lib/learnings/runner", () => ({ runLearningsExtraction }));
+mock.module("@/lib/learnings/store", () => ({
+  createDbLearningsStore: mock(() => ({})),
+}));
+
+const resolveComposioToolsForBgRun = mock(async () => ({
+  status: "off" as const,
+  reason: "no_slugs_selected" as const,
+}));
+mock.module("./composio-tools", () => ({
+  assertComposioRepoToolkitsStillAllowed: mock(async () => undefined),
+  resolveComposioToolsForBgRun,
+}));
+
+type NormalizedSandboxBuilderInput = Parameters<
+  typeof normalizedRuntime.buildNormalizedBackgroundSandboxInput
+>[0];
+type NormalizedSandboxInput = ReturnType<
+  typeof normalizedRuntime.buildNormalizedBackgroundSandboxInput
+>;
+type NormalizedLearningsBuilderInput = Parameters<
+  typeof normalizedRuntime.buildNormalizedBackgroundLearningsInput
+>[0];
+const realBuildNormalizedBackgroundSandboxInput =
+  normalizedRuntime.buildNormalizedBackgroundSandboxInput;
+const realBuildNormalizedBackgroundLearningsInput =
+  normalizedRuntime.buildNormalizedBackgroundLearningsInput;
+
+let normalizedSandboxImpl = (
+  input: NormalizedSandboxBuilderInput,
+): NormalizedSandboxInput => realBuildNormalizedBackgroundSandboxInput(input);
+let normalizedLearningsImpl = (input: NormalizedLearningsBuilderInput) =>
+  realBuildNormalizedBackgroundLearningsInput(input);
+const buildNormalizedBackgroundSandboxInput = mock(
+  (input: NormalizedSandboxBuilderInput) => {
+    executionBoundaryOrder.push("normalize");
+    const result = normalizedSandboxImpl(input);
+    normalizedSandboxOutputs.push(result);
+    return result;
+  },
+);
+const buildNormalizedBackgroundLearningsInput = mock(
+  (input: NormalizedLearningsBuilderInput) => {
+    executionBoundaryOrder.push("normalize");
+    return normalizedLearningsImpl(input);
+  },
+);
+
+mock.module("@/lib/unattended-runtime/normalized-step-input", () => ({
+  ...normalizedRuntime,
+  buildNormalizedBackgroundSandboxInput,
+  buildNormalizedBackgroundLearningsInput,
+}));
+
+const normalizedSandboxOutputs: NormalizedSandboxInput[] = [];
+
 // ---------------------------------------------------------------------------
 // sanitizeUnattendedToolCalls — real-ish fake honoring the documented
 // contract: returns the SAME reference when nothing needed fixing, or a NEW
@@ -328,6 +458,9 @@ mock.module("@open-agents/agent", () => ({
 }));
 
 let inferenceProfileResolutionShouldFail = false;
+let inferenceRouteAvailabilityFailureAt: number | null = null;
+let inferenceRouteAvailabilityCalls = 0;
+const inferenceResolutionCalls: Array<Record<string, unknown>> = [];
 mock.module("@/lib/inference/model-option-id", () => ({
   USER_INFERENCE_OPTION_PREFIX: "user-profile:",
   parseModelOptionSelection: (optionId: string) => {
@@ -341,9 +474,29 @@ mock.module("@/lib/inference/model-option-id", () => ({
   getModelOptionSelectionId: (modelId: string | null | undefined) =>
     modelId ?? "",
 }));
+mock.module("@/lib/db/inference-profiles", () => ({
+  getInferenceProfileByIdForUser: mock(
+    async (_userId: string, profileId: string) => ({
+      id: profileId,
+      provider: "anthropic",
+      baseUrl: "https://inference.example.com/v1",
+    }),
+  ),
+}));
 mock.module("@/lib/inference/profile-resolution", () => ({
+  assertInferenceProfileRouteAvailable: mock(async () => {
+    executionBoundaryOrder.push("inference_profile_availability");
+    inferenceRouteAvailabilityCalls += 1;
+    if (
+      inferenceRouteAvailabilityFailureAt !== null &&
+      inferenceRouteAvailabilityCalls >= inferenceRouteAvailabilityFailureAt
+    ) {
+      throw new Error("Selected inference profile changed after queueing.");
+    }
+  }),
   resolveInferenceProfileModelSelection: mock(
-    async (params: { selection: unknown }) => {
+    async (params: { selection: unknown } & Record<string, unknown>) => {
+      inferenceResolutionCalls.push(params);
       if (inferenceProfileResolutionShouldFail) {
         throw new Error(
           "Selected inference profile is unavailable. Choose another User model or switch back to Vercel AI Gateway.",
@@ -389,6 +542,9 @@ function buildRun(
     startedAt: null,
     finishedAt: null,
     resultSummary: null,
+    executionSnapshot: null,
+    definitionVersion: null,
+    definitionHash: null,
     createdAt: now,
     updatedAt: now,
     ...overrides,
@@ -421,6 +577,24 @@ function buildAgent(overrides: Partial<BackgroundAgent> = {}): BackgroundAgent {
   };
 }
 
+function buildSnapshotRun(
+  acceptedAgent: BackgroundAgent,
+  overrides: Record<string, unknown> = {},
+): BackgroundAgentRun {
+  const executionSnapshot =
+    (overrides.executionSnapshot as ReturnType<
+      typeof buildBackgroundAgentExecutionSnapshot
+    >) ?? buildBackgroundAgentExecutionSnapshot(acceptedAgent);
+  return buildRun({
+    ...({
+      executionSnapshot,
+      definitionVersion: 1,
+      definitionHash: hashBackgroundAgentExecutionSnapshot(executionSnapshot),
+      ...overrides,
+    } as unknown as Partial<BackgroundAgentRun>),
+  });
+}
+
 function recordedEvents() {
   return recordBackgroundAgentEvent.mock.calls.map(([input]) => input);
 }
@@ -441,8 +615,15 @@ beforeEach(() => {
   outputIdCounter = 0;
   accessUserPermission = "write";
   accessRequiredPermissionSeen = [];
+  executionBoundaryOrder.length = 0;
+  beforeStatusUpdate = null;
+  afterEventRecorded = null;
+  afterSandboxConnected = null;
   sanitizerShouldDeny = null;
   inferenceProfileResolutionShouldFail = false;
+  inferenceRouteAvailabilityFailureAt = null;
+  inferenceRouteAvailabilityCalls = 0;
+  inferenceResolutionCalls.length = 0;
   generateCalls.length = 0;
   generateImpl = async () => ({
     finishReason: "stop",
@@ -452,13 +633,22 @@ beforeEach(() => {
     usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
     totalUsage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
   });
+  learningsRunImpl = async () => ({
+    candidatesExtracted: 0,
+    accepted: 0,
+    merged: 0,
+    rejected: 0,
+  });
 
   getBackgroundAgentRunWithAgent.mockClear();
   recordBackgroundAgentEvent.mockClear();
   recordBackgroundAgentOutput.mockClear();
   listBackgroundAgentOutputsMock.mockClear();
   updateBackgroundAgentRunStatus.mockClear();
+  persistRunSummary.mockClear();
+  recordSummaryFailedEvent.mockClear();
   sandboxExec.mockClear();
+  connectSandbox.mockClear();
   verifyRepoAccess.mockClear();
   mintInstallationToken.mockClear();
   revokeInstallationToken.mockClear();
@@ -470,6 +660,15 @@ beforeEach(() => {
   getMergeReadinessViaInstallation.mockClear();
   generate.mockClear();
   recordUsage.mockClear();
+  runLearningsExtraction.mockClear();
+  resolveComposioToolsForBgRun.mockClear();
+  normalizedSandboxImpl = (input) =>
+    realBuildNormalizedBackgroundSandboxInput(input);
+  normalizedLearningsImpl = (input) =>
+    realBuildNormalizedBackgroundLearningsInput(input);
+  buildNormalizedBackgroundSandboxInput.mockClear();
+  buildNormalizedBackgroundLearningsInput.mockClear();
+  normalizedSandboxOutputs.length = 0;
 });
 
 afterEach(() => {
@@ -500,6 +699,463 @@ describe("(a) comment-only agent toolset", () => {
     const call = generateCalls[0];
     const toolNames = Object.keys(call?.tools ?? {});
     expect(toolNames).toEqual(["github_comment_on_pr_or_issue"]);
+  });
+});
+
+describe("execution snapshot binding", () => {
+  test("a lost terminal-success CAS emits no completion evidence", async () => {
+    afterEventRecorded = (event) => {
+      if (event.eventName === "background-agent.check.completed") {
+        beforeStatusUpdate = (input) => {
+          if (input.status === "succeeded") {
+            currentRun = { ...currentRun, status: "cancelled" };
+          }
+        };
+      }
+    };
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-success-race",
+    });
+
+    expect(currentRun.status).toBe("cancelled");
+    expect(recordedEvent("background-agent.run.completed")).toBeUndefined();
+  });
+
+  test("rechecks live authorization before sandbox connection", async () => {
+    afterEventRecorded = (event) => {
+      if (event.eventName === "background-agent.github.installation.resolved") {
+        currentAgent = currentAgent
+          ? { ...currentAgent, status: "disabled" }
+          : null;
+      }
+    };
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-before-sandbox",
+    });
+
+    expect(connectSandbox).not.toHaveBeenCalled();
+    expect(recordedEvent("background-agent.run.failed")).toMatchObject({
+      errorKind: "agent_disabled",
+    });
+  });
+
+  test("rechecks live authorization after sandbox connection before mutation", async () => {
+    afterSandboxConnected = () => {
+      currentAgent = currentAgent
+        ? { ...currentAgent, status: "disabled" }
+        : null;
+    };
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-after-sandbox",
+    });
+
+    expect(connectSandbox).toHaveBeenCalledTimes(1);
+    expect(sandboxExec).not.toHaveBeenCalled();
+    expect(recordedEvent("background-agent.run.failed")).toMatchObject({
+      errorKind: "agent_disabled",
+    });
+  });
+
+  test("rechecks live authorization before Composio session resolution", async () => {
+    currentAgent = buildAgent({ composioToolkitSlugs: ["github"] });
+    afterEventRecorded = (event) => {
+      if (event.eventName === "background-agent.git.context.completed") {
+        currentAgent = currentAgent
+          ? { ...currentAgent, status: "disabled" }
+          : null;
+      }
+    };
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-before-composio",
+    });
+
+    expect(resolveComposioToolsForBgRun).not.toHaveBeenCalled();
+    expect(recordedEvent("background-agent.run.failed")).toMatchObject({
+      errorKind: "agent_disabled",
+    });
+  });
+
+  test("rechecks live authorization before working-branch mutation", async () => {
+    currentAgent = buildAgent({ githubActions: { push: true } });
+    afterEventRecorded = (event) => {
+      if (event.eventName === "background-agent.git.context.completed") {
+        currentAgent = currentAgent
+          ? { ...currentAgent, status: "disabled" }
+          : null;
+      }
+    };
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-before-branch",
+    });
+
+    expect(
+      sandboxExec.mock.calls.some(([command]) =>
+        (command as string).includes("git checkout"),
+      ),
+    ).toBe(false);
+    expect(recordedEvent("background-agent.run.failed")).toMatchObject({
+      errorKind: "agent_disabled",
+    });
+  });
+
+  test("terminal retries short-circuit before snapshot validation or authorization", async () => {
+    const completedSummary = {
+      headline: "Keep the completed summary",
+      checked: [],
+      changed: [],
+      blocked: [],
+      artifacts: [],
+      next: [],
+      warnings: [],
+    };
+    currentRun = buildSnapshotRun(buildAgent(), {
+      status: "succeeded",
+      definitionHash: "0".repeat(64),
+      resultSummary: completedSummary,
+    });
+    currentAgent = buildAgent({ status: "disabled" });
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-terminal-retry",
+    });
+
+    expect(verifyRepoAccess).not.toHaveBeenCalled();
+    expect(updateBackgroundAgentRunStatus).not.toHaveBeenCalled();
+    expect(recordBackgroundAgentEvent).not.toHaveBeenCalled();
+    expect(persistRunSummary).not.toHaveBeenCalled();
+    expect(currentRun.resultSummary).toBe(completedSummary);
+  });
+
+  test("an invalid-snapshot retry cannot append failure evidence or overwrite its summary", async () => {
+    currentRun = buildSnapshotRun(buildAgent(), {
+      definitionHash: "0".repeat(64),
+    });
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-invalid-retry",
+    });
+    const summaryAfterFailure = currentRun.resultSummary;
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-invalid-retry",
+    });
+
+    expect(
+      recordedEventsNamed("background-agent.snapshot.invalid"),
+    ).toHaveLength(1);
+    expect(recordedEventsNamed("background-agent.run.failed")).toHaveLength(1);
+    expect(persistRunSummary).toHaveBeenCalledTimes(1);
+    expect(currentRun.resultSummary).toBe(summaryAfterFailure);
+  });
+
+  test("a lost failure transition emits no evidence and preserves the winning summary", async () => {
+    currentRun = buildSnapshotRun(buildAgent(), {
+      definitionHash: "0".repeat(64),
+    });
+    const winningSummary = {
+      headline: "Another worker already completed",
+      checked: [],
+      changed: [],
+      blocked: [],
+      artifacts: [],
+      next: [],
+      warnings: [],
+    };
+    beforeStatusUpdate = () => {
+      currentRun = {
+        ...currentRun,
+        status: "succeeded",
+        resultSummary: winningSummary,
+      };
+    };
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-failure-race",
+    });
+
+    expect(
+      recordedEventsNamed("background-agent.snapshot.invalid"),
+    ).toHaveLength(0);
+    expect(recordedEventsNamed("background-agent.run.failed")).toHaveLength(0);
+    expect(persistRunSummary).not.toHaveBeenCalled();
+    expect(currentRun.status).toBe("succeeded");
+    expect(currentRun.resultSummary).toBe(winningSummary);
+  });
+
+  test("uses every frozen behavior field after the live source is edited", async () => {
+    const accepted = buildAgent({
+      name: "Frozen definition",
+      instructions: "FROZEN-INSTRUCTIONS-CANARY",
+      checkCommand: null,
+      composioToolkitSlugs: [],
+      builtinToolNames: ["bash"],
+      githubActions: { comment_on_pr_or_issue: true },
+      writeScope: { mode: "this_repo" },
+      requireCiGreenForMerge: true,
+      modelId: "anthropic/claude-haiku-4.5",
+    });
+    currentRun = buildSnapshotRun(accepted);
+    currentAgent = buildAgent({
+      name: "Edited definition",
+      instructions: "MUTATED-INSTRUCTIONS-CANARY",
+      builtinToolNames: ["bash"],
+      githubActions: { comment_on_pr_or_issue: true },
+      writeScope: { mode: "this_repo" },
+      requireCiGreenForMerge: true,
+      modelId: null,
+    });
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-snapshot",
+    });
+
+    const call = generateCalls[0];
+    expect(JSON.stringify(call?.messages)).toContain(
+      "FROZEN-INSTRUCTIONS-CANARY",
+    );
+    expect(JSON.stringify(call?.messages)).not.toContain(
+      "MUTATED-INSTRUCTIONS-CANARY",
+    );
+    expect(call?.options.allowedBuiltinToolNames).toEqual(["bash"]);
+    expect(call?.options.model).toMatchObject({
+      id: "anthropic/claude-haiku-4.5",
+    });
+    expect(Object.keys(call?.tools ?? {})).toEqual([
+      "github_comment_on_pr_or_issue",
+    ]);
+  });
+
+  test("live security edits may revoke frozen GitHub actions", async () => {
+    currentRun = buildSnapshotRun(
+      buildAgent({ githubActions: { comment_on_pr_or_issue: true } }),
+    );
+    currentAgent = buildAgent({ githubActions: {} });
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-live-revoke",
+    });
+
+    expect(Object.keys(generateCalls[0]?.tools ?? {})).toEqual([]);
+  });
+
+  test("later live expansion never grants more than frozen intent", async () => {
+    currentRun = buildSnapshotRun(buildAgent({ githubActions: {} }));
+    currentAgent = buildAgent({ githubActions: { push: true } });
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-live-expand",
+    });
+
+    expect(Object.keys(generateCalls[0]?.tools ?? {})).toEqual([]);
+    expect(
+      sandboxExec.mock.calls.some(([command]) =>
+        (command as string).includes("git checkout"),
+      ),
+    ).toBe(false);
+  });
+
+  test("executes a frozen private check command without persisting it in events", async () => {
+    const privateCommand = "bun test --token=private-check-command-canary";
+    currentRun = buildSnapshotRun(buildAgent({ checkCommand: privateCommand }));
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-private-check",
+    });
+
+    expect(sandboxExec).toHaveBeenCalledWith(
+      privateCommand,
+      "/workspace/widgets",
+      expect.any(Number),
+    );
+    expect(JSON.stringify(recordedEvents())).not.toContain(
+      "private-check-command-canary",
+    );
+    expect(recordedEvent("background-agent.check.completed")).toMatchObject({
+      payload: {
+        commandLabel: "required_check",
+        commandHash: expect.stringMatching(/^[0-9a-f]{64}$/),
+      },
+    });
+  });
+
+  const invalidCases: Array<{
+    label: string;
+    overrides: Record<string, unknown>;
+    errorKind: string;
+  }> = [
+    {
+      label: "partial tuple",
+      overrides: { definitionHash: null },
+      errorKind: "snapshot_invalid",
+    },
+    {
+      label: "unsupported version",
+      overrides: { definitionVersion: 2 },
+      errorKind: "snapshot_version_unsupported",
+    },
+    {
+      label: "hash mismatch",
+      overrides: { definitionHash: "0".repeat(64) },
+      errorKind: "snapshot_hash_mismatch",
+    },
+    {
+      label: "repository mismatch",
+      overrides: { repoName: "different-repo" },
+      errorKind: "snapshot_invalid",
+    },
+    {
+      label: "unsafe corrupted metadata",
+      overrides: {
+        definitionVersion: 1_000_001,
+        definitionHash: "secret-looking-corrupt-hash-value",
+      },
+      errorKind: "snapshot_version_unsupported",
+    },
+  ];
+
+  invalidCases.forEach(({ label, overrides, errorKind }) => {
+    test(`fails ${label} before running or allocating a sandbox`, async () => {
+      currentRun = buildSnapshotRun(buildAgent(), overrides);
+      const { executeBackgroundAgentRun } = await executorModulePromise;
+
+      await executeBackgroundAgentRun({
+        runId: currentRun.id,
+        workflowRunId: "wf-invalid",
+      });
+
+      expect(connectSandbox).not.toHaveBeenCalled();
+      expect(generate).not.toHaveBeenCalled();
+      expect(updateBackgroundAgentRunStatus.mock.calls[0]?.[0]).toMatchObject({
+        status: "failed",
+        errorKind,
+      });
+      expect(
+        recordedEvent("background-agent.workflow.started"),
+      ).toBeUndefined();
+      const invalidEvent = recordedEvent("background-agent.snapshot.invalid");
+      expect(invalidEvent).toMatchObject({
+        status: "failed",
+        level: "error",
+        errorKind,
+        payload: {
+          definitionVersion:
+            typeof currentRun.definitionVersion === "number" &&
+            Number.isSafeInteger(currentRun.definitionVersion) &&
+            currentRun.definitionVersion >= 0 &&
+            currentRun.definitionVersion <= 1000
+              ? currentRun.definitionVersion
+              : null,
+          definitionHash:
+            typeof currentRun.definitionHash === "string" &&
+            /^[0-9a-f]{64}$/.test(currentRun.definitionHash)
+              ? currentRun.definitionHash
+              : null,
+        },
+      });
+      expect(JSON.stringify(invalidEvent)).not.toContain("instructions");
+      expect(JSON.stringify(invalidEvent)).not.toContain(
+        "secret-looking-corrupt-hash-value",
+      );
+      expect(recordedEvents().map((event) => event.eventName)).toEqual([
+        "background-agent.snapshot.invalid",
+        "background-agent.run.failed",
+      ]);
+    });
+  });
+
+  test("distinguishes deleted from disabled sources before sandbox cost", async () => {
+    currentRun = buildSnapshotRun(buildAgent());
+    currentAgent = null;
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-deleted",
+    });
+
+    expect(connectSandbox).not.toHaveBeenCalled();
+    expect(updateBackgroundAgentRunStatus.mock.calls[0]?.[0]).toMatchObject({
+      errorKind: "agent_deleted",
+    });
+
+    updateBackgroundAgentRunStatus.mockClear();
+    currentRun = buildSnapshotRun(buildAgent());
+    currentAgent = buildAgent({ status: "disabled" });
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-disabled",
+    });
+    expect(updateBackgroundAgentRunStatus.mock.calls[0]?.[0]).toMatchObject({
+      errorKind: "agent_disabled",
+    });
+  });
+
+  test("uses the fresh nullable agent id when deletion races initial validation", async () => {
+    currentRun = buildSnapshotRun(buildAgent());
+    const acceptedRun = currentRun;
+    const acceptedAgent = currentAgent;
+    getBackgroundAgentRunWithAgent.mockImplementationOnce(async () => ({
+      run: acceptedRun,
+      agent: acceptedAgent,
+    }));
+    currentRun = { ...currentRun, agentId: null };
+    currentAgent = null;
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-delete-race",
+    });
+
+    expect(connectSandbox).not.toHaveBeenCalled();
+    expect(recordedEvent("background-agent.run.failed")).toMatchObject({
+      agentId: null,
+      errorKind: "agent_deleted",
+    });
+  });
+
+  test("legacy rows use an explicit observable live fallback", async () => {
+    currentRun = buildRun();
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-legacy",
+    });
+
+    expect(generate).toHaveBeenCalledTimes(1);
+    expect(
+      recordedEvent("background-agent.snapshot.legacy_fallback"),
+    ).toBeTruthy();
   });
 });
 
@@ -567,6 +1223,27 @@ describe("(b) required-permission derivation per toggle set", () => {
 });
 
 describe("(c) model resolution", () => {
+  test("uses the concrete default frozen at queue time after the live source changes", async () => {
+    const acceptedAgent = buildAgent({ modelId: null });
+    currentRun = buildSnapshotRun(acceptedAgent, {
+      executionSnapshot: buildBackgroundAgentExecutionSnapshot(acceptedAgent, {
+        route: "gateway",
+        modelId: "anthropic/claude-haiku-4.5",
+      }),
+    });
+    currentAgent = buildAgent({ modelId: "anthropic/claude-opus-4.6" });
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-1",
+    });
+
+    expect(generateCalls[0]?.options.model).toMatchObject({
+      id: "anthropic/claude-haiku-4.5",
+    });
+  });
+
   test("passes the agent's plain gateway modelId as options.model and records it on usage", async () => {
     currentAgent = buildAgent({ modelId: "anthropic/claude-haiku-4.5" });
     const { executeBackgroundAgentRun } = await executorModulePromise;
@@ -587,9 +1264,21 @@ describe("(c) model resolution", () => {
   });
 
   test("resolves a user-profile: selection via resolveInferenceProfileModelSelection", async () => {
-    currentAgent = buildAgent({
+    const acceptedAgent = buildAgent({
       modelId: "user-profile:profile-1:glm-4.6",
     });
+    const executionSnapshot = buildBackgroundAgentExecutionSnapshot(
+      acceptedAgent,
+      {
+        route: "user",
+        modelId: "glm-4.6",
+        inferenceProfileId: "profile-1",
+        provider: "anthropic",
+        baseUrl: "https://inference.example.com/v1",
+      },
+    );
+    currentRun = buildSnapshotRun(acceptedAgent, { executionSnapshot });
+    currentAgent = acceptedAgent;
     const { executeBackgroundAgentRun } = await executorModulePromise;
 
     await executeBackgroundAgentRun({
@@ -603,6 +1292,46 @@ describe("(c) model resolution", () => {
       "user-v2",
       expect.objectContaining({ model: "glm-4.6" }),
     );
+    expect(inferenceResolutionCalls[0]).toMatchObject({
+      inferenceProfileId: "profile-1",
+      expectedRoute: {
+        provider: "anthropic",
+        baseUrl: "https://inference.example.com/v1",
+      },
+    });
+  });
+
+  test("revokes an accepted user route when the live profile changes before the model turn", async () => {
+    const acceptedAgent = buildAgent({
+      modelId: "user-profile:profile-1:glm-4.6",
+    });
+    const executionSnapshot = buildBackgroundAgentExecutionSnapshot(
+      acceptedAgent,
+      {
+        route: "user",
+        modelId: "glm-4.6",
+        inferenceProfileId: "profile-1",
+        provider: "anthropic",
+        baseUrl: "https://inference.example.com/v1",
+      },
+    );
+    currentRun = buildSnapshotRun(acceptedAgent, { executionSnapshot });
+    currentAgent = acceptedAgent;
+    // Initial validation passes. The mocked model resolver does not perform
+    // its own DB check, so the second call is the executor guard immediately
+    // before the first model turn.
+    inferenceRouteAvailabilityFailureAt = 2;
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-1",
+    });
+
+    expect(generate).not.toHaveBeenCalled();
+    expect(recordedEvent("background-agent.run.failed")).toMatchObject({
+      errorKind: "model_resolution_failed",
+    });
   });
 
   test("fails the run with model_resolution_failed instead of silently falling back", async () => {
@@ -741,6 +1470,709 @@ describe("(e) ready_pr-equivalent flow: push + open_pr toggles", () => {
       status: "succeeded",
       outputUrl: "https://github.com/acme/widgets/pull/55",
     });
+  });
+});
+
+describe("normalized background execution boundary (#966)", () => {
+  test("builds exactly one normalized sandbox input before sandbox work and emits safe acceptance evidence", async () => {
+    currentRun = buildSnapshotRun(buildAgent());
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-normalized-once",
+    });
+
+    expect(buildNormalizedBackgroundSandboxInput).toHaveBeenCalledTimes(1);
+    expect(buildNormalizedBackgroundLearningsInput).not.toHaveBeenCalled();
+    const builderCall =
+      buildNormalizedBackgroundSandboxInput.mock.calls[0]?.[0];
+    expect(builderCall).toMatchObject({
+      resolvedDefinition: {
+        snapshotSource: "frozen",
+        definitionVersion: 1,
+        definitionHash: currentRun.definitionHash,
+      },
+      identity: {
+        runId: currentRun.id,
+        userId: currentRun.userId,
+        triggerId: currentRun.triggerId,
+        requestId: currentRun.requestId,
+        workflowRunId: "wf-normalized-once",
+      },
+    });
+    expect(connectSandbox).toHaveBeenCalledTimes(1);
+    const accepted = recordedEvent(
+      "background-agent.normalized-input.accepted",
+    );
+    expect(accepted).toMatchObject({
+      status: "succeeded",
+      level: "info",
+      payload: {
+        runId: currentRun.id,
+        agentId: currentRun.agentId,
+        inputVersion: 1,
+        definitionVersion: 1,
+        definitionHash: currentRun.definitionHash,
+        snapshotSource: "frozen",
+        requestId: currentRun.requestId,
+        workflowRunId: "wf-normalized-once",
+        workspacePolicy: "persistent_resume",
+      },
+    });
+    expect(recordedEvents().indexOf(accepted as EventInput)).toBeLessThan(
+      recordedEvents().findIndex(
+        (event) => event.eventName === "background-agent.sandbox.started",
+      ),
+    );
+  });
+
+  test("uses normalized frozen behavior for prompt, model, tools, checkout, and verification after live edits", async () => {
+    const acceptedAgent = buildAgent({
+      instructions: "snapshot instructions",
+      checkCommand: "snapshot-check",
+      builtinToolNames: ["read"],
+      githubActions: { push: true },
+      modelId: "anthropic/claude-haiku-4.5",
+    });
+    currentRun = buildSnapshotRun(acceptedAgent);
+    currentAgent = buildAgent({
+      instructions: "live edited instructions",
+      checkCommand: "live-check",
+      builtinToolNames: ["bash", "write"],
+      githubActions: { comment_on_pr_or_issue: true },
+      modelId: "anthropic/claude-opus-4.6",
+    });
+    normalizedSandboxImpl = (input) => {
+      const normalized = realBuildNormalizedBackgroundSandboxInput(input);
+      return {
+        ...normalized,
+        prompt: {
+          definitionName: "Normalized definition",
+          instructions: "NORMALIZED-INSTRUCTIONS-CANARY",
+        },
+        model: {
+          route: "gateway",
+          modelId: "anthropic/claude-haiku-4.5",
+        },
+        requestedPolicy: {
+          ...normalized.requestedPolicy,
+          builtinToolNames: ["bash"],
+          composioToolkitSlugs: [],
+          github: {
+            kind: "background_actions",
+            actions: {
+              open_pull_request: false,
+              comment_on_pr_or_issue: true,
+              approve_pull_request: false,
+              request_changes: false,
+              merge_pull_request: false,
+              push: false,
+              delete_branch: false,
+            },
+            writeScope: { mode: "this_repo" },
+            requireCiGreenForMerge: true,
+          },
+        },
+        verification: {
+          kind: "command",
+          command: "bun test normalized-check-canary",
+        },
+        workspace: {
+          ...normalized.workspace,
+          initialCheckout: {
+            ref: "normalized-checkout-branch",
+            source: "event_branch",
+          },
+        },
+      };
+    };
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-normalized-fields",
+    });
+
+    expect(JSON.stringify(generateCalls[0]?.messages)).toContain(
+      "NORMALIZED-INSTRUCTIONS-CANARY",
+    );
+    expect(generateCalls[0]?.options).toMatchObject({
+      allowedBuiltinToolNames: ["bash"],
+      model: { id: "anthropic/claude-haiku-4.5" },
+    });
+    expect(Object.keys(generateCalls[0]?.tools ?? {})).toEqual([
+      "github_comment_on_pr_or_issue",
+    ]);
+    expect(connectSandbox.mock.calls[0]?.[0]).toMatchObject({
+      state: {
+        source: { branch: "normalized-checkout-branch" },
+      },
+    });
+    expect(sandboxExec).toHaveBeenCalledWith(
+      "bun test normalized-check-canary",
+      "/workspace/widgets",
+      expect.any(Number),
+    );
+    const serialized = JSON.stringify({
+      calls: generateCalls,
+      events: recordedEvents(),
+    });
+    expect(serialized).not.toContain("live edited instructions");
+    expect(serialized).not.toContain("live-check");
+  });
+
+  test("normalizes the built-in learnings path once without creating a workspace", async () => {
+    const learningsAgent = buildAgent({
+      instructions:
+        "[builtin:pr-review-learnings] Extract learnings from merged pull requests.",
+      githubActions: {},
+    });
+    currentRun = buildSnapshotRun(learningsAgent);
+    currentAgent = learningsAgent;
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-normalized-learnings",
+    });
+
+    expect(buildNormalizedBackgroundLearningsInput).toHaveBeenCalledTimes(1);
+    expect(buildNormalizedBackgroundSandboxInput).not.toHaveBeenCalled();
+    expect(connectSandbox).not.toHaveBeenCalled();
+    expect(
+      recordedEvent("background-agent.normalized-input.accepted"),
+    ).toMatchObject({
+      payload: {
+        inputVersion: 1,
+        workspacePolicy: "none",
+        snapshotSource: "frozen",
+      },
+    });
+  });
+
+  test("keeps live revocation separate from frozen requested policy and fails closed after normalization", async () => {
+    currentRun = buildSnapshotRun(
+      buildAgent({
+        githubActions: { comment_on_pr_or_issue: true, push: true },
+      }),
+    );
+    currentAgent = buildAgent({
+      githubActions: { comment_on_pr_or_issue: true },
+    });
+    afterEventRecorded = (event) => {
+      if (event.eventName === "background-agent.normalized-input.accepted") {
+        currentAgent = { ...currentAgent!, status: "disabled" };
+      }
+    };
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-normalized-revoked",
+    });
+
+    const built = normalizedSandboxOutputs[0];
+    expect(built?.requestedPolicy.github.actions).toMatchObject({
+      comment_on_pr_or_issue: true,
+      push: true,
+    });
+    expect(connectSandbox).not.toHaveBeenCalled();
+    expect(generate).not.toHaveBeenCalled();
+    expect(recordedEvent("background-agent.run.failed")).toMatchObject({
+      errorKind: "agent_disabled",
+    });
+  });
+
+  test("live built-in tool revocation narrows normalized requested policy", async () => {
+    currentRun = buildSnapshotRun(buildAgent({ builtinToolNames: ["bash"] }));
+    currentAgent = buildAgent({ builtinToolNames: [] });
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-normalized-builtin-revoked",
+    });
+
+    expect(
+      normalizedSandboxOutputs[0]?.requestedPolicy.builtinToolNames,
+    ).toEqual(["bash"]);
+    expect(generateCalls[0]?.options.allowedBuiltinToolNames).toEqual([]);
+  });
+
+  test("preserves the durable background sandbox lifecycle", async () => {
+    currentRun = buildSnapshotRun(buildAgent());
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-normalized-workspace",
+    });
+
+    expect(connectSandbox.mock.calls[0]?.[0]).toMatchObject({
+      state: { sandboxName: `background_agent_${currentRun.id}` },
+      options: {
+        persistent: true,
+        resume: true,
+        createIfMissing: true,
+      },
+    });
+  });
+
+  test("rejects invalid normalized input with safe terminal evidence before sandbox allocation", async () => {
+    currentRun = buildSnapshotRun(
+      buildAgent({ instructions: "PRIVATE-NORMALIZED-SECRET-CANARY" }),
+    );
+    normalizedSandboxImpl = () => {
+      throw new normalizedRuntime.NormalizedUnattendedInputError(
+        "normalized_input_invalid",
+        [{ code: "too_big", path: ["prompt", "instructions"] }],
+      );
+    };
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-normalized-rejected",
+    });
+
+    expect(connectSandbox).not.toHaveBeenCalled();
+    expect(generate).not.toHaveBeenCalled();
+    expect(currentRun).toMatchObject({
+      status: "failed",
+      errorKind: "normalized_input_invalid",
+    });
+    expect(
+      recordedEvent("background-agent.normalized-input.rejected"),
+    ).toMatchObject({
+      status: "failed",
+      level: "error",
+      errorKind: "normalized_input_invalid",
+      payload: {
+        runId: currentRun.id,
+        agentId: currentRun.agentId,
+        errorKind: "normalized_input_invalid",
+        safeFieldPaths: ["prompt.instructions"],
+        requestId: currentRun.requestId,
+        workflowRunId: "wf-normalized-rejected",
+      },
+    });
+    expect(JSON.stringify(recordedEvents())).not.toContain(
+      "PRIVATE-NORMALIZED-SECRET-CANARY",
+    );
+  });
+
+  test("does not rebuild normalized input on duplicate terminal delivery and keeps legacy provenance explicit", async () => {
+    currentRun = buildSnapshotRun(buildAgent());
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-normalized-duplicate",
+    });
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-normalized-duplicate",
+    });
+    expect(buildNormalizedBackgroundSandboxInput).toHaveBeenCalledTimes(1);
+
+    buildNormalizedBackgroundSandboxInput.mockClear();
+    recordBackgroundAgentEvent.mockClear();
+    currentRun = buildRun();
+    currentAgent = buildAgent();
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-normalized-legacy",
+    });
+    expect(buildNormalizedBackgroundSandboxInput).toHaveBeenCalledTimes(1);
+    expect(
+      recordedEvent("background-agent.normalized-input.accepted"),
+    ).toMatchObject({
+      payload: {
+        inputVersion: 1,
+        definitionVersion: null,
+        definitionHash: null,
+        snapshotSource: "legacy_live_fallback",
+        workspacePolicy: "persistent_resume",
+      },
+    });
+  });
+
+  test("normalizes accepted ref or branch before GitHub access and token work", async () => {
+    const acceptedAgent = buildAgent();
+    const cases: Array<Partial<BackgroundAgentRun>> = [
+      { id: "run-ref-order", ref: "refs/pull/7/head", branch: null },
+      { id: "run-branch-order", ref: null, branch: "feature/order" },
+    ];
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    for (const overrides of cases) {
+      currentRun = buildSnapshotRun(acceptedAgent, overrides);
+      currentAgent = acceptedAgent;
+      executionBoundaryOrder.length = 0;
+
+      await executeBackgroundAgentRun({
+        runId: currentRun.id,
+        workflowRunId: `wf-${currentRun.id}`,
+      });
+
+      expect(executionBoundaryOrder.indexOf("normalize")).toBeLessThan(
+        executionBoundaryOrder.indexOf("verify_repo_access"),
+      );
+    }
+  });
+
+  test("masks GitHub actions when live declared permissions are downgraded", async () => {
+    const acceptedAgent = buildAgent({
+      permissions: { github: { contents: "write" } },
+      githubActions: { push: true },
+    });
+    currentRun = buildSnapshotRun(acceptedAgent, {
+      ref: "refs/heads/main",
+    });
+    currentAgent = buildAgent({
+      permissions: { github: { contents: "read" } },
+      githubActions: { push: true },
+    });
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-permission-downgrade",
+    });
+
+    expect(Object.keys(generateCalls[0]?.tools ?? {})).not.toContain(
+      "github_push",
+    );
+    expect(
+      normalizedSandboxOutputs[0]?.requestedPolicy.declaredPermissions,
+    ).toEqual({ github: { contents: "write" } });
+  });
+
+  test("keeps the normalized legacy model stable after the input is built", async () => {
+    currentRun = buildRun({ ref: "refs/heads/main" });
+    currentAgent = buildAgent({ modelId: "anthropic/claude-haiku-4.5" });
+    normalizedSandboxImpl = (input) => {
+      const normalized = realBuildNormalizedBackgroundSandboxInput(input);
+      currentAgent = currentAgent
+        ? { ...currentAgent, modelId: "user-profile:" }
+        : null;
+      return normalized;
+    };
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-legacy-model-stable",
+    });
+
+    expect(generateCalls[0]?.options.model).toMatchObject({
+      id: "anthropic/claude-haiku-4.5",
+    });
+    expect(currentRun.status).toBe("succeeded");
+  });
+
+  test("stops side effects when the claimed run becomes terminal", async () => {
+    currentRun = buildSnapshotRun(buildAgent(), { ref: "refs/heads/main" });
+    afterEventRecorded = (event) => {
+      if (event.eventName === "background-agent.normalized-input.accepted") {
+        currentRun = { ...currentRun, status: "cancelled" };
+      }
+    };
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-terminal-ownership",
+    });
+
+    expect(connectSandbox).not.toHaveBeenCalled();
+    expect(generate).not.toHaveBeenCalled();
+    expect(currentRun.status).toBe("cancelled");
+  });
+
+  test("stops side effects after workflow ownership changes", async () => {
+    currentRun = buildSnapshotRun(buildAgent(), { ref: "refs/heads/main" });
+    afterEventRecorded = (event) => {
+      if (event.eventName === "background-agent.normalized-input.accepted") {
+        currentRun = {
+          ...currentRun,
+          status: "running",
+          workflowRunId: "wf-new-owner",
+        };
+      }
+    };
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-stale-owner",
+    });
+
+    expect(connectSandbox).not.toHaveBeenCalled();
+    expect(generate).not.toHaveBeenCalled();
+    expect(currentRun).toMatchObject({
+      status: "running",
+      workflowRunId: "wf-new-owner",
+    });
+  });
+
+  test("a stale normalization rejection cannot terminalize a concurrent owner", async () => {
+    currentRun = buildSnapshotRun(buildAgent(), { ref: "refs/heads/main" });
+    normalizedSandboxImpl = () => {
+      beforeStatusUpdate = (input) => {
+        if (input.status === "failed") {
+          currentRun = {
+            ...currentRun,
+            status: "running",
+            workflowRunId: "wf-concurrent-owner",
+          };
+        }
+      };
+      throw new normalizedRuntime.NormalizedUnattendedInputError(
+        "normalized_input_invalid",
+        [{ code: "invalid", path: ["prompt"] }],
+      );
+    };
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-stale-rejection",
+    });
+
+    expect(currentRun).toMatchObject({
+      status: "running",
+      workflowRunId: "wf-concurrent-owner",
+    });
+    expect(
+      recordedEvent("background-agent.normalized-input.rejected"),
+    ).toBeUndefined();
+    expect(recordedEvent("background-agent.run.failed")).toBeUndefined();
+  });
+
+  test("preserves truthful source and external ID for learnings", async () => {
+    const learningsAgent = buildAgent({
+      instructions:
+        "[builtin:pr-review-learnings] Extract learnings from merged pull requests.",
+      githubActions: {},
+    });
+    currentRun = buildSnapshotRun(learningsAgent, {
+      source: "schedule",
+      externalId: "schedule:learnings:2026-07-12T01:00:00Z",
+      ref: "refs/heads/main",
+    });
+    currentAgent = learningsAgent;
+    let eventSeen: LearningsRunnerParams["event"];
+    learningsRunImpl = async (params) => {
+      eventSeen = params.event;
+      return {
+        candidatesExtracted: 0,
+        accepted: 0,
+        merged: 0,
+        rejected: 0,
+      };
+    };
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-learnings-provenance",
+    });
+
+    expect(eventSeen).toMatchObject({
+      source: currentRun.source,
+      externalId: currentRun.externalId,
+    });
+  });
+
+  test("does not persist sandbox attribution for the no-workspace learnings path", async () => {
+    const learningsAgent = buildAgent({
+      instructions:
+        "[builtin:pr-review-learnings] Extract learnings from merged pull requests.",
+      githubActions: {},
+    });
+    currentRun = buildSnapshotRun(learningsAgent, {
+      ref: "refs/heads/main",
+    });
+    currentAgent = learningsAgent;
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-learnings-no-sandbox",
+    });
+
+    const runningUpdate = updateBackgroundAgentRunStatus.mock.calls
+      .map(([input]) => input)
+      .find((input) => input.status === "running");
+    expect(runningUpdate?.sandboxName ?? null).toBeNull();
+    expect(
+      recordedEvent("background-agent.normalized-input.accepted")
+        ?.sandboxName ?? null,
+    ).toBeNull();
+  });
+
+  test("blocks learnings extraction when live pull-request read permission is removed", async () => {
+    const acceptedAgent = buildAgent({
+      instructions:
+        "[builtin:pr-review-learnings] Extract learnings from merged pull requests.",
+      permissions: {
+        github: { contents: "read", pullRequests: "read" },
+      },
+      githubActions: {},
+    });
+    currentRun = buildSnapshotRun(acceptedAgent, {
+      ref: "refs/heads/main",
+    });
+    currentAgent = buildAgent({
+      ...acceptedAgent,
+      permissions: { github: { contents: "read" } },
+    });
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-learnings-permission-removed",
+    });
+
+    expect(withScopedInstallationOctokit).not.toHaveBeenCalled();
+    expect(runLearningsExtraction).not.toHaveBeenCalled();
+  });
+
+  test("blocks learnings extraction when frozen pull-request write is removed live", async () => {
+    const acceptedAgent = buildAgent({
+      instructions:
+        "[builtin:pr-review-learnings] Extract learnings from merged pull requests.",
+      permissions: {
+        github: { contents: "read", pullRequests: "write" },
+      },
+      githubActions: {},
+    });
+    currentRun = buildSnapshotRun(acceptedAgent, {
+      ref: "refs/heads/main",
+    });
+    currentAgent = buildAgent({
+      ...acceptedAgent,
+      permissions: { github: { contents: "read" } },
+    });
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-learnings-write-permission-removed",
+    });
+
+    expect(withScopedInstallationOctokit).not.toHaveBeenCalled();
+    expect(runLearningsExtraction).not.toHaveBeenCalled();
+  });
+
+  test("normalizes a persisted checkout before live inference-profile availability work", async () => {
+    currentRun = buildRun({ ref: "refs/heads/main" });
+    currentAgent = buildAgent({
+      modelId: "user-profile:profile-legacy:glm-4.6",
+    });
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-persisted-ref-inference-order",
+    });
+
+    expect(executionBoundaryOrder.indexOf("normalize")).toBeLessThan(
+      executionBoundaryOrder.indexOf("inference_profile_availability"),
+    );
+  });
+
+  test("defers profile availability until after a default-branch checkout is normalized", async () => {
+    currentRun = buildRun({ ref: null, branch: null });
+    currentAgent = buildAgent({
+      modelId: "user-profile:profile-default-branch:glm-4.6",
+    });
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-default-branch-inference-order",
+    });
+
+    expect(executionBoundaryOrder).toContain("verify_repo_access");
+    expect(executionBoundaryOrder.indexOf("normalize")).toBeLessThan(
+      executionBoundaryOrder.indexOf("inference_profile_availability"),
+    );
+  });
+
+  test("concurrent valid deliveries share one normalized build and access path", async () => {
+    const acceptedAgent = buildAgent();
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    currentRun = buildSnapshotRun(acceptedAgent, {
+      id: "run-single-delivery-baseline",
+      ref: "refs/heads/main",
+    });
+    currentAgent = acceptedAgent;
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-single-delivery-baseline",
+    });
+    const singleDeliveryAccessCalls = verifyRepoAccess.mock.calls.length;
+    const singleDeliveryTokenCalls = mintInstallationToken.mock.calls.length;
+
+    verifyRepoAccess.mockClear();
+    mintInstallationToken.mockClear();
+    buildNormalizedBackgroundSandboxInput.mockClear();
+    currentRun = buildSnapshotRun(acceptedAgent, {
+      id: "run-concurrent-delivery",
+      ref: "refs/heads/main",
+    });
+    currentAgent = acceptedAgent;
+
+    await Promise.all([
+      executeBackgroundAgentRun({
+        runId: currentRun.id,
+        workflowRunId: "wf-concurrent-a",
+      }),
+      executeBackgroundAgentRun({
+        runId: currentRun.id,
+        workflowRunId: "wf-concurrent-b",
+      }),
+    ]);
+
+    expect(buildNormalizedBackgroundSandboxInput).toHaveBeenCalledTimes(1);
+    expect(verifyRepoAccess).toHaveBeenCalledTimes(singleDeliveryAccessCalls);
+    expect(mintInstallationToken).toHaveBeenCalledTimes(
+      singleDeliveryTokenCalls,
+    );
+  });
+
+  test("accepted evidence never serializes the normalized body, instructions, provider configuration, or runtime objects", async () => {
+    const acceptedAgent = buildAgent({
+      instructions: "PRIVATE-INSTRUCTIONS-CANARY",
+      modelId: "anthropic/claude-haiku-4.5",
+    });
+    currentRun = buildSnapshotRun(acceptedAgent);
+    currentAgent = acceptedAgent;
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-normalized-redaction",
+    });
+
+    const accepted = recordedEvent(
+      "background-agent.normalized-input.accepted",
+    );
+    expect(accepted).toBeDefined();
+    const serialized = JSON.stringify(accepted);
+    for (const forbidden of [
+      "PRIVATE-INSTRUCTIONS-CANARY",
+      "requestedPolicy",
+      "resolvedDefinition",
+      "sandboxState",
+      "providerConfig",
+      "githubToken",
+    ]) {
+      expect(serialized).not.toContain(forbidden);
+    }
   });
 });
 

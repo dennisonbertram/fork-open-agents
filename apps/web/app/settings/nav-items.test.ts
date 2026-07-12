@@ -3,6 +3,7 @@ import { Bot, Cpu, Lightbulb, Sparkles, Users } from "lucide-react";
 import {
   findActiveNavItem,
   flattenNavItems,
+  resolveSettingsFallbackRouteId,
   SETTINGS_NAV_GROUPS,
   visibleNavGroups,
 } from "./nav-items";
@@ -12,11 +13,11 @@ import {
 // Repositories entry that reaches the same effective-status view").
 
 describe("settings nav data", () => {
-  test("groups are ordered Account, Tools, Insights, Admin", () => {
+  test("groups are ordered Account, Workspace, Advanced, Admin", () => {
     expect(SETTINGS_NAV_GROUPS.map((g) => g.id)).toEqual([
       "account",
-      "tools",
-      "insights",
+      "workspace",
+      "advanced",
       "admin",
     ]);
   });
@@ -29,22 +30,20 @@ describe("settings nav data", () => {
       "/settings/profile",
       "/settings/preferences",
       "/settings/connections",
+      "/settings/usage",
     ]);
-    expect(byId.tools).toEqual([
+    expect(byId.workspace).toEqual([
       "/settings/agents",
       "/settings/models",
       "/settings/composio",
       "/settings/mcp",
       "/settings/skills",
-      "/settings/background-agents",
       "/settings/repositories",
-      "/loops",
-      "/settings/runtime-profiles",
     ]);
-    expect(byId.insights).toEqual([
-      "/settings/usage",
-      "/settings/leaderboard",
+    expect(byId.advanced).toEqual([
+      "/settings/runtime-profiles",
       "/settings/learnings",
+      "/settings/leaderboard",
     ]);
     expect(byId.admin).toEqual(["/settings/admin"]);
   });
@@ -58,14 +57,32 @@ describe("settings nav data", () => {
   });
 
   test("visibleNavGroups hides the admin group unless isAdmin", () => {
-    expect(visibleNavGroups(false).map((g) => g.id)).not.toContain("admin");
-    expect(visibleNavGroups(true).map((g) => g.id)).toContain("admin");
+    expect(visibleNavGroups(false).map((g) => g.id)).toEqual([
+      "account",
+      "workspace",
+      "advanced",
+    ]);
+    expect(visibleNavGroups(true).map((g) => g.id)).toEqual([
+      "account",
+      "workspace",
+      "advanced",
+      "admin",
+    ]);
+  });
+
+  test("visibleNavGroups removes empty groups", () => {
+    expect(
+      visibleNavGroups(false, [
+        ...SETTINGS_NAV_GROUPS,
+        { id: "empty", label: "Empty", items: [] },
+      ]).map((group) => group.id),
+    ).not.toContain("empty");
   });
 
   test("flattenNavItems lists every item once with unique ids", () => {
     const items = flattenNavItems();
-    expect(items).toHaveLength(16);
-    expect(new Set(items.map((i) => i.id)).size).toBe(16);
+    expect(items).toHaveLength(14);
+    expect(new Set(items.map((i) => i.id)).size).toBe(14);
   });
 
   test("findActiveNavItem resolves exact and nested routes", () => {
@@ -80,16 +97,19 @@ describe("settings nav data", () => {
     const item = findActiveNavItem("/settings/agents");
     expect(item?.id).toBe("agents");
     expect(item?.href).toBe("/settings/agents");
+    expect(item?.label).toBe("Chat roles");
   });
 
-  // NAV-002: agents item is in the tools group
-  test("NAV-002: agents item is in the tools group and is the first item", () => {
-    const toolsGroup = SETTINGS_NAV_GROUPS.find((g) => g.id === "tools");
-    expect(toolsGroup).toBeDefined();
-    expect(toolsGroup?.items[0]?.id).toBe("agents");
+  // NAV-002: agents item is in the workspace group
+  test("NAV-002: agents item is in the workspace group and is the first item", () => {
+    const workspaceGroup = SETTINGS_NAV_GROUPS.find(
+      (g) => g.id === "workspace",
+    );
+    expect(workspaceGroup).toBeDefined();
+    expect(workspaceGroup?.items[0]?.id).toBe("agents");
   });
 
-  // NAV-003: agents item does not use the Bot icon (reserved for background-agents)
+  // NAV-003: chat roles remain visually distinct from unattended Automations.
   test("NAV-003: agents item uses Users icon (not Bot)", () => {
     const item = findActiveNavItem("/settings/agents");
     // Verify by reference equality — lucide icons don't expose .name
@@ -104,8 +124,10 @@ describe("settings nav data", () => {
     expect(item?.href).toBe("/settings/skills");
     expect(item?.icon).toBe(Sparkles);
 
-    const toolsGroup = SETTINGS_NAV_GROUPS.find((g) => g.id === "tools");
-    expect(toolsGroup?.items.map((i) => i.id)).toContain("skills");
+    const workspaceGroup = SETTINGS_NAV_GROUPS.find(
+      (g) => g.id === "workspace",
+    );
+    expect(workspaceGroup?.items.map((i) => i.id)).toContain("skills");
   });
 
   // NAV-005: runtime-profiles item resolves correctly and is in Tools group
@@ -122,28 +144,38 @@ describe("settings nav data", () => {
     expect(item?.icon).toBe(Cpu);
   });
 
-  // NAV-007: runtime-profiles is in the tools group
-  test("NAV-007: runtime-profiles item is in the tools group", () => {
-    const toolsGroup = SETTINGS_NAV_GROUPS.find((g) => g.id === "tools");
-    const ids = toolsGroup?.items.map((i) => i.id);
+  // NAV-007: runtime-profiles is in the advanced group
+  test("NAV-007: runtime-profiles item is in the advanced group", () => {
+    const advancedGroup = SETTINGS_NAV_GROUPS.find((g) => g.id === "advanced");
+    const ids = advancedGroup?.items.map((i) => i.id);
     expect(ids).toContain("runtime-profiles");
   });
 
-  // NAV-008: loops item resolves to /loops and is in the tools group
-  test("NAV-008: loops nav item resolves to /loops and is in the tools group (M1-09)", () => {
-    const item = findActiveNavItem("/loops");
-    expect(item?.id).toBe("loops");
-    expect(item?.href).toBe("/loops");
-    expect(item?.label).toBe("Loops");
-
-    const toolsGroup = SETTINGS_NAV_GROUPS.find((g) => g.id === "tools");
-    expect(toolsGroup?.items.map((i) => i.id)).toContain("loops");
+  test("NAV-008: legacy definition routes remain direct-only", () => {
+    expect(findActiveNavItem("/loops")).toBeUndefined();
+    expect(findActiveNavItem("/settings/background-agents")).toBeUndefined();
   });
 
-  // NAV-009: loops item also resolves for nested loop routes
-  test("NAV-009: loops nav item is active for nested routes /loops/[loopId]", () => {
-    const item = findActiveNavItem("/loops/loop_abc123");
-    expect(item?.id).toBe("loops");
+  test("NAV-008b: legacy Automation alias retains valid Settings fallback metadata", () => {
+    expect(resolveSettingsFallbackRouteId("/settings/background-agents")).toBe(
+      "background-agents",
+    );
+    expect(resolveSettingsFallbackRouteId("/settings/usage")).toBe("usage");
+    expect(resolveSettingsFallbackRouteId("/settings/nonexistent")).toBe(
+      "profile",
+    );
+  });
+
+  test("NAV-012: top-level navigation owns Automations without a duplicate Settings entry", () => {
+    const workspaceGroup = SETTINGS_NAV_GROUPS.find(
+      (group) => group.id === "workspace",
+    );
+    const ids = workspaceGroup?.items.map((item) => item.id);
+
+    expect(ids).not.toContain("automations");
+    expect(ids).not.toContain("background-agents");
+    expect(ids).not.toContain("loops");
+    expect(findActiveNavItem("/automations")).toBeUndefined();
   });
 
   // NAV-010 (#805): Repositories item exists in the tools group and points
@@ -153,8 +185,12 @@ describe("settings nav data", () => {
     expect(item?.id).toBe("repositories");
     expect(item?.href).toBe("/settings/repositories");
 
-    const toolsGroup = SETTINGS_NAV_GROUPS.find((g) => g.id === "tools");
-    expect(toolsGroup?.items.map((i) => i.id)).toContain("repositories");
+    expect(item?.label).toBe("Repository settings");
+
+    const workspaceGroup = SETTINGS_NAV_GROUPS.find(
+      (g) => g.id === "workspace",
+    );
+    expect(workspaceGroup?.items.map((i) => i.id)).toContain("repositories");
   });
 
   // NAV-011 (#805): nested per-repo routes still resolve to the same nav item.
@@ -163,13 +199,22 @@ describe("settings nav data", () => {
     expect(item?.id).toBe("repositories");
   });
 
-  test("learnings item lives in Insights and uses its route slug for active matching", () => {
+  test("learnings item lives in Advanced and uses its route slug for active matching", () => {
     const item = findActiveNavItem("/settings/learnings");
     expect(item?.id).toBe("learnings");
     expect(item?.href).toBe("/settings/learnings");
     expect(item?.icon).toBe(Lightbulb);
 
-    const insightsGroup = SETTINGS_NAV_GROUPS.find((g) => g.id === "insights");
-    expect(insightsGroup?.items.map((i) => i.id)).toContain("learnings");
+    const advancedGroup = SETTINGS_NAV_GROUPS.find((g) => g.id === "advanced");
+    expect(advancedGroup?.items.map((i) => i.id)).toContain("learnings");
+  });
+
+  test("non-admin active matching cannot resolve the Admin item", () => {
+    expect(
+      findActiveNavItem("/settings/admin", visibleNavGroups(false)),
+    ).toBeUndefined();
+    expect(
+      findActiveNavItem("/settings/admin", visibleNavGroups(true))?.id,
+    ).toBe("admin");
   });
 });

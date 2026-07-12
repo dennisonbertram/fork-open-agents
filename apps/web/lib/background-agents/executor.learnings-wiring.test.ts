@@ -11,6 +11,8 @@ import { beforeEach, describe, expect, mock, test } from "bun:test";
 import type { BackgroundAgent, BackgroundAgentRun } from "@/lib/db/schema";
 
 mock.module("server-only", () => ({}));
+process.env.BACKGROUND_AGENTS_ENABLED = "true";
+process.env.BACKGROUND_AGENTS_ALLOWED_REPOS = "*";
 
 // ---- Stub helpers ----
 type EventInput = {
@@ -52,7 +54,12 @@ let learningsResult: {
   rejected: 1,
 };
 
-const runLearningsExtraction = mock(async () => learningsResult);
+type LearningsRunnerParams = {
+  assertLiveAuthorization?: () => Promise<void>;
+};
+const runLearningsExtraction = mock(
+  async (_params?: LearningsRunnerParams) => learningsResult,
+);
 
 mock.module("@/lib/learnings/runner", () => ({
   runLearningsExtraction,
@@ -81,6 +88,9 @@ mock.module("@/lib/sandbox/config", () => ({
 // ---- Store mocks ----
 let currentRun: BackgroundAgentRun;
 let currentAgent: BackgroundAgent | null;
+let beforeStatusUpdate:
+  | ((input: StatusUpdateInput) => void | Promise<void>)
+  | null = null;
 
 const getBackgroundAgentRunWithAgent = mock(async () => ({
   run: currentRun,
@@ -88,14 +98,25 @@ const getBackgroundAgentRunWithAgent = mock(async () => ({
 }));
 const recordBackgroundAgentEvent = mock(async (input: EventInput) => input);
 const updateBackgroundAgentRunStatus = mock(
-  async (input: StatusUpdateInput): Promise<BackgroundAgentRun> => ({
-    ...currentRun,
-    status: input.status,
-    workflowRunId: input.workflowRunId ?? currentRun.workflowRunId,
-    sandboxName: input.sandboxName ?? currentRun.sandboxName,
-    errorKind: input.errorKind ?? currentRun.errorKind,
-    errorMessage: input.errorMessage ?? currentRun.errorMessage,
-  }),
+  async (input: StatusUpdateInput): Promise<BackgroundAgentRun | null> => {
+    await beforeStatusUpdate?.(input);
+    if (
+      ["succeeded", "failed", "skipped", "cancelled"].includes(
+        currentRun.status,
+      )
+    ) {
+      return null;
+    }
+    currentRun = {
+      ...currentRun,
+      status: input.status,
+      workflowRunId: input.workflowRunId ?? currentRun.workflowRunId,
+      sandboxName: input.sandboxName ?? currentRun.sandboxName,
+      errorKind: input.errorKind ?? currentRun.errorKind,
+      errorMessage: input.errorMessage ?? currentRun.errorMessage,
+    };
+    return currentRun;
+  },
 );
 const listBackgroundAgentEvents = mock(async () => []);
 // #798 P2-1: uncapped, composio-scoped fetch — default empty so existing
@@ -219,6 +240,7 @@ mock.module("@/lib/inference/model-option-id", () => ({
 }));
 
 mock.module("@/lib/inference/profile-resolution", () => ({
+  assertInferenceProfileRouteAvailable: mock(async () => undefined),
   resolveInferenceProfileModelSelection: mock(
     async (params: { selection: unknown }) => params.selection,
   ),
@@ -277,6 +299,9 @@ function buildLearningsRun(
     startedAt: null,
     finishedAt: null,
     resultSummary: null,
+    executionSnapshot: null,
+    definitionVersion: null,
+    definitionHash: null,
     createdAt: now,
     updatedAt: now,
     ...overrides,
@@ -325,6 +350,7 @@ beforeEach(() => {
   };
   currentRun = buildLearningsRun();
   currentAgent = buildLearningsAgent();
+  beforeStatusUpdate = null;
   getBackgroundAgentRunWithAgent.mockClear();
   recordBackgroundAgentEvent.mockClear();
   updateBackgroundAgentRunStatus.mockClear();
@@ -393,6 +419,53 @@ describe("executeBackgroundAgentRun — learnings built-in agent wiring", () => 
     );
     expect(terminalUpdate).toBeDefined();
     expect(terminalUpdate?.status).toBe("succeeded");
+  });
+
+  test("passes a live guard into the learnings runner and revocation stops it", async () => {
+    runLearningsExtraction.mockImplementation(
+      async (params?: LearningsRunnerParams) => {
+        await params?.assertLiveAuthorization?.();
+        currentAgent = currentAgent
+          ? { ...currentAgent, status: "disabled" }
+          : null;
+        await params?.assertLiveAuthorization?.();
+        return learningsResult;
+      },
+    );
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wfr-revoked",
+    });
+
+    expect(currentRun.status).toBe("failed");
+    expect(
+      recordBackgroundAgentEvent.mock.calls.find(
+        ([event]) => event.eventName === "learnings-agent.run.succeeded",
+      ),
+    ).toBeUndefined();
+  });
+
+  test("a lost learnings success CAS emits no success event", async () => {
+    beforeStatusUpdate = (input) => {
+      if (input.status === "succeeded") {
+        currentRun = { ...currentRun, status: "cancelled" };
+      }
+    };
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wfr-success-race",
+    });
+
+    expect(currentRun.status).toBe("cancelled");
+    expect(
+      recordBackgroundAgentEvent.mock.calls.find(
+        ([event]) => event.eventName === "learnings-agent.run.succeeded",
+      ),
+    ).toBeUndefined();
   });
 
   test("marks run as failed when runner returns errorKind", async () => {

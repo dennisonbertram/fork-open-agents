@@ -237,6 +237,27 @@ describe("POST /api/agent-loop-runs/[runId]/resume", () => {
     expect(body).toMatchObject({ errorKind: "illegal_transition" });
   });
 
+  test("returns typed source_deleted for an owned retained run", async () => {
+    resumeLoopRun.mockImplementation(async () => {
+      throw new RunControlError(
+        "source_deleted",
+        "Cannot resume run run-1: source Automation was deleted",
+      );
+    });
+    const { POST } = await resumeRoutePromise;
+    const response = await POST(
+      new Request("http://localhost/api/agent-loop-runs/run-1/resume", {
+        method: "POST",
+      }),
+      context(),
+    );
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({
+      errorKind: "source_deleted",
+    });
+  });
+
   test("BT-059: returns 502 with success:false, errorKind:dispatch_failed when the execution backend rejects the dispatch (issue #763)", async () => {
     resumeLoopRun.mockImplementation(async () => {
       throw new DispatchFailedError(

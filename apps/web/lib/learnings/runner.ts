@@ -18,6 +18,7 @@ export type RunLearningsExtractionParams = {
   generate: (prompt: string) => Promise<unknown>;
   store: LearningsStore;
   recordEvent: (params: unknown) => Promise<void>;
+  assertLiveAuthorization?: () => Promise<void>;
 };
 
 export type RunLearningsExtractionResult = {
@@ -102,10 +103,13 @@ export async function runLearningsExtraction(
     store,
     recordEvent,
   } = params;
+  const assertLiveAuthorization =
+    params.assertLiveAuthorization ?? (async () => undefined);
 
   // Only process merged PRs
   if (event.merged !== true) {
     // Record a zero-learning run summary
+    await assertLiveAuthorization();
     await store.recordExtractionRun({
       id: nanoid(),
       userId,
@@ -120,6 +124,7 @@ export async function runLearningsExtraction(
       rejected: 0,
       errorKind: null,
     });
+    await assertLiveAuthorization();
     return {
       candidatesExtracted: 0,
       accepted: 0,
@@ -128,6 +133,7 @@ export async function runLearningsExtraction(
     };
   }
 
+  await assertLiveAuthorization();
   await recordEvent({
     eventName: "learnings-extraction.run_started",
     level: "info",
@@ -158,6 +164,7 @@ export async function runLearningsExtraction(
 
   if (isOctokitLike(octokit) && event.prNumber) {
     try {
+      await assertLiveAuthorization();
       const prResp = await octokit.rest.pulls.get({
         owner: event.repoOwner,
         repo: event.repoName,
@@ -172,6 +179,7 @@ export async function runLearningsExtraction(
         baseBranch: pr.base.ref,
       };
 
+      await assertLiveAuthorization();
       const filesResp = await octokit.rest.pulls.listFiles({
         owner: event.repoOwner,
         repo: event.repoName,
@@ -184,12 +192,14 @@ export async function runLearningsExtraction(
         .join("\n---\n");
 
       // Fetch diff
+      await assertLiveAuthorization();
       const diffResp = await octokit.request(
         `GET /repos/${event.repoOwner}/${event.repoName}/pulls/${event.prNumber}`,
         { headers: { accept: "application/vnd.github.v3.diff" } },
       );
       diffText = typeof diffResp.data === "string" ? diffResp.data : "";
     } catch {
+      await assertLiveAuthorization();
       // Treat fetch errors as empty diff — still record a run summary
     }
   }
@@ -221,10 +231,12 @@ reviewerSourced (false for PR-based extraction).
 `;
 
   let rawResult: unknown;
+  await assertLiveAuthorization();
   try {
     rawResult = await generate(prompt);
   } catch {
     const errorKind = "extraction_parse_failed";
+    await assertLiveAuthorization();
     await store.recordExtractionRun({
       id: nanoid(),
       userId,
@@ -239,6 +251,7 @@ reviewerSourced (false for PR-based extraction).
       rejected: 0,
       errorKind,
     });
+    await assertLiveAuthorization();
     return {
       candidatesExtracted: 0,
       accepted: 0,
@@ -250,6 +263,7 @@ reviewerSourced (false for PR-based extraction).
 
   if (!isGenerateResult(rawResult)) {
     const errorKind = "extraction_parse_failed";
+    await assertLiveAuthorization();
     await store.recordExtractionRun({
       id: nanoid(),
       userId,
@@ -264,6 +278,7 @@ reviewerSourced (false for PR-based extraction).
       rejected: 0,
       errorKind,
     });
+    await assertLiveAuthorization();
     return {
       candidatesExtracted: 0,
       accepted: 0,
@@ -280,6 +295,7 @@ reviewerSourced (false for PR-based extraction).
   let rejected = 0;
   let runErrorKind: string | undefined;
 
+  await assertLiveAuthorization();
   await recordEvent({
     eventName: "learnings-extraction.candidates_parsed",
     level: "info",
@@ -295,6 +311,7 @@ reviewerSourced (false for PR-based extraction).
   });
 
   // Fetch existing learnings for dedup
+  await assertLiveAuthorization();
   const existing = await store.findForDedup({
     userId,
     repoOwner: event.repoOwner,
@@ -305,6 +322,7 @@ reviewerSourced (false for PR-based extraction).
     // Quality + actionability gate
     if (!passesQualityGate(candidate)) {
       rejected += 1;
+      await assertLiveAuthorization();
       await recordEvent({
         eventName: "learnings-extraction.candidate_rejected",
         level: "info",
@@ -329,6 +347,7 @@ reviewerSourced (false for PR-based extraction).
     if ("drop" in excerptResult) {
       rejected += 1;
       runErrorKind = "redaction_blocked";
+      await assertLiveAuthorization();
       await recordEvent({
         eventName: "learnings-extraction.redaction_blocked",
         level: "warn",
@@ -388,6 +407,7 @@ reviewerSourced (false for PR-based extraction).
 
     if (decision === "update" && bestMatch) {
       // Merge into existing row
+      await assertLiveAuthorization();
       await store.updateLearning(bestMatch.id, {
         description: candidate.description,
         solution: candidate.solution ?? undefined,
@@ -397,6 +417,7 @@ reviewerSourced (false for PR-based extraction).
       });
       mergedCount += 1;
       accepted += 1;
+      await assertLiveAuthorization();
       await recordEvent({
         eventName: "learnings-extraction.learning_persisted",
         level: "info",
@@ -447,8 +468,10 @@ reviewerSourced (false for PR-based extraction).
         committedFilePath: null,
         createdBy: "pr_review_learnings_agent",
       };
+      await assertLiveAuthorization();
       await store.createLearning(newRow);
       accepted += 1;
+      await assertLiveAuthorization();
       await recordEvent({
         eventName: "learnings-extraction.learning_persisted",
         level: "info",
@@ -472,6 +495,7 @@ reviewerSourced (false for PR-based extraction).
   }
 
   // Record per-run extraction summary
+  await assertLiveAuthorization();
   await store.recordExtractionRun({
     id: nanoid(),
     userId,
@@ -487,6 +511,7 @@ reviewerSourced (false for PR-based extraction).
     errorKind: runErrorKind ?? null,
   });
 
+  await assertLiveAuthorization();
   return {
     candidatesExtracted,
     accepted,

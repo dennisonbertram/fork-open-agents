@@ -13,6 +13,7 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { SidebarTrigger } from "@/components/ui/sidebar";
+import { buildGitHubConnectUrl } from "@/lib/github/urls";
 import { useSessionsShell } from "./sessions-shell-context";
 
 // sessions-empty-state: a brand-new user's very first authenticated screen.
@@ -44,13 +45,15 @@ export function SessionsIndexShell() {
             </EmptyDescription>
           </EmptyHeader>
           <EmptyContent>
-            <Button onClick={openNewSessionDialog}>
+            <Button onClick={() => openNewSessionDialog()}>
               <Plus className="h-4 w-4" />
               New Session
             </Button>
             {hasGitHubInstallations ? null : (
               <Button asChild variant="outline">
-                <Link href="/get-started?step=github">Connect GitHub</Link>
+                <Link href={buildGitHubConnectUrl("/sessions")}>
+                  Connect GitHub
+                </Link>
               </Button>
             )}
           </EmptyContent>

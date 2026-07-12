@@ -21,6 +21,7 @@ import {
 import { getAllVariants } from "@/lib/model-variants";
 import { getModelOptionSelectionId } from "@/lib/inference/model-option-id";
 import { getServerSession } from "@/lib/session/get-server-session";
+import { getProductSurfaceExposurePolicy } from "@/lib/product-surfaces/config";
 import { getCodeEditorDisabledReason } from "@/lib/managed-runtime/code-editor-gate";
 import { getManagedRuntimeProfile } from "@open-agents/sandbox/managed-runtime-profiles";
 import { resolveManagedRuntimeProfile } from "@/lib/managed-runtime/profile-resolution";
@@ -85,6 +86,7 @@ export default async function SessionChatPage({
   params,
 }: SessionChatPageProps) {
   const { sessionId, chatId } = await params;
+  const productSurfaceExposure = getProductSurfaceExposurePolicy();
 
   // Start independent fetches in parallel
   const sessionPromise = getServerSession();
@@ -221,7 +223,11 @@ export default async function SessionChatPage({
           </div>
         )}
         <SessionChatContent
-          harnessEnabled={process.env.HARNESS_ENABLED === "true"}
+          harnessEnabled={
+            productSurfaceExposure.verifiedBuild &&
+            process.env.HARNESS_ENABLED === "true"
+          }
+          workflowCatalogExposed={productSurfaceExposure.workflowCatalog}
           initialIsOnlyChatInSession={initialIsOnlyChatInSession}
           messageDurationMap={messageDurationMap}
           messageStartedAtMap={messageStartedAtMap}

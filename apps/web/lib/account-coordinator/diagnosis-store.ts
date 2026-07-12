@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, asc, desc, eq, inArray, or } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import {
   agentLoopEvents,
@@ -860,22 +860,24 @@ async function loadWorkflowDiagnosis(params: {
   }
 
   const targetRepo = repoFromSession(row.session);
+  const normalizedTarget = normalizeChatWorkflowRun({
+    id: row.workflowRun.id,
+    chatId: row.workflowRun.chatId,
+    chatTitle: row.chat?.title ?? null,
+    sessionId: row.workflowRun.sessionId,
+    sessionTitle: row.session?.title ?? null,
+    status: row.workflowRun.status,
+    runtimeMode: row.workflowRun.runtimeMode,
+    errorMessage: row.workflowRun.errorMessage,
+    startedAt: row.workflowRun.startedAt,
+    finishedAt: row.workflowRun.finishedAt,
+    createdAt: row.workflowRun.createdAt,
+  } satisfies ChatWorkflowRunRow);
   const target: AccountWorkItem = {
-    ...normalizeChatWorkflowRun({
-      id: row.workflowRun.id,
-      chatId: row.workflowRun.chatId,
-      chatTitle: row.chat?.title ?? null,
-      sessionId: row.workflowRun.sessionId,
-      sessionTitle: row.session?.title ?? null,
-      status: row.workflowRun.status,
-      runtimeMode: row.workflowRun.runtimeMode,
-      errorMessage: row.workflowRun.errorMessage,
-      startedAt: row.workflowRun.startedAt,
-      finishedAt: row.workflowRun.finishedAt,
-      createdAt: row.workflowRun.createdAt,
-    } satisfies ChatWorkflowRunRow),
+    ...normalizedTarget,
     ...(targetRepo ? { repo: targetRepo } : {}),
     metadata: {
+      ...normalizedTarget.metadata,
       chatId: row.workflowRun.chatId,
       sessionId: row.workflowRun.sessionId,
       runtimeMode: row.workflowRun.runtimeMode,
@@ -1145,7 +1147,11 @@ async function loadAgentLoopDiagnosis(params: {
   limit: number;
 }): Promise<AccountDiagnosisResponse | null> {
   const [row] = await db
-    .select({ run: agentLoopRuns, loop: agentLoops })
+    .select({
+      run: agentLoopRuns,
+      loop: agentLoops,
+      failedStepCount: sql<number>`COALESCE((SELECT COUNT(*)::int FROM ${agentLoopStepRuns} WHERE ${agentLoopStepRuns.loopRunId} = ${agentLoopRuns.id} AND ${agentLoopStepRuns.status} = 'failed'), 0)`,
+    })
     .from(agentLoopRuns)
     .leftJoin(agentLoops, eq(agentLoops.id, agentLoopRuns.loopId))
     .where(
@@ -1155,7 +1161,7 @@ async function loadAgentLoopDiagnosis(params: {
       ),
     )
     .limit(1);
-  if (!row?.loop) {
+  if (!row) {
     return null;
   }
 
@@ -1164,13 +1170,15 @@ async function loadAgentLoopDiagnosis(params: {
   const target = normalizeAgentLoopRun(
     {
       id: run.id,
-      loopName: loop.name,
+      loopId: run.loopId,
+      loopName: loop?.name ?? null,
       status: run.status,
       source: run.source,
-      repoOwner: loop.repoOwner,
-      repoName: loop.repoName,
+      repoOwner: loop?.repoOwner ?? null,
+      repoName: loop?.repoName ?? null,
       currentNodeId: run.currentNodeId,
       stepCount: run.stepCount,
+      failedStepCount: Number(row.failedStepCount),
       errorKind: run.errorKind,
       errorMessage: run.errorMessage,
       createdAt: run.createdAt,
@@ -1195,7 +1203,7 @@ async function loadAgentLoopDiagnosis(params: {
     makeDiagnosticEvidence({
       id: run.id,
       kind: "target",
-      title: loop.name,
+      title: loop?.name ?? "Deleted automation",
       status: run.status,
       summary: run.errorMessage ? "Agent loop run failed" : undefined,
       occurredAt: run.updatedAt,
@@ -1216,18 +1224,20 @@ async function loadAgentLoopDiagnosis(params: {
         errorMessage: run.errorMessage,
         definitionSnapshot: run.definitionSnapshot,
         context: run.context,
-        loop: {
-          id: loop.id,
-          name: loop.name,
-          description: loop.description,
-          repoOwner: loop.repoOwner,
-          repoName: loop.repoName,
-          status: loop.status,
-          guardrails: loop.guardrails,
-          permissions: loop.permissions,
-          watchdogEnabled: loop.watchdogEnabled,
-          watchdogRetryBudget: loop.watchdogRetryBudget,
-        },
+        loop: loop
+          ? {
+              id: loop.id,
+              name: loop.name,
+              description: loop.description,
+              repoOwner: loop.repoOwner,
+              repoName: loop.repoName,
+              status: loop.status,
+              guardrails: loop.guardrails,
+              permissions: loop.permissions,
+              watchdogEnabled: loop.watchdogEnabled,
+              watchdogRetryBudget: loop.watchdogRetryBudget,
+            }
+          : null,
       },
     }),
   ]);

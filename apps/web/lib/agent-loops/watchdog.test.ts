@@ -146,11 +146,12 @@ const retryCurrentStepForWatchdogMock = mock(
   },
 );
 
+let pauseTransitionWins = true;
 const pauseLoopRunSystemMock = mock(async (_runId: string) => {
   pauseCallCount++;
+  return pauseTransitionWins;
 });
 
-// The return type is AgentLoopStepRun | null (null means no failure edge)
 type MockStepRun = {
   id: string;
   loopRunId: string;
@@ -168,34 +169,42 @@ type MockStepRun = {
   finishedAt: null;
   durationMs: null;
   createdAt: Date;
-} | null;
+};
+type MockAdvanceResult =
+  | { outcome: "advanced"; stepRun: MockStepRun }
+  | { outcome: "no_failure_edge" }
+  | { outcome: "race_lost" };
 
 const advanceToFailureEdgeMock = mock(
   async (params: {
     loopRunId: string;
+    expectedStepRunId: string;
     nodeId: string;
     snapshotDefinition: unknown;
-  }): Promise<MockStepRun> => {
+  }): Promise<MockAdvanceResult> => {
     advanceCallCount++;
     lastAdvanceNodeId = params.nodeId;
     // Return a mock step run (the success case)
     return {
-      id: "failure-edge-step-run-1",
-      loopRunId: params.loopRunId,
-      nodeId: "node-b",
-      nodeKind: "agent_step",
-      attempt: 1,
-      status: "queued",
-      stepInput: null,
-      stepOutput: null,
-      sandboxName: null,
-      workflowRunId: null,
-      errorKind: null,
-      errorMessage: null,
-      startedAt: null,
-      finishedAt: null,
-      durationMs: null,
-      createdAt: new Date(),
+      outcome: "advanced",
+      stepRun: {
+        id: "failure-edge-step-run-1",
+        loopRunId: params.loopRunId,
+        nodeId: "node-b",
+        nodeKind: "agent_step",
+        attempt: 1,
+        status: "queued",
+        stepInput: null,
+        stepOutput: null,
+        sandboxName: null,
+        workflowRunId: null,
+        errorKind: null,
+        errorMessage: null,
+        startedAt: null,
+        finishedAt: null,
+        durationMs: null,
+        createdAt: new Date(),
+      },
     };
   },
 );
@@ -203,6 +212,7 @@ const advanceToFailureEdgeMock = mock(
 const dispatchStepWorkflowMock = mock(async (stepRunId: string) => {
   dispatchCallCount++;
   lastDispatchedStepRunId = stepRunId;
+  return true;
 });
 
 const recordAgentLoopEventMock = mock(
@@ -221,7 +231,16 @@ const recordAgentLoopEventMock = mock(
   },
 );
 
+let sourceLiveResults: boolean[] = [];
+const isAgentLoopRunSourceLiveMock = mock(
+  async () => sourceLiveResults.shift() ?? true,
+);
+
 mock.module("./store", () => ({
+  isAgentLoopRunSourceLive: isAgentLoopRunSourceLiveMock,
+  createAndAdvanceAgentLoopStep: mock(async () => ({
+    outcome: "source_deleted" as const,
+  })),
   createAgentLoopWatchdogRun: createAgentLoopWatchdogRunMock,
   updateAgentLoopWatchdogRun: updateAgentLoopWatchdogRunMock,
   countWatchdogRetryDecisions: countWatchdogRetryDecisionsMock,
@@ -333,6 +352,9 @@ function makeLoopRun(overrides: Partial<AgentLoopRun> = {}): AgentLoopRun {
         { id: "e3", source: "node-b", target: "end", when: "success" },
       ],
     } as Record<string, unknown>,
+    executionSnapshot: null,
+    definitionVersion: null,
+    definitionHash: null,
     currentNodeId: "node-a",
     currentStepRunId: "step-run-1",
     iterationCount: 0,
@@ -362,6 +384,7 @@ function resetAll() {
   retryCallCount = 0;
   lastRetryHint = undefined;
   pauseCallCount = 0;
+  pauseTransitionWins = true;
   advanceCallCount = 0;
   lastAdvanceNodeId = undefined;
   dispatchCallCount = 0;
@@ -370,6 +393,7 @@ function resetAll() {
   mockAgentDecision = { decision: "retry", diagnosis: "Test diagnosis" };
   watchdogRunIdCounter = 0;
   retryCurrentStepForWatchdogShouldThrow = false;
+  sourceLiveResults = [];
 
   createAgentLoopWatchdogRunMock.mockClear();
   updateAgentLoopWatchdogRunMock.mockClear();
@@ -379,34 +403,39 @@ function resetAll() {
   advanceToFailureEdgeMock.mockClear();
   dispatchStepWorkflowMock.mockClear();
   recordAgentLoopEventMock.mockClear();
+  isAgentLoopRunSourceLiveMock.mockClear();
   generateTextMock.mockClear();
 
   // Reset advanceToFailureEdge to return a success step run by default
   advanceToFailureEdgeMock.mockImplementation(
     async (params: {
       loopRunId: string;
+      expectedStepRunId: string;
       nodeId: string;
       snapshotDefinition: unknown;
-    }): Promise<MockStepRun> => {
+    }): Promise<MockAdvanceResult> => {
       advanceCallCount++;
       lastAdvanceNodeId = params.nodeId;
       return {
-        id: "failure-edge-step-run-1",
-        loopRunId: params.loopRunId,
-        nodeId: "node-b",
-        nodeKind: "agent_step",
-        attempt: 1,
-        status: "queued",
-        stepInput: null,
-        stepOutput: null,
-        sandboxName: null,
-        workflowRunId: null,
-        errorKind: null,
-        errorMessage: null,
-        startedAt: null,
-        finishedAt: null,
-        durationMs: null,
-        createdAt: new Date(),
+        outcome: "advanced",
+        stepRun: {
+          id: "failure-edge-step-run-1",
+          loopRunId: params.loopRunId,
+          nodeId: "node-b",
+          nodeKind: "agent_step",
+          attempt: 1,
+          status: "queued",
+          stepInput: null,
+          stepOutput: null,
+          sandboxName: null,
+          workflowRunId: null,
+          errorKind: null,
+          errorMessage: null,
+          startedAt: null,
+          finishedAt: null,
+          durationMs: null,
+          createdAt: new Date(),
+        },
       };
     },
   );
@@ -414,6 +443,42 @@ function resetAll() {
 
 // Import watchdog after all mocks are set up
 const watchdogPromise = import("./watchdog");
+
+describe("watchdog source deletion race guard", () => {
+  beforeEach(resetAll);
+
+  test("deletion after diagnosis prevents every decision mutation", async () => {
+    sourceLiveResults = [true, false];
+    const { invokeWatchdog } = await watchdogPromise;
+
+    const result = await invokeWatchdog({
+      loop: makeLoop({ watchdogEnabled: true, watchdogRetryBudget: 2 }),
+      loopRun: makeLoopRun(),
+      stepRunId: "step-run-1",
+      nodeId: "node-a",
+      nodeKind: "agent_step",
+      attempt: 1,
+      errorKind: "step_failed",
+      errorMessage: "Step failed",
+      workflowRunId: "wf-1",
+    });
+
+    expect(result.invoked).toBe(false);
+    expect(generateTextMock).toHaveBeenCalledTimes(1);
+    expect(retryCurrentStepForWatchdogMock).not.toHaveBeenCalled();
+    expect(pauseLoopRunSystemMock).not.toHaveBeenCalled();
+    expect(advanceToFailureEdgeMock).not.toHaveBeenCalled();
+    expect(dispatchStepWorkflowMock).not.toHaveBeenCalled();
+    expect(watchdogRunsUpdated).toContainEqual(
+      expect.objectContaining({
+        id: "watchdog-run-1",
+        status: "failed",
+        diagnosis: "Loop execution authorization was revoked.",
+        finishedAt: expect.any(Date),
+      }),
+    );
+  });
+});
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
@@ -570,6 +635,35 @@ describe("WD-03: retry decision → retryCurrentStepForWatchdog called", () => {
     expect(lastRetryHint).toBe("Try a different approach");
   });
 
+  test("retry decision requires the failed step id in the store compare-and-set", async () => {
+    const { invokeWatchdog } = await watchdogPromise;
+    const loop = makeLoop({ watchdogEnabled: true, watchdogRetryBudget: 2 });
+    const loopRun = makeLoopRun({ currentStepRunId: "step-run-1" });
+    mockAgentDecision = {
+      decision: "retry",
+      diagnosis: "Retry this step",
+      hint: "Try a different approach",
+    };
+
+    await invokeWatchdog({
+      loop,
+      loopRun,
+      stepRunId: "step-run-1",
+      nodeId: "node-a",
+      nodeKind: "agent_step",
+      attempt: 1,
+      errorKind: "step_failed",
+      errorMessage: "Step failed",
+      workflowRunId: "wf-1",
+    });
+
+    expect(retryCurrentStepForWatchdogMock).toHaveBeenCalledWith({
+      runId: loopRun.id,
+      expectedStepRunId: "step-run-1",
+      hint: "Try a different approach",
+    });
+  });
+
   test("retry decision emits watchdog.decided event at info level", async () => {
     const { invokeWatchdog } = await watchdogPromise;
     const loop = makeLoop({ watchdogEnabled: true, watchdogRetryBudget: 2 });
@@ -721,6 +815,68 @@ describe("WD-04: skip decision with failure edge → advances to next node", () 
     const payload = dispatchedEvent?.payload as Record<string, unknown>;
     expect(payload?.["via"]).toBe("watchdog_skip");
   });
+
+  test("cancellation during diagnosis prevents skip advance and all decision evidence", async () => {
+    const { invokeWatchdog } = await watchdogPromise;
+    mockAgentDecision = { decision: "skip", diagnosis: "Skip this step" };
+    advanceToFailureEdgeMock.mockResolvedValueOnce({ outcome: "race_lost" });
+
+    const result = await invokeWatchdog({
+      loop: makeLoop({ watchdogEnabled: true, watchdogRetryBudget: 2 }),
+      loopRun: makeLoopRun(),
+      stepRunId: "step-run-1",
+      nodeId: "node-a",
+      nodeKind: "agent_step",
+      attempt: 1,
+      errorKind: "step_failed",
+      errorMessage: "Step failed",
+      workflowRunId: "wf-1",
+    });
+
+    expect(result).toEqual({ invoked: false });
+    expect(dispatchStepWorkflowMock).not.toHaveBeenCalled();
+    expect(
+      recordedEvents.some(
+        (event) =>
+          event.eventName === "agent-loop.watchdog.decided" ||
+          event.eventName === "agent-loop.chain.dispatched",
+      ),
+    ).toBe(false);
+    expect(watchdogRunsUpdated).toContainEqual(
+      expect.objectContaining({
+        status: "failed",
+        finishedAt: expect.any(Date),
+      }),
+    );
+  });
+
+  test("cancellation after skip advance prevents dispatch and decided evidence", async () => {
+    const { invokeWatchdog } = await watchdogPromise;
+    mockAgentDecision = { decision: "skip", diagnosis: "Skip this step" };
+    dispatchStepWorkflowMock.mockResolvedValueOnce(false);
+
+    const result = await invokeWatchdog({
+      loop: makeLoop({ watchdogEnabled: true, watchdogRetryBudget: 2 }),
+      loopRun: makeLoopRun(),
+      stepRunId: "step-run-1",
+      nodeId: "node-a",
+      nodeKind: "agent_step",
+      attempt: 1,
+      errorKind: "step_failed",
+      errorMessage: "Step failed",
+      workflowRunId: "wf-1",
+    });
+
+    expect(result).toEqual({ invoked: false });
+    expect(dispatchStepWorkflowMock).toHaveBeenCalledTimes(1);
+    expect(
+      recordedEvents.some(
+        (event) =>
+          event.eventName === "agent-loop.watchdog.decided" ||
+          event.eventName === "agent-loop.chain.dispatched",
+      ),
+    ).toBe(false);
+  });
 });
 
 describe("WD-05: skip decision with no failure edge → pause (graceful)", () => {
@@ -759,10 +915,11 @@ describe("WD-05: skip decision with no failure edge → pause (graceful)", () =>
         loopRunId: string;
         nodeId: string;
         snapshotDefinition: unknown;
-      }): Promise<MockStepRun> => {
+        expectedStepRunId: string;
+      }): Promise<MockAdvanceResult> => {
         advanceCallCount++;
         lastAdvanceNodeId = "node-b";
-        return null;
+        return { outcome: "no_failure_edge" };
       },
     );
 
@@ -836,6 +993,34 @@ describe("WD-06: pause decision → run paused + watchdog.decided emitted", () =
     expect(decidedEvent?.level).toBe("warn");
     const payload = decidedEvent?.payload as Record<string, unknown>;
     expect(payload?.["decision"]).toBe("pause");
+  });
+
+  test("chain failure during diagnosis cannot be resurrected to paused", async () => {
+    const { invokeWatchdog } = await watchdogPromise;
+    pauseTransitionWins = false;
+    mockAgentDecision = { decision: "pause", diagnosis: "Pause it" };
+
+    const result = await invokeWatchdog({
+      loop: makeLoop({ watchdogEnabled: true }),
+      loopRun: makeLoopRun(),
+      stepRunId: "step-run-1",
+      nodeId: "node-a",
+      nodeKind: "agent_step",
+      attempt: 1,
+      errorKind: "step_failed",
+      errorMessage: "Step failed",
+      workflowRunId: "wf-1",
+    });
+
+    expect(result).toEqual({ invoked: false });
+    expect(
+      recordedEvents.some(
+        (event) => event.eventName === "agent-loop.watchdog.decided",
+      ),
+    ).toBe(false);
+    expect(watchdogRunsUpdated).toContainEqual(
+      expect.objectContaining({ status: "failed" }),
+    );
   });
 });
 

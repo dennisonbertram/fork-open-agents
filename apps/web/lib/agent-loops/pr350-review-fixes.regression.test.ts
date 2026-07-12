@@ -199,6 +199,10 @@ describe("REG-350-04: RunControlError has stable kind discriminator", () => {
           return "404";
         case "illegal_transition":
           return "409";
+        case "source_deleted":
+          return "409";
+        case "source_inactive":
+          return "409";
       }
     }
 
@@ -236,6 +240,8 @@ describe("REG-350-05: pause route — non-owned run (RunControlError not_found) 
 
   mock.module("@/lib/agent-loops/config", () => ({
     isAgentLoopsEnabled,
+    getAgentLoopRepoAccess: () => ({ allowed: true }),
+    isAgentLoopRepoAllowed: () => true,
   }));
 
   const pauseRoutePromise =

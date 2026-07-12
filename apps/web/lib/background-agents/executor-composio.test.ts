@@ -29,6 +29,8 @@ import type { BackgroundAgent, BackgroundAgentRun } from "@/lib/db/schema";
 import type { ExecResult, Sandbox } from "@open-agents/sandbox";
 
 mock.module("server-only", () => ({}));
+process.env.BACKGROUND_AGENTS_ENABLED = "true";
+process.env.BACKGROUND_AGENTS_ALLOWED_REPOS = "*";
 
 // ---------------------------------------------------------------------------
 // Shared type stubs
@@ -85,15 +87,18 @@ const getBackgroundAgentRunWithAgent = mock(async () => ({
 const recordBackgroundAgentEvent = mock(async (input: EventInput) => input);
 const recordBackgroundAgentOutput = mock(async (input: OutputInput) => input);
 const updateBackgroundAgentRunStatus = mock(
-  async (input: StatusUpdateInput): Promise<BackgroundAgentRun> => ({
-    ...currentRun,
-    status: input.status,
-    workflowRunId: input.workflowRunId ?? currentRun.workflowRunId,
-    sandboxName: input.sandboxName ?? currentRun.sandboxName,
-    errorKind: input.errorKind ?? currentRun.errorKind,
-    errorMessage: input.errorMessage ?? currentRun.errorMessage,
-    outputUrl: input.outputUrl ?? currentRun.outputUrl,
-  }),
+  async (input: StatusUpdateInput): Promise<BackgroundAgentRun> => {
+    currentRun = {
+      ...currentRun,
+      status: input.status,
+      workflowRunId: input.workflowRunId ?? currentRun.workflowRunId,
+      sandboxName: input.sandboxName ?? currentRun.sandboxName,
+      errorKind: input.errorKind ?? currentRun.errorKind,
+      errorMessage: input.errorMessage ?? currentRun.errorMessage,
+      outputUrl: input.outputUrl ?? currentRun.outputUrl,
+    };
+    return currentRun;
+  },
 );
 const listBackgroundAgentEvents = mock(async () => []);
 // #798 P2-1: uncapped, composio-scoped fetch — default empty so existing
@@ -327,6 +332,7 @@ mock.module("@/lib/inference/model-option-id", () => ({
 }));
 
 mock.module("@/lib/inference/profile-resolution", () => ({
+  assertInferenceProfileRouteAvailable: mock(async () => undefined),
   resolveInferenceProfileModelSelection: mock(
     async (params: { selection: unknown }) => params.selection,
   ),
@@ -360,8 +366,13 @@ const resolveComposioToolsForBgRun = mock(
     reason: "no_slugs_selected",
   }),
 );
+let composioPolicyFailure: Error | null = null;
+const assertComposioRepoToolkitsStillAllowed = mock(async () => {
+  if (composioPolicyFailure) throw composioPolicyFailure;
+});
 
 mock.module("./composio-tools", () => ({
+  assertComposioRepoToolkitsStillAllowed,
   resolveComposioToolsForBgRun,
 }));
 
@@ -406,6 +417,9 @@ function buildRun(
     startedAt: null,
     finishedAt: null,
     resultSummary: null,
+    executionSnapshot: null,
+    definitionVersion: null,
+    definitionHash: null,
     createdAt: now,
     updatedAt: now,
     ...overrides,
@@ -473,6 +487,8 @@ beforeEach(() => {
   generate.mockClear();
   listEnabledToolGrantsForAgent.mockClear();
   resolveComposioToolsForBgRun.mockClear();
+  assertComposioRepoToolkitsStillAllowed.mockClear();
+  composioPolicyFailure = null;
 
   // Default: no toolkit slugs on agent, no grants, resolver returns "off"
   currentAgent = buildAgent({ composioToolkitSlugs: [] });
@@ -500,6 +516,58 @@ afterAll(() => {
 // ---------------------------------------------------------------------------
 
 describe("Background agent Composio tool injection (Phase 5)", () => {
+  test("blocks a cached Composio tool when repository policy changes before execution", async () => {
+    const executeTool = mock(async () => ({ ok: true }));
+    currentAgent = buildAgent({ composioToolkitSlugs: ["github", "slack"] });
+    resolveComposioToolsForBgRun.mockImplementation(async () => ({
+      status: "ready" as const,
+      tools: {
+        github_create_issue: {
+          description: "Create a GitHub issue",
+          execute: executeTool,
+        },
+      },
+      toolkitSlugs: ["github"],
+      disconnectedToolkits: [],
+    }));
+    generate.mockImplementationOnce(async (input: GenerateCall) => {
+      generateCalls.push(input);
+      composioPolicyFailure = new Error(
+        "Repository policy revoked Composio toolkit github.",
+      );
+      const tool = input.tools?.github_create_issue as {
+        execute?: () => Promise<unknown>;
+      };
+      await tool.execute?.();
+      return {
+        finishReason: "stop",
+        rawFinishReason: "stop",
+        response: { messages: [] },
+        steps: [],
+        usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+        totalUsage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+      };
+    });
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "workflow-1",
+    });
+
+    expect(assertComposioRepoToolkitsStillAllowed).toHaveBeenCalledWith({
+      userId: "user-1",
+      repoOwner: "acme",
+      repoName: "widgets",
+      toolkitSlugs: ["github"],
+    });
+    expect(executeTool).not.toHaveBeenCalled();
+    expect(recordedEvent("background-agent.run.failed")).toMatchObject({
+      status: "failed",
+      errorKind: "agent_disabled",
+    });
+  });
+
   /**
    * BT-001: When agent has no composio toolkit slugs, the run proceeds exactly
    * as before — no composio tools, no change to generate call behavior.

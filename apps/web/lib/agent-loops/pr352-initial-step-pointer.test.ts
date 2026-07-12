@@ -121,9 +121,30 @@ const stepRunsCreated: Array<{
 // ── Store mocks ───────────────────────────────────────────────────────────────
 
 let createAgentLoopRunResult: {
-  run: { id: string; status: string };
+  run: {
+    id: string;
+    status: string;
+    definitionSnapshot: Record<string, unknown>;
+  };
   created: boolean;
-} | null = { run: { id: "loop-run-1", status: "queued" }, created: true };
+} | null = {
+  run: {
+    id: "loop-run-1",
+    status: "queued",
+    definitionSnapshot: {
+      nodes: [
+        {
+          id: "start-node",
+          kind: "start",
+          label: "Start",
+          position: { x: 0, y: 0 },
+        },
+      ],
+      edges: [],
+    },
+  },
+  created: true,
+};
 
 const createAgentLoopRun = mock(async () => createAgentLoopRunResult);
 const hasActiveRunForLoop = mock(async () => false);
@@ -180,6 +201,10 @@ const getMaxAttemptForNode = mock(async () => 0);
 // Both go through the same module registry key when resolved by Bun from the same dir.
 // We mock both aliases to be safe.
 mock.module("@/lib/agent-loops/store", () => ({
+  isAgentLoopRunSourceLive: mock(async () => true),
+  createAndAdvanceAgentLoopStep: mock(async () => ({
+    outcome: "source_deleted" as const,
+  })),
   createAgentLoopRun,
   hasActiveRunForLoop,
   getOwnedAgentLoop,
@@ -199,6 +224,10 @@ mock.module("@/lib/agent-loops/store", () => ({
 }));
 
 mock.module("./store", () => ({
+  isAgentLoopRunSourceLive: mock(async () => true),
+  createAndAdvanceAgentLoopStep: mock(async () => ({
+    outcome: "source_deleted" as const,
+  })),
   createAgentLoopRun,
   hasActiveRunForLoop,
   getOwnedAgentLoop,
@@ -250,6 +279,7 @@ mock.module("@/app/workflows/agent-loop-step", () => ({
 
 mock.module("@/lib/agent-loops/config", () => ({
   isAgentLoopsEnabled: () => true,
+  getAgentLoopRepoAccess: () => ({ allowed: true }),
   isAgentLoopRepoAllowed: () => true,
 }));
 
@@ -335,7 +365,11 @@ function resetAll() {
   setInitialStepPointerCalls.length = 0;
   workflowStartCalls.length = 0;
   createAgentLoopRunResult = {
-    run: { id: "loop-run-1", status: "queued" },
+    run: {
+      id: "loop-run-1",
+      status: "queued",
+      definitionSnapshot: activeLoopFixture().definition,
+    },
     created: true,
   };
 

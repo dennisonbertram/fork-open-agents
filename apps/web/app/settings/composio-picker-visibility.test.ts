@@ -98,6 +98,14 @@ describe("BT-224B-008 + BT-224B-009: AGENT_ROLE_DESCRIPTIONS covers all agent ke
     }
   });
 
+  test("visible descriptions call Main a role and the other entries helper roles", () => {
+    expect(AGENT_ROLE_DESCRIPTIONS.main).toMatch(/Main role/);
+    for (const key of ["explorer", "executor", "design"] as const) {
+      expect(AGENT_ROLE_DESCRIPTIONS[key]).toMatch(/Helper role/);
+      expect(AGENT_ROLE_DESCRIPTIONS[key]).not.toMatch(/subagent/i);
+    }
+  });
+
   test("descriptions cover all four known agent keys", () => {
     expect(Object.keys(AGENT_ROLE_DESCRIPTIONS).sort()).toEqual(
       [...COMPOSIO_AGENT_KEYS].sort(),

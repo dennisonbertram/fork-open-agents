@@ -46,17 +46,22 @@ import {
   advanceToFailureEdge,
   dispatchStepWorkflow,
   recordAgentLoopEvent,
+  isAgentLoopRunSourceLive,
 } from "./store";
-import type { AgentLoop, AgentLoopRun } from "@/lib/db/schema";
+import type { AgentLoopRun } from "@/lib/db/schema";
+import type { AgentLoopExecutionPolicy } from "./execution-snapshot";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export type InvokeWatchdogParams = {
-  loop: AgentLoop & {
-    watchdogEnabled: boolean;
-    watchdogInstructions: string | null;
-    watchdogRetryBudget: number;
-  };
+  loop: Pick<
+    AgentLoopExecutionPolicy,
+    | "repoOwner"
+    | "repoName"
+    | "watchdogEnabled"
+    | "watchdogInstructions"
+    | "watchdogRetryBudget"
+  >;
   loopRun: AgentLoopRun;
   stepRunId: string;
   nodeId: string;
@@ -78,6 +83,18 @@ export type InvokeWatchdogResult = {
   invoked: boolean;
   decision?: "retry" | "skip" | "pause";
 };
+
+async function finalizeWatchdogRaceLost(
+  watchdogRunId: string,
+): Promise<InvokeWatchdogResult> {
+  await updateAgentLoopWatchdogRun({
+    id: watchdogRunId,
+    status: "failed",
+    diagnosis: "Run state changed before the watchdog decision could apply.",
+    finishedAt: new Date(),
+  });
+  return { invoked: false };
+}
 
 // ── Decision schema ───────────────────────────────────────────────────────────
 
@@ -216,6 +233,15 @@ export async function invokeWatchdog(
   }
 
   const loopRunId = loopRun.id;
+  const isExecutionAllowed = () =>
+    isAgentLoopRunSourceLive(loopRunId, {
+      repoOwner: loop.repoOwner,
+      repoName: loop.repoName,
+    });
+
+  if (!(await isExecutionAllowed())) {
+    return { invoked: false };
+  }
 
   // (b) Budget pre-check
   const priorRetries = await countWatchdogRetryDecisions({ loopRunId, nodeId });
@@ -256,7 +282,9 @@ export async function invokeWatchdog(
       diagnosis: truncate(diagnosis, MAX_DIAGNOSIS_STORE_LENGTH),
     });
 
-    await pauseLoopRunSystem(loopRunId);
+    if (!(await pauseLoopRunSystem(loopRunId))) {
+      return finalizeWatchdogRaceLost(watchdogRow.id);
+    }
 
     await recordAgentLoopEvent({
       loopRunId,
@@ -350,6 +378,16 @@ export async function invokeWatchdog(
     }
   }
 
+  if (!(await isExecutionAllowed())) {
+    await updateAgentLoopWatchdogRun({
+      id: watchdogRow.id,
+      status: "failed",
+      diagnosis: "Loop execution authorization was revoked.",
+      finishedAt: new Date(),
+    });
+    return { invoked: false };
+  }
+
   // (g) Apply decision
   // Coerce illegal decisions: if the parsed decision is not in legalDecisions, force pause.
   // This is used by stall-sweep invocations where 'skip' is illegal (no live failure edge).
@@ -367,7 +405,9 @@ export async function invokeWatchdog(
 
   if (parseErrorKind) {
     // Invalid/timeout → pause
-    await pauseLoopRunSystem(loopRunId);
+    if (!(await pauseLoopRunSystem(loopRunId))) {
+      return finalizeWatchdogRaceLost(watchdogRow.id);
+    }
 
     await recordAgentLoopEvent({
       loopRunId,
@@ -410,12 +450,16 @@ export async function invokeWatchdog(
     try {
       const newStepRun = await retryCurrentStepForWatchdog({
         runId: loopRunId,
+        expectedStepRunId: stepRunId,
         hint,
       });
 
       // Dispatch the new step run
       try {
-        await dispatchStepWorkflow(newStepRun.id);
+        const dispatched = await dispatchStepWorkflow(newStepRun.id);
+        if (!dispatched) {
+          return finalizeWatchdogRaceLost(watchdogRow.id);
+        }
 
         await recordAgentLoopEvent({
           loopRunId,
@@ -457,22 +501,34 @@ export async function invokeWatchdog(
       // "retry" happened (issue #763 — watchdog decision integrity).
       retryDispatchFailed = true;
       finalDecision = "pause";
-      await pauseLoopRunSystem(loopRunId);
+      if (!(await pauseLoopRunSystem(loopRunId))) {
+        return finalizeWatchdogRaceLost(watchdogRow.id);
+      }
     }
   } else if (finalDecision === "skip") {
-    const advancedStepRun = await advanceToFailureEdge({
+    const advanceResult = await advanceToFailureEdge({
       loopRunId,
+      expectedStepRunId: stepRunId,
       nodeId,
       snapshotDefinition: loopRun.definitionSnapshot,
     });
 
-    if (!advancedStepRun) {
+    if (advanceResult.outcome === "race_lost") {
+      return finalizeWatchdogRaceLost(watchdogRow.id);
+    }
+    if (advanceResult.outcome === "no_failure_edge") {
       // No failure edge — pause (graceful, not an error)
-      await pauseLoopRunSystem(loopRunId);
+      if (!(await pauseLoopRunSystem(loopRunId))) {
+        return finalizeWatchdogRaceLost(watchdogRow.id);
+      }
     } else {
+      const advancedStepRun = advanceResult.stepRun;
       // Dispatch the queued step run that advanceToFailureEdge created
       try {
-        await dispatchStepWorkflow(advancedStepRun.id);
+        const dispatched = await dispatchStepWorkflow(advancedStepRun.id);
+        if (!dispatched) {
+          return finalizeWatchdogRaceLost(watchdogRow.id);
+        }
 
         await recordAgentLoopEvent({
           loopRunId,
@@ -510,7 +566,9 @@ export async function invokeWatchdog(
     }
   } else {
     // pause
-    await pauseLoopRunSystem(loopRunId);
+    if (!(await pauseLoopRunSystem(loopRunId))) {
+      return finalizeWatchdogRaceLost(watchdogRow.id);
+    }
   }
 
   // (h) Emit watchdog.decided

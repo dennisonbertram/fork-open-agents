@@ -74,7 +74,10 @@ const whereMockLeft = mock(() => ({
 const leftJoinMock = mock(() => ({ where: whereMockLeft }));
 const fromMock = mock(() => ({
   leftJoin: leftJoinMock,
-  where: mock(() => ({ limit: limitMockLeft })),
+  where: mock(() => ({
+    limit: limitMockLeft,
+    for: mock(() => ({ limit: limitMockLeft })),
+  })),
 }));
 const selectMock = mock((_fields?: unknown) => ({ from: fromMock }));
 
@@ -106,6 +109,7 @@ mock.module("@/lib/db/client", () => ({
         insert: insertMock,
         update: txUpdateMock,
         delete: deleteMock,
+        select: selectMock,
         query: {
           agentLoops: { findFirst: txFindFirstMock },
           agentLoopRuns: { findFirst: txFindFirstMock },
@@ -152,24 +156,6 @@ const VALID_DEFINITION = {
   edges: [{ id: "e1", source: "s", target: "e", when: "always" }],
 };
 
-function makeLoop(overrides: Partial<Record<string, unknown>> = {}) {
-  return {
-    id: "loop-1",
-    userId: "user-1",
-    name: "Test Loop",
-    description: null,
-    repoOwner: "acme",
-    repoName: "widgets",
-    definition: VALID_DEFINITION,
-    status: "draft",
-    guardrails: null,
-    permissions: {},
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    ...overrides,
-  };
-}
-
 function makeLoopRun(overrides: Partial<Record<string, unknown>> = {}) {
   return {
     id: "run-1",
@@ -177,6 +163,9 @@ function makeLoopRun(overrides: Partial<Record<string, unknown>> = {}) {
     userId: "user-1",
     status: "queued",
     definitionSnapshot: { nodes: [], edges: [] },
+    executionSnapshot: null,
+    definitionVersion: null,
+    definitionHash: null,
     currentNodeId: null,
     currentStepRunId: null,
     iterationCount: 0,
@@ -248,15 +237,10 @@ describe("REGRESSION-002: deleteAgentLoop returns false when userId doesn't own 
   beforeEach(resetMocks);
 
   test("returns false when delete returns empty (wrong owner)", async () => {
-    deleteMock.mockReturnValueOnce({
-      where: mock(() => ({
-        returning: mock(() => []),
-      })),
-    });
-
     const store = await storePromise;
     const result = await store.deleteAgentLoop("attacker-user", "loop-victim");
     expect(result).toBe(false);
+    expect(deleteMock).not.toHaveBeenCalled();
   });
 });
 
@@ -471,14 +455,9 @@ describe("REGRESSION-009: createAgentLoopRun duplicate key returns existing run,
   beforeEach(resetMocks);
 
   test("second call with same idempotencyKey returns {run, created:false} without throwing", async () => {
-    const loop = makeLoop();
     const existing = makeLoopRun({ idempotencyKey: "key-retry" });
 
-    // Ownership check passes
-    findFirstMock.mockResolvedValueOnce(loop);
-    // Conflict suppressed — insert returns nothing
-    returningMock.mockImplementationOnce(() => []);
-    // Fetch of the pre-existing run
+    // The accepted winner is returned before consulting the mutable source.
     findFirstMock.mockResolvedValueOnce(existing);
 
     const store = await storePromise;
@@ -603,6 +582,7 @@ describe("REGRESSION-ST: createAgentLoopWatchdogRun startedAt persistence (M3-01
   beforeEach(resetMocks);
 
   test("ST-1: startedAt: new Date() is included in the insert values", async () => {
+    queryResult = [{ id: "run-1", loopId: "loop-1" }];
     const now = new Date();
     const watchdogRow = {
       id: "wd-1",
@@ -642,6 +622,7 @@ describe("REGRESSION-ST: createAgentLoopWatchdogRun startedAt persistence (M3-01
   });
 
   test("ST-2: without startedAt → inserted row does NOT include startedAt (or has undefined/null)", async () => {
+    queryResult = [{ id: "run-1", loopId: "loop-1" }];
     const watchdogRow = {
       id: "wd-2",
       loopRunId: "run-1",

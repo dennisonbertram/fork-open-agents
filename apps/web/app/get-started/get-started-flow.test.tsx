@@ -43,22 +43,10 @@ describe("GetStartedFlow - github status auto-open", () => {
 
     const html = renderToStaticMarkup(<GetStartedFlow />);
 
-    // Step 2's panel must be the one in the expanded (grid-rows-[1fr]) state,
-    // not collapsed (grid-rows-[0fr]), even though `step` is absent.
     const lowerHtml = html.toLowerCase();
-    const step2PanelStart = lowerHtml.indexOf(">connect github<");
-    expect(step2PanelStart).toBeGreaterThan(-1);
-    const panelStart = lowerHtml.lastIndexOf(
-      '<div class="border-b border-white/10">',
-      step2PanelStart,
-    );
-    const panelSection = html.slice(panelStart);
-    const gridDivStart = panelSection.indexOf(
-      '<div class="grid transition-all',
-    );
-    expect(panelSection.slice(gridDivStart, gridDivStart + 200)).toContain(
-      "grid-rows-[1fr]",
-    );
+    expect(lowerHtml).toContain("connect github");
+    expect(lowerHtml).toContain("github account not connected");
+    expect(html).not.toContain("grid-rows-[0fr]");
   });
 
   test("renders the GitHubStatusNotice inline state for the given status", async () => {
@@ -105,6 +93,34 @@ describe("GetStartedFlow - reconnect intent is explicit (#781)", () => {
     expect(html.toLowerCase()).not.toContain("reconnect your github account");
     expect(html.toLowerCase()).not.toContain("reconnect github");
     expect(html.toLowerCase()).toContain("connect your github account");
+  });
+});
+
+describe("GetStartedFlow - product next action (#967)", () => {
+  test("connected default renders Start a Session without another Connect action", async () => {
+    searchParamValues = { step: "github", next: "/sessions" };
+    sessionState = { hasGitHubAccount: true, hasGitHubInstallations: true };
+    const { GetStartedFlow } = await flowModulePromise;
+    const html = renderToStaticMarkup(<GetStartedFlow />);
+    expect(html).toContain("Start a Session");
+    expect(html).not.toMatch(/<button[^>]*>Connect GitHub<\/button>/);
+  });
+
+  test("connected saved internal destination renders Continue", async () => {
+    searchParamValues = { step: "github", next: "/settings/profile" };
+    sessionState = { hasGitHubAccount: true, hasGitHubInstallations: true };
+    const { GetStartedFlow } = await flowModulePromise;
+    const html = renderToStaticMarkup(<GetStartedFlow />);
+    expect(html).toContain(">Continue<");
+  });
+
+  test("linked identity without installation keeps Install GitHub App", async () => {
+    searchParamValues = { step: "github", next: "/sessions" };
+    sessionState = { hasGitHubAccount: true, hasGitHubInstallations: false };
+    const { GetStartedFlow } = await flowModulePromise;
+    expect(renderToStaticMarkup(<GetStartedFlow />)).toContain(
+      "Install GitHub App",
+    );
   });
 });
 

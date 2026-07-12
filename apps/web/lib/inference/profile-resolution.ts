@@ -11,18 +11,54 @@ import {
   INFERENCE_PROFILE_REENTER_KEY_MESSAGE,
   recordInferenceProfileTestResult,
 } from "@/lib/db/inference-profiles";
+import type { InferenceProfileProvider } from "@/lib/inference/types";
 import { normalizeInferenceProfileBaseUrl } from "./model-routing";
 
 export class InferenceProfileResolutionError extends Error {
   override name = "InferenceProfileResolutionError";
 }
 
+export type ExpectedInferenceProfileRoute = {
+  provider: InferenceProfileProvider;
+  baseUrl: string | null;
+};
+
+export async function assertInferenceProfileRouteAvailable(params: {
+  userId: string;
+  inferenceProfileId: string;
+  provider: InferenceProfileProvider;
+  baseUrl: string | null;
+}) {
+  const profile = await getInferenceProfileByIdForUser(
+    params.userId,
+    params.inferenceProfileId,
+  );
+  if (!profile || !profile.enabled) {
+    throw new InferenceProfileResolutionError(
+      "Selected inference profile is unavailable. Choose another User model or switch back to Vercel AI Gateway.",
+    );
+  }
+
+  const liveBaseUrl = normalizeInferenceProfileBaseUrl(
+    profile.provider,
+    profile.baseUrl,
+  );
+  if (profile.provider !== params.provider || liveBaseUrl !== params.baseUrl) {
+    throw new InferenceProfileResolutionError(
+      "Selected inference profile changed after this run was queued. Queue a new run to use the updated route.",
+    );
+  }
+
+  return profile;
+}
+
 export async function resolveInferenceProfileModelSelection(params: {
   userId: string;
   inferenceProfileId: string | null | undefined;
   selection: AgentModelSelection;
+  expectedRoute?: ExpectedInferenceProfileRoute;
 }): Promise<AgentModelSelection> {
-  const { inferenceProfileId, selection, userId } = params;
+  const { expectedRoute, inferenceProfileId, selection, userId } = params;
 
   if (!inferenceProfileId) {
     return {
@@ -34,10 +70,13 @@ export async function resolveInferenceProfileModelSelection(params: {
     };
   }
 
-  const profile = await getInferenceProfileByIdForUser(
-    userId,
-    inferenceProfileId,
-  );
+  const profile = expectedRoute
+    ? await assertInferenceProfileRouteAvailable({
+        userId,
+        inferenceProfileId,
+        ...expectedRoute,
+      })
+    : await getInferenceProfileByIdForUser(userId, inferenceProfileId);
   if (!profile || !profile.enabled) {
     throw new InferenceProfileResolutionError(
       "Selected inference profile is unavailable. Choose another User model or switch back to Vercel AI Gateway.",

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterAll, beforeEach, describe, expect, mock, test } from "bun:test";
 
 mock.module("server-only", () => ({}));
 
@@ -8,6 +8,11 @@ const updateCalls: Array<{
 }> = [];
 const connectCalls: Array<Record<string, unknown>> = [];
 let probeCalls = 0;
+let ownedSessionAllowed = true;
+const consoleErrors: string[] = [];
+const consoleWarnings: string[] = [];
+const originalConsoleError = console.error;
+const originalConsoleWarn = console.warn;
 
 let probeResult: {
   success: boolean;
@@ -33,7 +38,13 @@ let sessionRecord: {
 
 mock.module("@/app/api/sessions/_lib/session-context", () => ({
   requireAuthenticatedUser: async () => ({ ok: true, userId: "user-1" }),
-  requireOwnedSession: async () => ({ ok: true, sessionRecord }),
+  requireOwnedSession: async () =>
+    ownedSessionAllowed
+      ? { ok: true, sessionRecord }
+      : {
+          ok: false,
+          response: Response.json({ error: "Forbidden" }, { status: 403 }),
+        },
 }));
 
 mock.module("@/lib/db/sessions", () => ({
@@ -92,11 +103,25 @@ mock.module("@open-agents/sandbox", () => ({
 
 const routeModulePromise = import("./route");
 
+afterAll(() => {
+  console.error = originalConsoleError;
+  console.warn = originalConsoleWarn;
+});
+
 describe("/api/sandbox/reconnect", () => {
   beforeEach(() => {
     updateCalls.length = 0;
     connectCalls.length = 0;
     probeCalls = 0;
+    ownedSessionAllowed = true;
+    consoleErrors.length = 0;
+    consoleWarnings.length = 0;
+    console.error = (...args: unknown[]) => {
+      consoleErrors.push(args.map(String).join(" "));
+    };
+    console.warn = (...args: unknown[]) => {
+      consoleWarnings.push(args.map(String).join(" "));
+    };
     probeResult = {
       success: true,
       stdout: "ok",
@@ -147,6 +172,19 @@ describe("/api/sandbox/reconnect", () => {
     expect(payload.expiresAt).toBe(sessionRecord.sandboxState.expiresAt);
     expect(connectCalls).toHaveLength(0);
     expect(probeCalls).toBe(0);
+    expect(updateCalls).toHaveLength(0);
+  });
+
+  test("does not reveal sandbox identity or probe the provider across ownership boundaries", async () => {
+    const { GET } = await routeModulePromise;
+    ownedSessionAllowed = false;
+
+    const response = await GET(
+      new Request("http://localhost/api/sandbox/reconnect?sessionId=session-1"),
+    );
+
+    expect(response.status).toBe(403);
+    expect(connectCalls).toHaveLength(0);
     expect(updateCalls).toHaveLength(0);
   });
 
@@ -206,6 +244,64 @@ describe("/api/sandbox/reconnect", () => {
       type: "vercel",
       sandboxName: "session_session-1",
     });
+  });
+
+  test("returns typed redacted evidence when the persisted sandbox is unavailable", async () => {
+    const { GET } = await routeModulePromise;
+
+    probeResult = {
+      success: false,
+      stdout: "",
+      stderr: "Status code 410 is not ok provider_token=super-secret",
+    };
+
+    const response = await GET(
+      new Request(
+        "http://localhost/api/sandbox/reconnect?sessionId=session-1",
+        { headers: { "x-request-id": "request-950" } },
+      ),
+    );
+    const payload = (await response.json()) as {
+      status: string;
+      errorKind?: string;
+      requestId?: string;
+    };
+
+    expect(response.status).toBe(200);
+    expect(payload.status).toBe("expired");
+    expect(payload.errorKind).toBe("sandbox_unavailable");
+    expect(payload.requestId).toBe("request-950");
+    expect(JSON.stringify(payload)).not.toContain("super-secret");
+    expect(consoleErrors.join("\n")).not.toContain("super-secret");
+  });
+
+  test("preserves runtime state with typed redacted evidence after a transient reconnect failure", async () => {
+    const { GET } = await routeModulePromise;
+    probeResult = {
+      success: false,
+      stdout: "",
+      stderr: "temporary provider failure provider_token=super-secret",
+    };
+
+    const response = await GET(
+      new Request(
+        "http://localhost/api/sandbox/reconnect?sessionId=session-1",
+        { headers: { "x-request-id": "request-950" } },
+      ),
+    );
+    const payload = (await response.json()) as {
+      status: string;
+      requestId?: string;
+      warningKind?: string;
+    };
+
+    expect(response.status).toBe(200);
+    expect(payload.status).toBe("connected");
+    expect(payload.warningKind).toBe("sandbox_reconnect_transient");
+    expect(payload.requestId).toBe("request-950");
+    expect(JSON.stringify(payload)).not.toContain("super-secret");
+    expect(consoleWarnings.join("\n")).not.toContain("super-secret");
+    expect(updateCalls).toHaveLength(0);
   });
 
   test("drops a missing sandbox resume handle when the reconnect flow hits a 404", async () => {

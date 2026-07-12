@@ -250,7 +250,7 @@ const githubEvent = {
 
 function resetIntMocks() {
   process.env.BACKGROUND_AGENTS_ENABLED = "true";
-  delete process.env.BACKGROUND_AGENTS_ALLOWED_REPOS;
+  process.env.BACKGROUND_AGENTS_ALLOWED_REPOS = "*";
   dbQueryRows = [];
   workflowStart.mockClear();
   dispatchLoopRunForTrigger.mockClear();

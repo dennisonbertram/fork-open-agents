@@ -21,16 +21,37 @@
  * BT-765-02: manual dispatch seeds run.context.trigger = { source: "manual" }.
  */
 
-import { beforeEach, describe, expect, mock, test } from "bun:test";
+import { beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 
 mock.module("server-only", () => ({}));
 
 // ── Store mocks ────────────────────────────────────────────────────────────────
 
 let createAgentLoopRunResult: {
-  run: { id: string; status: string };
+  run: {
+    id: string;
+    status: string;
+    definitionSnapshot: Record<string, unknown>;
+  };
   created: boolean;
-} | null = { run: { id: "loop-run-1", status: "queued" }, created: true };
+} | null = {
+  run: {
+    id: "loop-run-1",
+    status: "queued",
+    definitionSnapshot: {
+      nodes: [
+        {
+          id: "start-node",
+          kind: "start",
+          label: "Start",
+          position: { x: 0, y: 0 },
+        },
+      ],
+      edges: [],
+    },
+  },
+  created: true,
+};
 
 let hasActiveRunResult = false;
 let ownedLoopResult: {
@@ -94,6 +115,10 @@ const conditionallyTransitionRunStatus = mock(
 );
 
 mock.module("@/lib/agent-loops/store", () => ({
+  isAgentLoopRunSourceLive: mock(async () => true),
+  createAndAdvanceAgentLoopStep: mock(async () => ({
+    outcome: "source_deleted" as const,
+  })),
   createAgentLoopRun,
   hasActiveRunForLoop,
   getOwnedAgentLoop,
@@ -126,18 +151,44 @@ mock.module("@/app/workflows/agent-loop-step", () => ({
 // ── Config mocks ──────────────────────────────────────────────────────────────
 
 let loopsEnabled = true;
-let allowedRepos: string | undefined = undefined;
+let allowedRepos: string | undefined = "*";
+
+function getTestRepoAccess(owner: string, repo: string) {
+  if (allowedRepos === undefined || allowedRepos.trim().length === 0) {
+    return {
+      allowed: false as const,
+      reason: "repo_allowlist_unconfigured" as const,
+      policyState: "missing" as const,
+    };
+  }
+  if (allowedRepos.trim() === "*") {
+    return { allowed: true as const, policyState: "wildcard" as const };
+  }
+  const entries = allowedRepos
+    .split(",")
+    .map((entry) => entry.trim().toLowerCase());
+  if (entries.some((entry) => !entry.includes("/") || entry === "*")) {
+    return {
+      allowed: false as const,
+      reason: "repo_allowlist_invalid" as const,
+      policyState: "invalid" as const,
+    };
+  }
+  const key = `${owner.toLowerCase()}/${repo.toLowerCase()}`;
+  return entries.includes(key)
+    ? { allowed: true as const, policyState: "list" as const }
+    : {
+        allowed: false as const,
+        reason: "repo_not_allowed" as const,
+        policyState: "list" as const,
+      };
+}
 
 mock.module("@/lib/agent-loops/config", () => ({
   isAgentLoopsEnabled: () => loopsEnabled,
-  isAgentLoopRepoAllowed: (owner: string, repo: string) => {
-    if (!allowedRepos) return true;
-    const key = `${owner.toLowerCase()}/${repo.toLowerCase()}`;
-    return allowedRepos
-      .split(",")
-      .map((s) => s.trim())
-      .includes(key);
-  },
+  getAgentLoopRepoAccess: getTestRepoAccess,
+  isAgentLoopRepoAllowed: (owner: string, repo: string) =>
+    getTestRepoAccess(owner, repo).allowed,
 }));
 
 // ── Validation mock ───────────────────────────────────────────────────────────
@@ -239,7 +290,7 @@ const githubEvent = {
 
 function resetMocks() {
   loopsEnabled = true;
-  allowedRepos = undefined;
+  allowedRepos = "*";
   workflowStartShouldThrow = false;
   hasActiveRunResult = false;
   ownedLoopResult = activeLoop;
@@ -248,7 +299,11 @@ function resetMocks() {
     definition: validDefinition,
   };
   createAgentLoopRunResult = {
-    run: { id: "loop-run-1", status: "queued" },
+    run: {
+      id: "loop-run-1",
+      status: "queued",
+      definitionSnapshot: validDefinition,
+    },
     created: true,
   };
   start.mockClear();
@@ -351,7 +406,11 @@ describe("dispatchLoopRunForTrigger", () => {
   // BT-326-02: duplicate delivery dedupes
   test("BT-326-02: duplicate delivery returns existing run without dispatching", async () => {
     createAgentLoopRunResult = {
-      run: { id: "loop-run-existing", status: "queued" },
+      run: {
+        id: "loop-run-existing",
+        status: "queued",
+        definitionSnapshot: validDefinition,
+      },
       created: false,
     };
     const { dispatchLoopRunForTrigger } = await bridgeModulePromise;
@@ -428,6 +487,55 @@ describe("dispatchLoopRunForTrigger", () => {
     expect(result.reason).toBe("repo_not_allowed");
     expect(createAgentLoopRun).not.toHaveBeenCalled();
     expect(start).not.toHaveBeenCalled();
+  });
+
+  test("refuses a trigger before run creation when the loop allowlist is missing", async () => {
+    allowedRepos = undefined;
+    const warnSpy = spyOn(console, "warn").mockImplementation(() => undefined);
+    const { dispatchLoopRunForTrigger } = await bridgeModulePromise;
+
+    const result = await dispatchLoopRunForTrigger({
+      loop: activeLoop,
+      trigger: enabledTrigger,
+      event: githubEvent,
+      requestId: "req-missing-loop-policy",
+    });
+
+    expect(result).toEqual({
+      skipped: true,
+      reason: "repo_allowlist_unconfigured",
+    });
+    expect(createAgentLoopRun).not.toHaveBeenCalled();
+    expect(warnSpy).toHaveBeenCalledWith(
+      "[agent-loops] repository policy refused dispatch",
+      expect.objectContaining({
+        eventName: "agent-loop.dispatch.repo-policy-refused",
+        policyState: "missing",
+        reason: "repo_allowlist_unconfigured",
+        requestId: "req-missing-loop-policy",
+      }),
+    );
+    warnSpy.mockRestore();
+  });
+
+  test("distinguishes an invalid loop allowlist from valid-list exclusion", async () => {
+    allowedRepos = "*,acme/widgets";
+    const warnSpy = spyOn(console, "warn").mockImplementation(() => undefined);
+    const { dispatchLoopRunForTrigger } = await bridgeModulePromise;
+
+    const result = await dispatchLoopRunForTrigger({
+      loop: activeLoop,
+      trigger: enabledTrigger,
+      event: githubEvent,
+      requestId: "req-invalid-loop-policy",
+    });
+
+    expect(result).toEqual({
+      skipped: true,
+      reason: "repo_allowlist_invalid",
+    });
+    expect(createAgentLoopRun).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
   });
 
   // BT-326-06: inactive-loop skip

@@ -27,8 +27,8 @@ import {
 } from "./composio-copy";
 
 describe("TOOL_PROFILES_DESCRIPTION (#803 item 2)", () => {
-  test("BT-803-002 describes profiles as chat-usable, not something background agents/loops consume automatically", () => {
-    expect(TOOL_PROFILES_DESCRIPTION).toMatch(/chat/i);
+  test("BT-803-002 describes profiles as Session-usable, not something Automations/loops consume automatically", () => {
+    expect(TOOL_PROFILES_DESCRIPTION).toMatch(/session/i);
     // Must NOT claim background agents/loops use a PROFILE automatically —
     // they only consult toolkit slugs set directly on their own editor.
     expect(TOOL_PROFILES_DESCRIPTION).not.toMatch(
@@ -36,8 +36,8 @@ describe("TOOL_PROFILES_DESCRIPTION (#803 item 2)", () => {
     );
   });
 
-  test("BT-803-002b explains background agents and loops pick toolkits directly on their own editor instead", () => {
-    expect(TOOL_PROFILES_DESCRIPTION).toMatch(/background agents/i);
+  test("BT-803-002b explains Automations and loops pick toolkits directly in their own editor instead", () => {
+    expect(TOOL_PROFILES_DESCRIPTION).toMatch(/automations/i);
     expect(TOOL_PROFILES_DESCRIPTION).toMatch(/loops/i);
     expect(TOOL_PROFILES_DESCRIPTION).toMatch(
       /pick toolkits directly|choose toolkits directly/i,
@@ -55,7 +55,7 @@ describe("EMPTY_TOOL_PROFILES_TEXT (#803 item 3)", () => {
     expect(EMPTY_TOOL_PROFILES_TEXT).toMatch(/no tool profiles yet/i);
     expect(EMPTY_TOOL_PROFILES_TEXT).toMatch(/gmail|slack/i);
     expect(EMPTY_TOOL_PROFILES_TEXT).toMatch(
-      /hand.*to an agent|pick.*in a chat/i,
+      /assign.*to a chat role|pick.*in a session/i,
     );
   });
 });

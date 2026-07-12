@@ -28,6 +28,7 @@ export interface WorkflowPickerItemsProps {
 
 export interface WorkflowPickerCompactProps {
   disabled?: boolean;
+  exposed: boolean;
   selectedWorkflowId?: string | null;
   onSelectWorkflow?: (id: string | null) => void;
 }
@@ -150,15 +151,20 @@ export function WorkflowPickerItems({
  */
 export function WorkflowPickerCompact({
   disabled = false,
+  exposed,
   selectedWorkflowId = null,
   onSelectWorkflow,
 }: WorkflowPickerCompactProps) {
   const [open, setOpen] = useState(false);
 
   const { data, error, isLoading } = useSWR(
-    "/api/workflows/catalog",
+    exposed ? "/api/workflows/catalog" : null,
     fetchWorkflowCatalog,
   );
+
+  if (!exposed) {
+    return null;
+  }
 
   const workflows = data?.workflows ?? [];
   const hasWorkflows = workflows.length > 0;

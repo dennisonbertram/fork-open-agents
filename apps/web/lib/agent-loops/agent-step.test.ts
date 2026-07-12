@@ -55,6 +55,15 @@ import type {
   AgentLoopRun,
   AgentLoopStepRun,
 } from "@/lib/db/schema";
+import {
+  buildAgentLoopExecutionSnapshot,
+  hashAgentLoopExecutionSnapshot,
+  toAgentLoopExecutionPolicy,
+} from "./execution-snapshot";
+import {
+  buildNormalizedLoopStepInput,
+  type NormalizedUnattendedStepInputV1,
+} from "@/lib/unattended-runtime/normalized-step-input";
 
 mock.module("server-only", () => ({}));
 
@@ -117,7 +126,30 @@ const updateAgentLoopRunContextMock = mock(async (input: RunContextInput) => {
   return { ...currentLoopRun, context: input.context };
 });
 
+let sourceLiveResults: boolean[] = [];
+let liveSourceState: "deleted" | "inactive" | "active" = "deleted";
+let agentLoopsEnabled = true;
+let repoAllowed = true;
+const isAgentLoopRunSourceLiveMock = mock(
+  async () => sourceLiveResults.shift() ?? true,
+);
+const getAgentLoopRunWithLoopMock = mock(async () => ({
+  run: currentLoopRun,
+  loop:
+    liveSourceState === "deleted"
+      ? null
+      : {
+          ...currentLoop,
+          status: liveSourceState === "active" ? "active" : "inactive",
+        },
+}));
+
 mock.module("./store", () => ({
+  isAgentLoopRunSourceLive: isAgentLoopRunSourceLiveMock,
+  getAgentLoopRunWithLoop: getAgentLoopRunWithLoopMock,
+  createAndAdvanceAgentLoopStep: mock(async () => ({
+    outcome: "source_deleted" as const,
+  })),
   getAgentLoopStepRunWithContext: mock(async (_stepRunId: string) => ({
     stepRun: currentStepRun,
     loopRun: currentLoopRun,
@@ -130,6 +162,14 @@ mock.module("./store", () => ({
   conditionallyTransitionRunStatus: mock(async () => null),
   findStalledLoopRunCandidates: mock(async () => []),
   retryCurrentStep: mock(async () => undefined),
+}));
+
+mock.module("./config", () => ({
+  isAgentLoopsEnabled: () => agentLoopsEnabled,
+  getAgentLoopRepoAccess: () =>
+    repoAllowed
+      ? { allowed: true as const }
+      : { allowed: false as const, reason: "repo_not_allowed" as const },
 }));
 
 // ── GitHub access + app mocks ─────────────────────────────────────────────────
@@ -147,13 +187,25 @@ let verifyRepoAccessResult: {
   defaultBranch: "main",
 };
 
-const verifyRepoAccessMock = mock(async () => verifyRepoAccessResult);
+const verifyRepoAccessMock = mock(
+  async (_params?: unknown) => verifyRepoAccessResult,
+);
 
 let mintInstallationTokenResult: { token: string } = {
   token: "ghs_SHOULD_NOT_APPEAR_IN_EVENTS",
 };
-const mintInstallationTokenMock = mock(async () => mintInstallationTokenResult);
+const mintInstallationTokenMock = mock(
+  async (_params?: unknown) => mintInstallationTokenResult,
+);
 const revokeInstallationTokenMock = mock(async () => undefined);
+const withScopedInstallationOctokitMock = mock(
+  async (params: {
+    installationId: number;
+    repositoryId: number;
+    permissions: Record<string, string>;
+    operation: (octokit: unknown) => Promise<unknown>;
+  }) => params.operation({ rest: {} }),
+);
 
 mock.module("@/lib/github/access", () => ({
   verifyRepoAccess: verifyRepoAccessMock,
@@ -162,14 +214,7 @@ mock.module("@/lib/github/access", () => ({
 mock.module("@/lib/github/app", () => ({
   mintInstallationToken: mintInstallationTokenMock,
   revokeInstallationToken: revokeInstallationTokenMock,
-  withScopedInstallationOctokit: mock(
-    async (params: {
-      installationId: number;
-      repositoryId: number;
-      permissions: Record<string, string>;
-      operation: (octokit: unknown) => Promise<unknown>;
-    }) => params.operation({ rest: {} }),
-  ),
+  withScopedInstallationOctokit: withScopedInstallationOctokitMock,
 }));
 
 // ── Sandbox mock ──────────────────────────────────────────────────────────────
@@ -284,9 +329,12 @@ const resolveComposioToolsForBgRunMock = mock(
     reason: "no_slugs_selected",
   }),
 );
+const assertComposioRepoToolkitsStillAllowedMock = mock(async () => undefined);
 
 mock.module("@/lib/background-agents/composio-tools", () => ({
   resolveComposioToolsForBgRun: resolveComposioToolsForBgRunMock,
+  assertComposioRepoToolkitsStillAllowed:
+    assertComposioRepoToolkitsStillAllowedMock,
 }));
 
 // ── openAgent mock ────────────────────────────────────────────────────────────
@@ -430,6 +478,9 @@ function makeLoopRun(overrides: Partial<AgentLoopRun> = {}): AgentLoopRun {
     userId: "user-1",
     status: "running",
     definitionSnapshot: {} as Record<string, unknown>,
+    executionSnapshot: null,
+    definitionVersion: null,
+    definitionHash: null,
     currentNodeId: null,
     currentStepRunId: null,
     iterationCount: 0,
@@ -473,12 +524,74 @@ function makeLoop(overrides: Partial<AgentLoop> = {}): AgentLoop {
   };
 }
 
+function makeNormalizedLoopInput(
+  params: {
+    node?: ReturnType<typeof makeAgentStepNode>;
+    context?: Record<string, unknown>;
+    watchdogHint?: string | null;
+  } = {},
+): Extract<
+  NormalizedUnattendedStepInputV1,
+  { executionKind: "loop_agent_step" }
+> {
+  const node = params.node ?? makeAgentStepNode();
+  const acceptedLoop = makeLoop({
+    name: "Frozen normalized loop",
+    repoOwner: "frozen-owner",
+    repoName: "frozen-repo",
+    definition: { nodes: [node], edges: [] },
+    guardrails: {
+      stepTimeoutMs: 321_000,
+      maxAgentTurnsPerStep: 7,
+    },
+    permissions: { github: { contents: "write" } },
+  });
+  const snapshot = buildAgentLoopExecutionSnapshot(acceptedLoop);
+  return buildNormalizedLoopStepInput({
+    resolvedDefinition: {
+      definition: snapshot,
+      snapshotSource: "frozen",
+      definitionVersion: 1,
+      definitionHash: hashAgentLoopExecutionSnapshot(snapshot),
+    },
+    identity: {
+      runId: "loop-run-1",
+      userId: "user-1",
+      stepRunId: "step-run-1",
+      nodeId: node.id,
+      attempt: 1,
+      requestId: "request-normalized-agent-step",
+      workflowRunId: "wf-run-1",
+    },
+    repositoryIntent: {
+      branch: "frozen-branch",
+      defaultBranch: "main",
+    },
+    promptContext: params.context ?? {
+      trigger: { eventKind: "github.issue", issueNumber: 42 },
+      prior: { result: "FROZEN-CONTEXT-CANARY" },
+    },
+    watchdogHint: params.watchdogHint ?? "FROZEN-WATCHDOG-HINT",
+    workspace: {
+      sandboxName: "agent_loop_step-run-1",
+      initialCheckout: {
+        ref: "frozen-branch",
+        source: "context_branch",
+      },
+    },
+  });
+}
+
 // ── Setup ─────────────────────────────────────────────────────────────────────
 
 function resetMocks() {
   recordedEvents = [];
   recordedStepUpdates = [];
   recordedContextUpdates = [];
+  sourceLiveResults = [];
+  liveSourceState = "deleted";
+  agentLoopsEnabled = true;
+  repoAllowed = true;
 
   sandboxConnectShouldThrow = null;
   sandboxReadFileResult = JSON.stringify({ result: "done" });
@@ -528,9 +641,12 @@ function resetMocks() {
   updateAgentLoopStepRunMock.mockClear();
   recordAgentLoopEventMock.mockClear();
   updateAgentLoopRunContextMock.mockClear();
+  isAgentLoopRunSourceLiveMock.mockClear();
+  getAgentLoopRunWithLoopMock.mockClear();
   verifyRepoAccessMock.mockClear();
   mintInstallationTokenMock.mockClear();
   revokeInstallationTokenMock.mockClear();
+  withScopedInstallationOctokitMock.mockClear();
   connectSandboxMock.mockClear();
   sandboxMock.readFile.mockClear();
   sandboxMock.exec.mockClear();
@@ -554,6 +670,7 @@ function resetMocks() {
   // the composio resolver does not leak into later tests that rely on the
   // default off/no_slugs_selected behavior.
   resolveComposioToolsForBgRunMock.mockReset();
+  assertComposioRepoToolkitsStillAllowedMock.mockClear();
   resolveComposioToolsForBgRunMock.mockImplementation(async () => ({
     status: "off",
     reason: "no_slugs_selected",
@@ -562,6 +679,345 @@ function resetMocks() {
 
 // Import after mocks
 const { executeAgentStep } = await import("./agent-step");
+
+describe("source deletion race guards", () => {
+  beforeEach(() => {
+    resetMocks();
+    currentStepRun = makeStepRun();
+    currentLoopRun = makeLoopRun();
+    currentLoop = makeLoop();
+  });
+
+  const execute = () =>
+    executeAgentStep({
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+      loopRunId: "loop-run-1",
+      node: makeAgentStepNode() as Parameters<
+        typeof executeAgentStep
+      >[0]["node"],
+      loopRun: currentLoopRun,
+      loop: currentLoop,
+      startedAt: Date.now(),
+    });
+
+  test("deletion before setup prevents repository and sandbox access", async () => {
+    sourceLiveResults = [false];
+
+    const result = await execute();
+
+    expect(result.errorKind).toBe("source_deleted");
+    expect(recordedStepUpdates.at(-1)).toMatchObject({
+      status: "failed",
+      errorKind: "source_deleted",
+    });
+    expect(recordedEvents.at(-1)).toMatchObject({
+      eventName: "agent-loop.step.failed",
+      payload: expect.objectContaining({ errorKind: "source_deleted" }),
+    });
+    expect(verifyRepoAccessMock).not.toHaveBeenCalled();
+    expect(connectSandboxMock).not.toHaveBeenCalled();
+    expect(createCommitMock).not.toHaveBeenCalled();
+  });
+
+  test("inactive source reports its exact cause and closes the step", async () => {
+    sourceLiveResults = [false];
+    liveSourceState = "inactive";
+
+    const result = await execute();
+
+    expect(result.errorKind).toBe("source_inactive");
+    expect(recordedStepUpdates.at(-1)).toMatchObject({
+      status: "failed",
+      errorKind: "source_inactive",
+    });
+    expect(verifyRepoAccessMock).not.toHaveBeenCalled();
+    expect(connectSandboxMock).not.toHaveBeenCalled();
+  });
+
+  test("feature kill switch reports its exact cause and closes the step", async () => {
+    sourceLiveResults = [false];
+    liveSourceState = "active";
+    agentLoopsEnabled = false;
+
+    const result = await execute();
+
+    expect(result.errorKind).toBe("feature_disabled");
+    expect(recordedStepUpdates.at(-1)).toMatchObject({
+      status: "failed",
+      errorKind: "feature_disabled",
+    });
+    expect(verifyRepoAccessMock).not.toHaveBeenCalled();
+    expect(connectSandboxMock).not.toHaveBeenCalled();
+  });
+
+  test("repository allowlist revocation reports its exact cause", async () => {
+    sourceLiveResults = [false];
+    liveSourceState = "active";
+    repoAllowed = false;
+
+    const result = await execute();
+
+    expect(result.errorKind).toBe("repo_not_allowed");
+    expect(recordedStepUpdates.at(-1)).toMatchObject({
+      status: "failed",
+      errorKind: "repo_not_allowed",
+    });
+    expect(verifyRepoAccessMock).not.toHaveBeenCalled();
+    expect(connectSandboxMock).not.toHaveBeenCalled();
+  });
+
+  test("deletion after setup prevents sandbox allocation", async () => {
+    sourceLiveResults = [true, false];
+
+    const result = await execute();
+
+    expect(result.errorKind).toBe("source_deleted");
+    expect(verifyRepoAccessMock).toHaveBeenCalledTimes(1);
+    expect(connectSandboxMock).not.toHaveBeenCalled();
+    expect(revokeInstallationTokenMock).toHaveBeenCalledTimes(1);
+    expect(openAgentGenerateMock).not.toHaveBeenCalled();
+    expect(createCommitMock).not.toHaveBeenCalled();
+  });
+
+  test("deletion after the model returns prevents commit preparation", async () => {
+    sourceLiveResults = [true, true, false];
+
+    const result = await execute();
+
+    expect(result.errorKind).toBe("source_deleted");
+    expect(openAgentGenerateMock).toHaveBeenCalledTimes(1);
+    expect(buildCommitIntentFromSandboxMock).not.toHaveBeenCalled();
+    expect(createCommitMock).not.toHaveBeenCalled();
+  });
+
+  test("deletion immediately before commit prevents the GitHub write", async () => {
+    sourceLiveResults = [true, true, true, false];
+
+    const result = await execute();
+
+    expect(result.errorKind).toBe("source_deleted");
+    expect(buildCommitIntentFromSandboxMock).toHaveBeenCalledTimes(1);
+    expect(createCommitMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("frozen repository and permission intent", () => {
+  beforeEach(() => {
+    resetMocks();
+    currentStepRun = makeStepRun();
+    currentLoopRun = makeLoopRun();
+    currentLoop = makeLoop();
+  });
+
+  test("live source edits cannot redirect the accepted repo or narrow frozen permissions", async () => {
+    const node = makeAgentStepNode({
+      permissions: { github: { issues: "write" } },
+    }) as Parameters<typeof executeAgentStep>[0]["node"];
+    const accepted = makeLoop({
+      repoOwner: "accepted-owner",
+      repoName: "accepted-repo",
+      definition: { nodes: [node], edges: [] },
+      permissions: { github: { contents: "write", issues: "write" } },
+    });
+    const snapshot = buildAgentLoopExecutionSnapshot(accepted);
+    currentLoopRun = makeLoopRun({
+      definitionSnapshot: snapshot.definition,
+      executionSnapshot: snapshot,
+      definitionVersion: 1,
+      definitionHash: hashAgentLoopExecutionSnapshot(snapshot),
+    });
+    const policy = toAgentLoopExecutionPolicy(
+      currentLoopRun,
+      makeLoop({
+        repoOwner: "edited-owner",
+        repoName: "edited-repo",
+        definition: accepted.definition,
+        permissions: { github: { contents: "read" } },
+      }),
+    ).loop;
+
+    await executeAgentStep({
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+      loopRunId: "loop-run-1",
+      node,
+      loopRun: currentLoopRun,
+      loop: policy,
+      startedAt: Date.now(),
+    });
+
+    expect(verifyRepoAccessMock.mock.calls[0]?.[0]).toMatchObject({
+      owner: "accepted-owner",
+      repo: "accepted-repo",
+    });
+    expect(mintInstallationTokenMock.mock.calls[0]?.[0]).toMatchObject({
+      permissions: expect.objectContaining({
+        contents: "write",
+        issues: "write",
+      }),
+    });
+  });
+});
+
+describe("normalized loop behavior consumption (#968)", () => {
+  beforeEach(() => {
+    resetMocks();
+    currentStepRun = makeStepRun();
+    currentLoopRun = makeLoopRun({
+      context: {
+        trigger: { eventKind: "live.edited" },
+        private: "LIVE-MUTABLE-CONTEXT-CANARY",
+      },
+      requestId: "request-normalized-agent-step",
+    });
+    currentLoop = makeLoop();
+  });
+
+  test("uses normalized frozen prompt, repo, tools, permissions, check, output, budgets, and disposable workspace", async () => {
+    const frozenNode = makeAgentStepNode({
+      instructions: "FROZEN-NORMALIZED-INSTRUCTIONS",
+      outputSchema: { required: ["result"] },
+      checkCommand: "bun test frozen-normalized-check",
+      permissions: { github: { issues: "write" } },
+      builtinToolNames: ["bash"],
+      composioToolkitSlugs: ["linear"],
+    });
+    const normalizedInput = makeNormalizedLoopInput({ node: frozenNode });
+    const liveNode = makeAgentStepNode({
+      instructions: "LIVE-EDITED-INSTRUCTIONS",
+      outputSchema: { required: ["liveRequired"] },
+      checkCommand: "bun test live-edited-check",
+      permissions: { github: { issues: "write" } },
+      builtinToolNames: ["bash", "write"],
+      composioToolkitSlugs: ["linear", "slack"],
+    }) as Parameters<typeof executeAgentStep>[0]["node"];
+    currentLoop = makeLoop({
+      repoOwner: "live-edited-owner",
+      repoName: "live-edited-repo",
+      definition: { nodes: [liveNode], edges: [] },
+      permissions: { github: { issues: "write" } },
+    });
+    sandboxReadFileResult = JSON.stringify({
+      result: "done",
+      branch: "frozen-branch",
+    });
+    resolveComposioToolsForBgRunMock.mockImplementation(async () => ({
+      status: "ready",
+      tools: {},
+      toolkitSlugs: ["linear"],
+      disconnectedToolkits: [],
+    }));
+    const callParams = {
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+      loopRunId: "loop-run-1",
+      node: liveNode,
+      loopRun: currentLoopRun,
+      loop: currentLoop,
+      startedAt: Date.now(),
+      normalizedInput,
+    };
+
+    const result = await executeAgentStep(callParams);
+
+    expect(result.outcome).toBe("success");
+    expect(verifyRepoAccessMock.mock.calls[0]?.[0]).toMatchObject({
+      owner: "frozen-owner",
+      repo: "frozen-repo",
+    });
+    expect(mintInstallationTokenMock.mock.calls[0]?.[0]).toMatchObject({
+      permissions: expect.objectContaining({
+        contents: "write",
+        issues: "write",
+      }),
+    });
+    expect(resolveComposioToolsForBgRunMock.mock.calls[0]?.[0]).toMatchObject({
+      slugs: ["linear"],
+      repoOwner: "frozen-owner",
+      repoName: "frozen-repo",
+    });
+    const generateCall = openAgentGenerateMock.mock.calls[0]?.[0] as {
+      messages?: unknown;
+      options?: {
+        allowedBuiltinToolNames?: string[];
+      };
+      timeout?: { totalMs?: number };
+    };
+    const serializedPrompt = JSON.stringify(generateCall.messages);
+    expect(serializedPrompt).toContain("FROZEN-NORMALIZED-INSTRUCTIONS");
+    expect(serializedPrompt).toContain("FROZEN-CONTEXT-CANARY");
+    expect(serializedPrompt).toContain("FROZEN-WATCHDOG-HINT");
+    expect(serializedPrompt).not.toContain("LIVE-EDITED-INSTRUCTIONS");
+    expect(serializedPrompt).not.toContain("LIVE-MUTABLE-CONTEXT-CANARY");
+    expect(generateCall.options?.allowedBuiltinToolNames).toEqual(["bash"]);
+    expect(generateCall.timeout?.totalMs).toBeLessThanOrEqual(321_000);
+    expect(sandboxMock.exec).toHaveBeenCalledWith(
+      "bun test frozen-normalized-check",
+      sandboxMock.workingDirectory,
+      expect.any(Number),
+    );
+    const sandboxConfig = connectSandboxMock.mock.calls[0]?.[0] as {
+      state?: { sandboxName?: string; source?: { branch?: string } };
+      options?: { persistent?: boolean; resume?: boolean };
+    };
+    expect(sandboxConfig).toMatchObject({
+      state: {
+        sandboxName: "agent_loop_step-run-1",
+        source: { branch: "frozen-branch" },
+      },
+      options: { persistent: false, resume: false },
+    });
+    expect(sandboxMock.stop).toHaveBeenCalledTimes(1);
+    expect(revokeInstallationTokenMock).toHaveBeenCalled();
+  });
+
+  test("live permission and tool removal narrows normalized frozen intent without granting later expansion", async () => {
+    const frozenNode = makeAgentStepNode({
+      permissions: { github: { issues: "write" } },
+      builtinToolNames: ["bash"],
+      composioToolkitSlugs: ["linear"],
+    });
+    const normalizedInput = makeNormalizedLoopInput({ node: frozenNode });
+    const liveNode = makeAgentStepNode({
+      permissions: { github: { issues: "read" } },
+      builtinToolNames: [],
+      composioToolkitSlugs: [],
+    }) as Parameters<typeof executeAgentStep>[0]["node"];
+    currentLoop = makeLoop({
+      definition: { nodes: [liveNode], edges: [] },
+      permissions: { github: { issues: "read" } },
+    });
+
+    const callParams = {
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+      loopRunId: "loop-run-1",
+      node: liveNode,
+      loopRun: currentLoopRun,
+      loop: currentLoop,
+      startedAt: Date.now(),
+      normalizedInput,
+    };
+
+    await executeAgentStep(callParams);
+
+    const tokenPermissions = (
+      (mintInstallationTokenMock.mock.calls[0]?.[0] ?? {}) as {
+        permissions?: Record<string, string>;
+      }
+    ).permissions;
+    expect(tokenPermissions).toMatchObject({
+      contents: "write",
+      issues: "read",
+    });
+    expect(resolveComposioToolsForBgRunMock).not.toHaveBeenCalled();
+    const generateCall = openAgentGenerateMock.mock.calls[0]?.[0] as {
+      options?: { allowedBuiltinToolNames?: string[] };
+    };
+    expect(generateCall.options?.allowedBuiltinToolNames).toEqual([]);
+  });
+});
 
 // ── BT-S01: Happy path ────────────────────────────────────────────────────────
 
@@ -934,6 +1390,29 @@ describe("BT-S07: checkCommand passes → success", () => {
     expect(result.outcome).toBe("success");
     // Sandbox exec was called for the checkCommand
     expect(sandboxMock.exec.mock.calls.length).toBeGreaterThan(0);
+  });
+
+  test("check evidence never serializes the frozen command", async () => {
+    const privateCommand = "echo check-command-private-canary";
+    await executeAgentStep({
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+      loopRunId: "loop-run-1",
+      node: makeAgentStepNode({ checkCommand: privateCommand }) as Parameters<
+        typeof executeAgentStep
+      >[0]["node"],
+      loopRun: currentLoopRun,
+      loop: currentLoop,
+      startedAt: Date.now(),
+    });
+
+    expect(JSON.stringify(recordedEvents)).not.toContain(privateCommand);
+    expect(recordedEvents).toContainEqual(
+      expect.objectContaining({
+        eventName: "agent-loop.step.check.completed",
+        payload: expect.objectContaining({ checkConfigured: true }),
+      }),
+    );
   });
 });
 
@@ -1326,6 +1805,39 @@ describe("BT-S20: agent-loop.step.commit.completed emitted on commit", () => {
     const payload = commitEvent?.payload as Record<string, unknown>;
     expect(payload?.["branch"]).toBeDefined();
     expect(payload?.["sha"]).toBeDefined();
+  });
+
+  test("final GitHub permission removal prevents the scoped commit write", async () => {
+    const allowed = {
+      ok: true as const,
+      installationId: 42,
+      repositoryId: 7,
+      defaultBranch: "main",
+    };
+    verifyRepoAccessMock
+      .mockImplementationOnce(async () => allowed)
+      .mockImplementationOnce(async () => allowed)
+      .mockImplementationOnce(async () => allowed)
+      .mockImplementationOnce(async () => ({
+        ok: false as const,
+        reason: "user_no_write" as const,
+      }));
+
+    const result = await executeAgentStep({
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+      loopRunId: "loop-run-1",
+      node: makeAgentStepNode() as Parameters<
+        typeof executeAgentStep
+      >[0]["node"],
+      loopRun: currentLoopRun,
+      loop: currentLoop,
+      startedAt: Date.now(),
+    });
+
+    expect(result.errorKind).toBe("permission_missing");
+    expect(withScopedInstallationOctokitMock).not.toHaveBeenCalled();
+    expect(createCommitMock).not.toHaveBeenCalled();
   });
 });
 
@@ -2002,6 +2514,50 @@ describe("BT-S26/S27/S28: agent-loop Composio degradation events (#798)", () => 
     expect(notConnectedEvent).toBeDefined();
     const payload = notConnectedEvent?.payload as Record<string, unknown>;
     expect(payload?.["disconnectedToolkits"]).toEqual(["slack"]);
+  });
+
+  test("cached Composio tools recheck current repository policy before execute", async () => {
+    const toolExecute = mock(async () => ({ ok: true }));
+    resolveComposioToolsForBgRunMock.mockImplementation(async () => ({
+      status: "ready",
+      tools: {
+        github_create_issue: {
+          description: "Create issue",
+          execute: toolExecute,
+        },
+      },
+      toolkitSlugs: ["github"],
+      disconnectedToolkits: [],
+    }));
+
+    await executeAgentStep({
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+      loopRunId: "loop-run-1",
+      node: makeAgentStepNode({
+        composioToolkitSlugs: ["github"],
+      }) as Parameters<typeof executeAgentStep>[0]["node"],
+      loopRun: currentLoopRun,
+      loop: currentLoop,
+      startedAt: Date.now(),
+    });
+
+    const generateInput = openAgentGenerateMock.mock.calls[0]?.[0] as {
+      tools?: Record<string, { execute?: (...args: unknown[]) => unknown }>;
+    };
+    assertComposioRepoToolkitsStillAllowedMock.mockRejectedValueOnce(
+      new Error("Repository policy revoked Composio toolkit access"),
+    );
+    await expect(
+      generateInput.tools?.github_create_issue?.execute?.({}),
+    ).rejects.toThrow("revoked");
+    expect(assertComposioRepoToolkitsStillAllowedMock).toHaveBeenCalledWith({
+      userId: "user-1",
+      repoOwner: "acme",
+      repoName: "my-repo",
+      toolkitSlugs: ["github"],
+    });
+    expect(toolExecute).not.toHaveBeenCalled();
   });
 });
 

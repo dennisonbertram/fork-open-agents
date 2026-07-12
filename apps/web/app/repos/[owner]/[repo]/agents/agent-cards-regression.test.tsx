@@ -37,6 +37,9 @@ mock.module("next/navigation", () => ({
   redirect: (_path: string) => {
     throw new Error("redirect");
   },
+  notFound: () => {
+    throw new Error("notFound");
+  },
 }));
 
 mock.module("swr", () => ({

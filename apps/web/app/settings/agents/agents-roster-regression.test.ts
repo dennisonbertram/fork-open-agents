@@ -146,12 +146,16 @@ describe("buildAgentRoster regression", () => {
     expect(main?.toolsLabel).toBe("None");
   });
 
-  // REG-006: agents nav item must be in the tools group (not a different group).
+  // REG-006: stable agents id/href now lives under the Workspace group.
   // Catches regressions where the nav-items reorganization moves the item.
-  test("REG-006: agents nav item is in the tools group", () => {
-    const toolsGroup = SETTINGS_NAV_GROUPS.find((g) => g.id === "tools");
-    const agentsItem = toolsGroup?.items.find((i) => i.id === "agents");
+  test("REG-006: agents nav item is Chat roles in the Workspace group", () => {
+    const workspaceGroup = SETTINGS_NAV_GROUPS.find(
+      (g) => g.id === "workspace",
+    );
+    const agentsItem = workspaceGroup?.items.find((i) => i.id === "agents");
     expect(agentsItem).toBeDefined();
+    expect(agentsItem?.id).toBe("agents");
+    expect(agentsItem?.label).toBe("Chat roles");
     expect(agentsItem?.href).toBe("/settings/agents");
   });
 });

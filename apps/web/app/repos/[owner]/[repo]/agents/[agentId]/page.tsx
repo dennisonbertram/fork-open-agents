@@ -1,13 +1,18 @@
 import type { Metadata } from "next";
 import { Clock3, ExternalLink, Pencil } from "lucide-react";
 import Link from "next/link";
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import {
+  canonicalBackgroundAutomationDetailUrl,
+  canonicalBackgroundAutomationEditUrl,
+} from "@/lib/automations/definition-routes";
 import {
   getOwnedBackgroundAgentWithTriggers,
   listBackgroundAgentRuns,
 } from "@/lib/background-agents/store";
 import { formatRunTimestamp } from "@/lib/date/format-run-timestamp";
+import { canonicalRunDetailUrl } from "@/lib/runs/detail-routes";
 import { getServerSession } from "@/lib/session/get-server-session";
 import { cn } from "@/lib/utils";
 import type { RunSummary } from "@/lib/background-agents/run-summary";
@@ -88,25 +93,64 @@ export default async function AgentDetailPage({
 
   const { owner, repo, agentId } = await params;
 
-  const [agent, runs] = await Promise.all([
-    getOwnedBackgroundAgentWithTriggers({
-      userId: session.user.id,
-      agentId,
-    }),
-    listBackgroundAgentRuns({
-      userId: session.user.id,
-      repoOwner: owner,
-      repoName: repo,
-      limit: 20,
-    }),
-  ]);
+  const agent = await getOwnedBackgroundAgentWithTriggers({
+    userId: session.user.id,
+    agentId,
+  });
 
   if (!agent) {
     redirect(`/repos/${owner}/${repo}/agents`);
   }
+  if (agent.repoOwner !== owner || agent.repoName !== repo) {
+    notFound();
+  }
+
+  const runs = await listBackgroundAgentRuns({
+    userId: session.user.id,
+    repoOwner: owner,
+    repoName: repo,
+    limit: 20,
+  });
 
   // Filter runs for this specific agent
   const agentRuns = runs.filter((r) => r.agentId === agentId);
+
+  return (
+    <AgentDetailContent
+      agent={agent}
+      agentRuns={agentRuns}
+      owner={owner}
+      repo={repo}
+      surface="legacy"
+    />
+  );
+}
+
+export function AgentDetailContent({
+  agent,
+  agentRuns,
+  owner,
+  repo,
+  surface,
+}: {
+  agent: NonNullable<
+    Awaited<ReturnType<typeof getOwnedBackgroundAgentWithTriggers>>
+  >;
+  agentRuns: Awaited<ReturnType<typeof listBackgroundAgentRuns>>;
+  owner: string;
+  repo: string;
+  surface: "legacy" | "automation";
+}) {
+  const automationSurface = surface === "automation";
+  const detailHref = automationSurface
+    ? canonicalBackgroundAutomationDetailUrl(agent.id)
+    : `/repos/${owner}/${repo}/agents/${agent.id}`;
+  const editHref = automationSurface
+    ? canonicalBackgroundAutomationEditUrl(agent.id)
+    : `${detailHref}/edit`;
+  const backHref = automationSurface
+    ? "/automations"
+    : `/repos/${owner}/${repo}/agents`;
 
   // Derive permissions display
   const permEntries = Object.entries(agent.permissions?.github ?? {});
@@ -119,13 +163,15 @@ export default async function AgentDetailPage({
           <div>
             <div className="flex items-center gap-2">
               <Link
-                href={`/repos/${owner}/${repo}/agents`}
+                href={backHref}
                 className="text-sm text-muted-foreground hover:text-foreground"
               >
-                {owner}/{repo} agents
+                {automationSurface ? "Automations" : `${owner}/${repo} agents`}
               </Link>
               <span className="text-muted-foreground">/</span>
-              <h1 className="text-sm font-semibold">{agent.name}</h1>
+              <h1 className="text-sm font-semibold">
+                {automationSurface ? "Single-step Automation" : agent.name}
+              </h1>
             </div>
             <div className="mt-2 flex items-center gap-2">
               <h2 className="text-2xl font-semibold">{agent.name}</h2>
@@ -137,14 +183,16 @@ export default async function AgentDetailPage({
           </div>
           <div className="flex items-center gap-2">
             <Button asChild variant="default" size="sm">
-              <Link href={`/repos/${owner}/${repo}/agents/${agentId}/edit`}>
+              <Link href={editHref}>
                 <Pencil className="h-3.5 w-3.5" />
                 Edit
               </Link>
             </Button>
             <Button asChild variant="outline" size="sm">
-              <Link href={`/repos/${owner}/${repo}/agents`}>
-                ← Back to agents
+              <Link href={backHref}>
+                {automationSurface
+                  ? "← Back to Automations"
+                  : "← Back to agents"}
               </Link>
             </Button>
           </div>
@@ -152,7 +200,7 @@ export default async function AgentDetailPage({
 
         {/* Next run: tool availability (preflight, #802) */}
         <AgentToolPreflightPanel
-          agentId={agentId}
+          agentId={agent.id}
           configuredSlugs={agent.composioToolkitSlugs ?? []}
         />
 
@@ -390,7 +438,11 @@ export default async function AgentDetailPage({
 
                       {/* Link to raw run timeline (evidence/debug) */}
                       <Link
-                        href={`/background-runs/${run.id}`}
+                        href={
+                          automationSurface
+                            ? canonicalRunDetailUrl("background_agent", run.id)
+                            : `/background-runs/${run.id}`
+                        }
                         className="shrink-0 text-xs text-muted-foreground hover:text-foreground"
                       >
                         <span className="flex items-center gap-1">

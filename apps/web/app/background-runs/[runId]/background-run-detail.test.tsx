@@ -23,6 +23,7 @@ function detailData(
       id: "run_123",
       status: "running",
       source: "github",
+      triggerId: "trigger-1",
       triggerKind: "github.pull_request",
       externalId: "delivery-123",
       idempotencyKey: "agent-1:trigger-1:delivery-123",
@@ -41,6 +42,7 @@ function detailData(
       errorKind: null,
       errorMessage: null,
       createdAt: "2026-05-27T12:00:00.000Z",
+      updatedAt: "2026-05-27T12:01:00.000Z",
       startedAt: "2026-05-27T12:01:00.000Z",
       finishedAt: null,
     },
@@ -54,21 +56,22 @@ function detailData(
           checks: "read",
         },
       },
-      checkCommand: "bun --bun run ci",
+      checkConfigured: true,
     },
     events: [
       {
         id: "event-1",
         eventName: "background-agent.check.completed",
         status: "succeeded",
-        summary: "Command passed: bun --bun run ci",
+        summary: "Command passed: required_check.",
         workflowRunId: "workflow-1",
         sandboxName: "background_agent_run_123",
         requestId: "req_123",
         errorKind: null,
         redactionStatus: "passed",
         payload: {
-          command: "bun --bun run ci",
+          commandLabel: "required_check",
+          commandHash: "a".repeat(64),
           durationMs: 1234,
           stdout: "all tests passed",
         },
@@ -105,16 +108,16 @@ describe("BackgroundRunDetail", () => {
     expect(html).toContain("Permissions");
     expect(html).toContain("contents:write, pullRequests:write, checks:read");
     expect(html).toContain("Checks");
-    expect(html).toContain("succeeded · bun --bun run ci");
+    expect(html).toContain("succeeded");
     expect(html).toContain("Output");
     expect(html).toContain("ready_pr · created");
     expect(html).toContain("Duration");
     expect(html).toContain("Running");
     expect(html).toContain("Live timeline");
     expect(html).toContain("Refreshing");
-    expect(html).toContain("Command passed: bun --bun run ci");
+    expect(html).toContain("Command passed: required_check.");
     expect(html).toContain("background-agent.check.completed");
-    expect(html).toContain("bun --bun run ci");
+    expect(html).toContain("required_check");
     expect(html).toContain("1234ms");
     expect(html).toContain("all tests passed");
     // Run-level metadata (workflow run, request id, sandbox) is shown ONCE in
@@ -440,6 +443,58 @@ describe("BackgroundRunDetail", () => {
     expect(html).toContain("https://myapp-preview.vercel.app");
     // External ID visible
     expect(html).toContain("deployment_status:77:success");
+  });
+
+  // #795: permission_missing (and sibling typed errors) must surface a
+  // plain-language "what happened / what to do" banner above the fold —
+  // not just the raw errorKind mono text buried in the Debug section.
+  test("#795: permission_missing run shows a plain-language banner above the Debug section", async () => {
+    const { BackgroundRunDetail } = await componentModulePromise;
+
+    const data = detailData({
+      run: {
+        ...detailData().run,
+        status: "failed",
+        errorKind: "permission_missing",
+        errorMessage:
+          "GitHub App installation lacks contents:write for acme/widgets.",
+        finishedAt: "2026-05-27T12:03:00.000Z",
+      },
+    });
+
+    const html = renderToStaticMarkup(
+      <BackgroundRunDetail initialData={data} />,
+    );
+
+    // Plain-language copy renders, not just the raw kind.
+    expect(html).toContain("doesn&#x27;t have write access");
+    expect(html).toContain("Connect GitHub");
+    // The banner's own "What happened" copy must never contain the raw
+    // errorMessage internals (the sidebar Run card's existing raw
+    // errorMessage text is untouched and out of scope for this assertion).
+    const bannerStart = html.indexOf('aria-live="polite"');
+    const bannerEnd = html.indexOf("</section>", bannerStart);
+    const bannerHtml = html.slice(bannerStart, bannerEnd);
+    expect(bannerHtml).not.toContain(
+      "GitHub App installation lacks contents:write for acme/widgets.",
+    );
+    // The banner must appear before the Debug section in document order.
+    const bannerPos = html.indexOf("doesn&#x27;t have write access");
+    const debugPos = html.indexOf("Debug");
+    expect(bannerPos).toBeGreaterThanOrEqual(0);
+    expect(debugPos).toBeGreaterThan(bannerPos);
+  });
+
+  // #795: a run with no errorKind renders no banner at all.
+  test("#795: succeeded run with no errorKind shows no error banner", async () => {
+    const { BackgroundRunDetail } = await componentModulePromise;
+
+    const html = renderToStaticMarkup(
+      <BackgroundRunDetail initialData={detailData()} />,
+    );
+
+    expect(html).not.toContain("doesn&#x27;t have write access");
+    expect(html).not.toContain("What happened");
   });
 
   // BT-168-RD-004: Event context section shows trigger kind label

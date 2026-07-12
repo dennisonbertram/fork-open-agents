@@ -83,12 +83,14 @@ mock.module("@/app/providers", () => ({
 
 type FetchCall = { url: string; opts?: RequestInit };
 let fetchCalls: FetchCall[] = [];
+let fetchStatus = 200;
+let fetchBody: Record<string, unknown> = { runId: "run-xyz", created: true };
 const globalFetch = mock(async (url: string, opts?: RequestInit) => {
   fetchCalls.push({ url, opts });
   return {
-    ok: true,
-    status: 200,
-    json: async () => ({ runId: "run-xyz", created: true }),
+    ok: fetchStatus >= 200 && fetchStatus < 300,
+    status: fetchStatus,
+    json: async () => fetchBody,
   } as Response;
 });
 // @ts-expect-error — override global fetch for test
@@ -128,6 +130,8 @@ const VALID_DEF: LoopDefinition = {
 describe("BuilderCanvas — header path-forward affordances (#894)", () => {
   beforeEach(() => {
     fetchCalls = [];
+    fetchStatus = 200;
+    fetchBody = { runId: "run-xyz", created: true };
     globalFetch.mockClear();
     toastSuccess.mockClear();
     toastError.mockClear();
@@ -196,6 +200,62 @@ describe("BuilderCanvas — header path-forward affordances (#894)", () => {
     expect(post?.opts?.method).toBe("POST");
     expect(routerPush).toHaveBeenCalledWith("/loops/loop-1/runs/run-xyz");
     expect(toastSuccess).toHaveBeenCalledWith("Run started");
+  });
+
+  test("Automation variant keeps navigation canonical and warns that Run now performs real work", async () => {
+    const { BuilderCanvas } = await canvasPromise;
+    const { container } = render(
+      <BuilderCanvas
+        loopId="loop-1"
+        loopName="My loop"
+        loopDescription=""
+        loopStatus="active"
+        definition={VALID_DEF}
+        surface="automation"
+      />,
+    );
+    const q = within(container);
+
+    expect(q.getByRole("link", { name: "Automations" })).toBeTruthy();
+    expect(
+      q.getByRole("link", { name: "View Automation" }).getAttribute("href"),
+    ).toBe("/automations/agent-loop/loop-1");
+    expect(
+      q.getByText(
+        "Run now starts real unattended work with the configured repository permissions.",
+      ),
+    ).toBeTruthy();
+
+    await act(async () => {
+      await userClick(q.getByRole("button", { name: "Run now" }));
+    });
+
+    expect(routerPush).toHaveBeenCalledWith("/runs/loop/run-xyz");
+  });
+
+  test("Automation variant keeps typed dispatch failure evidence on canonical Runs", async () => {
+    fetchStatus = 502;
+    fetchBody = { errorKind: "dispatch_failed", runId: "failed-run" };
+    const { BuilderCanvas } = await canvasPromise;
+    const { container } = render(
+      <BuilderCanvas
+        loopId="loop-1"
+        loopName="My loop"
+        loopDescription=""
+        loopStatus="active"
+        definition={VALID_DEF}
+        surface="automation"
+      />,
+    );
+
+    await act(async () => {
+      await userClick(
+        within(container).getByRole("button", { name: "Run now" }),
+      );
+    });
+
+    expect(routerPush).toHaveBeenCalledWith("/runs/loop/failed-run");
+    expect(toastError).toHaveBeenCalled();
   });
 
   test("active loop with unsaved builder edits: Run now is disabled with a Save your changes first reason", async () => {

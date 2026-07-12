@@ -4,6 +4,7 @@ export type SerializedBackgroundRun = {
   id: string;
   status: string;
   source: string;
+  triggerId: string | null;
   triggerKind: string;
   externalId: string;
   idempotencyKey: string;
@@ -22,16 +23,21 @@ export type SerializedBackgroundRun = {
   errorKind: string | null;
   errorMessage: string | null;
   createdAt: string;
+  updatedAt: string;
   startedAt: string | null;
   finishedAt: string | null;
   resultSummary?: RunSummary | null;
+  definitionVersion?: number | null;
+  definitionHash?: string | null;
+  snapshotSource?: "frozen" | "legacy_live_fallback" | "invalid";
 };
 
 export type SerializedBackgroundAgent = {
   id: string;
   name: string;
   permissions: unknown;
-  checkCommand: string | null;
+  checkConfigured: boolean;
+  sourceDeleted?: boolean;
 };
 
 export type SerializedBackgroundEvent = {

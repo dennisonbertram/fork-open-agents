@@ -131,6 +131,9 @@ function makeLoopRun(overrides: Partial<AgentLoopRun> = {}): AgentLoopRun {
         { id: "e2", source: "work", target: "end", when: "success" },
       ],
     },
+    executionSnapshot: null,
+    definitionVersion: null,
+    definitionHash: null,
     currentNodeId: "work",
     currentStepRunId: "step-1",
     iterationCount: 0,
@@ -261,11 +264,54 @@ const getMaxAttemptForNodeMock = mock(
 );
 
 mock.module("./store", () => ({
+  isAgentLoopRunSourceLive: mock(async () => true),
+  createAndAdvanceAgentLoopStep: mock(
+    async (input: {
+      runId: string;
+      fromStepRunId: string;
+      nextNodeId: string;
+      nextNodeKind: string;
+      attempt: number;
+      stepCount: number;
+      iterationCount: number;
+      workflowRunId: string;
+    }) => {
+      const step = await createStepRunMock({
+        loopRunId: input.runId,
+        nodeId: input.nextNodeId,
+        nodeKind: input.nextNodeKind,
+        attempt: input.attempt,
+      });
+      const advanced = await advanceMock({
+        runId: input.runId,
+        fromStepRunId: input.fromStepRunId,
+        nextNodeId: input.nextNodeId,
+        nextStepRunId: step.id,
+        stepCount: input.stepCount,
+        iterationCount: input.iterationCount,
+        workflowRunId: input.workflowRunId,
+      });
+      return advanced
+        ? { outcome: "advanced" as const, step }
+        : { outcome: "duplicate" as const };
+    },
+  ),
   getAgentLoopStepRunWithContext: getCtxMock,
   getAgentLoopRunWithLoop: getAgentLoopRunWithLoopMock,
   updateAgentLoopRunStatus: updateRunStatusMock,
   conditionallyTransitionRunStatus: mock(
-    async (params: { runId: string; toStatus: string }) => {
+    async (params: {
+      runId: string;
+      toStatus: string;
+      errorKind?: string | null;
+      errorMessage?: string | null;
+    }) => {
+      recordedRunStatusUpdates.push({
+        runId: params.runId,
+        status: params.toStatus,
+        errorKind: params.errorKind,
+        errorMessage: params.errorMessage,
+      });
       // Default: transition succeeds (returns a non-null run)
       currentLoopRun = {
         ...currentLoopRun,

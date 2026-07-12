@@ -26,6 +26,7 @@ describe("account coordinator taxonomy", () => {
     expect(getAttentionReasons("cancelled")).toEqual(["cancelled"]);
     expect(getAttentionReasons("stale")).toEqual(["stale"]);
     expect(getAttentionReasons("waiting_on_user")).toEqual(["waiting_on_user"]);
+    expect(getAttentionReasons("unknown")).toEqual(["unknown_status"]);
     expect(getAttentionReasons("running")).toEqual([]);
   });
 
@@ -33,6 +34,7 @@ describe("account coordinator taxonomy", () => {
     expect(isRunning(item("queued"))).toBe(true);
     expect(isRunning(item("running"))).toBe(true);
     expect(isRecentlyCompleted(item("completed"))).toBe(true);
+    expect(isRecentlyCompleted(item("skipped"))).toBe(true);
     expect(isRecentlyCompleted(item("failed"))).toBe(false);
     expect(isWaitingOnUser(item("waiting_on_user"))).toBe(true);
     expect(isStale(item("stale"))).toBe(true);

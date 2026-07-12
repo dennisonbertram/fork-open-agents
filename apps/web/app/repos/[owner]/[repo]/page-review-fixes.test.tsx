@@ -1,121 +1,77 @@
 /**
- * Failing tests for #162 review blockers in page.tsx:
- * - BLOCKER 1: page.tsx has same coupling issue — a throw in listRepoBackgroundAgents
- *   breaks the whole server component render.
+ * Regression coverage for the repository dashboard's independent source
+ * isolation. The reduced dashboard intentionally no longer renders the old
+ * GitHub/Activity windows, but it must retain the same no-cascade guarantee
+ * for the canonical Automations and Runs summaries that replace them.
  */
-import { beforeEach, describe, expect, mock, test } from "bun:test";
-import { renderToStaticMarkup } from "react-dom/server";
+import { describe, expect, mock, test } from "bun:test";
+import type { RepositoryDashboardSummaryDependencies } from "./repository-dashboard-summary";
 
-let sessionUserId: string | null = "user-1";
-let agentsError: Error | null = null;
-let runsError: Error | null = null;
+mock.module("server-only", () => ({}));
 
-const redirect = mock((_path: string) => {
-  throw new Error("redirect");
-});
+const { loadRepositoryDashboardSummary } =
+  await import("./repository-dashboard-summary");
 
-mock.module("next/navigation", () => ({ redirect }));
+const input = { userId: "user-1", owner: "acme", repo: "widgets" };
 
-mock.module("@/lib/session/get-server-session", () => ({
-  getServerSession: async () =>
-    sessionUserId ? { user: { id: sessionUserId } } : null,
-}));
+function successfulRuns() {
+  return {
+    requestId: "request-1",
+    generatedAt: "2026-07-11T00:00:00.000Z",
+    items: [],
+    sourceStatus: [
+      {
+        source: "background_agent" as const,
+        status: "ok" as const,
+        itemCount: 0,
+      },
+      { source: "agent_loop" as const, status: "ok" as const, itemCount: 0 },
+    ],
+    allSourcesFailed: false,
+  };
+}
 
-mock.module("@/lib/background-agents/store", () => ({
-  listRepoBackgroundAgents: async () => {
-    if (agentsError) throw agentsError;
-    return [];
-  },
-  listBackgroundAgentRuns: async () => {
-    if (runsError) throw runsError;
-    return [];
-  },
-}));
+function dependencies(
+  overrides: Partial<RepositoryDashboardSummaryDependencies>,
+): RepositoryDashboardSummaryDependencies {
+  return {
+    listAutomations: mock(async () => ({
+      total: 2,
+      automations: [],
+      sourceStatus: [],
+      facets: { repositories: [], kinds: [], states: [] },
+    })),
+    listRuns: mock(async () => successfulRuns()),
+    ...overrides,
+  };
+}
 
-mock.module("@/lib/github/repo-dashboard", () => ({
-  getRepoDashboardData: async () => ({
-    prSummary: {
-      ok: true,
-      prs: [
-        {
-          number: 3,
-          title: "Important PR",
-          isDraft: false,
-          author: "alice",
-          baseBranch: "main",
-          updatedAt: new Date().toISOString(),
-          checksStatus: "passing",
-          url: "https://github.com/acme/widgets/pull/3",
-        },
-      ],
-    },
-    issueSummary: { ok: true, totalOpen: 5, recent: [] },
-    actionsSummary: { ok: true, latestStatus: "passing", recentRuns: [] },
-  }),
-}));
-
-// Agent Loops — flag off so this test file is not affected by the feature.
-mock.module("@/lib/agent-loops/config", () => ({
-  isAgentLoopsEnabled: () => false,
-}));
-
-mock.module("@/lib/agent-loops/store", () => ({
-  listAgentLoops: async () => [],
-}));
-
-// #805: repo Tools tab data loader — registered so the page module resolves;
-// this test file is not testing the Tools tab itself (see page.test.tsx and
-// tools-window.test.tsx for that coverage).
-mock.module("@/lib/composio/repo-tools-page-data", () => ({
-  getRepoToolsEffectiveStatuses: async () => [],
-}));
-
-const pageModulePromise = import("./page");
-
-describe("Page review-fix: BLOCKER 1 — partial-failure isolation in server component", () => {
-  beforeEach(() => {
-    sessionUserId = "user-1";
-    agentsError = null;
-    runsError = null;
-    redirect.mockClear();
-  });
-
-  // BLOCKER1-PAGE-A: when listRepoBackgroundAgents throws, page must still render
-  // GitHub windows — it must NOT throw and break the entire page.
-  test("BLOCKER1-PAGE-A: page still renders GitHub windows when listRepoBackgroundAgents throws", async () => {
-    agentsError = new Error("DB offline");
-
-    const { default: RepoDashboardPage } = await pageModulePromise;
-
-    // Currently page.tsx uses Promise.all — this will throw, breaking the render
-    // After fix, it should catch the error and render a safe fallback
-    const html = renderToStaticMarkup(
-      await RepoDashboardPage({
-        params: Promise.resolve({ owner: "acme", repo: "widgets" }),
+describe("repository dashboard partial-failure isolation", () => {
+  test("an Automation summary failure does not hide the Runs summary", async () => {
+    const result = await loadRepositoryDashboardSummary(
+      input,
+      dependencies({
+        listAutomations: mock(async () => {
+          throw new Error("Automations DB unavailable");
+        }),
       }),
     );
 
-    // GitHub windows must still appear
-    expect(html).toContain("Pull Requests");
-    expect(html).toContain("Important PR");
-    expect(html).toContain("Issues");
-    expect(html).toContain("Actions");
+    expect(result.automations).toEqual({ status: "error" });
+    expect(result.runs).toEqual({ status: "ready", count: 0 });
   });
 
-  // BLOCKER1-PAGE-B: when listBackgroundAgentRuns throws, page still renders
-  test("BLOCKER1-PAGE-B: page still renders when listBackgroundAgentRuns throws", async () => {
-    runsError = new Error("Runs DB connection refused");
-
-    const { default: RepoDashboardPage } = await pageModulePromise;
-
-    const html = renderToStaticMarkup(
-      await RepoDashboardPage({
-        params: Promise.resolve({ owner: "acme", repo: "widgets" }),
+  test("a Runs summary failure does not hide the Automation summary", async () => {
+    const result = await loadRepositoryDashboardSummary(
+      input,
+      dependencies({
+        listRuns: mock(async () => {
+          throw new Error("Runs DB unavailable");
+        }),
       }),
     );
 
-    // GitHub windows still render
-    expect(html).toContain("Pull Requests");
-    expect(html).toContain("Important PR");
+    expect(result.automations).toEqual({ status: "ready", count: 2 });
+    expect(result.runs).toEqual({ status: "error" });
   });
 });

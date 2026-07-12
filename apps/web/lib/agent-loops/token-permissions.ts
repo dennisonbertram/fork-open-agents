@@ -46,3 +46,47 @@ export function effectiveStepPermissions(
   }
   return loopPermissions;
 }
+
+type GithubPermissions = NonNullable<BackgroundAgentPermissions["github"]>;
+
+/** Frozen request intersected with the current live allowance, field by field. */
+export function intersectStepPermissions(
+  requested: BackgroundAgentPermissions | undefined,
+  live: BackgroundAgentPermissions | undefined,
+): BackgroundAgentPermissions | undefined {
+  const requestedGithub = requested?.github;
+  const liveGithub = live?.github;
+  if (!requestedGithub) return undefined;
+  const github: Partial<Record<keyof GithubPermissions, "read" | "write">> = {};
+  for (const key of Object.keys(requestedGithub) as Array<
+    keyof GithubPermissions
+  >) {
+    const requestedValue = requestedGithub[key];
+    const liveValue = liveGithub?.[key];
+    if (!requestedValue || !liveValue) continue;
+    github[key] =
+      requestedValue === "read" || liveValue === "read" ? "read" : "write";
+  }
+  return Object.keys(github).length > 0
+    ? { github: github as GithubPermissions }
+    : undefined;
+}
+
+/** null means the runtime default set; arrays are explicit allowlists. */
+export function intersectBuiltinToolNames(
+  requested: string[] | null,
+  live: string[] | null,
+): string[] | null {
+  if (requested === null) return live;
+  if (live === null) return requested;
+  const liveNames = new Set(live);
+  return requested.filter((name) => liveNames.has(name));
+}
+
+export function intersectComposioToolkitSlugs(
+  requested: string[],
+  live: string[],
+): string[] {
+  const liveSlugs = new Set(live);
+  return requested.filter((slug) => liveSlugs.has(slug));
+}

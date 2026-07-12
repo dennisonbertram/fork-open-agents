@@ -1,7 +1,7 @@
 import { Clock3, ExternalLink } from "lucide-react";
 import Link from "next/link";
 import type { BackgroundAgentWithTriggers } from "@/lib/background-agents/store";
-import type { BackgroundAgentRun } from "@/lib/db/schema";
+import type { PublicBackgroundAgentRun } from "@/lib/background-agents/public-run";
 import { DashboardStatusPill } from "./dashboard-status-pill";
 import {
   INSTRUCTION_PREVIEW_CAP,
@@ -10,7 +10,7 @@ import {
 } from "./truncate-preview";
 
 // Type aliases for consumers of these window components.
-export type DashboardRun = BackgroundAgentRun;
+export type DashboardRun = PublicBackgroundAgentRun;
 export type DashboardAgent = BackgroundAgentWithTriggers;
 
 function formatDate(value: Date | null) {
@@ -145,16 +145,29 @@ export function AgentsWindow({ agents }: AgentsWindowProps) {
 
 type ActivityWindowProps = {
   runs: DashboardRun[];
+  repoOwner: string;
+  repoName: string;
 };
 
-export function ActivityWindow({ runs }: ActivityWindowProps) {
+export function ActivityWindow({
+  runs,
+  repoOwner,
+  repoName,
+}: ActivityWindowProps) {
+  const runsHref = `/runs?repoOwner=${encodeURIComponent(repoOwner)}&repoName=${encodeURIComponent(repoName)}`;
   return (
     <section
       aria-label="Activity window"
       className="rounded-md border border-border"
     >
-      <div className="border-b border-border px-4 py-3">
+      <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
         <h2 className="text-sm font-medium">Activity</h2>
+        <Link
+          href={runsHref}
+          className="text-xs text-muted-foreground hover:text-foreground"
+        >
+          View all runs
+        </Link>
       </div>
       {runs.length === 0 ? (
         <div className="p-8 text-center text-sm text-muted-foreground">

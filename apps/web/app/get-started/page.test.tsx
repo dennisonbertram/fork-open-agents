@@ -61,6 +61,29 @@ describe("GetStartedPage loop-freedom", () => {
     );
   });
 
+  test.each(["https://evil.example/x", "//evil.example/x", "\\evil.example/x"])(
+    "sanitizes hostile next %s to Sessions",
+    async (next) => {
+      mockNeedsOnboarding = async () => false;
+      redirect.mockClear();
+      const { default: GetStartedPage } = await import("./page");
+      await expect(
+        GetStartedPage({ searchParams: Promise.resolve({ next }) }),
+      ).rejects.toThrow("redirect:/sessions");
+    },
+  );
+
+  test("sanitizes array next values to Sessions", async () => {
+    mockNeedsOnboarding = async () => false;
+    redirect.mockClear();
+    const { default: GetStartedPage } = await import("./page");
+    await expect(
+      GetStartedPage({
+        searchParams: Promise.resolve({ next: ["/runs", "//evil"] }),
+      }),
+    ).rejects.toThrow("redirect:/sessions");
+  });
+
   test("needs-onboarding user renders GetStartedFlow without redirecting", async () => {
     mockNeedsOnboarding = async () => true;
     redirect.mockClear();

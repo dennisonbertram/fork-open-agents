@@ -23,6 +23,11 @@ import type {
   AgentLoopRun,
   AgentLoopStepRun,
 } from "@/lib/db/schema";
+import {
+  buildAgentLoopExecutionSnapshot,
+  hashAgentLoopExecutionSnapshot,
+} from "./execution-snapshot";
+import * as normalizedRuntime from "@/lib/unattended-runtime/normalized-step-input";
 
 mock.module("server-only", () => ({}));
 
@@ -68,6 +73,7 @@ let recordedContextUpdates: {
   runId: string;
   context: Record<string, unknown>;
 }[] = [];
+let boundaryOrder: string[] = [];
 
 // ── Store mocks ───────────────────────────────────────────────────────────────
 
@@ -109,14 +115,27 @@ const updateAgentLoopRunContextMock = mock(
     return { ...currentLoopRun, context: input.context };
   },
 );
+let terminalTransitionWins = true;
+const conditionallyTransitionRunStatusMock = mock(
+  async (input: { runId: string; toStatus: AgentLoopRun["status"] }) => {
+    if (!terminalTransitionWins) return null;
+    recordedRunUpdates.push({ runId: input.runId, status: input.toStatus });
+    currentLoopRun = { ...currentLoopRun, status: input.toStatus };
+    return currentLoopRun;
+  },
+);
 
 mock.module("./store", () => ({
+  isAgentLoopRunSourceLive: mock(async () => true),
+  createAndAdvanceAgentLoopStep: mock(async () => ({
+    outcome: "source_deleted" as const,
+  })),
   getAgentLoopStepRunWithContext: getAgentLoopStepRunMock,
   updateAgentLoopStepRun: updateAgentLoopStepRunMock,
   recordAgentLoopEvent: recordAgentLoopEventMock,
   updateAgentLoopRunStatus: updateAgentLoopRunStatusMock,
   updateAgentLoopRunContext: updateAgentLoopRunContextMock,
-  conditionallyTransitionRunStatus: mock(async () => null),
+  conditionallyTransitionRunStatus: conditionallyTransitionRunStatusMock,
   findStalledLoopRunCandidates: mock(async () => []),
   retryCurrentStep: mock(async () => undefined),
 }));
@@ -141,7 +160,10 @@ const verifyRepoAccessMock = mock(async () => verifyRepoAccessResult);
 let mintInstallationTokenResult: { token: string } = {
   token: "ghs_test_token",
 };
-const mintInstallationTokenMock = mock(async () => mintInstallationTokenResult);
+const mintInstallationTokenMock = mock(async () => {
+  boundaryOrder.push("token.mint");
+  return mintInstallationTokenResult;
+});
 const revokeInstallationTokenMock = mock(async () => undefined);
 
 mock.module("@/lib/github/access", () => ({
@@ -219,6 +241,29 @@ mock.module("@/lib/sandbox/config", () => ({
   DEFAULT_SANDBOX_PORTS: [3000],
   DEFAULT_SANDBOX_TIMEOUT_MS: 300_000,
   DEFAULT_SANDBOX_VCPUS: 2,
+}));
+
+type LoopBuilderInput = Parameters<
+  typeof normalizedRuntime.buildNormalizedLoopStepInput
+>[0];
+type LoopNormalizedInput = ReturnType<
+  typeof normalizedRuntime.buildNormalizedLoopStepInput
+>;
+const realBuildNormalizedLoopStepInput =
+  normalizedRuntime.buildNormalizedLoopStepInput;
+let normalizedLoopBuilderImpl = (input: LoopBuilderInput) =>
+  realBuildNormalizedLoopStepInput(input);
+const normalizedLoopOutputs: LoopNormalizedInput[] = [];
+const buildNormalizedLoopStepInputMock = mock((input: LoopBuilderInput) => {
+  boundaryOrder.push("normalized.build");
+  const output = normalizedLoopBuilderImpl(input);
+  normalizedLoopOutputs.push(output);
+  return output;
+});
+
+mock.module("@/lib/unattended-runtime/normalized-step-input", () => ({
+  ...normalizedRuntime,
+  buildNormalizedLoopStepInput: buildNormalizedLoopStepInputMock,
 }));
 
 // ── GitHub API client mock ────────────────────────────────────────────────────
@@ -334,6 +379,9 @@ function makeLoopRun(overrides: Partial<AgentLoopRun> = {}): AgentLoopRun {
     userId: "user-1",
     status: "running",
     definitionSnapshot: makeDefinitionSnapshot([]) as Record<string, unknown>,
+    executionSnapshot: null,
+    definitionVersion: null,
+    definitionHash: null,
     currentNodeId: null,
     currentStepRunId: null,
     iterationCount: 0,
@@ -384,6 +432,9 @@ function resetMocks() {
   recordedStepUpdates = [];
   recordedRunUpdates = [];
   recordedContextUpdates = [];
+  boundaryOrder = [];
+  terminalTransitionWins = true;
+  conditionallyTransitionRunStatusMock.mockClear();
   githubApiCallCount = 0;
 
   verifyRepoAccessResult = {
@@ -411,6 +462,10 @@ function resetMocks() {
   verifyRepoAccessMock.mockClear();
   mintInstallationTokenMock.mockClear();
   revokeInstallationTokenMock.mockClear();
+  normalizedLoopBuilderImpl = (input) =>
+    realBuildNormalizedLoopStepInput(input);
+  normalizedLoopOutputs.length = 0;
+  buildNormalizedLoopStepInputMock.mockClear();
   issuesMock.listForRepo.mockClear();
   pullsMock.get.mockClear();
   reposMock.listDeployments.mockClear();
@@ -442,6 +497,9 @@ describe("github_check — list_issues", () => {
     });
     currentLoopRun = makeLoopRun({
       definitionSnapshot: snapshot as Record<string, unknown>,
+      executionSnapshot: null,
+      definitionVersion: null,
+      definitionHash: null,
     });
     currentLoop = makeLoop();
 
@@ -567,6 +625,9 @@ describe("github_check — pr_status", () => {
     });
     currentLoopRun = makeLoopRun({
       definitionSnapshot: snapshot as Record<string, unknown>,
+      executionSnapshot: null,
+      definitionVersion: null,
+      definitionHash: null,
       context: { impl_step: { prNumber: 42 } },
     });
     currentLoop = makeLoop();
@@ -607,6 +668,9 @@ describe("github_check — pr_status", () => {
     // Context does NOT have impl_step.prNumber
     currentLoopRun = makeLoopRun({
       definitionSnapshot: currentLoopRun.definitionSnapshot,
+      executionSnapshot: null,
+      definitionVersion: null,
+      definitionHash: null,
       context: {},
     });
 
@@ -657,6 +721,9 @@ describe("github_check — deployment_status", () => {
     });
     currentLoopRun = makeLoopRun({
       definitionSnapshot: snapshot as Record<string, unknown>,
+      executionSnapshot: null,
+      definitionVersion: null,
+      definitionHash: null,
     });
     currentLoop = makeLoop();
 
@@ -724,6 +791,9 @@ describe("github_check — ci_status", () => {
     });
     currentLoopRun = makeLoopRun({
       definitionSnapshot: snapshot as Record<string, unknown>,
+      executionSnapshot: null,
+      definitionVersion: null,
+      definitionHash: null,
       context: { impl_step: { headSha: "abc123" } },
     });
     currentLoop = makeLoop();
@@ -757,6 +827,9 @@ describe("github_check — ci_status", () => {
     // Context has no impl_step.headSha
     currentLoopRun = makeLoopRun({
       definitionSnapshot: currentLoopRun.definitionSnapshot,
+      executionSnapshot: null,
+      definitionVersion: null,
+      definitionHash: null,
       context: {},
     });
 
@@ -803,6 +876,9 @@ describe("github_check — pr_status *From type validation", () => {
     });
     currentLoopRun = makeLoopRun({
       definitionSnapshot: snapshot as Record<string, unknown>,
+      executionSnapshot: null,
+      definitionVersion: null,
+      definitionHash: null,
       context: { step: { prNumber: contextValue } },
     });
     currentLoop = makeLoop();
@@ -927,6 +1003,9 @@ describe("github_check — ci_status *From type validation", () => {
     });
     currentLoopRun = makeLoopRun({
       definitionSnapshot: snapshot as Record<string, unknown>,
+      executionSnapshot: null,
+      definitionVersion: null,
+      definitionHash: null,
       context: { step: { headSha: contextValue } },
     });
     currentLoop = makeLoop();
@@ -1017,6 +1096,9 @@ describe("github_check — no check config guard ordering", () => {
     });
     currentLoopRun = makeLoopRun({
       definitionSnapshot: snapshot as Record<string, unknown>,
+      executionSnapshot: null,
+      definitionVersion: null,
+      definitionHash: null,
     });
     currentLoop = makeLoop();
   });
@@ -1058,6 +1140,9 @@ describe("github_check — permission / installation failures", () => {
     });
     currentLoopRun = makeLoopRun({
       definitionSnapshot: snapshot as Record<string, unknown>,
+      executionSnapshot: null,
+      definitionVersion: null,
+      definitionHash: null,
     });
     currentLoop = makeLoop();
   });
@@ -1125,6 +1210,9 @@ describe("condition node", () => {
     });
     currentLoopRun = makeLoopRun({
       definitionSnapshot: snapshot as Record<string, unknown>,
+      executionSnapshot: null,
+      definitionVersion: null,
+      definitionHash: null,
       context,
     });
     currentLoop = makeLoop();
@@ -1215,6 +1303,9 @@ describe("end node", () => {
     currentStepRun = makeStepRun({ nodeId: "end-node-1", nodeKind: "end" });
     currentLoopRun = makeLoopRun({
       definitionSnapshot: snapshot as Record<string, unknown>,
+      executionSnapshot: null,
+      definitionVersion: null,
+      definitionHash: null,
     });
     currentLoop = makeLoop();
   });
@@ -1258,6 +1349,29 @@ describe("end node", () => {
     expect(verifyRepoAccessMock.mock.calls.length).toBe(0);
     expect(githubApiCallCount).toBe(0);
   });
+
+  test("concurrent cancellation wins over end-node completion evidence", async () => {
+    terminalTransitionWins = false;
+    const { executeAgentLoopStep } = await executorPromise;
+    await executeAgentLoopStep({
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+    });
+
+    expect(
+      recordedEvents.find(
+        (event) => event.eventName === "agent-loop.run.completed",
+      ),
+    ).toBeUndefined();
+    expect(
+      recordedEvents.find(
+        (event) => event.eventName === "agent-loop.step.completed",
+      ),
+    ).toBeUndefined();
+    expect(
+      recordedStepUpdates.some((update) => update.status === "completed"),
+    ).toBe(false);
+  });
 });
 
 // ── BT-008: start node trivially succeeds ─────────────────────────────────────
@@ -1276,6 +1390,9 @@ describe("start node", () => {
     currentStepRun = makeStepRun({ nodeId: "start-node-1", nodeKind: "start" });
     currentLoopRun = makeLoopRun({
       definitionSnapshot: snapshot as Record<string, unknown>,
+      executionSnapshot: null,
+      definitionVersion: null,
+      definitionHash: null,
     });
     currentLoop = makeLoop();
   });
@@ -1317,6 +1434,9 @@ describe("agent_step node", () => {
     });
     currentLoopRun = makeLoopRun({
       definitionSnapshot: snapshot as Record<string, unknown>,
+      executionSnapshot: null,
+      definitionVersion: null,
+      definitionHash: null,
     });
     currentLoop = makeLoop();
   });
@@ -1337,6 +1457,226 @@ describe("agent_step node", () => {
   });
 });
 
+describe("normalized loop agent_step boundary (#968)", () => {
+  function configureFrozenAgentStep(
+    options: {
+      attempt?: number;
+      context?: Record<string, unknown>;
+      watchdogHint?: string;
+    } = {},
+  ) {
+    resetMocks();
+    const node = {
+      id: "normalized-agent-node",
+      kind: "agent_step" as const,
+      label: "Frozen normalized node",
+      position: { x: 0, y: 0 },
+      instructions: "FROZEN-NORMALIZED-INSTRUCTIONS",
+      outputSchema: { required: ["result"] },
+      checkCommand: "bun test frozen-normalized-check",
+      permissions: { github: { issues: "write" as const } },
+      composioToolkitSlugs: ["linear"],
+      builtinToolNames: ["bash"],
+    };
+    const acceptedLoop = makeLoop({
+      name: "Frozen loop",
+      repoOwner: "frozen-owner",
+      repoName: "frozen-repo",
+      definition: { nodes: [node], edges: [] },
+      guardrails: {
+        stepTimeoutMs: 321_000,
+        maxAgentTurnsPerStep: 7,
+      },
+      permissions: { github: { contents: "write" } },
+    });
+    const snapshot = buildAgentLoopExecutionSnapshot(acceptedLoop);
+    currentStepRun = makeStepRun({
+      id: "step-normalized-1",
+      nodeId: node.id,
+      nodeKind: "agent_step",
+      attempt: options.attempt ?? 1,
+      status: "queued",
+      stepInput: options.watchdogHint
+        ? { watchdogHint: options.watchdogHint }
+        : null,
+    });
+    currentLoopRun = makeLoopRun({
+      id: "loop-run-normalized-1",
+      loopId: acceptedLoop.id,
+      definitionSnapshot: snapshot.definition,
+      executionSnapshot: snapshot,
+      definitionVersion: 1,
+      definitionHash: hashAgentLoopExecutionSnapshot(snapshot),
+      context: options.context ?? {
+        trigger: { eventKind: "github.issue", issueNumber: 42 },
+      },
+      requestId: "request-normalized-1",
+      workflowRunId: "workflow-original",
+    });
+    currentLoop = makeLoop({
+      id: acceptedLoop.id,
+      userId: acceptedLoop.userId,
+      name: "Live edited loop",
+      repoOwner: "live-edited-owner",
+      repoName: "live-edited-repo",
+      definition: {
+        nodes: [
+          {
+            ...node,
+            instructions: "LIVE-EDITED-INSTRUCTIONS",
+            builtinToolNames: ["write"],
+          },
+        ],
+        edges: [],
+      },
+      guardrails: { stepTimeoutMs: 1, maxAgentTurnsPerStep: 1 },
+      permissions: { github: { issues: "read" } },
+    });
+    return { node, snapshot };
+  }
+
+  test("builds one strict normalized input from the resolved snapshot before token or sandbox work", async () => {
+    const { node } = configureFrozenAgentStep();
+    const { executeAgentLoopStep } = await executorPromise;
+
+    await executeAgentLoopStep({
+      stepRunId: currentStepRun.id,
+      workflowRunId: "workflow-normalized-1",
+      stepTimeoutMs: 321_000,
+      maxAgentTurnsPerStep: 7,
+    });
+
+    expect(buildNormalizedLoopStepInputMock).toHaveBeenCalledTimes(1);
+    expect(boundaryOrder[0]).toBe("normalized.build");
+    expect(boundaryOrder).toContain("token.mint");
+    expect(buildNormalizedLoopStepInputMock.mock.calls[0]?.[0]).toMatchObject({
+      resolvedDefinition: {
+        snapshotSource: "frozen",
+        definitionVersion: 1,
+        definitionHash: currentLoopRun.definitionHash,
+      },
+      identity: {
+        runId: currentLoopRun.id,
+        stepRunId: currentStepRun.id,
+        nodeId: node.id,
+        attempt: 1,
+        userId: currentLoopRun.userId,
+        requestId: currentLoopRun.requestId,
+        workflowRunId: "workflow-normalized-1",
+      },
+      promptContext: currentLoopRun.context,
+      workspace: {
+        sandboxName: `agent_loop_${currentStepRun.id}`,
+        initialCheckout: {
+          ref: "main",
+          source: "live_default_branch",
+        },
+      },
+    });
+    expect(recordedEvents).toContainEqual(
+      expect.objectContaining({
+        eventName: "agent-loop.step.normalized-input.accepted",
+        status: "succeeded",
+        level: "info",
+        payload: {
+          runId: currentLoopRun.id,
+          stepRunId: currentStepRun.id,
+          nodeId: node.id,
+          attempt: 1,
+          inputVersion: 1,
+          definitionVersion: 1,
+          definitionHash: currentLoopRun.definitionHash,
+          snapshotSource: "frozen",
+          workflowRunId: "workflow-normalized-1",
+          workspacePolicy: "disposable_step",
+        },
+      }),
+    );
+  });
+
+  test("rejects unsafe context and oversized watchdog hints before token minting", async () => {
+    configureFrozenAgentStep({
+      context: { trigger: { token: "PRIVATE-CONTEXT-TOKEN-CANARY" } },
+      watchdogHint: "x".repeat(4097),
+    });
+    const { executeAgentLoopStep } = await executorPromise;
+
+    const result = await executeAgentLoopStep({
+      stepRunId: currentStepRun.id,
+      workflowRunId: "workflow-normalized-rejected",
+    });
+
+    expect(result).toMatchObject({
+      outcome: "failure",
+      errorKind: "normalized_input_invalid",
+    });
+    expect(mintInstallationTokenMock).not.toHaveBeenCalled();
+    expect(
+      recordedEvents.find(
+        (event) =>
+          event.eventName === "agent-loop.step.normalized-input.rejected",
+      ),
+    ).toMatchObject({
+      status: "failed",
+      level: "error",
+      payload: {
+        runId: currentLoopRun.id,
+        stepRunId: currentStepRun.id,
+        nodeId: currentStepRun.nodeId,
+        errorKind: "normalized_input_invalid",
+        safeFieldPaths: expect.any(Array),
+        workflowRunId: "workflow-normalized-rejected",
+      },
+    });
+    expect(JSON.stringify(recordedEvents)).not.toContain(
+      "PRIVATE-CONTEXT-TOKEN-CANARY",
+    );
+  });
+
+  test("retry attempts keep frozen provenance while receiving a new attempt identity", async () => {
+    configureFrozenAgentStep({
+      attempt: 2,
+      watchdogHint: "Bounded retry guidance",
+    });
+    const { executeAgentLoopStep } = await executorPromise;
+
+    await executeAgentLoopStep({
+      stepRunId: currentStepRun.id,
+      workflowRunId: "workflow-normalized-retry",
+    });
+
+    const input = normalizedLoopOutputs[0];
+    expect(input).toMatchObject({
+      identity: {
+        stepRunId: currentStepRun.id,
+        attempt: 2,
+        workflowRunId: "workflow-normalized-retry",
+      },
+      provenance: {
+        snapshotSource: "frozen",
+        definitionVersion: 1,
+        definitionHash: currentLoopRun.definitionHash,
+      },
+      prompt: { watchdogHint: "Bounded retry guidance" },
+    });
+  });
+
+  test("terminal duplicate delivery produces no normalized rebuild, token, sandbox, or new events", async () => {
+    configureFrozenAgentStep();
+    currentStepRun = { ...currentStepRun, status: "succeeded" };
+    const { executeAgentLoopStep } = await executorPromise;
+
+    await executeAgentLoopStep({
+      stepRunId: currentStepRun.id,
+      workflowRunId: "workflow-duplicate",
+    });
+
+    expect(buildNormalizedLoopStepInputMock).not.toHaveBeenCalled();
+    expect(mintInstallationTokenMock).not.toHaveBeenCalled();
+    expect(recordedEvents).toEqual([]);
+  });
+});
+
 // ── BT-010: snapshot parse failure ───────────────────────────────────────────
 
 describe("snapshot parse failure", () => {
@@ -1353,6 +1693,9 @@ describe("snapshot parse failure", () => {
     currentStepRun = makeStepRun({ nodeId: "x", nodeKind: "github_check" });
     currentLoopRun = makeLoopRun({
       definitionSnapshot: badSnapshot as Record<string, unknown>,
+      executionSnapshot: null,
+      definitionVersion: null,
+      definitionHash: null,
     });
     currentLoop = makeLoop();
 
@@ -1389,6 +1732,9 @@ describe("missing node in snapshot", () => {
     });
     currentLoopRun = makeLoopRun({
       definitionSnapshot: snapshot as Record<string, unknown>,
+      executionSnapshot: null,
+      definitionVersion: null,
+      definitionHash: null,
     });
     currentLoop = makeLoop();
   });
@@ -1421,6 +1767,9 @@ describe("event emission", () => {
     currentStepRun = makeStepRun({ nodeId: "end-node-1", nodeKind: "end" });
     currentLoopRun = makeLoopRun({
       definitionSnapshot: snapshot as Record<string, unknown>,
+      executionSnapshot: null,
+      definitionVersion: null,
+      definitionHash: null,
     });
     currentLoop = makeLoop();
   });
@@ -1476,6 +1825,9 @@ describe("event emission", () => {
     });
     currentLoopRun = makeLoopRun({
       definitionSnapshot: snapshot as Record<string, unknown>,
+      executionSnapshot: null,
+      definitionVersion: null,
+      definitionHash: null,
     });
     currentLoop = makeLoop();
 
@@ -1518,6 +1870,9 @@ describe("redaction", () => {
     });
     currentLoopRun = makeLoopRun({
       definitionSnapshot: snapshot as Record<string, unknown>,
+      executionSnapshot: null,
+      definitionVersion: null,
+      definitionHash: null,
     });
     currentLoop = makeLoop();
     listIssuesResult = [];

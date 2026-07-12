@@ -44,12 +44,14 @@ mock.module("nanoid", () => ({
 // notInArray() call targets.
 const runsIdColumn = "runId.id";
 const runsStatusColumn = "runId.status";
+const runsWorkflowRunIdColumn = "runId.workflowRunId";
 const eventsRunIdColumn = "eventId.runId";
 const eventsSequenceColumn = "eventId.sequence";
 
-const runsTableSymbol: { id: string; status: string } = {
+const runsTableSymbol: { id: string; status: string; workflowRunId: string } = {
   id: runsIdColumn,
   status: runsStatusColumn,
+  workflowRunId: runsWorkflowRunIdColumn,
 };
 const eventsTableSymbol: { runId: string; sequence: string } = {
   runId: eventsRunIdColumn,
@@ -79,6 +81,7 @@ mock.module("./matching", () => ({
 type FakeCond =
   | { _eq: [unknown, unknown] }
   | { _and: FakeCond[] }
+  | { _inArray: [unknown, unknown[]] }
   | { _notInArray: [unknown, unknown[]] };
 
 function evalCond(cond: FakeCond | undefined, row: FakeRunRow): boolean {
@@ -89,11 +92,17 @@ function evalCond(cond: FakeCond | undefined, row: FakeRunRow): boolean {
   if ("_eq" in cond) {
     const [col, value] = cond._eq;
     if (col === "runId.id") return row.id === value;
+    if (col === "runId.workflowRunId") return row.workflowRunId === value;
     return true;
   }
   if ("_notInArray" in cond) {
     const [col, values] = cond._notInArray;
     if (col === "runId.status") return !values.includes(row.status);
+    return true;
+  }
+  if ("_inArray" in cond) {
+    const [col, values] = cond._inArray;
+    if (col === "runId.status") return values.includes(row.status);
     return true;
   }
   return true;
@@ -266,6 +275,52 @@ describe("#743 terminal-status guard: updateBackgroundAgentRunStatus", () => {
 
     expect(result?.status).toBe("running");
     expect(runsTable[0]?.status).toBe("running");
+  });
+
+  test("expectedStatuses applies a compare-and-set transition when the status matches", async () => {
+    seedRun("queued");
+    const { updateBackgroundAgentRunStatus } = await storePromise;
+
+    const result = await updateBackgroundAgentRunStatus({
+      runId: "run-1",
+      status: "running",
+      expectedStatuses: ["queued"],
+    });
+
+    expect(result?.status).toBe("running");
+    expect(runsTable[0]?.status).toBe("running");
+  });
+
+  test("expectedStatuses refuses a stale compare-and-set without changing the run", async () => {
+    seedRun("running");
+    const { updateBackgroundAgentRunStatus } = await storePromise;
+
+    const result = await updateBackgroundAgentRunStatus({
+      runId: "run-1",
+      status: "failed",
+      expectedStatuses: ["queued"],
+    });
+
+    expect(result).toBeNull();
+    expect(runsTable[0]?.status).toBe("running");
+    expect(eventsTable).toHaveLength(0);
+  });
+
+  test("expectedWorkflowRunId refuses a stale workflow owner", async () => {
+    const row = seedRun("running");
+    row.workflowRunId = "workflow-new-owner";
+    const { updateBackgroundAgentRunStatus } = await storePromise;
+
+    const result = await updateBackgroundAgentRunStatus({
+      runId: "run-1",
+      status: "failed",
+      expectedStatuses: ["running"],
+      expectedWorkflowRunId: "workflow-stale-owner",
+    });
+
+    expect(result).toBeNull();
+    expect(runsTable[0]?.status).toBe("running");
+    expect(runsTable[0]?.workflowRunId).toBe("workflow-new-owner");
   });
 });
 

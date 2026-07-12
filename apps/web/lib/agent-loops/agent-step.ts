@@ -90,21 +90,36 @@ import { isFlatOutputSchema } from "./output-schema-shape";
 import { resolveWorkingBranch } from "./resolve-working-branch";
 import {
   effectiveStepPermissions,
+  intersectBuiltinToolNames,
+  intersectComposioToolkitSlugs,
+  intersectStepPermissions,
   permissionsToInstallationToken,
 } from "./token-permissions";
-import { resolveComposioToolsForBgRun } from "@/lib/background-agents/composio-tools";
+import {
+  assertComposioRepoToolkitsStillAllowed,
+  resolveComposioToolsForBgRun,
+} from "@/lib/background-agents/composio-tools";
 import {
   updateAgentLoopStepRun,
   recordAgentLoopEvent,
   updateAgentLoopRunContext,
+  isAgentLoopRunSourceLive,
 } from "./store";
+import * as agentLoopStore from "./store";
+import { getAgentLoopRepoAccess, isAgentLoopsEnabled } from "./config";
 import { buildLoopStepPrompt } from "./loop-step-prompt";
 import type { ModelMessage } from "ai";
 import type { AgentLoop, AgentLoopRun } from "@/lib/db/schema";
+import type { AgentLoopExecutionPolicy } from "./execution-snapshot";
 import { GUARDRAIL_CEILINGS, GUARDRAIL_DEFAULTS } from "./types";
 import type { AgentStepNode } from "./types";
 import type { StepExecutionResult } from "./step-executor";
 import type { Sandbox } from "@open-agents/sandbox";
+import {
+  projectAgentLoopLiveSource,
+  type AgentLoopLiveSourceProjection,
+  type NormalizedLoopStepInput,
+} from "./normalized-step-input";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -146,8 +161,17 @@ export type AgentStepParams = {
   loopRunId: string;
   node: AgentStepNode;
   loopRun: AgentLoopRun;
-  loop: AgentLoop;
+  loop: Pick<
+    AgentLoopExecutionPolicy,
+    "repoOwner" | "repoName" | "permissions"
+  >;
   startedAt: number;
+  /** Strict frozen execution input. Omitted only by legacy direct unit callers. */
+  normalizedInput?: NormalizedLoopStepInput;
+  /** Durable ownership token acquired before any external side effect. */
+  executionClaimGeneration?: string;
+  /** Current source policy, used exclusively to revoke or narrow capability. */
+  liveSource?: AgentLoopLiveSourceProjection | null;
   /** Optional watchdog hint from the previous failed attempt (via stepInput.watchdogHint). */
   watchdogHint?: string;
   /**
@@ -174,6 +198,98 @@ function buildSandboxName(stepRunId: string): string {
 
 function nowMs(): number {
   return Date.now();
+}
+
+type AgentLoopLiveGateErrorKind =
+  | "source_deleted"
+  | "source_inactive"
+  | "feature_disabled"
+  | "repo_not_allowed";
+
+type AgentLoopLiveGateDenial = {
+  errorKind: AgentLoopLiveGateErrorKind;
+  errorMessage: string;
+};
+
+class AgentLoopLiveGateError extends Error {
+  constructor(readonly denial: AgentLoopLiveGateDenial) {
+    super(denial.errorMessage);
+    this.name = "AgentLoopLiveGateError";
+  }
+}
+
+async function getAgentLoopLiveGateDenial(params: {
+  loopRunId: string;
+  repoOwner: string;
+  repoName: string;
+}): Promise<AgentLoopLiveGateDenial | null> {
+  if (
+    await isAgentLoopRunSourceLive(params.loopRunId, {
+      repoOwner: params.repoOwner,
+      repoName: params.repoName,
+    })
+  ) {
+    return null;
+  }
+
+  const current = await agentLoopStore.getAgentLoopRunWithLoop(
+    params.loopRunId,
+  );
+  if (!current?.loop) {
+    return {
+      errorKind: "source_deleted",
+      errorMessage: "Source Automation was deleted during execution.",
+    };
+  }
+  if (current.loop.status !== "active") {
+    return {
+      errorKind: "source_inactive",
+      errorMessage: "Source Automation became inactive during execution.",
+    };
+  }
+  if (!isAgentLoopsEnabled()) {
+    return {
+      errorKind: "feature_disabled",
+      errorMessage: "Agent loop execution was disabled during execution.",
+    };
+  }
+  if (!getAgentLoopRepoAccess(params.repoOwner, params.repoName).allowed) {
+    return {
+      errorKind: "repo_not_allowed",
+      errorMessage: "The accepted repository is no longer allowed.",
+    };
+  }
+
+  // The aggregate live check can only be false for the gates above. If state
+  // changes again between its query and this diagnostic query, fail closed
+  // without incorrectly claiming that the source was deleted.
+  return {
+    errorKind: "source_inactive",
+    errorMessage: "Loop execution authorization changed during execution.",
+  };
+}
+
+function guardToolSet(
+  tools: import("ai").ToolSet | undefined,
+  guard: () => Promise<void>,
+): import("ai").ToolSet | undefined {
+  if (!tools) return undefined;
+  return Object.fromEntries(
+    Object.entries(tools).map(([name, value]) => {
+      const candidate = value as { execute?: (...args: unknown[]) => unknown };
+      if (typeof candidate.execute !== "function") return [name, value];
+      return [
+        name,
+        {
+          ...candidate,
+          execute: async (...args: unknown[]) => {
+            await guard();
+            return candidate.execute?.(...args);
+          },
+        },
+      ];
+    }),
+  ) as import("ai").ToolSet;
 }
 
 /**
@@ -326,18 +442,29 @@ async function recordAgentStepFailure(params: {
   errorKind: string;
   errorMessage: string;
   payloadExtras?: Record<string, unknown>;
+  executionClaimGeneration?: string;
 }): Promise<StepExecutionResult> {
   const finishedAt = new Date();
   const durationMs = nowMs() - params.startedAt;
 
-  await updateAgentLoopStepRun({
+  const updated = await updateAgentLoopStepRun({
     stepRunId: params.stepRunId,
     status: "failed",
     errorKind: params.errorKind,
     errorMessage: params.errorMessage,
     finishedAt,
     durationMs,
+    ...(params.executionClaimGeneration
+      ? {
+          expectedStatuses: ["running" as const],
+          expectedWorkflowRunId: params.workflowRunId,
+          expectedExecutionClaimGeneration: params.executionClaimGeneration,
+        }
+      : {}),
   });
+  if (updated === null) {
+    return { outcome: "failure", errorKind: "step_ownership_lost" };
+  }
 
   await recordAgentLoopEvent({
     loopRunId: params.loopRunId,
@@ -386,30 +513,124 @@ export async function executeAgentStep(
     startedAt,
     watchdogHint,
     stepTimeoutMs = AGENT_STEP_TIMEOUT_MS,
+    normalizedInput,
+    executionClaimGeneration,
   } = params;
+  const liveSource =
+    params.liveSource ??
+    (normalizedInput
+      ? projectAgentLoopLiveSource(
+          loop as unknown as AgentLoop,
+          normalizedInput.identity.nodeId,
+        )
+      : null);
+  const normalizedVerificationCommand =
+    normalizedInput?.verification.kind === "command" ||
+    normalizedInput?.verification.kind === "command_and_structured_output"
+      ? normalizedInput.verification.command
+      : undefined;
+  const normalizedOutputSchema =
+    (normalizedInput?.output.schema as Record<string, unknown> | null) ??
+    undefined;
+  let executionNode: AgentStepNode = normalizedInput
+    ? {
+        ...node,
+        id: normalizedInput.identity.nodeId,
+        kind: "agent_step",
+        instructions: normalizedInput.prompt.instructions,
+        outputSchema: normalizedOutputSchema,
+        checkCommand: normalizedVerificationCommand,
+        permissions: normalizedInput.requestedPolicy.declaredPermissions,
+        builtinToolNames: normalizedInput.requestedPolicy.builtinToolNames,
+        composioToolkitSlugs:
+          normalizedInput.requestedPolicy.composioToolkitSlugs,
+      }
+    : node;
+  const requestedPermissions = normalizedInput
+    ? normalizedInput.requestedPolicy.declaredPermissions
+    : effectiveStepPermissions(node.permissions, loop.permissions);
+  const effectivePermissions = normalizedInput
+    ? intersectStepPermissions(
+        requestedPermissions,
+        liveSource?.stepPolicy?.permissions,
+      )
+    : requestedPermissions;
+  const allowedBuiltinToolNames = normalizedInput
+    ? intersectBuiltinToolNames(
+        normalizedInput.requestedPolicy.builtinToolNames,
+        liveSource?.stepPolicy?.builtinToolNames ?? [],
+      )
+    : (node.builtinToolNames ?? null);
+  const toolkitSlugs = normalizedInput
+    ? intersectComposioToolkitSlugs(
+        normalizedInput.requestedPolicy.composioToolkitSlugs,
+        liveSource?.stepPolicy?.composioToolkitSlugs ?? [],
+      )
+    : (node.composioToolkitSlugs ?? []);
+  if (normalizedInput) {
+    executionNode = {
+      ...executionNode,
+      permissions: effectivePermissions,
+      builtinToolNames: allowedBuiltinToolNames,
+      composioToolkitSlugs: toolkitSlugs,
+    };
+  }
+  const executionLoopRunId = normalizedInput?.identity.runId ?? loopRunId;
+  const executionStepRunId = normalizedInput?.identity.stepRunId ?? stepRunId;
+  const executionUserId = normalizedInput?.identity.userId ?? loopRun.userId;
+  const executionNodeId = normalizedInput?.identity.nodeId ?? node.id;
+  const repoOwner = normalizedInput?.repository.owner ?? loop.repoOwner;
+  const repoName = normalizedInput?.repository.name ?? loop.repoName;
+  const promptContext =
+    normalizedInput?.prompt.context ?? loopRun.context ?? {};
+  const effectiveWatchdogHint =
+    normalizedInput?.prompt.watchdogHint ?? watchdogHint;
+  const effectiveStepTimeoutMs =
+    normalizedInput?.budgets.timeoutMs ?? stepTimeoutMs;
+  const outputPath = normalizedInput?.output.path ?? STEP_OUTPUT_PATH;
+  const outputMaxBytes =
+    normalizedInput?.output.maxBytes ?? STEP_OUTPUT_MAX_BYTES;
   const maxAgentTurns = Math.min(
-    params.maxAgentTurnsPerStep ?? GUARDRAIL_DEFAULTS.maxAgentTurnsPerStep,
+    normalizedInput?.budgets.maxTurns ??
+      params.maxAgentTurnsPerStep ??
+      GUARDRAIL_DEFAULTS.maxAgentTurnsPerStep,
     GUARDRAIL_CEILINGS.maxAgentTurnsPerStep,
   );
 
-  const sandboxName = buildSandboxName(stepRunId);
+  const sandboxName =
+    normalizedInput?.workspace.sandboxName ?? buildSandboxName(stepRunId);
 
   const failureCtx = {
-    loopRunId,
-    stepRunId,
-    nodeId: node.id,
-    nodeKind: node.kind,
-    attempt: loopRun.iterationCount + 1,
+    loopRunId: executionLoopRunId,
+    stepRunId: executionStepRunId,
+    nodeId: executionNodeId,
+    nodeKind: executionNode.kind,
+    attempt: normalizedInput?.identity.attempt ?? loopRun.iterationCount + 1,
     workflowRunId,
     startedAt,
+    ...(executionClaimGeneration ? { executionClaimGeneration } : {}),
   };
+  const getLiveGateDenial = () =>
+    getAgentLoopLiveGateDenial({
+      loopRunId: executionLoopRunId,
+      repoOwner,
+      repoName,
+    });
+
+  const initialLiveGateDenial = await getLiveGateDenial();
+  if (initialLiveGateDenial) {
+    return recordAgentStepFailure({
+      ...failureCtx,
+      ...initialLiveGateDenial,
+    });
+  }
 
   // ── 1. Verify repo access (write required for agent_step commit/push) ────────
 
   const accessResult = await verifyRepoAccess({
-    userId: loopRun.userId,
-    owner: loop.repoOwner,
-    repo: loop.repoName,
+    userId: executionUserId,
+    owner: repoOwner,
+    repo: repoName,
     requiredUserPermission: "write",
   });
 
@@ -435,9 +656,7 @@ export async function executeAgentStep(
     const scopedToken = await mintInstallationToken({
       installationId: accessResult.installationId,
       repositoryIds: [accessResult.repositoryId],
-      permissions: permissionsToInstallationToken(
-        effectiveStepPermissions(node.permissions, loop.permissions),
-      ),
+      permissions: permissionsToInstallationToken(effectivePermissions),
     });
     cloneToken = scopedToken.token;
   } catch (err) {
@@ -454,11 +673,22 @@ export async function executeAgentStep(
   //   (2) last insertion-order context entry with a non-empty string branch field
   //   (3) access.defaultBranch — repo default branch fallback
 
-  const workingBranch = resolveWorkingBranch(
-    (loopRun.context ?? {}) as Record<string, unknown>,
-    node.id,
-    accessResult.defaultBranch,
-  );
+  const workingBranch =
+    normalizedInput?.workspace.initialCheckout.ref ??
+    resolveWorkingBranch(
+      (loopRun.context ?? {}) as Record<string, unknown>,
+      node.id,
+      accessResult.defaultBranch,
+    );
+
+  const sandboxLiveGateDenial = await getLiveGateDenial();
+  if (sandboxLiveGateDenial) {
+    await revokeInstallationToken(cloneToken).catch(() => undefined);
+    return recordAgentStepFailure({
+      ...failureCtx,
+      ...sandboxLiveGateDenial,
+    });
+  }
 
   // ── 4. Connect sandbox ────────────────────────────────────────────────────────
 
@@ -469,7 +699,7 @@ export async function executeAgentStep(
         type: "vercel",
         sandboxName,
         source: {
-          repo: `https://github.com/${loop.repoOwner}/${loop.repoName}.git`,
+          repo: `https://github.com/${repoOwner}/${repoName}.git`,
           branch: workingBranch,
         },
       },
@@ -479,8 +709,8 @@ export async function executeAgentStep(
         vcpus: DEFAULT_SANDBOX_VCPUS,
         ports: DEFAULT_SANDBOX_PORTS,
         baseSnapshotId: DEFAULT_SANDBOX_BASE_SNAPSHOT_ID,
-        persistent: false,
-        resume: false,
+        persistent: normalizedInput?.workspace.persistent ?? false,
+        resume: normalizedInput?.workspace.resume ?? false,
         createIfMissing: true,
       },
     });
@@ -509,16 +739,16 @@ export async function executeAgentStep(
     // ── 5a. Emit sandbox.started event ───────────────────────────────────────
 
     await recordAgentLoopEvent({
-      loopRunId,
-      stepRunId,
-      nodeId: node.id,
+      loopRunId: executionLoopRunId,
+      stepRunId: executionStepRunId,
+      nodeId: executionNodeId,
       eventName: "agent-loop.step.sandbox.started",
       status: "running",
       level: "info",
       summary: `Sandbox ready: ${sandboxName}`,
       payload: {
         sandboxName,
-        stepRunId,
+        stepRunId: executionStepRunId,
         workingBranch,
       },
       workflowRunId,
@@ -526,13 +756,12 @@ export async function executeAgentStep(
 
     // ── 5b. Build prompt ─────────────────────────────────────────────────────
 
-    const contextSlice = (loopRun.context ?? {}) as Record<string, unknown>;
     const prompt = buildLoopStepPrompt({
-      node,
-      contextSlice,
-      repo: `${loop.repoOwner}/${loop.repoName}`,
+      node: executionNode,
+      contextSlice: promptContext,
+      repo: `${repoOwner}/${repoName}`,
       branch: workingBranch,
-      watchdogHint,
+      watchdogHint: effectiveWatchdogHint ?? undefined,
     });
 
     // ── 5c. Run openAgent in a bounded loop ─────────────────────────────────
@@ -562,7 +791,7 @@ export async function executeAgentStep(
       // approval-gated call cannot wedge the run with a dangling tool_use.
       unattended: true,
       // Pre-approved built-in tools for this step. null = default policy.
-      allowedBuiltinToolNames: node.builtinToolNames ?? null,
+      allowedBuiltinToolNames,
       customInstructions: BASE_STEP_CUSTOM_INSTRUCTIONS,
     };
 
@@ -575,24 +804,34 @@ export async function executeAgentStep(
     // off/error skip. Still non-fatal — the step continues without
     // Composio tools on off/error.
     let composioTools: import("ai").ToolSet | undefined;
-    const toolkitSlugs = node.composioToolkitSlugs ?? [];
     if (toolkitSlugs.length > 0) {
       const composioResult = await resolveComposioToolsForBgRun({
         agentId: null,
-        runId: loopRun.id,
-        userId: loopRun.userId,
+        runId: executionLoopRunId,
+        userId: executionUserId,
         slugs: toolkitSlugs,
-        repoOwner: loop.repoOwner,
-        repoName: loop.repoName,
+        repoOwner,
+        repoName,
       });
       if (composioResult.status === "ready") {
-        composioTools = composioResult.tools;
+        composioTools = guardToolSet(composioResult.tools, async () => {
+          const denial = await getLiveGateDenial();
+          if (denial) {
+            throw new AgentLoopLiveGateError(denial);
+          }
+          await assertComposioRepoToolkitsStillAllowed({
+            userId: executionUserId,
+            repoOwner,
+            repoName,
+            toolkitSlugs: composioResult.toolkitSlugs,
+          });
+        });
 
         if (composioResult.disconnectedToolkits.length > 0) {
           await recordAgentLoopEvent({
-            loopRunId,
-            stepRunId,
-            nodeId: node.id,
+            loopRunId: executionLoopRunId,
+            stepRunId: executionStepRunId,
+            nodeId: executionNodeId,
             eventName: "agent-loop.step.composio.not_connected",
             status: "succeeded",
             level: "warn",
@@ -605,9 +844,9 @@ export async function executeAgentStep(
         }
       } else if (composioResult.status === "error") {
         await recordAgentLoopEvent({
-          loopRunId,
-          stepRunId,
-          nodeId: node.id,
+          loopRunId: executionLoopRunId,
+          stepRunId: executionStepRunId,
+          nodeId: executionNodeId,
           eventName: "agent-loop.step.composio.error",
           status: "failed",
           level: "warn",
@@ -633,9 +872,9 @@ export async function executeAgentStep(
           composioResult.reason === "repo_policy_blocked" ||
           composioResult.reason === "not_in_repo_allowlist";
         await recordAgentLoopEvent({
-          loopRunId,
-          stepRunId,
-          nodeId: node.id,
+          loopRunId: executionLoopRunId,
+          stepRunId: executionStepRunId,
+          nodeId: executionNodeId,
           eventName: "agent-loop.step.composio.off",
           status: "succeeded",
           level: "warn",
@@ -659,7 +898,7 @@ export async function executeAgentStep(
     // pass each call only the remaining budget — otherwise a step configured
     // at e.g. 30 minutes could run up to maxAgentTurns x 30 minutes if
     // every iteration reset the timeout to the full stepTimeoutMs.
-    const deadlineAt = Date.now() + stepTimeoutMs;
+    const deadlineAt = Date.now() + effectiveStepTimeoutMs;
 
     try {
       let loopStep = 0;
@@ -672,7 +911,7 @@ export async function executeAgentStep(
           return await recordAgentStepFailure({
             ...failureCtx,
             errorKind: "workflow_failed",
-            errorMessage: `Agent step timed out after ${stepTimeoutMs}ms`,
+            errorMessage: `Agent step timed out after ${effectiveStepTimeoutMs}ms`,
           });
         }
 
@@ -688,6 +927,19 @@ export async function executeAgentStep(
         // result before re-sending history — otherwise the provider rejects the
         // request ("Tool result is missing for tool call …") and fails the run.
         agentMessages = sanitizeUnattendedToolCalls(agentMessages);
+        const liveModelAccess = await verifyRepoAccess({
+          userId: executionUserId,
+          owner: repoOwner,
+          repo: repoName,
+          requiredUserPermission: "write",
+        });
+        if (!liveModelAccess.ok) {
+          return await recordAgentStepFailure({
+            ...failureCtx,
+            errorKind: "permission_missing",
+            errorMessage: "Repository access was revoked during execution.",
+          });
+        }
         const turnStartedAt = Date.now();
         agentResult = await openAgent.generate({
           messages: agentMessages,
@@ -695,6 +947,14 @@ export async function executeAgentStep(
           timeout: { totalMs: Math.max(1, remainingMs) },
           ...(composioTools ? { tools: composioTools } : {}),
         } as Parameters<typeof openAgent.generate>[0]);
+
+        const turnLiveGateDenial = await getLiveGateDenial();
+        if (turnLiveGateDenial) {
+          return await recordAgentStepFailure({
+            ...failureCtx,
+            ...turnLiveGateDenial,
+          });
+        }
 
         // Append model response messages so tool results are visible next turn.
         if (agentResult.response?.messages?.length) {
@@ -706,9 +966,9 @@ export async function executeAgentStep(
         // static until the whole internal generate loop completes. Mirrors
         // executor.ts's background-agent.agent.step.completed payload shape.
         await recordAgentLoopEvent({
-          loopRunId,
-          stepRunId,
-          nodeId: node.id,
+          loopRunId: executionLoopRunId,
+          stepRunId: executionStepRunId,
+          nodeId: executionNodeId,
           eventName: "agent-loop.step.agent.turn.completed",
           status: "succeeded",
           level: "info",
@@ -748,6 +1008,12 @@ export async function executeAgentStep(
         }
       }
     } catch (err) {
+      if (err instanceof AgentLoopLiveGateError) {
+        return await recordAgentStepFailure({
+          ...failureCtx,
+          ...err.denial,
+        });
+      }
       const isAbort =
         err instanceof Error &&
         (err.name === "AbortError" || err.message.includes("aborted"));
@@ -755,7 +1021,7 @@ export async function executeAgentStep(
         ...failureCtx,
         errorKind: "workflow_failed",
         errorMessage: isAbort
-          ? `Agent step timed out after ${stepTimeoutMs}ms`
+          ? `Agent step timed out after ${effectiveStepTimeoutMs}ms`
           : `Agent step failed: ${err instanceof Error ? err.message : String(err)}`,
       });
     }
@@ -763,9 +1029,9 @@ export async function executeAgentStep(
     // ── 5d. Emit agent.completed event ───────────────────────────────────────
 
     await recordAgentLoopEvent({
-      loopRunId,
-      stepRunId,
-      nodeId: node.id,
+      loopRunId: executionLoopRunId,
+      stepRunId: executionStepRunId,
+      nodeId: executionNodeId,
       eventName: "agent-loop.step.agent.completed",
       status: "succeeded",
       level: "info",
@@ -786,22 +1052,22 @@ export async function executeAgentStep(
 
     let rawOutput: string;
     try {
-      rawOutput = await sandbox.readFile(STEP_OUTPUT_PATH, "utf-8");
+      rawOutput = await sandbox.readFile(outputPath, "utf-8");
     } catch {
       return await recordAgentStepFailure({
         ...failureCtx,
         errorKind: "step_output_invalid",
-        errorMessage: `Agent did not write output to ${STEP_OUTPUT_PATH}`,
+        errorMessage: `Agent did not write output to ${outputPath}`,
       });
     }
 
     // Size cap
     const byteSize = new TextEncoder().encode(rawOutput).length;
-    if (byteSize > STEP_OUTPUT_MAX_BYTES) {
+    if (byteSize > outputMaxBytes) {
       return await recordAgentStepFailure({
         ...failureCtx,
         errorKind: "step_output_invalid",
-        errorMessage: `Step output exceeds size cap: ${byteSize} bytes (max ${STEP_OUTPUT_MAX_BYTES})`,
+        errorMessage: `Step output exceeds size cap: ${byteSize} bytes (max ${outputMaxBytes})`,
       });
     }
 
@@ -826,8 +1092,11 @@ export async function executeAgentStep(
     }
 
     // Optional schema validation
-    if (node.outputSchema) {
-      const schemaError = validateStepOutput(parsedOutput, node.outputSchema);
+    if (executionNode.outputSchema) {
+      const schemaError = validateStepOutput(
+        parsedOutput,
+        executionNode.outputSchema,
+      );
       if (schemaError) {
         return await recordAgentStepFailure({
           ...failureCtx,
@@ -839,27 +1108,27 @@ export async function executeAgentStep(
 
     // ── 5f. checkCommand ─────────────────────────────────────────────────────
 
-    if (node.checkCommand?.trim()) {
+    if (executionNode.checkCommand?.trim()) {
       const checkStartedAt = nowMs();
       const checkResult = await sandbox.exec(
-        node.checkCommand.trim(),
+        executionNode.checkCommand.trim(),
         sandbox.workingDirectory,
         CHECK_COMMAND_TIMEOUT_MS,
       );
       const checkDurationMs = nowMs() - checkStartedAt;
 
       await recordAgentLoopEvent({
-        loopRunId,
-        stepRunId,
-        nodeId: node.id,
+        loopRunId: executionLoopRunId,
+        stepRunId: executionStepRunId,
+        nodeId: executionNodeId,
         eventName: "agent-loop.step.check.completed",
         status: checkResult.success ? "succeeded" : "failed",
         level: checkResult.success ? "info" : "warn",
         summary: checkResult.success
-          ? `Check passed: ${node.checkCommand}`
-          : `Check failed: ${node.checkCommand}`,
+          ? "Configured check passed"
+          : "Configured check failed",
         payload: {
-          command: node.checkCommand,
+          checkConfigured: true,
           exitCode: checkResult.exitCode,
           durationMs: checkDurationMs,
           stdout: truncateOutput(checkResult.stdout, 2000),
@@ -873,7 +1142,7 @@ export async function executeAgentStep(
         return await recordAgentStepFailure({
           ...failureCtx,
           errorKind: "checks_failed",
-          errorMessage: `checkCommand exited with code ${checkResult.exitCode}: ${node.checkCommand}`,
+          errorMessage: `Configured check exited with code ${checkResult.exitCode}`,
         });
       }
     }
@@ -892,24 +1161,57 @@ export async function executeAgentStep(
 
     if (hasChanges) {
       await stageAll(sandbox);
-      const coAuthor = await buildCoAuthor(loopRun.userId);
+      const commitAccess = await verifyRepoAccess({
+        userId: executionUserId,
+        owner: repoOwner,
+        repo: repoName,
+        requiredUserPermission: "write",
+      });
+      if (!commitAccess.ok) {
+        return await recordAgentStepFailure({
+          ...failureCtx,
+          errorKind: "permission_missing",
+          errorMessage: "Repository access was revoked before commit.",
+        });
+      }
+      const coAuthor = await buildCoAuthor(executionUserId);
       const intentResult = await buildCommitIntentFromSandbox({
         sandbox,
-        owner: loop.repoOwner,
-        repo: loop.repoName,
-        repositoryId: accessResult.repositoryId,
-        installationId: accessResult.installationId,
+        owner: repoOwner,
+        repo: repoName,
+        repositoryId: commitAccess.repositoryId,
+        installationId: commitAccess.installationId,
         branch: outputBranch,
         message: "chore: agent_step changes",
         ...(coAuthor ? { coAuthor } : {}),
       });
 
       if (intentResult.ok) {
+        const commitLiveGateDenial = await getLiveGateDenial();
+        if (commitLiveGateDenial) {
+          return await recordAgentStepFailure({
+            ...failureCtx,
+            ...commitLiveGateDenial,
+          });
+        }
+        const finalCommitAccess = await verifyRepoAccess({
+          userId: executionUserId,
+          owner: repoOwner,
+          repo: repoName,
+          requiredUserPermission: "write",
+        });
+        if (!finalCommitAccess.ok) {
+          return await recordAgentStepFailure({
+            ...failureCtx,
+            errorKind: "permission_missing",
+            errorMessage: "Repository access was revoked before commit.",
+          });
+        }
         let commitResult: Awaited<ReturnType<typeof createCommit>>;
         try {
           commitResult = (await withScopedInstallationOctokit({
-            installationId: accessResult.installationId,
-            repositoryId: accessResult.repositoryId,
+            installationId: finalCommitAccess.installationId,
+            repositoryId: finalCommitAccess.repositoryId,
             permissions: { contents: "write" },
             operation: async (octokit) =>
               createCommit({
@@ -932,9 +1234,9 @@ export async function executeAgentStep(
           const reason =
             commitErr instanceof Error ? commitErr.message : String(commitErr);
           await recordAgentLoopEvent({
-            loopRunId,
-            stepRunId,
-            nodeId: node.id,
+            loopRunId: executionLoopRunId,
+            stepRunId: executionStepRunId,
+            nodeId: executionNodeId,
             eventName: "agent-loop.step.commit.failed",
             status: "failed",
             level: "error",
@@ -954,9 +1256,9 @@ export async function executeAgentStep(
             (commitResult as { error?: string }).error ??
             "unknown commit error";
           await recordAgentLoopEvent({
-            loopRunId,
-            stepRunId,
-            nodeId: node.id,
+            loopRunId: executionLoopRunId,
+            stepRunId: executionStepRunId,
+            nodeId: executionNodeId,
             eventName: "agent-loop.step.commit.failed",
             status: "failed",
             level: "error",
@@ -979,9 +1281,9 @@ export async function executeAgentStep(
         };
 
         await recordAgentLoopEvent({
-          loopRunId,
-          stepRunId,
-          nodeId: node.id,
+          loopRunId: executionLoopRunId,
+          stepRunId: executionStepRunId,
+          nodeId: executionNodeId,
           eventName: "agent-loop.step.commit.completed",
           status: "succeeded",
           level: "info",
@@ -1000,30 +1302,40 @@ export async function executeAgentStep(
     // ── 5h. Merge output into run context + persist ──────────────────────────
 
     const mergeResult = mergeStepOutput(
-      loopRun.context ?? {},
-      node.id,
+      promptContext,
+      executionNodeId,
       parsedOutput,
     );
 
     await updateAgentLoopRunContext({
-      runId: loopRunId,
+      runId: executionLoopRunId,
       context: mergeResult.context,
     });
 
     const finishedAt = new Date();
-    await updateAgentLoopStepRun({
-      stepRunId,
+    const completed = await updateAgentLoopStepRun({
+      stepRunId: executionStepRunId,
       status: "succeeded",
       stepOutput: parsedOutput,
       sandboxName,
       finishedAt,
       durationMs: nowMs() - startedAt,
+      ...(executionClaimGeneration
+        ? {
+            expectedStatuses: ["running" as const],
+            expectedWorkflowRunId: workflowRunId,
+            expectedExecutionClaimGeneration: executionClaimGeneration,
+          }
+        : {}),
     });
+    if (completed === null) {
+      return { outcome: "failure", errorKind: "step_ownership_lost" };
+    }
 
     await recordAgentLoopEvent({
-      loopRunId,
-      stepRunId,
-      nodeId: node.id,
+      loopRunId: executionLoopRunId,
+      stepRunId: executionStepRunId,
+      nodeId: executionNodeId,
       eventName: "agent-loop.step.completed",
       status: "succeeded",
       level: "info",

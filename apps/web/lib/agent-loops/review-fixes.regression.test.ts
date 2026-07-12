@@ -215,6 +215,10 @@ const regUpdateRunContextMock = mock(async (input: RegContextInput) => {
 });
 
 mock.module("./store", () => ({
+  isAgentLoopRunSourceLive: mock(async () => true),
+  createAndAdvanceAgentLoopStep: mock(async () => ({
+    outcome: "source_deleted" as const,
+  })),
   getAgentLoopStepRunWithContext: regGetStepRunMock,
   updateAgentLoopStepRun: regUpdateStepRunMock,
   recordAgentLoopEvent: regRecordEventMock,
@@ -340,6 +344,9 @@ function makeRegLoopRun(o: Partial<AgentLoopRun> = {}): AgentLoopRun {
       string,
       unknown
     >,
+    executionSnapshot: null,
+    definitionVersion: null,
+    definitionHash: null,
     currentNodeId: null,
     currentStepRunId: null,
     iterationCount: 0,

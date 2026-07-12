@@ -184,6 +184,10 @@ const workflowStartMock = mock(
 );
 
 mock.module("./store", () => ({
+  isAgentLoopRunSourceLive: mock(async () => true),
+  createAndAdvanceAgentLoopStep: mock(async () => ({
+    outcome: "source_deleted" as const,
+  })),
   pauseLoopRun: pauseLoopRunMock,
   cancelLoopRun: cancelLoopRunMock,
   resumeLoopRun: resumeLoopRunMock,
@@ -253,6 +257,9 @@ function makeLoopRun(overrides: Partial<AgentLoopRun> = {}): AgentLoopRun {
     userId: "user-1",
     status: "running",
     definitionSnapshot: {} as Record<string, unknown>,
+    executionSnapshot: null,
+    definitionVersion: null,
+    definitionHash: null,
     currentNodeId: "work",
     currentStepRunId: null,
     iterationCount: 0,

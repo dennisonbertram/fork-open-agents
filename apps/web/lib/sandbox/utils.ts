@@ -101,6 +101,19 @@ export function isSandboxNotFoundError(message: string): boolean {
 }
 
 /**
+ * Check whether a provider resume failed because the named sandbox is already
+ * running. This stays server-side so provider copy is never exposed to clients;
+ * callers translate it into the stable `alreadyRunning` recovery contract.
+ */
+export function isSandboxAlreadyRunningError(message: string): boolean {
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes("sandbox is still running") ||
+    normalized.includes("sandbox is already running")
+  );
+}
+
+/**
  * Lenient not-found check for the warm-reconnect recreate decision.
  *
  * Unlike the strict {@link isSandboxNotFoundError} (which requires the

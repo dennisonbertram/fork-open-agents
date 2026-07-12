@@ -6,7 +6,7 @@
  */
 
 /** Shown in place of "None connected" when no profile is assigned to this agent. */
-export const EXTERNAL_TOOLS_NONE_ASSIGNED_LABEL = "None assigned to this agent";
+export const EXTERNAL_TOOLS_NONE_ASSIGNED_LABEL = "None assigned to this role";
 
 /**
  * Hint shown beneath the field (mirrors the existing "Built-in file editing
@@ -23,4 +23,4 @@ export const EXTERNAL_TOOLS_NONE_ASSIGNED_LABEL = "None assigned to this agent";
  * and names the action this page's own editor actually supports.
  */
 export const EXTERNAL_TOOLS_NONE_ASSIGNED_HINT =
-  "Pick tools directly below, or set a default profile in Settings → Composio's Agent defaults.";
+  "Pick tools directly below, or set a default profile in Settings → Composio's Chat role defaults.";

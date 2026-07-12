@@ -102,17 +102,21 @@ const txInsertMock = mock((_table: unknown) => ({
 // Default: mirrors inserted values + set values (existing behaviour).
 // Tests that simulate a TOCTOU race override this to return [].
 let txUpdateReturningOverride: unknown[] | null = null;
-const txUpdateMock = mock((_table: unknown) => ({
-  set: mock((setVals: unknown) => ({
-    where: mock(() => ({
-      returning: mock(() => {
-        if (txUpdateReturningOverride !== null) {
-          return txUpdateReturningOverride;
-        }
-        return [{ ...(insertedValues[0] as object), ...(setVals as object) }];
-      }),
-    })),
-  })),
+let transactionUpdates: Array<{ table: unknown; values: unknown }> = [];
+const txUpdateMock = mock((table: unknown) => ({
+  set: mock((setVals: unknown) => {
+    transactionUpdates.push({ table, values: setVals });
+    return {
+      where: mock(() => ({
+        returning: mock(() => {
+          if (txUpdateReturningOverride !== null) {
+            return txUpdateReturningOverride;
+          }
+          return [{ ...(insertedValues[0] as object), ...(setVals as object) }];
+        }),
+      })),
+    };
+  }),
 }));
 const txFindFirstMock = mock(async () => (queryResult[0] ?? null) as unknown);
 
@@ -121,11 +125,46 @@ const txFindFirstMock = mock(async () => (queryResult[0] ?? null) as unknown);
 // The real Drizzle query ends at .where() (no .limit()), so the mock must
 // make .where() itself return a thenable array.
 let txSelectResult: unknown[] = [{ maxAttempt: 1 }];
-const txSelectMock = mock((_fields?: unknown) => ({
-  from: mock(() => ({
-    where: mock(async () => txSelectResult),
-  })),
-}));
+let txSelectResultsQueue: unknown[][] = [];
+const txSelectMock = mock((_fields?: unknown) => {
+  let resolved: unknown[] | undefined;
+  const result = () => {
+    resolved ??= txSelectResultsQueue.shift() ?? txSelectResult;
+    return resolved;
+  };
+  const terminal = () => {
+    const limit = mock(async () => result());
+    let query: Promise<unknown[]> & {
+      limit: typeof limit;
+      for: ReturnType<typeof mock>;
+    };
+    query = Object.assign(Promise.resolve(result()), {
+      limit,
+      for: mock(() => query),
+    });
+    return query;
+  };
+  const chain = {
+    from: mock(() => chain),
+    where: mock(() => terminal()),
+  };
+  return chain;
+});
+
+const transactionMock = mock(async (fn: (tx: unknown) => Promise<unknown>) =>
+  fn({
+    insert: txInsertMock,
+    update: txUpdateMock,
+    delete: deleteMock,
+    select: txSelectMock,
+    query: {
+      agentLoops: { findFirst: txFindFirstMock },
+      agentLoopRuns: { findFirst: txFindFirstMock },
+      agentLoopStepRuns: { findFirst: txFindFirstMock },
+      agentLoopWatchdogRuns: { findFirst: txFindFirstMock },
+    },
+  }),
+);
 
 mock.module("@/lib/db/client", () => ({
   db: {
@@ -155,20 +194,7 @@ mock.module("@/lib/db/client", () => ({
         findFirst: findFirstMock,
       },
     },
-    transaction: mock(async (fn: (tx: unknown) => Promise<unknown>) =>
-      fn({
-        insert: txInsertMock,
-        update: txUpdateMock,
-        delete: deleteMock,
-        select: txSelectMock,
-        query: {
-          agentLoops: { findFirst: txFindFirstMock },
-          agentLoopRuns: { findFirst: txFindFirstMock },
-          agentLoopStepRuns: { findFirst: txFindFirstMock },
-          agentLoopWatchdogRuns: { findFirst: txFindFirstMock },
-        },
-      }),
-    ),
+    transaction: transactionMock,
   },
 }));
 
@@ -199,7 +225,9 @@ function resetMocks() {
   _deletedWhere = null;
   queryResult = [];
   txUpdateReturningOverride = null;
+  transactionUpdates = [];
   txSelectResult = [{ maxAttempt: 1 }];
+  txSelectResultsQueue = [];
   insertMock.mockClear();
   updateMock.mockClear();
   deleteMock.mockClear();
@@ -209,6 +237,7 @@ function resetMocks() {
   txInsertMock.mockClear();
   txUpdateMock.mockClear();
   txSelectMock.mockClear();
+  transactionMock.mockClear();
   returningMock.mockClear();
   valuesMock.mockClear();
   onConflictDoNothingMock.mockClear();
@@ -238,6 +267,9 @@ function makeLoop(overrides: Partial<Record<string, unknown>> = {}) {
     status: "draft",
     guardrails: null,
     permissions: {},
+    watchdogEnabled: false,
+    watchdogInstructions: null,
+    watchdogRetryBudget: 2,
     createdAt: new Date(),
     updatedAt: new Date(),
     ...overrides,
@@ -251,6 +283,9 @@ function makeLoopRun(overrides: Partial<Record<string, unknown>> = {}) {
     userId: "user-1",
     status: "queued",
     definitionSnapshot: { nodes: [], edges: [] },
+    executionSnapshot: null,
+    definitionVersion: null,
+    definitionHash: null,
     currentNodeId: null,
     currentStepRunId: null,
     iterationCount: 0,
@@ -379,6 +414,7 @@ describe("deleteAgentLoop", () => {
   beforeEach(resetMocks);
 
   test("BT-003: returns true when a row is deleted", async () => {
+    txSelectResultsQueue = [[{ id: "loop-1" }], []];
     deleteMock.mockReturnValueOnce({
       where: mock(() => ({
         returning: mock(() => [{ id: "loop-1" }]),
@@ -391,15 +427,129 @@ describe("deleteAgentLoop", () => {
   });
 
   test("BT-003b: returns false when no row matches (ownership miss)", async () => {
-    deleteMock.mockReturnValueOnce({
-      where: mock(() => ({
-        returning: mock(() => []),
-      })),
-    });
+    txSelectResultsQueue = [[]];
 
     const store = await storePromise;
     const result = await store.deleteAgentLoop("user-1", "loop-missing");
     expect(result).toBe(false);
+  });
+
+  test("atomically revokes active Runs and records source deletion before deleting", async () => {
+    try {
+      txSelectResultsQueue = [
+        [{ id: "loop-1" }],
+        [
+          makeLoopRun({
+            id: "run-active",
+            status: "running",
+          }),
+        ],
+      ];
+      txUpdateReturningOverride = [
+        makeLoopRun({
+          id: "run-active",
+          status: "cancelled",
+          errorKind: "source_deleted",
+        }),
+      ];
+
+      const store = await storePromise;
+      const result = await store.deleteAgentLoop("user-1", "loop-1");
+
+      expect(result).toBe(true);
+      expect(transactionMock).toHaveBeenCalledTimes(1);
+      expect(txUpdateMock).toHaveBeenCalledTimes(3);
+      expect(txInsertMock).toHaveBeenCalledTimes(1);
+      expect(deleteMock).toHaveBeenCalledTimes(1);
+      expect(transactionUpdates).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            table: agentLoopRunsTable,
+            values: expect.objectContaining({
+              status: "cancelled",
+              errorKind: "source_deleted",
+              finishedAt: expect.any(Date),
+            }),
+          }),
+          expect.objectContaining({
+            table: agentLoopStepRunsTable,
+            values: expect.objectContaining({
+              status: "skipped",
+              errorKind: "source_deleted",
+              errorMessage: "Source Automation deleted",
+              finishedAt: expect.any(Date),
+            }),
+          }),
+          expect.objectContaining({
+            table: agentLoopWatchdogRunsTable,
+            values: expect.objectContaining({
+              status: "failed",
+              decision: null,
+              diagnosis: "Source Automation deleted",
+              decisionPayload: null,
+              finishedAt: expect.any(Date),
+            }),
+          }),
+        ]),
+      );
+      const eventInput = valuesMock.mock.calls.at(-1)?.[0] as
+        | Record<string, unknown>
+        | undefined;
+      expect(eventInput).toMatchObject({
+        loopRunId: "run-active",
+        eventName: "agent-loop.source.revoked",
+        level: "warn",
+        redactionStatus: "passed",
+      });
+    } finally {
+      txFindFirstMock.mockReset();
+      txFindFirstMock.mockImplementation(
+        async () => (queryResult[0] ?? null) as unknown,
+      );
+      txUpdateReturningOverride = null;
+    }
+  });
+
+  test("preserves terminal Run status and writes no revocation event", async () => {
+    txSelectResultsQueue = [
+      [{ id: "loop-1" }],
+      [makeLoopRun({ id: "run-terminal", status: "completed" })],
+    ];
+    const store = await storePromise;
+
+    expect(await store.deleteAgentLoop("user-1", "loop-1")).toBe(true);
+    expect(txUpdateMock).not.toHaveBeenCalled();
+    expect(txInsertMock).not.toHaveBeenCalled();
+  });
+
+  test("does not delete the source when the same-transaction revocation event insert fails", async () => {
+    txSelectResultsQueue = [
+      [{ id: "loop-1" }],
+      [makeLoopRun({ id: "run-active", status: "running" })],
+    ];
+    txInsertMock.mockImplementationOnce(() => ({
+      values: mock(() => {
+        throw new Error("event insert failed");
+      }),
+    }));
+    const store = await storePromise;
+
+    await expect(store.deleteAgentLoop("user-1", "loop-1")).rejects.toThrow(
+      "event insert failed",
+    );
+    expect(deleteMock).not.toHaveBeenCalled();
+  });
+
+  test("surfaces a delete failure so the transaction can roll back revocation", async () => {
+    txSelectResultsQueue = [[{ id: "loop-1" }], []];
+    deleteMock.mockReturnValueOnce({
+      where: mock(() => ({ returning: mock(() => []) })),
+    });
+    const store = await storePromise;
+
+    await expect(store.deleteAgentLoop("user-1", "loop-1")).rejects.toThrow(
+      "Owned Automation disappeared during deletion",
+    );
   });
 });
 
@@ -453,9 +603,12 @@ describe("createAgentLoopRun", () => {
   test("BT-006: inserts a run with the correct loopId and userId, returns {run, created:true}", async () => {
     const loop = makeLoop();
     const run = makeLoopRun();
-    // First findFirst call is the ownership check (returns owned loop)
-    findFirstMock.mockResolvedValueOnce(loop);
-    returningMock.mockImplementationOnce(() => [run]);
+    const event = { id: "event-1", loopRunId: run.id };
+    findFirstMock.mockResolvedValueOnce(null);
+    txSelectResultsQueue = [[loop]];
+    returningMock
+      .mockImplementationOnce(() => [run])
+      .mockImplementationOnce(() => [event]);
 
     const store = await storePromise;
     const result = await store.createAgentLoopRun({
@@ -470,12 +623,12 @@ describe("createAgentLoopRun", () => {
     expect(result!.run.loopId).toBe("loop-1");
     expect(result!.run.userId).toBe("user-1");
     expect(result!.created).toBe(true);
-    expect(insertMock).toHaveBeenCalledTimes(1);
+    expect(txInsertMock).toHaveBeenCalledTimes(2);
   });
 
   test("BT-006b: returns null when loop is not owned by userId (cross-tenant rejection)", async () => {
-    // Ownership check returns null — loop belongs to another user
     findFirstMock.mockResolvedValueOnce(null);
+    txSelectResultsQueue = [[]];
 
     const store = await storePromise;
     const result = await store.createAgentLoopRun({
@@ -488,17 +641,11 @@ describe("createAgentLoopRun", () => {
 
     expect(result).toBeNull();
     // Must NOT have attempted to insert
-    expect(insertMock).not.toHaveBeenCalled();
+    expect(txInsertMock).not.toHaveBeenCalled();
   });
 
   test("BT-006c: returns {run, created:false} when idempotencyKey already exists (duplicate suppressed)", async () => {
-    const loop = makeLoop();
     const existingRun = makeLoopRun({ idempotencyKey: "idem-dup" });
-    // Ownership check passes
-    findFirstMock.mockResolvedValueOnce(loop);
-    // onConflictDoNothing returns empty (conflict suppressed)
-    returningMock.mockImplementationOnce(() => []);
-    // Fetch of existing run by idempotency key
     findFirstMock.mockResolvedValueOnce(existingRun);
 
     const store = await storePromise;
@@ -515,25 +662,21 @@ describe("createAgentLoopRun", () => {
     expect(result?.run.idempotencyKey).toBe("idem-dup");
   });
 
-  test("BT-006d: throws when insert returns nothing AND no existing run found (corrupted state)", async () => {
+  test("BT-006d: returns null when insert loses without an idempotent winner", async () => {
     const loop = makeLoop();
-    // Ownership check passes
-    findFirstMock.mockResolvedValueOnce(loop);
-    // onConflictDoNothing returns empty
+    findFirstMock.mockResolvedValueOnce(null).mockResolvedValueOnce(null);
+    txSelectResultsQueue = [[loop]];
     returningMock.mockImplementationOnce(() => []);
-    // No existing run found either
-    findFirstMock.mockResolvedValueOnce(null);
 
     const store = await storePromise;
-    await expect(
-      store.createAgentLoopRun({
-        loopId: "loop-1",
-        userId: "user-1",
-        definitionSnapshot: { nodes: [], edges: [] },
-        source: "manual",
-        idempotencyKey: "idem-corrupt",
-      }),
-    ).rejects.toThrow();
+    const result = await store.createAgentLoopRun({
+      loopId: "loop-1",
+      userId: "user-1",
+      definitionSnapshot: { nodes: [], edges: [] },
+      source: "manual",
+      idempotencyKey: "idem-corrupt",
+    });
+    expect(result).toBeNull();
   });
 });
 
@@ -556,7 +699,7 @@ describe("getAgentLoopRunWithLoop", () => {
     const store = await storePromise;
     const result = await store.getAgentLoopRunWithLoop("run-1");
     expect(result?.run.id).toBe("run-1");
-    expect(result?.loop.id).toBe("loop-1");
+    expect(result?.loop?.id).toBe("loop-1");
   });
 });
 
@@ -609,6 +752,38 @@ describe("createAgentLoopStepRun", () => {
     expect(result.loopRunId).toBe("run-1");
     expect(result.nodeId).toBe("start");
     expect(insertMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("createAndAdvanceAgentLoopStep", () => {
+  beforeEach(resetMocks);
+
+  test("source deletion before advance creates no orphan step", async () => {
+    txSelectResultsQueue = [
+      [
+        {
+          id: "run-1",
+          loopId: null,
+          currentStepRunId: "step-1",
+        },
+      ],
+    ];
+    const store = await storePromise;
+
+    const result = await store.createAndAdvanceAgentLoopStep({
+      runId: "run-1",
+      fromStepRunId: "step-1",
+      nextNodeId: "next",
+      nextNodeKind: "agent_step",
+      attempt: 1,
+      stepCount: 2,
+      iterationCount: 0,
+      workflowRunId: "wf-1",
+    });
+
+    expect(result).toEqual({ outcome: "source_deleted" });
+    expect(txInsertMock).not.toHaveBeenCalled();
+    expect(txUpdateMock).not.toHaveBeenCalled();
   });
 });
 
@@ -737,6 +912,28 @@ describe("listAgentLoopEvents", () => {
 describe("retryCurrentStep — TOCTOU race protection", () => {
   beforeEach(resetMocks);
 
+  test("inactive source rejects retry before creating another attempt", async () => {
+    const run = makeLoopRun({
+      status: "failed",
+      currentNodeId: "work",
+      currentStepRunId: "step-old",
+    });
+    txSelectResultsQueue = [[run]];
+    txFindFirstMock.mockResolvedValueOnce(null);
+
+    const store = await storePromise;
+    const { RunControlError } = await import("./run-controls-error");
+    const error = await store
+      .retryCurrentStep({ runId: "run-1", userId: "user-1" })
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(RunControlError);
+    if (error instanceof RunControlError) {
+      expect(error.kind).toBe("source_inactive");
+    }
+    expect(txInsertMock).not.toHaveBeenCalled();
+  });
+
   test("BT-P2-12: retryCurrentStep succeeds on the happy path (failed run, no race)", async () => {
     // Set up: findFirst returns a failed run with currentNodeId and currentStepRunId
     const run = makeLoopRun({
@@ -753,18 +950,10 @@ describe("retryCurrentStep — TOCTOU race protection", () => {
       status: "failed",
     });
 
-    // tx.query.agentLoopRuns.findFirst → the failed run
-    // tx.query.agentLoopStepRuns.findFirst → the failed step
-    let txFindCount = 0;
-    txFindFirstMock.mockImplementation(async () => {
-      txFindCount++;
-      if (txFindCount === 1) return run;
-      if (txFindCount === 2) return failedStep;
-      return null;
-    });
+    txFindFirstMock.mockResolvedValue(failedStep);
 
     // tx.select().from().where() → maxAttempt = 1
-    txSelectResult = [{ maxAttempt: 1 }];
+    txSelectResultsQueue = [[run], [{ maxAttempt: 1 }]];
 
     // tx.insert returns the new step run
     const newStep = makeStepRun({
@@ -806,15 +995,9 @@ describe("retryCurrentStep — TOCTOU race protection", () => {
       status: "failed",
     });
 
-    let txFindCount = 0;
-    txFindFirstMock.mockImplementation(async () => {
-      txFindCount++;
-      if (txFindCount === 1) return run;
-      if (txFindCount === 2) return failedStep;
-      return null;
-    });
+    txFindFirstMock.mockResolvedValue(failedStep);
 
-    txSelectResult = [{ maxAttempt: 1 }];
+    txSelectResultsQueue = [[run], [{ maxAttempt: 1 }]];
 
     const newStep = makeStepRun({
       id: "step-new",
@@ -838,7 +1021,7 @@ describe("retryCurrentStep — TOCTOU race protection", () => {
     // Using .catch so that an absent throw is a test FAILURE (not a silent pass):
     // if retryCurrentStep resolves, secondCallErr is the resolved value (not an
     // error), the instanceof check fails, and the test fails — no silent green.
-    txFindCount = 0;
+    txSelectResultsQueue = [[run], [{ maxAttempt: 1 }]];
     returningMock.mockImplementationOnce(() => [newStep]);
     const secondCallErr = await store
       .retryCurrentStep({ runId: "run-1", userId: "user-1" })
@@ -850,8 +1033,7 @@ describe("retryCurrentStep — TOCTOU race protection", () => {
   });
 
   test("BT-P2-14: retryCurrentStep throws not_found when run does not exist", async () => {
-    // tx.query.agentLoopRuns.findFirst returns null (missing or wrong userId)
-    txFindFirstMock.mockResolvedValueOnce(null);
+    txSelectResultsQueue = [[]];
 
     const store = await storePromise;
     const { RunControlError } = await import("./run-controls-error");
@@ -867,7 +1049,7 @@ describe("retryCurrentStep — TOCTOU race protection", () => {
       currentNodeId: "work",
       currentStepRunId: "step-1",
     });
-    txFindFirstMock.mockResolvedValueOnce(run);
+    txSelectResultsQueue = [[run]];
 
     const store = await storePromise;
     const { RunControlError } = await import("./run-controls-error");
@@ -878,10 +1060,89 @@ describe("retryCurrentStep — TOCTOU race protection", () => {
   });
 });
 
+describe("retryCurrentStepForWatchdog — execution claim isolation", () => {
+  beforeEach(resetMocks);
+
+  test("retry strips the prior claim, preserves durable input, and accepts a new generation", async () => {
+    const run = makeLoopRun({
+      status: "running",
+      currentNodeId: "work",
+      currentStepRunId: "step-old",
+      workflowRunId: "workflow-1",
+    });
+    const failedStep = makeStepRun({
+      id: "step-old",
+      loopRunId: "run-1",
+      nodeId: "work",
+      nodeKind: "agent_step",
+      attempt: 1,
+      status: "failed",
+      workflowRunId: "workflow-1",
+      stepInput: {
+        executionClaimGeneration: "generation-old",
+        watchdogHint: "Earlier guidance",
+        userInput: { issueNumber: 42 },
+      },
+    });
+
+    txSelectResultsQueue = [[run], [{ maxAttempt: 1 }]];
+    txFindFirstMock.mockResolvedValue(failedStep);
+    txUpdateReturningOverride = [
+      { ...run, status: "running", currentStepRunId: "step-new" },
+    ];
+
+    const store = await storePromise;
+    const retry = await store.retryCurrentStepForWatchdog({
+      runId: run.id,
+      expectedStepRunId: failedStep.id,
+      hint: "Try the smaller repair",
+    });
+
+    expect(retry.stepInput).toEqual({
+      watchdogHint: "Try the smaller repair",
+      userInput: { issueNumber: 42 },
+    });
+    expect(
+      (retry.stepInput as Record<string, unknown>)["executionClaimGeneration"],
+    ).toBeUndefined();
+
+    const claimed = await store.updateAgentLoopStepRun({
+      stepRunId: retry.id,
+      expectedStatuses: ["queued"],
+      expectedExecutionClaimGeneration: null,
+      executionClaimGeneration: "generation-new",
+    });
+    expect(claimed).not.toBeNull();
+    expect("generation-new").not.toBe("generation-old");
+  });
+});
+
 // ── Migration SQL inspection ────────────────────────────────────────────────
 // Verifies that the generated + hand-edited migration SQL is idempotent and
 // contains the required check constraint.  Uses file system inspection rather
 // than a live-DB test (no test DB in CI for this kind of check).
+describe("resumeLoopRun - inactive source guard", () => {
+  beforeEach(resetMocks);
+
+  test("inactive source rejects resume before changing run status", async () => {
+    const run = makeLoopRun({ status: "paused" });
+    txSelectResultsQueue = [[run]];
+    txFindFirstMock.mockResolvedValueOnce(null);
+
+    const store = await storePromise;
+    const { RunControlError } = await import("./run-controls-error");
+    const error = await store
+      .resumeLoopRun("run-1", "user-1")
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(RunControlError);
+    if (error instanceof RunControlError) {
+      expect(error.kind).toBe("source_inactive");
+    }
+    expect(txUpdateMock).not.toHaveBeenCalled();
+  });
+});
+
 describe("migration SQL idempotency and check constraint (BT-013)", () => {
   test("migration contains num_nonnulls check and IF NOT EXISTS guards", () => {
     const migrationsDir = join(import.meta.dir, "../../../db/migrations");

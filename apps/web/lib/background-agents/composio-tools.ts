@@ -162,6 +162,47 @@ export type ResolveComposioToolsForBgRunParams = {
   repoName: string;
 };
 
+export class ComposioRepoPolicyError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ComposioRepoPolicyError";
+  }
+}
+
+/**
+ * Rechecks the live repository policy immediately before a cached Composio
+ * tool executes. This intentionally does not resolve accounts or provider
+ * sessions again: it is a cheap revocation check over the toolkits that were
+ * already admitted when the ToolSet was created.
+ */
+export async function assertComposioRepoToolkitsStillAllowed(params: {
+  userId: string;
+  repoOwner: string;
+  repoName: string;
+  toolkitSlugs: string[];
+}): Promise<void> {
+  let policyResult: Awaited<ReturnType<typeof applyRepoToolkitPolicy>>;
+  try {
+    policyResult = await applyRepoToolkitPolicy({
+      userId: params.userId,
+      repoOwner: params.repoOwner,
+      repoName: params.repoName,
+      requestedSlugs: params.toolkitSlugs,
+    });
+  } catch {
+    throw new ComposioRepoPolicyError(
+      "Repository Composio policy could not be verified.",
+    );
+  }
+
+  if (policyResult.blocked.length > 0) {
+    const revoked = policyResult.blocked.map(({ slug }) => slug).sort();
+    throw new ComposioRepoPolicyError(
+      `Repository policy revoked Composio toolkit access: ${revoked.join(", ")}.`,
+    );
+  }
+}
+
 /**
  * errorKind taxonomy this resolver can actually produce today.
  *

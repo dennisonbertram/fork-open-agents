@@ -1404,6 +1404,12 @@ export const backgroundAgentRuns = pgTable(
       jsonb("result_summary").$type<
         import("@/lib/background-agents/run-summary").RunSummary
       >(),
+    executionSnapshot:
+      jsonb("execution_snapshot").$type<
+        import("@/lib/background-agents/execution-snapshot").BackgroundAgentExecutionSnapshotV1
+      >(),
+    definitionVersion: integer("definition_version"),
+    definitionHash: text("definition_hash"),
     requestId: text("request_id"),
     workflowRunId: text("workflow_run_id"),
     startedAt: timestamp("started_at"),
@@ -1434,6 +1440,10 @@ export const backgroundAgentRuns = pgTable(
       table.agentId,
       table.prNumber,
       table.createdAt,
+    ),
+    check(
+      "background_agent_runs_execution_snapshot_all_or_none",
+      sql`num_nonnulls(execution_snapshot, definition_version, definition_hash) in (0, 3) and (num_nonnulls(execution_snapshot, definition_version, definition_hash) = 0 or (definition_version = 1 and definition_hash ~ '^[0-9a-f]{64}$' and jsonb_typeof(execution_snapshot) = 'object' and (execution_snapshot ->> 'snapshotVersion') is not null and execution_snapshot ->> 'snapshotVersion' = definition_version::text))`,
     ),
   ],
 );
@@ -1652,9 +1662,9 @@ export const agentLoopRuns = pgTable(
   "agent_loop_runs",
   {
     id: text("id").primaryKey(),
-    loopId: text("loop_id")
-      .notNull()
-      .references(() => agentLoops.id, { onDelete: "cascade" }),
+    loopId: text("loop_id").references(() => agentLoops.id, {
+      onDelete: "set null",
+    }),
     userId: text("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
@@ -1673,6 +1683,12 @@ export const agentLoopRuns = pgTable(
     definitionSnapshot: jsonb("definition_snapshot")
       .$type<Record<string, unknown>>()
       .notNull(),
+    executionSnapshot:
+      jsonb("execution_snapshot").$type<
+        import("@/lib/agent-loops/execution-snapshot").AgentLoopExecutionSnapshotV1
+      >(),
+    definitionVersion: integer("definition_version"),
+    definitionHash: text("definition_hash"),
     currentNodeId: text("current_node_id"),
     currentStepRunId: text("current_step_run_id"),
     /** Incremented when an edge targets an already-visited node */
@@ -1706,6 +1722,10 @@ export const agentLoopRuns = pgTable(
     index("agent_loop_runs_user_created_idx").on(table.userId, table.createdAt),
     index("agent_loop_runs_status_idx").on(table.status),
     uniqueIndex("agent_loop_runs_idempotency_idx").on(table.idempotencyKey),
+    check(
+      "agent_loop_runs_execution_snapshot_all_or_none",
+      sql`num_nonnulls(execution_snapshot, definition_version, definition_hash) in (0, 3) and (num_nonnulls(execution_snapshot, definition_version, definition_hash) = 0 or (definition_version = 1 and definition_hash ~ '^[0-9a-f]{64}$' and jsonb_typeof(execution_snapshot) = 'object' and (execution_snapshot ->> 'snapshotVersion') is not null and execution_snapshot ->> 'snapshotVersion' = definition_version::text))`,
+    ),
   ],
 );
 

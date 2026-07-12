@@ -178,8 +178,9 @@ describe("buildAgentRoster", () => {
     expect((main?.description ?? "").length).toBeGreaterThan(10);
   });
 
-  // BT-010: Subagent rows use SUBAGENT_REGISTRY shortDescriptions
-  test("BT-010: Explorer/Executor/Design descriptions come from registry shortDescription", () => {
+  // BT-010: visible helper-role descriptions explain interactive work without
+  // presenting technical subagents as another product noun.
+  test("BT-010: roster descriptions use Session role vocabulary", () => {
     const rows = buildAgentRoster({
       preferences: basePrefs,
       composioDefaults: noComposioDefaults,
@@ -188,10 +189,11 @@ describe("buildAgentRoster", () => {
     const explorer = rows.find((r) => r.key === "explorer");
     const executor = rows.find((r) => r.key === "executor");
     const design = rows.find((r) => r.key === "design");
-    // Registry short descriptions start with "Use for"
-    expect(explorer?.description).toMatch(/Use for/);
-    expect(executor?.description).toMatch(/Use for/);
-    expect(design?.description).toMatch(/Use for/);
+    expect(rows.find((r) => r.key === "main")?.description).toMatch(/Session/);
+    for (const row of [explorer, executor, design]) {
+      expect(row?.description).toMatch(/role|work|interfaces/i);
+      expect(row?.description).not.toMatch(/subagent/i);
+    }
   });
 
   // BT-011: each row has a name field with the human-friendly role name

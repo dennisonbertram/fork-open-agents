@@ -26,6 +26,7 @@ import { decodeSuggestedTriggerParams } from "../suggested-trigger-query";
 type TemplateTriggerNudgeProps = {
   loopId: string;
   searchParams: URLSearchParams;
+  surface?: "legacy" | "automation";
 };
 
 function buildTriggerName(kind: string): string {
@@ -35,6 +36,7 @@ function buildTriggerName(kind: string): string {
 export function TemplateTriggerNudge({
   loopId,
   searchParams,
+  surface = "legacy",
 }: TemplateTriggerNudgeProps) {
   const router = useRouter();
   const spec = decodeSuggestedTriggerParams(searchParams);
@@ -82,7 +84,11 @@ export function TemplateTriggerNudge({
       toast.success("Trigger attached.");
       setDismissed(true);
       // Drop the suggested-trigger query params now that the nudge is resolved.
-      router.replace(`/loops/${loopId}/builder`);
+      router.replace(
+        surface === "automation"
+          ? `/automations/agent-loop/${encodeURIComponent(loopId)}/edit`
+          : `/loops/${loopId}/builder`,
+      );
     } catch {
       toast.error("Failed to attach trigger. Check your connection.");
     } finally {

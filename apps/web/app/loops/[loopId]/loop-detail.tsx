@@ -7,6 +7,10 @@ import useSWR from "swr";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
+  ReadinessVerdict,
+  type ReadinessVerdictProps,
+} from "@/components/ui/readiness-verdict";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -16,8 +20,9 @@ import {
 import type {
   GetAgentLoopResponse,
   ListAgentLoopRunsResponse,
+  AgentLoopsReadinessResponse,
+  AgentLoopRunWithFailedStepCount,
 } from "@/app/api/agent-loops/types";
-import type { AgentLoopRun } from "@/lib/db/schema";
 import type { LoopDefinition } from "@/lib/agent-loops/types";
 import type { ListLoopTriggersResponse } from "@/app/api/agent-loops/[loopId]/triggers/trigger-route-types";
 import { summarizeLoopSteps } from "./loop-step-summary";
@@ -30,6 +35,12 @@ import { useLoopRunNow } from "./use-loop-run-now";
 import { getScheduleTruthLine } from "./schedule-truth-line";
 import { getRunCompletionLabel } from "./run-completion-label";
 import { getRunHistoryEmptyState } from "./run-history-empty-state";
+import { validateLoopDefinition } from "@/lib/agent-loops/validation";
+import {
+  canonicalLoopAutomationDetailUrl,
+  canonicalLoopAutomationEditUrl,
+} from "@/lib/automations/definition-routes";
+import { canonicalRunDetailUrl } from "@/lib/runs/detail-routes";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -73,9 +84,11 @@ function formatDuration(
 function RunRow({
   run,
   loopId,
+  surface,
 }: {
-  run: AgentLoopRun & { failedStepCount?: number };
+  run: AgentLoopRunWithFailedStepCount;
   loopId: string;
+  surface: "legacy" | "automation";
 }) {
   const completionLabel = getRunCompletionLabel({
     status: run.status,
@@ -83,7 +96,11 @@ function RunRow({
   });
   return (
     <Link
-      href={`/loops/${loopId}/runs/${run.id}`}
+      href={
+        surface === "automation"
+          ? canonicalRunDetailUrl("agent_loop", run.id)
+          : `/loops/${loopId}/runs/${run.id}`
+      }
       className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-4 px-4 py-3 hover:bg-muted/20 transition-colors"
     >
       <div className="min-w-0">
@@ -116,9 +133,61 @@ function RunRow({
 type LoopDetailProps = {
   loopId: string;
   initialLoopData: GetAgentLoopResponse;
+  surface?: "legacy" | "automation";
 };
 
-export function LoopDetail({ loopId, initialLoopData }: LoopDetailProps) {
+const MANUAL_EXECUTION_CHECK_IDS = new Set([
+  "feature_flag",
+  "repo_allowlist",
+  "repo_access",
+]);
+
+function mapExecutionReadiness(
+  readiness: AgentLoopsReadinessResponse | undefined,
+  error: unknown,
+): ReadinessVerdictProps & { ready: boolean } {
+  if (error || !readiness || !Array.isArray(readiness.checks)) {
+    return {
+      ready: false,
+      status: "error",
+      headline: "Execution readiness unknown",
+      subtext:
+        "Readiness could not be verified. Manual execution remains unavailable.",
+    };
+  }
+  const checks = readiness.checks.filter((check) =>
+    MANUAL_EXECUTION_CHECK_IDS.has(check.id),
+  );
+  const complete = MANUAL_EXECUTION_CHECK_IDS.size === checks.length;
+  const ready =
+    readiness.enabled &&
+    complete &&
+    checks.every((check) => check.status === "ready");
+  return {
+    ready,
+    status: ready
+      ? "ready"
+      : readiness.enabled
+        ? "action-needed"
+        : "unavailable",
+    headline: ready
+      ? "Ready for manual execution"
+      : readiness.enabled
+        ? "Execution prerequisites need attention"
+        : "Multi-step Automations are disabled",
+    subtext: ready
+      ? "Deployment and repository gates passed."
+      : "Run now remains unavailable until every required check passes.",
+    checks,
+  };
+}
+
+export function LoopDetail({
+  loopId,
+  initialLoopData,
+  surface = "legacy",
+}: LoopDetailProps) {
+  const automationSurface = surface === "automation";
   const [activeRunNotice, setActiveRunNotice] = useState<string | null>(null);
   const [updatingStatus, setUpdatingStatus] = useState(false);
 
@@ -137,6 +206,17 @@ export function LoopDetail({ loopId, initialLoopData }: LoopDetailProps) {
       `/api/agent-loops/${loopId}/triggers`,
       fetchJson,
     );
+  const {
+    data: readinessData,
+    error: readinessError,
+    mutate: mutateReadiness,
+    isLoading: readinessLoading,
+  } = useSWR<AgentLoopsReadinessResponse>(
+    automationSurface
+      ? `/api/agent-loops/readiness?owner=${encodeURIComponent(initialLoopData.loop.repoOwner)}&repo=${encodeURIComponent(initialLoopData.loop.repoName)}`
+      : null,
+    fetchJson,
+  );
 
   const { loop } = loopData ?? initialLoopData;
   const runs = runsData?.runs ?? [];
@@ -146,9 +226,25 @@ export function LoopDetail({ loopId, initialLoopData }: LoopDetailProps) {
   // so the trigger COUNT used by status-honesty copy is correct on first
   // paint even before triggersData loads.
   const triggers = triggersData?.triggers ?? initialLoopData.triggers;
+  const executionReadiness: ReadinessVerdictProps & { ready: boolean } =
+    automationSurface
+      ? mapExecutionReadiness(readinessData, readinessError)
+      : {
+          ready: true,
+          status: "ready",
+          headline: "Ready",
+        };
+  const configurationValid = validateLoopDefinition(loop.definition).ok;
+  const detailHref = automationSurface
+    ? canonicalLoopAutomationDetailUrl(loopId)
+    : `/loops/${loopId}`;
+  const editHref = automationSurface
+    ? canonicalLoopAutomationEditUrl(loopId)
+    : `${detailHref}/builder`;
 
   const { runNow: handleRunNow, runningNow } = useLoopRunNow({
     loopId,
+    surface,
     onStart: () => setActiveRunNotice(null),
     onActiveRun: (id) => setActiveRunNotice(id),
     resolveActiveRunId: () =>
@@ -191,7 +287,9 @@ export function LoopDetail({ loopId, initialLoopData }: LoopDetailProps) {
           // Revalidate from server if response body is unavailable
           await mutateLoopData();
         }
-        toast.success(`Loop status updated to ${newStatus}`);
+        toast.success(
+          `${automationSurface ? "Automation" : "Loop"} status updated to ${newStatus}`,
+        );
       }
     } catch {
       toast.error("Failed to update loop status.");
@@ -211,10 +309,10 @@ export function LoopDetail({ loopId, initialLoopData }: LoopDetailProps) {
               className="mb-3 flex min-w-0 items-center gap-1.5 text-sm"
             >
               <Link
-                href="/loops"
+                href={automationSurface ? "/automations" : "/loops"}
                 className="shrink-0 text-muted-foreground hover:text-foreground"
               >
-                Loops
+                {automationSurface ? "Automations" : "Loops"}
               </Link>
               <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
               <Link
@@ -228,20 +326,30 @@ export function LoopDetail({ loopId, initialLoopData }: LoopDetailProps) {
               <h1 className="truncate text-2xl font-semibold">{loop.name}</h1>
               <StatusPill status={loop.status} />
             </div>
+            {automationSurface ? (
+              <p className="mt-1 text-sm text-muted-foreground">
+                Multi-step Automation
+              </p>
+            ) : null}
             <p className="mt-1 font-mono text-sm text-muted-foreground">
               {loop.repoOwner}/{loop.repoName}
             </p>
           </div>
           <div id="loop-run-now" className="flex items-center gap-2">
-            <Link href={`/loops/${loopId}/builder`}>
+            <Link href={editHref}>
               <Button variant="outline" size="sm">
                 <Workflow className="mr-2 h-4 w-4" />
-                Open builder
+                {automationSurface ? "Edit Steps" : "Open builder"}
               </Button>
             </Link>
             <Button
               onClick={handleRunNow}
-              disabled={runningNow || loop.status !== "active"}
+              disabled={
+                runningNow ||
+                loop.status !== "active" ||
+                (automationSurface &&
+                  (!executionReadiness.ready || !configurationValid))
+              }
               size="sm"
             >
               <Play className="mr-2 h-4 w-4" />
@@ -250,12 +358,71 @@ export function LoopDetail({ loopId, initialLoopData }: LoopDetailProps) {
           </div>
         </div>
 
+        {automationSurface ? (
+          <>
+            <p className="text-pretty text-xs text-amber-700 dark:text-amber-300">
+              Run now starts real unattended work with the configured repository
+              permissions.
+            </p>
+            <section className="rounded-md border border-border p-4">
+              <h2 className="text-balance text-sm font-medium">
+                Automation status
+              </h2>
+              <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                <div>
+                  <h3 className="text-xs text-muted-foreground">
+                    Configuration validity
+                  </h3>
+                  <p className="mt-1 text-sm font-medium">
+                    {configurationValid
+                      ? "Valid definition"
+                      : "Invalid definition"}
+                  </p>
+                </div>
+                <div>
+                  <h3 className="text-xs text-muted-foreground">
+                    Lifecycle status
+                  </h3>
+                  <p className="mt-1 text-sm font-medium capitalize">
+                    {loop.status}
+                  </p>
+                </div>
+                <div>
+                  <h3 className="text-xs text-muted-foreground">
+                    Trigger coverage
+                  </h3>
+                  <p className="mt-1 text-sm font-medium">
+                    {triggers.length === 0
+                      ? "No triggers configured"
+                      : `${triggers.length} trigger${triggers.length === 1 ? "" : "s"} configured`}
+                  </p>
+                </div>
+              </div>
+              <div className="mt-4">
+                <h3 className="mb-2 text-xs text-muted-foreground">
+                  Execution readiness
+                </h3>
+                <ReadinessVerdict
+                  {...executionReadiness}
+                  onRefresh={() => void mutateReadiness()}
+                  refreshing={readinessLoading}
+                />
+              </div>
+            </section>
+          </>
+        ) : null}
+
         {/* Active run notice (409) */}
         {activeRunNotice && (
           <div className="rounded-md border border-amber-500/25 bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-300">
-            This loop already has an active or paused run:{" "}
+            This {automationSurface ? "Automation" : "loop"} already has an
+            active or paused run:{" "}
             <Link
-              href={`/loops/${loopId}/runs/${activeRunNotice}`}
+              href={
+                automationSurface
+                  ? canonicalRunDetailUrl("agent_loop", activeRunNotice)
+                  : `/loops/${loopId}/runs/${activeRunNotice}`
+              }
               className="font-mono underline"
             >
               {activeRunNotice}
@@ -268,8 +435,8 @@ export function LoopDetail({ loopId, initialLoopData }: LoopDetailProps) {
         {/* Loop not active notice */}
         {loop.status !== "active" && (
           <div className="rounded-md border border-border bg-muted/20 p-3 text-xs text-muted-foreground">
-            Loop must be in <span className="font-mono">active</span> status to
-            run manually.
+            {automationSurface ? "Automation" : "Loop"} must be in{" "}
+            <span className="font-mono">active</span> status to run manually.
           </div>
         )}
 
@@ -305,7 +472,12 @@ export function LoopDetail({ loopId, initialLoopData }: LoopDetailProps) {
               ) : (
                 <div className="divide-y divide-border">
                   {runs.map((run) => (
-                    <RunRow key={run.id} run={run} loopId={loopId} />
+                    <RunRow
+                      key={run.id}
+                      run={run}
+                      loopId={loopId}
+                      surface={surface}
+                    />
                   ))}
                 </div>
               )}
@@ -315,7 +487,11 @@ export function LoopDetail({ loopId, initialLoopData }: LoopDetailProps) {
                 JSON moves behind "Advanced" for anyone who needs it. */}
             <section className="rounded-md border border-border">
               <div className="border-b border-border px-4 py-3">
-                <h2 className="text-sm font-medium">What this loop does</h2>
+                <h2 className="text-sm font-medium">
+                  {automationSurface
+                    ? "What this Automation does"
+                    : "What this loop does"}
+                </h2>
               </div>
               <div className="px-4 py-3">
                 {(() => {
@@ -325,7 +501,9 @@ export function LoopDetail({ loopId, initialLoopData }: LoopDetailProps) {
                   if (steps.length === 0) {
                     return (
                       <p className="text-sm text-muted-foreground">
-                        This loop has no steps yet. Open the builder to add one.
+                        {automationSurface
+                          ? "This Automation has no Steps yet. Edit Steps to add one."
+                          : "This loop has no steps yet. Open the builder to add one."}
                       </p>
                     );
                   }
@@ -356,7 +534,9 @@ export function LoopDetail({ loopId, initialLoopData }: LoopDetailProps) {
               className="rounded-md border border-border"
             >
               <div className="border-b border-border px-4 py-3">
-                <h2 className="text-sm font-medium">Loop status</h2>
+                <h2 className="text-sm font-medium">
+                  {automationSurface ? "Automation lifecycle" : "Loop status"}
+                </h2>
               </div>
               <div className="space-y-2 p-4">
                 <Select
@@ -408,6 +588,7 @@ export function LoopDetail({ loopId, initialLoopData }: LoopDetailProps) {
                 onTriggersChanged={() => {
                   void mutateTriggersData();
                 }}
+                surface={surface}
               />
             </div>
 

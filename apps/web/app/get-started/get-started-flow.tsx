@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useSession } from "@/hooks/use-session";
 import { AuthCtaError } from "@/components/auth/auth-cta-error";
+import { ProductJourney } from "@/components/product-journey";
 import { authClient } from "@/lib/auth/client";
 import { runAuthCta } from "@/lib/auth/run-auth-cta";
 import type { GitHubConnectStatus } from "@/lib/github/connect-status";
@@ -16,8 +17,6 @@ import { sanitizeInternalRedirect } from "@/lib/redirect-safety";
 import { GitHubStatusNotice } from "./github-status-notice";
 
 export const GITHUB_LINK_ERROR_MESSAGE = "Couldn't connect GitHub. Try again.";
-
-type StepId = 1 | 2;
 
 function OpenAgentsLogo({ className }: { className?: string }) {
   return (
@@ -61,48 +60,10 @@ export function GetStartedFlow() {
   // GitHub connection is broken. Only an explicit `reconnect=1` (set by
   // `buildGitHubReconnectUrl`) forces the reconnect flow.
   const isGitHubReconnect = searchParams.get("reconnect") === "1";
-  const isGitHubStepParam = searchParams.get("step") === "github";
-  // Any github=<status> param present on load auto-opens step 2, regardless
-  // of the `step` param — the user is returning from a connect/install
-  // attempt and needs to see the outcome, not land back on step 1.
-  const shouldAutoOpenGitHubStep = isGitHubStepParam || githubStatus !== null;
   const redirectPath = sanitizeInternalRedirect(
     searchParams.get("next"),
     "/sessions",
   );
-  const [activeStep, setActiveStep] = useState<StepId>(
-    shouldAutoOpenGitHubStep ? 2 : 1,
-  );
-  const [completedSteps, setCompletedSteps] = useState<Set<StepId>>(
-    () => new Set(shouldAutoOpenGitHubStep ? [1] : []),
-  );
-
-  const markComplete = useCallback((step: StepId) => {
-    setCompletedSteps((prev) => new Set([...prev, step]));
-    if (step < 2) {
-      setActiveStep((step + 1) as StepId);
-    }
-  }, []);
-
-  const canOpenStep = (step: StepId): boolean => {
-    if (step === 1) return true;
-    for (let i = 1; i < step; i++) {
-      if (!completedSteps.has(i as StepId)) return false;
-    }
-    return true;
-  };
-
-  const handleStepClick = (step: StepId) => {
-    if (canOpenStep(step)) {
-      setActiveStep(step);
-    }
-  };
-
-  const steps: { id: StepId; title: string }[] = [
-    { id: 1, title: "Vercel Account" },
-    { id: 2, title: "Connect GitHub" },
-  ];
-
   return (
     <div className="flex min-h-screen flex-col md:flex-row">
       {/* left panel */}
@@ -114,9 +75,12 @@ export function GetStartedFlow() {
           </span>
         </div>
         <p className="max-w-sm text-sm leading-relaxed text-zinc-600">
-          Describe what you want built, and an AI agent writes the code in its
-          own cloud sandbox — no local setup required.
+          Connect GitHub, start a durable Session, create an Automation, and
+          inspect the resulting Run.
         </p>
+        <div className="mt-8 text-white">
+          <ProductJourney dark linked />
+        </div>
       </div>
 
       {/* right panel */}
@@ -126,90 +90,49 @@ export function GetStartedFlow() {
             Get Started
           </h1>
 
-          <div className="flex-1">
-            {steps.map((step) => {
-              const isActive = activeStep === step.id;
-              const isCompleted = completedSteps.has(step.id);
-              const isLocked = !canOpenStep(step.id);
+          <div className="flex-1 space-y-6">
+            <section aria-labelledby="auth-prerequisite-heading">
+              <p className="text-xs font-medium uppercase text-zinc-500">
+                Authentication prerequisite
+              </p>
+              <h2
+                id="auth-prerequisite-heading"
+                className="mt-1 text-sm font-medium text-zinc-300"
+              >
+                Signed in with Vercel
+              </h2>
+              <div className="mt-3">
+                <VercelAccountPrerequisite
+                  session={session}
+                  loading={sessionLoading}
+                />
+              </div>
+            </section>
 
-              return (
-                <div key={step.id} className="border-b border-white/10">
-                  <button
-                    type="button"
-                    onClick={() => handleStepClick(step.id)}
-                    disabled={isLocked}
-                    className={`flex w-full items-center gap-3 py-4 text-left transition-colors duration-200 disabled:cursor-not-allowed ${
-                      isLocked
-                        ? "text-zinc-600"
-                        : isCompleted
-                          ? "text-zinc-400"
-                          : isActive
-                            ? "text-white"
-                            : "text-zinc-400 hover:text-zinc-200"
-                    }`}
-                  >
-                    <span
-                      className={`text-sm tabular-nums ${
-                        isLocked
-                          ? "text-zinc-700"
-                          : isActive
-                            ? "text-white"
-                            : "text-zinc-500"
-                      }`}
-                    >
-                      {step.id}.
-                    </span>
-                    <span
-                      className={`text-sm font-medium ${isActive ? "text-white" : ""}`}
-                    >
-                      {step.title}
-                    </span>
-                    {isCompleted && (
-                      <Check
-                        className="ml-auto size-4 text-white"
-                        strokeWidth={2.5}
-                      />
-                    )}
-                  </button>
-
-                  <div
-                    className={`grid transition-all duration-300 ease-in-out ${
-                      isActive
-                        ? "grid-rows-[1fr] opacity-100"
-                        : "grid-rows-[0fr] opacity-0"
-                    }`}
-                  >
-                    <div className="overflow-hidden">
-                      <div className="pb-5">
-                        {step.id === 1 && (
-                          <VercelAccountStep
-                            session={session}
-                            loading={sessionLoading}
-                            onComplete={() => markComplete(1)}
-                          />
-                        )}
-                        {step.id === 2 && (
-                          <GitHubConnectStep
-                            session={session}
-                            loading={sessionLoading}
-                            hasGitHubAccount={hasGitHubAccount}
-                            hasGitHubInstallations={hasGitHubInstallations}
-                            forceReconnect={isGitHubReconnect}
-                            redirectPath={redirectPath}
-                            githubStatus={githubStatus}
-                            missingInstallationId={missingInstallationId}
-                            onComplete={() => {
-                              markComplete(2);
-                              router.push(redirectPath);
-                            }}
-                          />
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+            <section
+              aria-labelledby="github-step-heading"
+              className="border-t border-white/10 pt-4"
+            >
+              <div className="flex items-center gap-3 text-white">
+                <span className="text-sm tabular-nums">1.</span>
+                <h2 id="github-step-heading" className="text-sm font-medium">
+                  Connect GitHub
+                </h2>
+              </div>
+              <div className="pt-4">
+                <GitHubConnectStep
+                  session={session}
+                  loading={sessionLoading}
+                  hasGitHubAccount={hasGitHubAccount}
+                  hasGitHubInstallations={hasGitHubInstallations}
+                  forceReconnect={isGitHubReconnect}
+                  redirectPath={redirectPath}
+                  githubStatus={githubStatus}
+                  missingInstallationId={missingInstallationId}
+                  onComplete={() => router.push(redirectPath)}
+                />
+              </div>
+            </section>
           </div>
         </div>
       </div>
@@ -217,23 +140,19 @@ export function GetStartedFlow() {
   );
 }
 
-// step 1: vercel account (display only)
-
-function VercelAccountStep({
+function VercelAccountPrerequisite({
   session,
   loading,
-  onComplete,
 }: {
   session: ReturnType<typeof useSession>["session"];
   loading: boolean;
-  onComplete: () => void;
 }) {
   if (loading) {
     return <Skeleton className="h-10 w-full rounded bg-white/5" />;
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-2">
       <p className="text-xs text-zinc-500">
         Signed in via Vercel. This account is used for authentication.
       </p>
@@ -260,18 +179,9 @@ function VercelAccountStep({
           </div>
         </div>
       </div>
-      <Button
-        size="sm"
-        onClick={onComplete}
-        className="gap-2 bg-white text-black hover:bg-zinc-200"
-      >
-        Continue
-      </Button>
     </div>
   );
 }
-
-// step 2: github connect
 
 function GitHubConnectStep({
   session,
@@ -352,7 +262,7 @@ function GitHubConnectStep({
           onClick={onComplete}
           className="gap-2 bg-white text-black hover:bg-zinc-200"
         >
-          Get Started
+          {redirectPath === "/sessions" ? "Start a Session" : "Continue"}
         </Button>
       </div>
     );

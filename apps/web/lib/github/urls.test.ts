@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { buildGitHubReconnectUrl } from "./urls";
+import { buildGitHubConnectUrl, buildGitHubReconnectUrl } from "./urls";
 
 // Issue #781: `step=github` alone must not imply reconnect intent (it also
 // means "auto-open the GitHub step" for status-carrying redirects). Reconnect
@@ -14,5 +14,22 @@ describe("buildGitHubReconnectUrl", () => {
     expect(parsed.searchParams.get("reconnect")).toBe("1");
     expect(parsed.searchParams.get("step")).toBe("github");
     expect(parsed.searchParams.get("next")).toBe("/sessions");
+  });
+});
+
+describe("buildGitHubConnectUrl", () => {
+  test("sanitizes and encodes the internal Session return path", () => {
+    expect(buildGitHubConnectUrl("/sessions")).toBe(
+      "/get-started?step=github&next=%2Fsessions",
+    );
+  });
+
+  test("rejects external and protocol-relative next values", () => {
+    expect(buildGitHubConnectUrl("https://evil.example/x")).toBe(
+      "/get-started?step=github&next=%2Fsessions",
+    );
+    expect(buildGitHubConnectUrl("//evil.example/x")).toBe(
+      "/get-started?step=github&next=%2Fsessions",
+    );
   });
 });

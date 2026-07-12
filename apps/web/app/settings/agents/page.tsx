@@ -13,12 +13,12 @@ export default function AgentsPage() {
     <>
       <SettingsPageHeader title={route.title} description={route.description} />
       <p className="text-sm text-muted-foreground">
-        Looking for triggered automations?{" "}
+        Looking for webhook and scheduled coding work?{" "}
         <Link
-          href="/settings/background-agents"
+          href="/automations"
           className="underline underline-offset-2 hover:text-foreground"
         >
-          See Background agents &rarr;
+          See Automations &rarr;
         </Link>
       </p>
       <AgentsLoader />

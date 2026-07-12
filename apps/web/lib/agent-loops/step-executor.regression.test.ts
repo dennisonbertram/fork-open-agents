@@ -102,6 +102,10 @@ const updateAgentLoopRunContextMock = mock(async (input: RunContextInput) => {
 });
 
 mock.module("./store", () => ({
+  isAgentLoopRunSourceLive: mock(async () => true),
+  createAndAdvanceAgentLoopStep: mock(async () => ({
+    outcome: "source_deleted" as const,
+  })),
   getAgentLoopStepRunWithContext: getAgentLoopStepRunMock,
   updateAgentLoopStepRun: updateAgentLoopStepRunMock,
   recordAgentLoopEvent: recordAgentLoopEventMock,
@@ -257,6 +261,9 @@ function makeLoopRun(overrides: Partial<AgentLoopRun> = {}): AgentLoopRun {
       string,
       unknown
     >,
+    executionSnapshot: null,
+    definitionVersion: null,
+    definitionHash: null,
     currentNodeId: null,
     currentStepRunId: null,
     iterationCount: 0,

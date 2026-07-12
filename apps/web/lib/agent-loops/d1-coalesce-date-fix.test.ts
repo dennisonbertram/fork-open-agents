@@ -84,18 +84,24 @@ const whereMockLeft = mock(() => ({ limit: limitMockLeft }));
 const leftJoinMock = mock(() => ({ where: whereMockLeft }));
 const fromMock = mock(() => ({
   leftJoin: leftJoinMock,
-  where: mock(() => ({ limit: limitMockLeft })),
+  where: mock(() => ({
+    limit: limitMockLeft,
+    for: mock(() => ({ limit: limitMockLeft })),
+  })),
 }));
 const selectMock = mock((_fields?: unknown) => ({ from: fromMock }));
 
 const txFindFirstMock = mock(async () => (queryResult[0] ?? null) as unknown);
-const txUpdateSetMock = mock((setVals: unknown) => ({
-  where: mock(() => ({
-    returning: mock(() => [
-      { ...(insertedValues[0] as object), ...(setVals as object) },
-    ]),
-  })),
-}));
+const txUpdateSetMock = mock((setVals: unknown) => {
+  updateSetCapture.push(setVals);
+  return {
+    where: mock(() => ({
+      returning: mock(() => [
+        { ...(insertedValues[0] as object), ...(setVals as object) },
+      ]),
+    })),
+  };
+});
 const txUpdateMock = mock((_table: unknown) => ({
   set: txUpdateSetMock,
 }));
@@ -181,13 +187,16 @@ function resetMocks() {
   );
   txUpdateMock.mockClear();
   txUpdateSetMock.mockReset();
-  txUpdateSetMock.mockImplementation((setVals: unknown) => ({
-    where: mock(() => ({
-      returning: mock(() => [
-        { ...(insertedValues[0] as object), ...(setVals as object) },
-      ]),
-    })),
-  }));
+  txUpdateSetMock.mockImplementation((setVals: unknown) => {
+    updateSetCapture.push(setVals);
+    return {
+      where: mock(() => ({
+        returning: mock(() => [
+          { ...(insertedValues[0] as object), ...(setVals as object) },
+        ]),
+      })),
+    };
+  });
   selectMock.mockReset();
   selectMock.mockImplementation((_fields?: unknown) => ({ from: fromMock }));
   txInsertMock.mockClear();
@@ -200,6 +209,9 @@ function makeLoopRun(overrides: Partial<Record<string, unknown>> = {}) {
     userId: "user-1",
     status: "failed",
     definitionSnapshot: { nodes: [], edges: [] },
+    executionSnapshot: null,
+    definitionVersion: null,
+    definitionHash: null,
     currentNodeId: "node-1",
     currentStepRunId: "step-1",
     iterationCount: 0,
@@ -380,10 +392,9 @@ describe("D1-003: retryCurrentStep — COALESCE startedAt uses NOW() not a Date 
     const failedStep = makeStepRun({ status: "failed" });
     const newStep = makeStepRun({ id: "step-2", attempt: 2, status: "queued" });
 
-    // Wire tx.query.agentLoopRuns.findFirst → run (first call)
-    // Wire tx.query.agentLoopStepRuns.findFirst → failedStep (second call)
-    // Both tables share txFindFirstMock; use sequential one-shot responses.
-    txFindFirstMock.mockResolvedValueOnce(run);
+    // The locked run lookup now uses tx.select(); the step lookup remains on
+    // tx.query.agentLoopStepRuns.
+    queryResult = [run];
     txFindFirstMock.mockResolvedValueOnce(failedStep);
 
     // tx.select({maxAttempt}).from(...).where(...) for MAX(attempt)
@@ -394,11 +405,10 @@ describe("D1-003: retryCurrentStep — COALESCE startedAt uses NOW() not a Date 
     const fromForSelect = mock(() => ({
       where: whereForSelect,
     })) as unknown as typeof fromMock;
-    (
-      selectMock.mockImplementationOnce as (
-        impl: (_fields?: unknown) => { from: typeof fromForSelect },
-      ) => typeof selectMock
-    )((_fields?: unknown) => ({
+    selectMock.mockImplementationOnce((_fields?: unknown) => ({
+      from: fromMock,
+    }));
+    selectMock.mockImplementationOnce((_fields?: unknown) => ({
       from: fromForSelect,
     }));
 

@@ -33,6 +33,17 @@ export function resolveWorkingBranch(
   nodeId: string,
   defaultBranch: string,
 ): string {
+  return resolveWorkingBranchIntent(context, nodeId, defaultBranch).ref;
+}
+
+export function resolveWorkingBranchIntent(
+  context: Record<string, unknown>,
+  nodeId: string,
+  defaultBranch: string,
+): {
+  ref: string;
+  source: "context_branch" | "live_default_branch";
+} {
   // 1. Own-node branch: context[nodeId].branch (re-run continuity)
   const ownEntry = context[nodeId];
   if (
@@ -43,7 +54,7 @@ export function resolveWorkingBranch(
   ) {
     const ownBranch = (ownEntry as Record<string, unknown>)["branch"];
     if (typeof ownBranch === "string" && ownBranch.length > 0) {
-      return ownBranch;
+      return { ref: ownBranch, source: "context_branch" };
     }
   }
 
@@ -73,9 +84,9 @@ export function resolveWorkingBranch(
   }
 
   if (lastValidBranch !== null) {
-    return lastValidBranch;
+    return { ref: lastValidBranch, source: "context_branch" };
   }
 
   // 3. Fall back to repo default branch
-  return defaultBranch;
+  return { ref: defaultBranch, source: "live_default_branch" };
 }

@@ -40,6 +40,8 @@ export type LoopFlowNodeData = LoopNode;
  */
 export type LoopFlowEdgeData = {
   when: LoopEdge["when"];
+  /** Original definition payload, retained opaquely for lossless saves. */
+  definitionEdge?: LoopEdge;
   /**
    * 0-based index within the parallel group (edges sharing the same source+target).
    * Computed by definitionToFlow. Absent on edges created directly in the builder
@@ -147,7 +149,13 @@ export function definitionToFlow(def: LoopDefinition): {
       source: loopEdge.source,
       target: loopEdge.target,
       type: "when",
-      data: { when: loopEdge.when, parallelIndex, parallelCount, isLoopBack },
+      data: {
+        when: loopEdge.when,
+        definitionEdge: loopEdge,
+        parallelIndex,
+        parallelCount,
+        isLoopBack,
+      },
     };
   });
 
@@ -169,90 +177,21 @@ export function flowToDefinition(
   nodes: LoopFlowNode[],
   edges: LoopFlowEdge[],
 ): LoopDefinition {
-  const loopNodes: LoopNode[] = nodes.map((flowNode) => {
-    // Reconstruct with canonical key order from the flow node data.
-    // The data field carries the full LoopNode — we just update position
-    // from the React Flow node (which may have been dragged).
-    const base = flowNode.data;
-    const position = { x: flowNode.position.x, y: flowNode.position.y };
-
-    // Rebuild with canonical key order matching the Zod schema field order:
-    // id → kind → label → position → (kind-specific fields)
-    switch (base.kind) {
-      case "start":
-        return {
-          id: base.id,
-          kind: "start" as const,
-          label: base.label,
-          position,
-        };
-
-      case "agent_step": {
-        const node: LoopNode = {
-          id: base.id,
-          kind: "agent_step" as const,
-          label: base.label,
-          position,
-          ...(base.instructions !== undefined && {
-            instructions: base.instructions,
-          }),
-          ...(base.outputSchema !== undefined && {
-            outputSchema: base.outputSchema,
-          }),
-          ...(base.checkCommand !== undefined && {
-            checkCommand: base.checkCommand,
-          }),
-          ...(base.permissions !== undefined && {
-            permissions: base.permissions,
-          }),
-          ...(base.composioToolkitSlugs !== undefined && {
-            composioToolkitSlugs: base.composioToolkitSlugs,
-          }),
-        };
-        return node;
-      }
-
-      case "github_check": {
-        const node: LoopNode = {
-          id: base.id,
-          kind: "github_check" as const,
-          label: base.label,
-          position,
-          ...(base.check !== undefined && { check: base.check }),
-        };
-        return node;
-      }
-
-      case "condition": {
-        const node: LoopNode = {
-          id: base.id,
-          kind: "condition" as const,
-          label: base.label,
-          position,
-          ...(base.condition !== undefined && { condition: base.condition }),
-        };
-        return node;
-      }
-
-      case "end":
-        return {
-          id: base.id,
-          kind: "end" as const,
-          label: base.label,
-          position,
-        };
-
-      default:
-        throw new Error(`Unknown node kind in flowToDefinition`);
-    }
-  });
-
-  const loopEdges: LoopEdge[] = edges.map((flowEdge) => ({
-    id: flowEdge.id,
-    source: flowEdge.source,
-    target: flowEdge.target,
-    when: flowEdge.data?.when ?? "always",
+  const loopNodes: LoopNode[] = nodes.map((flowNode) => ({
+    ...flowNode.data,
+    position: { x: flowNode.position.x, y: flowNode.position.y },
   }));
+
+  const loopEdges: LoopEdge[] = edges.map((flowEdge) => {
+    const definitionEdge = flowEdge.data?.definitionEdge;
+    return {
+      ...definitionEdge,
+      id: flowEdge.id,
+      source: flowEdge.source,
+      target: flowEdge.target,
+      when: flowEdge.data?.when ?? definitionEdge?.when ?? "always",
+    };
+  });
 
   return { nodes: loopNodes, edges: loopEdges };
 }

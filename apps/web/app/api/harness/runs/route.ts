@@ -12,6 +12,7 @@ import {
   toVerifiedBuildRunSnapshot,
 } from "@/lib/harness/run-mapping";
 import type { HarnessMode } from "@/lib/harness/types";
+import { isProductSurfaceExposed } from "@/lib/product-surfaces/config";
 import { requireOwnedHarnessSessionChat } from "../_lib/run-access";
 import {
   errorToHarnessResponse,
@@ -87,6 +88,15 @@ export async function POST(req: Request) {
   const authResult = await requireAuthenticatedUser();
   if (!authResult.ok) {
     return authResult.response;
+  }
+
+  if (!isProductSurfaceExposed("verifiedBuild")) {
+    return harnessErrorResponse({
+      code: "product_surface_disabled",
+      message: "Verified Build creation is not available",
+      status: 404,
+      requestId,
+    });
   }
 
   let body: unknown;

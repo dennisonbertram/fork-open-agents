@@ -13,13 +13,18 @@ export type AccountWorkStatus =
   | "completed"
   | "failed"
   | "cancelled"
+  | "skipped"
+  | "unknown"
   | "stale"
   | "scheduled";
 
 export type AccountAttentionReason =
   | "failed"
   | "cancelled"
+  | "failed_steps"
   | "stale"
+  | "stalled"
+  | "unknown_status"
   | "waiting_on_user"
   | "source_failed";
 

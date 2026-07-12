@@ -4,6 +4,7 @@ import { and, asc, desc, eq, gte, inArray, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import {
   agentLoopRuns,
+  agentLoopStepRuns,
   agentLoops,
   backgroundAgentRuns,
   backgroundAgents,
@@ -157,6 +158,7 @@ export function createAccountSnapshotLoaders(params: {
       db
         .select({
           id: agentLoopRuns.id,
+          loopId: agentLoopRuns.loopId,
           loopName: agentLoops.name,
           status: agentLoopRuns.status,
           source: agentLoopRuns.source,
@@ -164,6 +166,7 @@ export function createAccountSnapshotLoaders(params: {
           repoName: agentLoops.repoName,
           currentNodeId: agentLoopRuns.currentNodeId,
           stepCount: agentLoopRuns.stepCount,
+          failedStepCount: sql<number>`COALESCE((SELECT COUNT(*)::int FROM ${agentLoopStepRuns} WHERE ${agentLoopStepRuns.loopRunId} = ${agentLoopRuns.id} AND ${agentLoopStepRuns.status} = 'failed'), 0)`,
           errorKind: agentLoopRuns.errorKind,
           errorMessage: agentLoopRuns.errorMessage,
           createdAt: agentLoopRuns.createdAt,

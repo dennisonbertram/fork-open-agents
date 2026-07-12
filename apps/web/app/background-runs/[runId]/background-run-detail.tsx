@@ -8,6 +8,9 @@ import {
   RunMetadataTable,
   type RunMetadataRow,
 } from "@/components/run-metadata-table";
+import { RunDetailShell } from "@/app/runs/run-detail-shell";
+import { buildBackgroundRunDetailSummary } from "@/app/runs/run-detail-summary";
+import { RunErrorBanner } from "./run-error-banner";
 import { RunSummarySection } from "./run-summary-section";
 import { LiveTimeline } from "./live-timeline";
 import {
@@ -95,11 +98,10 @@ function formatCheckSummary(
 ) {
   const checkEvent = getLatestCheckEvent(events);
   if (!checkEvent) {
-    return agent?.checkCommand?.trim() ? "Pending" : "Not configured";
+    return agent?.checkConfigured ? "Pending" : "Not configured";
   }
 
-  const command = stringifyPayloadValue(checkEvent.payload.command);
-  return command ? `${checkEvent.status} · ${command}` : checkEvent.status;
+  return checkEvent.status;
 }
 
 function formatOutputSummary(outputs: SerializedBackgroundOutput[]) {
@@ -197,6 +199,22 @@ function buildProofStripRows(
 ): RunMetadataRow[] {
   const rows: RunMetadataRow[] = [
     { key: "status", label: "Status", value: run.status },
+    {
+      key: "definition",
+      label: "Definition",
+      value:
+        run.definitionVersion == null
+          ? "Legacy"
+          : `v${run.definitionVersion} · ${run.definitionHash?.slice(0, 12) ?? "invalid"}`,
+    },
+    {
+      key: "snapshot-source",
+      label: "Snapshot source",
+      value: (run.snapshotSource ?? "legacy_live_fallback").replaceAll(
+        "_",
+        " ",
+      ),
+    },
     { key: "trigger", label: "Trigger", value: run.triggerKind },
     {
       key: "repository",
@@ -261,14 +279,19 @@ const STREAM_STATUS_LABELS: Record<StreamStatus, string> = {
 
 export function BackgroundRunDetail({
   initialData,
+  variant = "legacy",
 }: {
   initialData: BackgroundRunDetailData;
+  variant?: "legacy" | "canonical";
 }) {
   const sseEnabled = isSseEnabled();
   const [streamRunStatus, setStreamRunStatus] = useState<string | null>(null);
   const [streamEvents, setStreamEvents] = useState<SerializedBackgroundEvent[]>(
     [],
   );
+  const [terminalData, setTerminalData] =
+    useState<BackgroundRunDetailData | null>(null);
+  const [terminalRefreshFailed, setTerminalRefreshFailed] = useState(false);
 
   const onSseEvents = useCallback((newEvents: SerializedBackgroundEvent[]) => {
     setStreamEvents((prev) => {
@@ -278,9 +301,18 @@ export function BackgroundRunDetail({
     });
   }, []);
 
-  const onSseTerminal = useCallback((status: string) => {
-    setStreamRunStatus(status);
-  }, []);
+  const onSseTerminal = useCallback(
+    (status: string) => {
+      setStreamRunStatus(status);
+      setTerminalRefreshFailed(false);
+      void fetchJson<BackgroundRunDetailData>(
+        `/api/background-agent-runs/${encodeURIComponent(initialData.run.id)}`,
+      )
+        .then(setTerminalData)
+        .catch(() => setTerminalRefreshFailed(true));
+    },
+    [initialData.run.id],
+  );
 
   const { status: sseStatus } = useBackgroundRunEventSource({
     runId: initialData.run.id,
@@ -308,7 +340,7 @@ export function BackgroundRunDetail({
     },
   );
 
-  const detail = data ?? initialData;
+  const detail = terminalData ?? data ?? initialData;
   const { agent, outputs } = detail;
 
   // When SSE is enabled, merge stream events with initial data; when
@@ -373,6 +405,201 @@ export function BackgroundRunDetail({
       : "Refreshing"
     : null;
 
+  const nativeDetail = (
+    <>
+      <RunErrorBanner errorKind={run.errorKind} />
+
+      <RunMetadataTable
+        rows={buildProofStripRows(run, agent, events, outputs, runCost)}
+      />
+
+      <section className="rounded-md border border-border">
+        <div className="border-b border-border px-4 py-3">
+          <h2 className="text-sm font-medium">Event context</h2>
+        </div>
+        <div className="grid gap-3 px-4 py-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div>
+            <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+              Trigger kind
+            </p>
+            <p className="mt-1 font-mono text-xs">{run.triggerKind}</p>
+          </div>
+          {run.prNumber !== null && (
+            <div>
+              <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                Pull request
+              </p>
+              <p className="mt-1 font-mono text-xs">PR #{run.prNumber}</p>
+            </div>
+          )}
+          {run.issueNumber !== null && (
+            <div>
+              <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                Issue
+              </p>
+              <p className="mt-1 font-mono text-xs">Issue #{run.issueNumber}</p>
+            </div>
+          )}
+          {run.deploymentUrl && (
+            <div>
+              <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                Deployment URL
+              </p>
+              <p className="mt-1 truncate font-mono text-xs">
+                {run.deploymentUrl}
+              </p>
+            </div>
+          )}
+          {run.branch && (
+            <div>
+              <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                Branch
+              </p>
+              <p className="mt-1 font-mono text-xs">{run.branch}</p>
+            </div>
+          )}
+          <div>
+            <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+              External event ID
+            </p>
+            <p className="mt-1 truncate font-mono text-xs">{run.externalId}</p>
+          </div>
+        </div>
+      </section>
+
+      <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
+        <div className="space-y-6">
+          {run.resultSummary ? (
+            <RunSummarySection summary={run.resultSummary} />
+          ) : null}
+          <LiveTimeline
+            events={events}
+            isLive={isLive}
+            statusLabel={timelineStatusLabel}
+          />
+        </div>
+
+        <aside className="space-y-6">
+          <section className="rounded-md border border-border">
+            <div className="border-b border-border px-4 py-3">
+              <h2 className="text-sm font-medium">Run</h2>
+            </div>
+            <div className="divide-y divide-border text-sm">
+              <div className="flex justify-between gap-3 px-4 py-2">
+                <span className="text-muted-foreground">Created</span>
+                <span>{formatDate(run.createdAt)}</span>
+              </div>
+              <div className="flex justify-between gap-3 px-4 py-2">
+                <span className="text-muted-foreground">Started</span>
+                <span>{formatDate(run.startedAt)}</span>
+              </div>
+              <div className="flex justify-between gap-3 px-4 py-2">
+                <span className="text-muted-foreground">Finished</span>
+                <span>{formatDate(run.finishedAt)}</span>
+              </div>
+              <div className="flex justify-between gap-3 px-4 py-2">
+                <span className="text-muted-foreground">Output</span>
+                <span className="font-mono">
+                  {formatSidebarOutputKinds(outputs)}
+                </span>
+              </div>
+              {run.errorKind && (
+                <div className="grid gap-1 px-4 py-2">
+                  <span className="text-muted-foreground">Error</span>
+                  <span className="font-mono text-xs">{run.errorKind}</span>
+                  {run.errorMessage && (
+                    <span className="text-xs text-muted-foreground">
+                      {run.errorMessage}
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+          </section>
+
+          <RunMetadataTable heading="Debug" rows={buildDebugRows(run)} />
+
+          <section className="rounded-md border border-border">
+            <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
+              <h2 className="text-sm font-medium">Outputs</h2>
+              {outputs.length > 0 && (
+                <span className="text-xs text-muted-foreground">
+                  {outputs.length}
+                </span>
+              )}
+            </div>
+            {outputs.length === 0 ? (
+              <div className="p-4 text-sm text-muted-foreground">
+                No outputs recorded.
+              </div>
+            ) : (
+              <div className="max-h-[24rem] divide-y divide-border overflow-y-auto">
+                {outputs.map((output) => (
+                  <div key={output.id} className="px-4 py-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2">
+                        <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
+                        <span className="text-sm">{output.kind}</span>
+                      </div>
+                      <StatusPill status={output.status} />
+                    </div>
+                    {output.url && (
+                      <Link
+                        href={output.url}
+                        className="mt-2 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                      >
+                        Open
+                        <ExternalLink className="h-3 w-3" />
+                      </Link>
+                    )}
+                    {output.prNumber !== null && (
+                      <p className="mt-1 font-mono text-xs text-muted-foreground">
+                        #{output.prNumber}
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        </aside>
+      </div>
+    </>
+  );
+
+  const outputLink = run.outputUrl ? (
+    <Link
+      href={run.outputUrl}
+      className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
+    >
+      Output
+      <ExternalLink className="h-4 w-4" />
+    </Link>
+  ) : null;
+
+  if (variant === "canonical") {
+    return (
+      <RunDetailShell
+        summary={buildBackgroundRunDetailSummary({
+          run,
+          agent,
+          events,
+          outputs,
+        })}
+        headerAction={outputLink}
+        statusMessage={
+          terminalRefreshFailed
+            ? "Final evidence refresh failed. Last known evidence is shown."
+            : error
+              ? "Live refresh failed. Existing evidence is still shown."
+              : streamStatusLabel
+        }
+      >
+        {nativeDetail}
+      </RunDetailShell>
+    );
+  }
+
   return (
     <main className="min-h-0 flex-1 overflow-y-auto bg-background text-foreground">
       <div className="mx-auto max-w-6xl space-y-6 px-4 py-8">
@@ -400,7 +627,11 @@ export function BackgroundRunDetail({
                 Live refresh failed. Existing evidence is still shown.
               </p>
             )}
-            {/* ARIA live region for stream connection status */}
+            {terminalRefreshFailed && (
+              <p role="status" className="mt-2 text-xs text-destructive">
+                Final evidence refresh failed. Last known evidence is shown.
+              </p>
+            )}
             {streamStatusLabel && (
               <div
                 aria-live="polite"
@@ -410,176 +641,10 @@ export function BackgroundRunDetail({
               </div>
             )}
           </div>
-          {run.outputUrl && (
-            <Link
-              href={run.outputUrl}
-              className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
-            >
-              Output
-              <ExternalLink className="h-4 w-4" />
-            </Link>
-          )}
+          {outputLink}
         </div>
 
-        <RunMetadataTable
-          rows={buildProofStripRows(run, agent, events, outputs, runCost)}
-        />
-
-        <section className="rounded-md border border-border">
-          <div className="border-b border-border px-4 py-3">
-            <h2 className="text-sm font-medium">Event context</h2>
-          </div>
-          <div className="grid gap-3 px-4 py-4 sm:grid-cols-2 lg:grid-cols-3">
-            <div>
-              <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                Trigger kind
-              </p>
-              <p className="mt-1 font-mono text-xs">{run.triggerKind}</p>
-            </div>
-            {run.prNumber !== null && (
-              <div>
-                <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                  Pull request
-                </p>
-                <p className="mt-1 font-mono text-xs">PR #{run.prNumber}</p>
-              </div>
-            )}
-            {run.issueNumber !== null && (
-              <div>
-                <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                  Issue
-                </p>
-                <p className="mt-1 font-mono text-xs">
-                  Issue #{run.issueNumber}
-                </p>
-              </div>
-            )}
-            {run.deploymentUrl && (
-              <div>
-                <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                  Deployment URL
-                </p>
-                <p className="mt-1 truncate font-mono text-xs">
-                  {run.deploymentUrl}
-                </p>
-              </div>
-            )}
-            {run.branch && (
-              <div>
-                <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                  Branch
-                </p>
-                <p className="mt-1 font-mono text-xs">{run.branch}</p>
-              </div>
-            )}
-            <div>
-              <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                External event ID
-              </p>
-              <p className="mt-1 truncate font-mono text-xs">
-                {run.externalId}
-              </p>
-            </div>
-          </div>
-        </section>
-
-        <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
-          <div className="space-y-6">
-            {run.resultSummary ? (
-              <RunSummarySection summary={run.resultSummary} />
-            ) : null}
-            <LiveTimeline
-              events={events}
-              isLive={isLive}
-              statusLabel={timelineStatusLabel}
-            />
-          </div>
-
-          <aside className="space-y-6">
-            <section className="rounded-md border border-border">
-              <div className="border-b border-border px-4 py-3">
-                <h2 className="text-sm font-medium">Run</h2>
-              </div>
-              <div className="divide-y divide-border text-sm">
-                <div className="flex justify-between gap-3 px-4 py-2">
-                  <span className="text-muted-foreground">Created</span>
-                  <span>{formatDate(run.createdAt)}</span>
-                </div>
-                <div className="flex justify-between gap-3 px-4 py-2">
-                  <span className="text-muted-foreground">Started</span>
-                  <span>{formatDate(run.startedAt)}</span>
-                </div>
-                <div className="flex justify-between gap-3 px-4 py-2">
-                  <span className="text-muted-foreground">Finished</span>
-                  <span>{formatDate(run.finishedAt)}</span>
-                </div>
-                <div className="flex justify-between gap-3 px-4 py-2">
-                  <span className="text-muted-foreground">Output</span>
-                  <span className="font-mono">
-                    {formatSidebarOutputKinds(outputs)}
-                  </span>
-                </div>
-                {run.errorKind && (
-                  <div className="grid gap-1 px-4 py-2">
-                    <span className="text-muted-foreground">Error</span>
-                    <span className="font-mono text-xs">{run.errorKind}</span>
-                    {run.errorMessage && (
-                      <span className="text-xs text-muted-foreground">
-                        {run.errorMessage}
-                      </span>
-                    )}
-                  </div>
-                )}
-              </div>
-            </section>
-
-            <RunMetadataTable heading="Debug" rows={buildDebugRows(run)} />
-
-            <section className="rounded-md border border-border">
-              <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
-                <h2 className="text-sm font-medium">Outputs</h2>
-                {outputs.length > 0 && (
-                  <span className="text-xs text-muted-foreground">
-                    {outputs.length}
-                  </span>
-                )}
-              </div>
-              {outputs.length === 0 ? (
-                <div className="p-4 text-sm text-muted-foreground">
-                  No outputs recorded.
-                </div>
-              ) : (
-                <div className="max-h-[24rem] divide-y divide-border overflow-y-auto">
-                  {outputs.map((output) => (
-                    <div key={output.id} className="px-4 py-3">
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="flex items-center gap-2">
-                          <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
-                          <span className="text-sm">{output.kind}</span>
-                        </div>
-                        <StatusPill status={output.status} />
-                      </div>
-                      {output.url && (
-                        <Link
-                          href={output.url}
-                          className="mt-2 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-                        >
-                          Open
-                          <ExternalLink className="h-3 w-3" />
-                        </Link>
-                      )}
-                      {output.prNumber !== null && (
-                        <p className="mt-1 font-mono text-xs text-muted-foreground">
-                          #{output.prNumber}
-                        </p>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </section>
-          </aside>
-        </div>
+        {nativeDetail}
       </div>
     </main>
   );

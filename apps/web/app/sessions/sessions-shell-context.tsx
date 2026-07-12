@@ -2,9 +2,10 @@
 
 import type { ReactNode } from "react";
 import { createContext, useContext } from "react";
+import type { SessionDialogRepository } from "./session-dialog-repository";
 
 type SessionsShellContextValue = {
-  openNewSessionDialog: () => void;
+  openNewSessionDialog: (repository?: SessionDialogRepository) => void;
 };
 
 const SessionsShellContext = createContext<

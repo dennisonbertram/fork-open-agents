@@ -108,6 +108,10 @@ const createAgentLoopStepRunRegMock = mock(async () => ({
 const setInitialStepPointerRegMock = mock(async () => ({ id: "reg-run" }));
 
 mock.module("@/lib/agent-loops/store", () => ({
+  isAgentLoopRunSourceLive: mock(async () => true),
+  createAndAdvanceAgentLoopStep: mock(async () => ({
+    outcome: "source_deleted" as const,
+  })),
   createAgentLoopRun: createAgentLoopRunRegMock,
   hasActiveRunForLoop: hasActiveRunForLoopRegMock,
   getOwnedAgentLoop: getOwnedAgentLoopRegMock,
@@ -132,6 +136,7 @@ mock.module("@/app/workflows/agent-loop-step", () => ({
 
 mock.module("@/lib/agent-loops/config", () => ({
   isAgentLoopsEnabled: () => true,
+  getAgentLoopRepoAccess: () => ({ allowed: true }),
   isAgentLoopRepoAllowed: () => true,
 }));
 

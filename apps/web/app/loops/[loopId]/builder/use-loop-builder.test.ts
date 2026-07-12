@@ -601,6 +601,53 @@ describe("createLoopBuilderStore — addNode auto-connect (insert-into-edge)", (
 });
 
 describe("createLoopBuilderStore — settings slice (#877)", () => {
+  it("settings-only edits preserve the exact restricted graph definition", () => {
+    const restrictedDefinition: LoopDefinition = {
+      nodes: [
+        {
+          id: "start",
+          kind: "start",
+          label: "Start",
+          position: { x: 0, y: 0 },
+        },
+        {
+          id: "step",
+          kind: "agent_step",
+          label: "Restricted step",
+          position: { x: 200, y: 0 },
+          instructions: "Read files only.",
+          builtinToolNames: ["file_read", "file_search"],
+        },
+        {
+          id: "end",
+          kind: "end",
+          label: "End",
+          position: { x: 400, y: 0 },
+        },
+      ],
+      edges: [
+        { id: "e1", source: "start", target: "step", when: "always" },
+        { id: "e2", source: "step", target: "end", when: "success" },
+      ],
+    };
+    const store = createLoopBuilderStore();
+    store.getState().initialize(restrictedDefinition);
+    store.getState().initializeSettings({
+      name: "Restricted loop",
+      description: "",
+      guardrails: {},
+      watchdogEnabled: false,
+      watchdogInstructions: "",
+      watchdogRetryBudget: 2,
+    });
+
+    store.getState().updateSettings({ name: "Renamed restricted loop" });
+
+    expect(JSON.stringify(store.getState().currentDefinition())).toBe(
+      JSON.stringify(restrictedDefinition),
+    );
+  });
+
   it("initializeSettings seeds settings without marking the store dirty", () => {
     const store = createLoopBuilderStore();
     store.getState().initialize(VALID_DEF);

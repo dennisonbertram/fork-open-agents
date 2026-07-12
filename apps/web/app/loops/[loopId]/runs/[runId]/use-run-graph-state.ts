@@ -18,7 +18,7 @@
  */
 
 import { GUARDRAIL_DEFAULTS } from "@/lib/agent-loops/types";
-import type { LoopDefinition } from "@/lib/agent-loops/types";
+import type { PublicLoopGraph } from "@/lib/agent-loops/public-run";
 import type {
   AgentLoopStepRun,
   AgentLoopRun,
@@ -60,7 +60,7 @@ export type RunGraphState = {
 };
 
 export type RunGraphInput = {
-  definitionSnapshot: LoopDefinition;
+  definitionSnapshot: PublicLoopGraph;
   steps: AgentLoopStepRun[];
   run: Pick<
     AgentLoopRun,

@@ -50,6 +50,10 @@ const createAgentLoopRun = mock(async () => ({
 }));
 
 mock.module("@/lib/agent-loops/store", () => ({
+  isAgentLoopRunSourceLive: mock(async () => true),
+  createAndAdvanceAgentLoopStep: mock(async () => ({
+    outcome: "source_deleted" as const,
+  })),
   createAgentLoopRun,
   hasActiveRunForLoop,
   getOwnedAgentLoop,
@@ -72,6 +76,7 @@ mock.module("@/app/workflows/agent-loop-step", () => ({
 }));
 mock.module("@/lib/agent-loops/config", () => ({
   isAgentLoopsEnabled: () => true,
+  getAgentLoopRepoAccess: () => ({ allowed: true }),
   isAgentLoopRepoAllowed: () => true,
 }));
 mock.module("@/lib/agent-loops/validation", () => ({

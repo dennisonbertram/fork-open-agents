@@ -51,17 +51,18 @@ import { extractDefinitionGuardrails } from "./definition-guardrails";
 import {
   getAgentLoopStepRunWithContext,
   getAgentLoopRunWithLoop,
-  updateAgentLoopRunStatus,
   conditionallyTransitionRunStatus,
   updateAgentLoopStepRun,
   recordAgentLoopEvent,
-  createAgentLoopStepRun,
-  advanceRunToNextStep,
+  createAndAdvanceAgentLoopStep,
   countStepRunsForNode,
   getMaxAttemptForNode,
+  isAgentLoopRunSourceLive,
 } from "./store";
 import { executeAgentLoopStep } from "./step-executor";
 import { invokeWatchdog } from "./watchdog";
+import { AgentLoopSourceDeletedError } from "./source-deleted-error";
+import { AgentLoopSnapshotError } from "./execution-snapshot";
 
 // ── Public types ───────────────────────────────────────────────────────────────
 
@@ -126,7 +127,52 @@ export async function runAgentLoopStep(
 
   // ── 1. Load context ────────────────────────────────────────────────────────
 
-  const ctx = await getAgentLoopStepRunWithContext(stepRunId);
+  let ctx: Awaited<ReturnType<typeof getAgentLoopStepRunWithContext>>;
+  try {
+    ctx = await getAgentLoopStepRunWithContext(stepRunId);
+  } catch (error) {
+    if (error instanceof AgentLoopSourceDeletedError) return;
+    if (error instanceof AgentLoopSnapshotError && error.runId) {
+      const transitioned = await conditionallyTransitionRunStatus({
+        runId: error.runId,
+        toStatus: "failed",
+        fromStatuses: ["queued", "running", "stalled"],
+        errorKind: error.errorKind,
+        errorMessage: error.message,
+      });
+      if (transitioned) {
+        const invalidSnapshotKinds = new Set([
+          "snapshot_missing",
+          "snapshot_invalid",
+          "snapshot_version_unsupported",
+          "snapshot_hash_mismatch",
+        ]);
+        const snapshotInvalid = invalidSnapshotKinds.has(error.errorKind);
+        await updateAgentLoopStepRun({
+          stepRunId,
+          status: "skipped",
+          errorKind: error.errorKind,
+          errorMessage: error.message,
+        });
+        await recordAgentLoopEvent({
+          loopRunId: error.runId,
+          stepRunId,
+          eventName: snapshotInvalid
+            ? "agent-loop.snapshot.invalid"
+            : "agent-loop.execution.revoked",
+          status: "failed",
+          level: "error",
+          summary: snapshotInvalid
+            ? "Loop execution definition could not be used."
+            : "Loop execution authorization was revoked.",
+          payload: { errorKind: error.errorKind },
+          workflowRunId,
+        });
+      }
+      return;
+    }
+    throw error;
+  }
   if (!ctx) {
     // Cannot do anything useful without the DB row — log and bail.
     console.error(`[agent-loop.chain] Step run not found: ${stepRunId}`);
@@ -135,6 +181,38 @@ export async function runAgentLoopStep(
 
   const { loopRun, loop } = ctx;
   const loopRunId = loopRun.id;
+
+  // A delayed delivery for an older attempt must never route, retry, or invoke
+  // the watchdog after the Run pointer has advanced to a newer step.
+  if (
+    loopRun.currentStepRunId !== null &&
+    loopRun.currentStepRunId !== stepRunId
+  ) {
+    return;
+  }
+
+  if (ctx.snapshotSource) {
+    const legacy = ctx.snapshotSource === "legacy_live_fallback";
+    await recordAgentLoopEvent({
+      loopRunId,
+      stepRunId,
+      nodeId: ctx.stepRun.nodeId,
+      eventName: legacy
+        ? "agent-loop.snapshot.legacy_fallback"
+        : "agent-loop.snapshot.validated",
+      status: "succeeded",
+      level: legacy ? "warn" : "info",
+      summary: legacy
+        ? "Using legacy live loop policy fallback."
+        : "Validated frozen loop execution definition.",
+      payload: {
+        snapshotSource: ctx.snapshotSource,
+        definitionVersion: ctx.definitionVersion,
+        definitionHash: ctx.definitionHash,
+      },
+      workflowRunId,
+    });
+  }
 
   // ── 2. Cooperative pre-check ───────────────────────────────────────────────
 
@@ -258,6 +336,16 @@ export async function runAgentLoopStep(
       payload["elapsedMs"] = now - loopRun.startedAt.getTime();
     }
 
+    const guardrailErrorMessage = `Guardrail exceeded: ${whichGuardrail}`;
+    const guardrailWinner = await conditionallyTransitionRunStatus({
+      runId: loopRunId,
+      toStatus: "failed",
+      fromStatuses: ["queued", "running", "stalled"],
+      errorKind: "guardrail_exceeded",
+      errorMessage: guardrailErrorMessage,
+    });
+    if (!guardrailWinner) return;
+
     await recordAgentLoopEvent({
       loopRunId,
       stepRunId,
@@ -278,14 +366,6 @@ export async function runAgentLoopStep(
       stepRunId,
       status: "skipped",
       finishedAt: guardrailNow,
-    });
-
-    const guardrailErrorMessage = `Guardrail exceeded: ${whichGuardrail}`;
-    await updateAgentLoopRunStatus({
-      runId: loopRunId,
-      status: "failed",
-      errorKind: "guardrail_exceeded",
-      errorMessage: guardrailErrorMessage,
     });
 
     await recordAgentLoopEvent({
@@ -311,6 +391,8 @@ export async function runAgentLoopStep(
     stepTimeoutMs: guardrails.stepTimeoutMs,
     maxAgentTurnsPerStep: guardrails.maxAgentTurnsPerStep,
   });
+
+  if (result.outcome === "replay") return;
 
   // ── 5b. Re-check run status after execution ────────────────────────────────
   //
@@ -351,7 +433,7 @@ export async function runAgentLoopStep(
 
   // Re-load loopRun to see if status changed (end node sets it to completed)
   // We detect this by checking if the run's status is now completed/failed
-  // The executor's end-node path calls updateAgentLoopRunStatus(completed).
+  // The executor's end-node path owns the completion transition.
   // We check by looking at the result: if the node was "end", there's no
   // outgoing edge — we check the outcome + whether run is now completed.
   // Actually, we check via the definition snapshot to avoid re-loading.
@@ -417,11 +499,7 @@ export async function runAgentLoopStep(
     currentStepCount: loopRun.stepCount,
     currentIterationCount: loopRun.iterationCount,
     nodeKind: node?.kind ?? "unknown",
-    loop: loop as import("@/lib/db/schema").AgentLoop & {
-      watchdogEnabled: boolean;
-      watchdogInstructions: string | null;
-      watchdogRetryBudget: number;
-    },
+    loop,
     loopRun,
     pausedMidExecution,
     stalledMidExecution,
@@ -445,12 +523,8 @@ type AdvanceParams = {
   currentStepCount: number;
   currentIterationCount: number;
   nodeKind: string;
-  /** The full loop object — threaded through for watchdog invocation on failure. */
-  loop: import("@/lib/db/schema").AgentLoop & {
-    watchdogEnabled: boolean;
-    watchdogInstructions: string | null;
-    watchdogRetryBudget: number;
-  };
+  /** Snapshot-derived loop policy threaded through for watchdog invocation. */
+  loop: Parameters<typeof invokeWatchdog>[0]["loop"];
   /** The full loop run — threaded through for watchdog invocation on failure. */
   loopRun: import("@/lib/db/schema").AgentLoopRun;
   /**
@@ -545,7 +619,7 @@ async function advanceLoopRun(params: AdvanceParams): Promise<void> {
         // If invokeWatchdog itself throws (a watchdog bug), fall back to fail-fast
         // so a watchdog bug never permanently wedges a run.
         try {
-          await invokeWatchdog({
+          const watchdogResult = await invokeWatchdog({
             loop: loop as Parameters<typeof invokeWatchdog>[0]["loop"],
             loopRun,
             stepRunId,
@@ -557,6 +631,29 @@ async function advanceLoopRun(params: AdvanceParams): Promise<void> {
               errorMessage ?? `Step failed with no failure edge: ${nodeId}`,
             workflowRunId,
           });
+          if (!watchdogResult.invoked) {
+            const revoked = await conditionallyTransitionRunStatus({
+              runId: loopRunId,
+              toStatus: "failed",
+              fromStatuses: ["queued", "running", "stalled"],
+              errorKind: "execution_revoked",
+              errorMessage:
+                "Loop execution authorization was revoked before watchdog action.",
+            });
+            if (revoked) {
+              await recordAgentLoopEvent({
+                loopRunId,
+                stepRunId,
+                nodeId,
+                eventName: "agent-loop.execution.revoked",
+                status: "failed",
+                level: "error",
+                summary: "Loop execution authorization was revoked.",
+                payload: { errorKind: "execution_revoked" },
+                workflowRunId,
+              });
+            }
+          }
           // Watchdog owns the state — do not also mark failed.
           return;
         } catch (watchdogErr) {
@@ -579,12 +676,14 @@ async function advanceLoopRun(params: AdvanceParams): Promise<void> {
       const noFailureEdgeMessage = `Step failed with no failure edge: ${nodeId}`;
       const resolvedErrorMessage = errorMessage ?? noFailureEdgeMessage;
 
-      await updateAgentLoopRunStatus({
+      const failed = await conditionallyTransitionRunStatus({
         runId: loopRunId,
-        status: "failed",
+        toStatus: "failed",
+        fromStatuses: ["queued", "running", "stalled"],
         errorKind: resolvedErrorKind,
         errorMessage: resolvedErrorMessage,
       });
+      if (!failed) return;
 
       await recordAgentLoopEvent({
         loopRunId,
@@ -607,6 +706,16 @@ async function advanceLoopRun(params: AdvanceParams): Promise<void> {
       });
     } else {
       // Successful/true/false outcome with no matching edge (dangling or graph gap)
+      const routeMissingMsg = `No outgoing edge from '${nodeId}' for outcome '${outcome}' (dangling or missing edge)`;
+      const failed = await conditionallyTransitionRunStatus({
+        runId: loopRunId,
+        toStatus: "failed",
+        fromStatuses: ["queued", "running", "stalled"],
+        errorKind: "chain_route_missing",
+        errorMessage: routeMissingMsg,
+      });
+      if (!failed) return;
+
       await recordAgentLoopEvent({
         loopRunId,
         stepRunId,
@@ -617,14 +726,6 @@ async function advanceLoopRun(params: AdvanceParams): Promise<void> {
         summary: `No route from ${nodeId} for outcome: ${outcome}`,
         payload: { nodeId, outcome, edgeId },
         workflowRunId,
-      });
-
-      const routeMissingMsg = `No outgoing edge from '${nodeId}' for outcome '${outcome}' (dangling or missing edge)`;
-      await updateAgentLoopRunStatus({
-        runId: loopRunId,
-        status: "failed",
-        errorKind: "chain_route_missing",
-        errorMessage: routeMissingMsg,
       });
 
       await recordAgentLoopEvent({
@@ -689,13 +790,17 @@ async function advanceLoopRun(params: AdvanceParams): Promise<void> {
   });
   const nextAttempt = maxAttemptSoFar + 1;
 
-  let nextStepRun: Awaited<ReturnType<typeof createAgentLoopStepRun>>;
+  let advanceResult: Awaited<ReturnType<typeof createAndAdvanceAgentLoopStep>>;
   try {
-    nextStepRun = await createAgentLoopStepRun({
-      loopRunId,
-      nodeId: nextNodeId,
-      nodeKind: nextNodeKind,
+    advanceResult = await createAndAdvanceAgentLoopStep({
+      runId: loopRunId,
+      fromStepRunId: stepRunId,
+      nextNodeId,
+      nextNodeKind,
       attempt: nextAttempt,
+      stepCount: newStepCount,
+      iterationCount: newIterationCount,
+      workflowRunId,
     });
   } catch (insertErr) {
     // Unique-constraint violation on (loopRunId, nodeId, attempt):
@@ -729,17 +834,11 @@ async function advanceLoopRun(params: AdvanceParams): Promise<void> {
 
   // ── 7f. Atomic advance (anti-double-dispatch) ─────────────────────────────
 
-  const advanced = await advanceRunToNextStep({
-    runId: loopRunId,
-    fromStepRunId: stepRunId,
-    nextNodeId,
-    nextStepRunId: nextStepRun.id,
-    stepCount: newStepCount,
-    iterationCount: newIterationCount,
-    workflowRunId,
-  });
+  if (advanceResult.outcome === "source_deleted") {
+    return;
+  }
 
-  if (!advanced) {
+  if (advanceResult.outcome === "duplicate") {
     // Another invocation already advanced from this step — do not dispatch
     await recordAgentLoopEvent({
       loopRunId,
@@ -754,6 +853,8 @@ async function advanceLoopRun(params: AdvanceParams): Promise<void> {
     });
     return;
   }
+
+  const nextStepRun = advanceResult.step;
 
   // ── 7g. Pause mid-execution: bookkeeping done, skip dispatch ─────────────
   //
@@ -814,6 +915,35 @@ async function advanceLoopRun(params: AdvanceParams): Promise<void> {
   }
 
   // ── 7h. Dispatch next step workflow ────────────────────────────────────────
+
+  if (
+    !(await isAgentLoopRunSourceLive(loopRunId, {
+      repoOwner: loop.repoOwner,
+      repoName: loop.repoName,
+    }))
+  ) {
+    const revoked = await conditionallyTransitionRunStatus({
+      runId: loopRunId,
+      toStatus: "failed",
+      fromStatuses: ["queued", "running", "stalled"],
+      errorKind: "execution_revoked",
+      errorMessage: "Loop execution authorization was revoked before dispatch.",
+    });
+    if (revoked) {
+      await recordAgentLoopEvent({
+        loopRunId,
+        stepRunId,
+        nodeId,
+        eventName: "agent-loop.execution.revoked",
+        status: "failed",
+        level: "error",
+        summary: "Loop execution authorization was revoked before dispatch.",
+        payload: { errorKind: "execution_revoked" },
+        workflowRunId,
+      });
+    }
+    return;
+  }
 
   try {
     // Dynamic import breaks the cycle: chain.ts ← agent-loop-step.ts ← chain.ts.

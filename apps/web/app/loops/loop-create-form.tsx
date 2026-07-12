@@ -21,6 +21,8 @@ import { appendSuggestedTriggerParams } from "./suggested-trigger-query";
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type LoopCreateFormProps = {
+  /** Opt-in canonical Automation presentation; omitted preserves legacy copy/routes. */
+  surface?: "legacy" | "automation";
   /** Pre-populated validation errors (e.g. from a server 400 response) */
   initialValidationErrors?: LoopValidationError[];
   /** Pre-populate repo owner from query params (e.g. dashboard "New workflow" action) */
@@ -85,6 +87,7 @@ const DEFAULT_DEFINITION = JSON.stringify(
 // ── Main component ─────────────────────────────────────────────────────────────
 
 export function LoopCreateForm({
+  surface = "legacy",
   initialValidationErrors,
   initialRepoOwner,
   initialRepoName,
@@ -216,11 +219,19 @@ export function LoopCreateForm({
       }
 
       const { loop } = (await res.json()) as CreateAgentLoopResponse;
-      toast.success(`Loop "${loop.name}" created.`);
+      toast.success(
+        surface === "automation"
+          ? `Multi-step Automation draft "${loop.name}" created.`
+          : `Loop "${loop.name}" created.`,
+      );
       const basePath =
-        redirectTo === "builder"
-          ? `/loops/${loop.id}/builder`
-          : `/loops/${loop.id}`;
+        surface === "automation"
+          ? redirectTo === "builder"
+            ? `/automations/agent-loop/${encodeURIComponent(loop.id)}/edit`
+            : `/automations/agent-loop/${encodeURIComponent(loop.id)}`
+          : redirectTo === "builder"
+            ? `/loops/${loop.id}/builder`
+            : `/loops/${loop.id}`;
       router.push(appendSuggestedTriggerParams(basePath, suggestedTriggerSpec));
     } catch {
       toast.error("Failed to create loop. Please try again.");
@@ -262,8 +273,12 @@ export function LoopCreateForm({
         )}
         <p className="text-xs text-muted-foreground">
           {repoLocked
-            ? "This loop runs against this repository."
-            : "The GitHub repository this loop runs against. Pick one you've used before, or type any owner/repo."}
+            ? surface === "automation"
+              ? "This Automation runs against this repository."
+              : "This loop runs against this repository."
+            : surface === "automation"
+              ? "The GitHub repository this Automation runs against. Pick one you've used before, or type any owner/repo."
+              : "The GitHub repository this loop runs against. Pick one you've used before, or type any owner/repo."}
         </p>
       </div>
 
@@ -274,7 +289,11 @@ export function LoopCreateForm({
           id="description"
           value={description}
           onChange={(e) => setDescription(e.target.value)}
-          placeholder="Describe what this loop does"
+          placeholder={
+            surface === "automation"
+              ? "Describe what this Automation does"
+              : "Describe what this loop does"
+          }
         />
       </div>
 
@@ -306,16 +325,18 @@ export function LoopCreateForm({
           return (
             <div className="space-y-2">
               <p className="text-xs text-muted-foreground">
-                You don&apos;t need to edit anything here — pick a repository
-                and create. You&apos;ll fine-tune each step visually in the
-                builder.
+                {surface === "automation"
+                  ? "You don't need to edit anything here — pick a repository and create the draft. You'll fine-tune each Step visually next."
+                  : "You don't need to edit anything here — pick a repository and create. You'll fine-tune each step visually in the builder."}
               </p>
               <details
                 open={hasDefinitionError || undefined}
                 className="rounded-md border border-border bg-muted/10 px-3 py-2"
               >
                 <summary className="cursor-pointer text-sm text-muted-foreground hover:text-foreground">
-                  Advanced — edit the loop definition (JSON)
+                  {surface === "automation"
+                    ? "Advanced — edit the Automation definition (JSON)"
+                    : "Advanced — edit the loop definition (JSON)"}
                 </summary>
                 <div className="mt-3 space-y-2">{editor}</div>
               </details>
@@ -325,10 +346,15 @@ export function LoopCreateForm({
 
         return (
           <div className="space-y-2">
-            <Label htmlFor="definition">Loop definition (JSON)</Label>
+            <Label htmlFor="definition">
+              {surface === "automation"
+                ? "Automation definition (JSON)"
+                : "Loop definition (JSON)"}
+            </Label>
             <p className="text-xs text-muted-foreground">
-              Paste or edit the loop definition JSON. Errors are validated on
-              blur before saving.
+              {surface === "automation"
+                ? "Paste or edit the Automation definition JSON. Configuration errors are validated on blur; validity does not imply execution readiness."
+                : "Paste or edit the loop definition JSON. Errors are validated on blur before saving."}
             </p>
             {editor}
           </div>
@@ -340,7 +366,11 @@ export function LoopCreateForm({
           Cancel
         </Button>
         <Button type="submit" disabled={submitting}>
-          {submitting ? "Creating…" : "Create loop"}
+          {submitting
+            ? "Creating…"
+            : surface === "automation"
+              ? "Create multi-step Automation"
+              : "Create loop"}
         </Button>
       </div>
     </form>

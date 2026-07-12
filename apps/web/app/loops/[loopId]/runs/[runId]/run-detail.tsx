@@ -5,6 +5,8 @@ import { ChevronDown, ChevronRight, Clock3 } from "lucide-react";
 import Link from "next/link";
 import { mutate as globalMutate } from "swr";
 import { cn } from "@/lib/utils";
+import { RunDetailShell } from "@/app/runs/run-detail-shell";
+import { buildLoopRunDetailSummary } from "@/app/runs/run-detail-summary";
 import {
   RunMetadataTable,
   type RunMetadataRow,
@@ -15,7 +17,7 @@ import type {
   AgentLoopStepRun,
   AgentLoopWatchdogRun,
 } from "@/lib/db/schema";
-import { loopDefinitionSchema } from "@/lib/agent-loops/types";
+import { publicLoopGraphSchema } from "@/lib/agent-loops/public-run";
 import { getLoopErrorCopy, sanitizeErrorDetail } from "@/app/loops/error-copy";
 import { getRunCompletionLabel } from "../../run-completion-label";
 import { getTurnBudgetProof } from "./turn-budget-proof";
@@ -85,7 +87,7 @@ function buildProofStripRows(
     {
       key: "repository",
       label: "Repository",
-      value: `${loop.repoOwner}/${loop.repoName}`,
+      value: loop ? `${loop.repoOwner}/${loop.repoName}` : null,
     },
     {
       key: "iterations",
@@ -115,6 +117,19 @@ function buildProofStripRows(
       copyable: true,
     },
     { key: "current-node", label: "Current Node", value: run.currentNodeId },
+    {
+      key: "definition",
+      label: "Definition",
+      value:
+        run.definitionVersion === 1
+          ? `v1 ${run.definitionHash?.slice(0, 12) ?? "invalid"}`
+          : "Legacy",
+    },
+    {
+      key: "snapshot-source",
+      label: "Snapshot source",
+      value: run.snapshotSource ?? null,
+    },
   ];
 
   const turnProof = getTurnBudgetProof(run.errorKind, guardrails);
@@ -307,8 +322,10 @@ function buildInterleavedTimeline(
 
 export function RunDetail({
   initialData,
+  variant = "legacy",
 }: {
   initialData: GetAgentLoopRunDetailResponse;
+  variant?: "legacy" | "canonical";
 }) {
   const { data, error, liveness } = useLoopRunPolling(
     initialData.run.id,
@@ -336,7 +353,7 @@ export function RunDetail({
     failedStepCount,
   });
 
-  const guardrails = loop.guardrails as
+  const guardrails = loop?.guardrails as
     | Record<string, unknown>
     | null
     | undefined;
@@ -346,7 +363,7 @@ export function RunDetail({
   const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
 
   // SNAPSHOT RULE: parse snapshot from the run, never from loop.definition
-  const definitionSnapshotResult = loopDefinitionSchema.safeParse(
+  const definitionSnapshotResult = publicLoopGraphSchema.safeParse(
     run.definitionSnapshot,
   );
   const definitionSnapshot = definitionSnapshotResult.success
@@ -363,10 +380,223 @@ export function RunDetail({
     }
   }
 
+  const completionNotice = completionLabel ? (
+    <p className="text-pretty text-sm font-medium text-amber-700 dark:text-amber-300">
+      {completionLabel}
+    </p>
+  ) : run.status === "stalled" ? (
+    <p className="text-pretty text-sm text-amber-700 dark:text-amber-300">
+      No activity for a while — the run appears stuck. Retry it or check the
+      step log.
+    </p>
+  ) : null;
+
+  const nativeDetail = (
+    <>
+      {variant === "canonical" ? completionNotice : null}
+
+      <RunMetadataTable rows={buildProofStripRows(run, loop, guardrails)} />
+
+      {!loop || loop.sourceActive === false || loop.sourceDeleted ? (
+        <p
+          role="status"
+          className="rounded-md border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-200"
+        >
+          {loop?.sourceDeleted || !loop
+            ? "Source deleted; execution history retained."
+            : "Source inactive; execution history retained."}
+        </p>
+      ) : null}
+
+      <RunActions
+        runId={run.id}
+        loopId={loop?.sourceActive && !loop.sourceDeleted ? loop.id : null}
+        sourceAvailable={loop !== null}
+        status={run.status}
+        onActionComplete={() => {
+          void globalMutate(`/api/agent-loop-runs/${run.id}`);
+          if (loop) void globalMutate(loopRunsListSwrKey(loop.id));
+        }}
+      />
+
+      {/* Watchdog diagnosis banner — only when paused with a watchdog decision */}
+      {run.status === "paused" && watchdogRuns.length > 0 && (
+        <PausedDiagnosisBanner watchdogRuns={watchdogRuns} />
+      )}
+
+      {/* Error banner — what happened / what to do / technical details (#767) */}
+      {run.errorKind &&
+        (() => {
+          const copy = getLoopErrorCopy(run.errorKind);
+          return (
+            <div className="rounded-md border border-red-500/25 bg-red-500/10 p-3">
+              <p className="text-sm font-medium text-red-700 dark:text-red-300">
+                {copy.whatHappened}
+              </p>
+              <p className="mt-1 text-sm text-foreground">
+                {copy.actionHref ? (
+                  <Link href={copy.actionHref} className="underline">
+                    {copy.whatToDo}
+                  </Link>
+                ) : (
+                  copy.whatToDo
+                )}
+              </p>
+              <details className="mt-2">
+                <summary className="cursor-pointer text-[10px] text-muted-foreground">
+                  Technical details
+                </summary>
+                <div className="mt-1 space-y-1">
+                  <p className="font-mono text-[10px] text-muted-foreground">
+                    {copy.rawKind}
+                  </p>
+                  {run.errorMessage && (
+                    <p className="font-mono text-[10px] text-muted-foreground">
+                      {sanitizeErrorDetail(run.errorMessage)}
+                    </p>
+                  )}
+                </div>
+              </details>
+            </div>
+          );
+        })()}
+
+      {/* Composio degradation warnings (#798) — distinct from the error
+            banner above: shown independent of run.status, so a succeeded
+            run whose Composio tools were silently off/disconnected/errored
+            still surfaces evidence here. */}
+      <ComposioWarningsSection warnings={composioWarnings} />
+
+      {/* Live run graph — ABOVE timeline; collapsible */}
+      {definitionSnapshot && definitionSnapshot.nodes.length > 0 && (
+        <section className="rounded-md border border-border">
+          <button
+            type="button"
+            onClick={() => setGraphCollapsed((c) => !c)}
+            className="flex w-full items-center justify-between gap-3 border-b border-border px-4 py-3 text-left hover:bg-muted/20"
+          >
+            <h2 className="text-sm font-medium">Run graph</h2>
+            <div className="flex items-center gap-2">
+              {isActive && (
+                <span className="text-xs text-muted-foreground">Live</span>
+              )}
+              {graphCollapsed ? (
+                <ChevronRight className="h-4 w-4 text-muted-foreground" />
+              ) : (
+                <ChevronDown className="h-4 w-4 text-muted-foreground" />
+              )}
+            </div>
+          </button>
+          {!graphCollapsed && (
+            <div className="h-72 sm:h-96">
+              <RunGraph
+                definitionSnapshot={definitionSnapshot}
+                steps={steps}
+                run={run}
+                guardrails={guardrails ?? null}
+                events={events}
+                onNodeClick={handleNodeClick}
+              />
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* Step timeline */}
+      <section className="rounded-md border border-border">
+        <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
+          <h2 className="text-sm font-medium">Step timeline</h2>
+          {focusedNodeId && (
+            <button
+              type="button"
+              onClick={() => setFocusedNodeId(null)}
+              className="text-xs text-muted-foreground hover:text-foreground"
+            >
+              Clear filter
+            </button>
+          )}
+          {isActive && !focusedNodeId && (
+            <span className="text-xs text-muted-foreground">Live</span>
+          )}
+        </div>
+        <div aria-live="polite" aria-label="Active step status">
+          {steps.length === 0 && watchdogRuns.length === 0 ? (
+            <div className="p-8 text-center text-sm text-muted-foreground">
+              No steps recorded yet.
+            </div>
+          ) : (
+            <div className="divide-y divide-border">
+              {buildInterleavedTimeline(steps, watchdogRuns).map((entry) =>
+                entry.kind === "step" ? (
+                  <StepRow
+                    key={`step-${entry.step.id}`}
+                    step={entry.step}
+                    isActive={entry.step.id === run.currentStepRunId}
+                    isHighlighted={
+                      focusedNodeId !== null &&
+                      entry.step.nodeId === focusedNodeId
+                    }
+                  />
+                ) : (
+                  <WatchdogRow
+                    key={`watchdog-${entry.watchdogRun.id}`}
+                    watchdogRun={entry.watchdogRun}
+                  />
+                ),
+              )}
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* Event log */}
+      <section className="rounded-md border border-border">
+        <div className="border-b border-border px-4 py-3">
+          <h2 className="text-sm font-medium">Event log</h2>
+        </div>
+        {events.length === 0 ? (
+          <div className="p-8 text-center text-sm text-muted-foreground">
+            No events recorded.
+          </div>
+        ) : (
+          <div className="divide-y divide-border">
+            {events.map((event) => (
+              <EventRow key={event.id} event={event} />
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* Debug sidebar */}
+      <RunMetadataTable
+        heading="Correlation IDs"
+        rows={buildCorrelationIdRows(run)}
+      />
+    </>
+  );
+
+  const livenessMessage = error
+    ? "Live refresh failed. Last known state is shown."
+    : liveness.kind === "live"
+      ? `Updated ${liveness.secondsSinceUpdate}s ago · refreshing every 2s`
+      : liveness.kind === "stalled"
+        ? `Live updates stalled — last update ${liveness.secondsSinceUpdate}s ago. Shown data may be out of date.`
+        : null;
+
+  if (variant === "canonical") {
+    return (
+      <RunDetailShell
+        summary={buildLoopRunDetailSummary(detail, { variant: "canonical" })}
+        statusMessage={livenessMessage}
+      >
+        {nativeDetail}
+      </RunDetailShell>
+    );
+  }
+
   return (
     <main className="min-h-0 flex-1 overflow-y-auto bg-background text-foreground">
       <div className="mx-auto max-w-6xl space-y-6 px-4 py-8">
-        {/* Header */}
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-4">
           <div className="min-w-0">
             <nav
@@ -380,38 +610,40 @@ export function RunDetail({
                 Loops
               </Link>
               <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-              <Link
-                href={`/repos/${loop.repoOwner}/${loop.repoName}`}
-                className="min-w-0 truncate font-mono text-muted-foreground hover:text-foreground"
-              >
-                {loop.repoOwner}/{loop.repoName}
-              </Link>
-              <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-              <Link
-                href={`/loops/${loop.id}`}
-                className="min-w-0 truncate text-muted-foreground hover:text-foreground"
-              >
-                {loop.name}
-              </Link>
-              <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              {loop?.sourceActive && !loop.sourceDeleted ? (
+                <>
+                  <Link
+                    href={`/repos/${loop.repoOwner}/${loop.repoName}`}
+                    className="min-w-0 truncate font-mono text-muted-foreground hover:text-foreground"
+                  >
+                    {loop.repoOwner}/{loop.repoName}
+                  </Link>
+                  <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  <Link
+                    href={`/loops/${loop.id}`}
+                    className="min-w-0 truncate text-muted-foreground hover:text-foreground"
+                  >
+                    {loop.name}
+                  </Link>
+                  <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                </>
+              ) : (
+                <>
+                  <span className="text-muted-foreground">
+                    {loop
+                      ? `${loop.name} (${loop.sourceDeleted ? "deleted" : "inactive"})`
+                      : "Deleted automation"}
+                  </span>
+                  <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                </>
+              )}
               <span className="shrink-0 font-medium">Run</span>
             </nav>
             <div className="flex items-center gap-2">
               <h1 className="truncate text-2xl font-semibold">Loop run</h1>
               <StatusPill status={run.status} />
             </div>
-            {completionLabel ? (
-              <p className="mt-1 text-sm font-medium text-amber-700 dark:text-amber-300">
-                {completionLabel}
-              </p>
-            ) : (
-              run.status === "stalled" && (
-                <p className="mt-1 text-sm text-amber-700 dark:text-amber-300">
-                  No activity for a while — the run appears stuck. Retry it or
-                  check the step log.
-                </p>
-              )
-            )}
+            {completionNotice}
             <p className="mt-1 truncate font-mono text-sm text-muted-foreground">
               {run.id}
             </p>
@@ -437,176 +669,7 @@ export function RunDetail({
           )}
         </div>
 
-        {/* Proof strip */}
-        <RunMetadataTable rows={buildProofStripRows(run, loop, guardrails)} />
-
-        {/* Run actions */}
-        <RunActions
-          runId={run.id}
-          loopId={loop.id}
-          status={run.status}
-          onActionComplete={() => {
-            // Revalidate this run's own SWR key AND the loop's runs-list
-            // key (loop-detail.tsx) so the two surfaces can't disagree about
-            // this run's status after a control action (#767, walk-3).
-            void globalMutate(`/api/agent-loop-runs/${run.id}`);
-            void globalMutate(loopRunsListSwrKey(loop.id));
-          }}
-        />
-
-        {/* Watchdog diagnosis banner — only when paused with a watchdog decision */}
-        {run.status === "paused" && watchdogRuns.length > 0 && (
-          <PausedDiagnosisBanner watchdogRuns={watchdogRuns} />
-        )}
-
-        {/* Error banner — what happened / what to do / technical details (#767) */}
-        {run.errorKind &&
-          (() => {
-            const copy = getLoopErrorCopy(run.errorKind);
-            return (
-              <div className="rounded-md border border-red-500/25 bg-red-500/10 p-3">
-                <p className="text-sm font-medium text-red-700 dark:text-red-300">
-                  {copy.whatHappened}
-                </p>
-                <p className="mt-1 text-sm text-foreground">
-                  {copy.actionHref ? (
-                    <Link href={copy.actionHref} className="underline">
-                      {copy.whatToDo}
-                    </Link>
-                  ) : (
-                    copy.whatToDo
-                  )}
-                </p>
-                <details className="mt-2">
-                  <summary className="cursor-pointer text-[10px] text-muted-foreground">
-                    Technical details
-                  </summary>
-                  <div className="mt-1 space-y-1">
-                    <p className="font-mono text-[10px] text-muted-foreground">
-                      {copy.rawKind}
-                    </p>
-                    {run.errorMessage && (
-                      <p className="font-mono text-[10px] text-muted-foreground">
-                        {sanitizeErrorDetail(run.errorMessage)}
-                      </p>
-                    )}
-                  </div>
-                </details>
-              </div>
-            );
-          })()}
-
-        {/* Composio degradation warnings (#798) — distinct from the error
-            banner above: shown independent of run.status, so a succeeded
-            run whose Composio tools were silently off/disconnected/errored
-            still surfaces evidence here. */}
-        <ComposioWarningsSection warnings={composioWarnings} />
-
-        {/* Live run graph — ABOVE timeline; collapsible */}
-        {definitionSnapshot && definitionSnapshot.nodes.length > 0 && (
-          <section className="rounded-md border border-border">
-            <button
-              type="button"
-              onClick={() => setGraphCollapsed((c) => !c)}
-              className="flex w-full items-center justify-between gap-3 border-b border-border px-4 py-3 text-left hover:bg-muted/20"
-            >
-              <h2 className="text-sm font-medium">Run graph</h2>
-              <div className="flex items-center gap-2">
-                {isActive && (
-                  <span className="text-xs text-muted-foreground">Live</span>
-                )}
-                {graphCollapsed ? (
-                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                ) : (
-                  <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                )}
-              </div>
-            </button>
-            {!graphCollapsed && (
-              <div className="h-72 sm:h-96">
-                <RunGraph
-                  definitionSnapshot={definitionSnapshot}
-                  steps={steps}
-                  run={run}
-                  guardrails={guardrails ?? null}
-                  events={events}
-                  onNodeClick={handleNodeClick}
-                />
-              </div>
-            )}
-          </section>
-        )}
-
-        {/* Step timeline */}
-        <section className="rounded-md border border-border">
-          <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
-            <h2 className="text-sm font-medium">Step timeline</h2>
-            {focusedNodeId && (
-              <button
-                type="button"
-                onClick={() => setFocusedNodeId(null)}
-                className="text-xs text-muted-foreground hover:text-foreground"
-              >
-                Clear filter
-              </button>
-            )}
-            {isActive && !focusedNodeId && (
-              <span className="text-xs text-muted-foreground">Live</span>
-            )}
-          </div>
-          <div aria-live="polite" aria-label="Active step status">
-            {steps.length === 0 && watchdogRuns.length === 0 ? (
-              <div className="p-8 text-center text-sm text-muted-foreground">
-                No steps recorded yet.
-              </div>
-            ) : (
-              <div className="divide-y divide-border">
-                {buildInterleavedTimeline(steps, watchdogRuns).map((entry) =>
-                  entry.kind === "step" ? (
-                    <StepRow
-                      key={`step-${entry.step.id}`}
-                      step={entry.step}
-                      isActive={entry.step.id === run.currentStepRunId}
-                      isHighlighted={
-                        focusedNodeId !== null &&
-                        entry.step.nodeId === focusedNodeId
-                      }
-                    />
-                  ) : (
-                    <WatchdogRow
-                      key={`watchdog-${entry.watchdogRun.id}`}
-                      watchdogRun={entry.watchdogRun}
-                    />
-                  ),
-                )}
-              </div>
-            )}
-          </div>
-        </section>
-
-        {/* Event log */}
-        <section className="rounded-md border border-border">
-          <div className="border-b border-border px-4 py-3">
-            <h2 className="text-sm font-medium">Event log</h2>
-          </div>
-          {events.length === 0 ? (
-            <div className="p-8 text-center text-sm text-muted-foreground">
-              No events recorded.
-            </div>
-          ) : (
-            <div className="divide-y divide-border">
-              {events.map((event) => (
-                <EventRow key={event.id} event={event} />
-              ))}
-            </div>
-          )}
-        </section>
-
-        {/* Debug sidebar */}
-        <RunMetadataTable
-          heading="Correlation IDs"
-          rows={buildCorrelationIdRows(run)}
-        />
+        {nativeDetail}
       </div>
     </main>
   );

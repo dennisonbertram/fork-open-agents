@@ -37,9 +37,10 @@ import {
   findStalledLoopRunCandidates,
   conditionallyTransitionRunStatus,
   recordAgentLoopEvent,
-  getAgentLoopRunWithLoop,
+  getAgentLoopRunExecutionContext,
 } from "./store";
 import { invokeWatchdogForStall } from "./watchdog";
+import { AgentLoopSnapshotError } from "./execution-snapshot";
 
 // ── Public types ───────────────────────────────────────────────────────────────
 
@@ -81,6 +82,7 @@ export async function sweepStalledLoopRuns(): Promise<SweepResult> {
     }
 
     stalledCount++;
+    let terminalizedByPolicy = false;
 
     // ── M3-02-A: Watchdog routing ─────────────────────────────────────────────
     // Load loop details per-candidate (only after a successful transition).
@@ -88,29 +90,58 @@ export async function sweepStalledLoopRuns(): Promise<SweepResult> {
     // never aborts the sweep batch (invokeWatchdogForStall itself never throws,
     // but the outer try/catch catches any unexpected store errors).
     try {
-      const detail = await getAgentLoopRunWithLoop(candidate.id);
+      const detail = await getAgentLoopRunExecutionContext(candidate.id);
       if (
         detail?.loop.watchdogEnabled &&
-        detail.run.currentStepRunId &&
-        detail.run.currentNodeId
+        detail.loopRun.currentStepRunId &&
+        detail.loopRun.currentNodeId
       ) {
         await invokeWatchdogForStall({
           loop: detail.loop,
-          loopRun: detail.run,
-          stepRunId: detail.run.currentStepRunId,
-          nodeId: detail.run.currentNodeId,
+          loopRun: detail.loopRun,
+          stepRunId: detail.loopRun.currentStepRunId,
+          nodeId: detail.loopRun.currentNodeId,
           // nodeKind: we don't have it in the candidate — fall back to 'unknown'.
           // A future enhancement could resolve it from the definitionSnapshot.
           nodeKind: "unknown",
           attempt: 0,
           errorKind: "stall_sweep",
           errorMessage: `Run stalled: last event ${candidate.lastEventName ?? "(none)"} ${Math.round(lastEventAgeMs / 60000)}m ago`,
-          workflowRunId: detail.run.workflowRunId,
+          workflowRunId: detail.loopRun.workflowRunId,
         });
       }
-    } catch {
+    } catch (error) {
+      if (error instanceof AgentLoopSnapshotError) {
+        const failed = await conditionallyTransitionRunStatus({
+          runId: candidate.id,
+          toStatus: "failed",
+          fromStatuses: ["stalled"],
+          errorKind: error.errorKind,
+          errorMessage: error.message,
+        });
+        if (failed) {
+          terminalizedByPolicy = true;
+          const snapshotInvalid = error.errorKind.startsWith("snapshot_");
+          await recordAgentLoopEvent({
+            loopRunId: candidate.id,
+            eventName: snapshotInvalid
+              ? "agent-loop.snapshot.invalid"
+              : "agent-loop.execution.revoked",
+            status: "failed",
+            level: "error",
+            summary: snapshotInvalid
+              ? "Loop execution definition could not be used by watchdog."
+              : "Loop watchdog authorization was revoked.",
+            payload: { errorKind: error.errorKind },
+          });
+        }
+      }
       // Watchdog error must never abort the sweep batch.
       // The stalled transition and event emission continue below.
+    }
+    if (terminalizedByPolicy) {
+      stalledCount--;
+      continue;
     }
     // ─────────────────────────────────────────────────────────────────────────
 

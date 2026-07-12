@@ -16,12 +16,14 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 import type { StartAgentLoopRunResponse } from "@/app/api/agent-loops/types";
+import { canonicalRunDetailUrl } from "@/lib/runs/detail-routes";
 
 export const DISPATCH_FAILED_TOAST =
   "Couldn't start the run — the execution backend rejected the dispatch. The run is marked failed; see the run page for details.";
 
 type UseLoopRunNowOptions = {
   loopId: string;
+  surface?: "legacy" | "automation";
   onStart?: () => void;
   onActiveRun?: (activeRunId: string) => void;
   resolveActiveRunId?: () => string | undefined;
@@ -30,6 +32,7 @@ type UseLoopRunNowOptions = {
 
 export function useLoopRunNow({
   loopId,
+  surface = "legacy",
   onStart,
   onActiveRun,
   resolveActiveRunId,
@@ -37,6 +40,10 @@ export function useLoopRunNow({
 }: UseLoopRunNowOptions) {
   const router = useRouter();
   const [runningNow, setRunningNow] = useState(false);
+  const runHref = (runId: string) =>
+    surface === "automation"
+      ? canonicalRunDetailUrl("agent_loop", runId)
+      : `/loops/${loopId}/runs/${runId}`;
 
   async function runNow() {
     setRunningNow(true);
@@ -72,7 +79,7 @@ export function useLoopRunNow({
         };
         toast.error(DISPATCH_FAILED_TOAST);
         if (body.runId) {
-          router.push(`/loops/${loopId}/runs/${body.runId}`);
+          router.push(runHref(body.runId));
         }
         return;
       }
@@ -88,7 +95,7 @@ export function useLoopRunNow({
       const { runId } = (await res.json()) as StartAgentLoopRunResponse;
       toast.success("Run started");
       onStarted?.(runId);
-      router.push(`/loops/${loopId}/runs/${runId}`);
+      router.push(runHref(runId));
     } catch {
       toast.error("Failed to start run.");
     } finally {

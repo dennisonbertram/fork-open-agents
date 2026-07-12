@@ -118,16 +118,29 @@ const recordAgentLoopEvent = mock(async (input: EventInput) => {
   };
 });
 
-const getAgentLoopRunWithLoop = mock(async (runId: string) => {
+const getAgentLoopRunExecutionContext = mock(async (runId: string) => {
   getAgentLoopRunWithLoopCalls.push(runId);
-  return loopRunWithLoopMap.get(runId) ?? null;
+  const row = loopRunWithLoopMap.get(runId);
+  return row
+    ? {
+        loopRun: row.run,
+        loop: row.loop,
+        snapshotSource: "legacy_live_fallback" as const,
+        definitionVersion: null,
+        definitionHash: null,
+      }
+    : null;
 });
 
 mock.module("@/lib/agent-loops/store", () => ({
+  isAgentLoopRunSourceLive: mock(async () => true),
+  createAndAdvanceAgentLoopStep: mock(async () => ({
+    outcome: "source_deleted" as const,
+  })),
   findStalledLoopRunCandidates,
   conditionallyTransitionRunStatus,
   recordAgentLoopEvent,
-  getAgentLoopRunWithLoop,
+  getAgentLoopRunExecutionContext,
   updateAgentLoopRunContext: mock(async () => undefined),
   retryCurrentStep: mock(async () => undefined),
   listAgentLoopRuns: mock(async () => []),
@@ -240,7 +253,7 @@ describe("sweep + watchdog integration (M3-02-A)", () => {
     findStalledLoopRunCandidates.mockClear();
     conditionallyTransitionRunStatus.mockClear();
     recordAgentLoopEvent.mockClear();
-    getAgentLoopRunWithLoop.mockClear();
+    getAgentLoopRunExecutionContext.mockClear();
     invokeWatchdogForStall.mockClear();
 
     findStalledLoopRunCandidates.mockImplementation(
@@ -263,10 +276,21 @@ describe("sweep + watchdog integration (M3-02-A)", () => {
         createdAt: new Date(),
       };
     });
-    getAgentLoopRunWithLoop.mockImplementation(async (runId: string) => {
-      getAgentLoopRunWithLoopCalls.push(runId);
-      return loopRunWithLoopMap.get(runId) ?? null;
-    });
+    getAgentLoopRunExecutionContext.mockImplementation(
+      async (runId: string) => {
+        getAgentLoopRunWithLoopCalls.push(runId);
+        const row = loopRunWithLoopMap.get(runId);
+        return row
+          ? {
+              loopRun: row.run,
+              loop: row.loop,
+              snapshotSource: "legacy_live_fallback" as const,
+              definitionVersion: null,
+              definitionHash: null,
+            }
+          : null;
+      },
+    );
     invokeWatchdogForStall.mockImplementation(
       async (params: InvokeWatchdogCall) => {
         invokeWatchdogCalls.push(params);

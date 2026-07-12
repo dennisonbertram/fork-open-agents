@@ -1,4 +1,5 @@
 import { SignInButton } from "@/components/auth/sign-in-button";
+import { PRODUCT_JOURNEY } from "@/lib/product-journey";
 
 type BentoItem = {
   readonly id: string;
@@ -9,23 +10,23 @@ type BentoItem = {
 const items: readonly BentoItem[] = [
   {
     id: "001",
-    title: "AI SDK",
-    body: "Unified interface across models. Switch providers, stream responses, and call tools with a single API.",
+    title: "Connect GitHub",
+    body: "Choose which repositories Open Agents may access before starting repository-scoped work.",
   },
   {
     id: "002",
-    title: "AI Gateway",
-    body: "Route requests across providers with built-in fallbacks, rate limiting, and observability.",
+    title: "Start a Session",
+    body: "Work interactively with repository, branch, sandbox, and conversation context kept together.",
   },
   {
     id: "003",
-    title: "Sandbox",
-    body: "Secure, isolated environments for every session. Full filesystem, network, and runtime access.",
+    title: "Create an Automation",
+    body: "Configure coding steps and start them manually, from GitHub events, or on a schedule.",
   },
   {
     id: "004",
-    title: "Workflow SDK",
-    body: "Durable, resumable agent workflows that survive restarts and coordinate multi-step operations.",
+    title: "Inspect a Run",
+    body: "Review an execution attempt's status, trigger, evidence, and available recovery controls.",
   },
 ];
 
@@ -74,18 +75,18 @@ export function LandingBento() {
         <div className="grid gap-6 border-b border-(--l-border) px-6 py-14 pb-10 sm:gap-10 sm:px-10 md:grid-cols-2 md:gap-0 md:pb-14 md:py-28">
           <div>
             <h2 className="text-balance text-3xl font-semibold leading-[1.05] tracking-tighter sm:text-4xl md:text-6xl">
-              Infrastructure
+              A clear path
               <br />
-              that ships.
+              from idea to evidence.
             </h2>
           </div>
           <div className="md:pl-10">
             <p className="max-w-md text-balance text-base leading-relaxed text-(--l-fg-2)">
-              Built on production-grade primitives from the Vercel ecosystem. No
-              synthetic demos &mdash; real infrastructure for real agents.
+              Connect a repository, work interactively, automate repeatable
+              coding tasks, and inspect what actually ran.
             </p>
             <div className="mt-6">
-              <SignInButton />
+              <SignInButton callbackUrl={PRODUCT_JOURNEY[0].href} />
             </div>
           </div>
         </div>

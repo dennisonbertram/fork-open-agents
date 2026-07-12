@@ -47,6 +47,21 @@ describe("settings route metadata", () => {
     ]);
   });
 
+  test("interactive role metadata uses Chat roles at the stable agents route", () => {
+    const meta = getSettingsRouteMetadata("agents");
+    expect(meta.title).toBe("Chat roles");
+    expect(meta.href).toBe("/settings/agents");
+    expect(meta.description).toBe(
+      "Configure the roles used inside interactive Sessions. Webhook and scheduled coding work lives in Automations.",
+    );
+  });
+
+  test("repository configuration is distinct from the top-level directory", () => {
+    const meta = getSettingsRouteMetadata("repositories");
+    expect(meta.title).toBe("Repository settings");
+    expect(meta.href).toBe("/settings/repositories");
+  });
+
   // BT-803-ROUTES-001 (#803 item 1): the Composio nav description must
   // mention both chats and background agents/loops — not just "in a chat" —
   // so a naive reader learns tools are usable outside chat too (W11).

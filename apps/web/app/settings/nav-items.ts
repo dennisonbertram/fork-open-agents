@@ -1,12 +1,11 @@
 import type { LucideIcon } from "lucide-react";
-import { RefreshCw } from "lucide-react";
 import {
   getSettingsRouteMetadata,
   type SettingsRouteId,
 } from "./settings-routes";
 
 export type SettingsNavItem = {
-  id: string;
+  id: SettingsRouteId;
   label: string;
   href: string;
   icon: LucideIcon;
@@ -42,35 +41,28 @@ export const SETTINGS_NAV_GROUPS: SettingsNavGroup[] = [
       settingsNavItem("profile"),
       settingsNavItem("preferences"),
       settingsNavItem("connections"),
+      settingsNavItem("usage"),
     ],
   },
   {
-    id: "tools",
-    label: "Tools",
+    id: "workspace",
+    label: "Workspace",
     items: [
       settingsNavItem("agents"),
       settingsNavItem("models"),
       settingsNavItem("composio"),
       settingsNavItem("mcp"),
       settingsNavItem("skills"),
-      settingsNavItem("background-agents"),
       settingsNavItem("repositories"),
-      {
-        id: "loops",
-        label: "Loops",
-        href: "/loops",
-        icon: RefreshCw,
-      },
-      settingsNavItem("runtime-profiles"),
     ],
   },
   {
-    id: "insights",
-    label: "Insights",
+    id: "advanced",
+    label: "Advanced",
     items: [
-      settingsNavItem("usage"),
-      settingsNavItem("leaderboard"),
+      settingsNavItem("runtime-profiles"),
       settingsNavItem("learnings"),
+      settingsNavItem("leaderboard"),
     ],
   },
   {
@@ -86,7 +78,9 @@ export function visibleNavGroups(
   isAdmin: boolean,
   groups = SETTINGS_NAV_GROUPS,
 ) {
-  return groups.filter((group) => !group.adminOnly || isAdmin);
+  return groups.filter(
+    (group) => group.items.length > 0 && (!group.adminOnly || isAdmin),
+  );
 }
 
 export function flattenNavItems(groups = SETTINGS_NAV_GROUPS) {
@@ -101,7 +95,26 @@ export function findActiveNavItem(
   pathname: string,
   groups = SETTINGS_NAV_GROUPS,
 ) {
-  return flattenNavItems(groups).find(
+  const items = flattenNavItems(groups);
+  return items.find(
     (item) => pathname === item.href || pathname.startsWith(`${item.href}/`),
   );
+}
+
+/**
+ * Resolve metadata for the Settings auth-loading fallback. External product
+ * destinations may own nav state without being SettingsRouteId values.
+ */
+export function resolveSettingsFallbackRouteId(
+  pathname: string,
+  groups = SETTINGS_NAV_GROUPS,
+): SettingsRouteId {
+  if (
+    pathname === "/settings/background-agents" ||
+    pathname.startsWith("/settings/background-agents/")
+  ) {
+    return "background-agents";
+  }
+  const activeId = findActiveNavItem(pathname, groups)?.id;
+  return activeId ?? "profile";
 }
