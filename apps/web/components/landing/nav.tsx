@@ -50,7 +50,11 @@ export function LandingNav({
               size="sm"
               aria-label="Open Agents on GitHub (opens in a new tab)"
             />
-            <SignInButton size="sm" className="h-10 sm:h-8" />
+            <SignInButton
+              size="sm"
+              className="h-10 sm:h-8"
+              callbackUrl="/get-started?step=github&amp;next=%2Fsessions"
+            />
           </div>
         </div>
       </div>

@@ -11,6 +11,7 @@ import { LandingFeatures } from "@/components/landing/features";
 import { LandingFooter } from "@/components/landing/footer";
 import { LandingNav } from "@/components/landing/nav";
 import { Stage } from "@/components/landing/stage";
+import { ProductJourney } from "@/components/product-journey";
 
 /**
  * Renders when the Vercel OAuth flow redirects back with `?error=<code>`
@@ -65,8 +66,8 @@ export function SignedOutHero() {
                 Open Agents.
               </h1>
               <p className="mt-4 text-balance text-base leading-relaxed text-(--l-fg-2) sm:mt-6 sm:text-xl">
-                Describe what you want built, and an AI agent writes the code in
-                its own cloud sandbox — no local setup required.
+                Code in a durable cloud Session, create GitHub-triggered or
+                scheduled Automations, and inspect each Run before acting on it.
               </p>
             </div>
 
@@ -77,7 +78,7 @@ export function SignedOutHero() {
               <div className="flex items-center gap-2">
                 <SignInButton
                   size="lg"
-                  callbackUrl="/get-started?next=/sessions"
+                  callbackUrl="/get-started?step=github&amp;next=%2Fsessions"
                 />
                 <GitHubLink>Open Source</GitHubLink>
               </div>
@@ -87,6 +88,9 @@ export function SignedOutHero() {
               </p>
             </div>
             {signInErrorCode ? <SignInDidNotCompleteBanner /> : null}
+            <div className="mt-10">
+              <ProductJourney />
+            </div>
           </div>
 
           <div className="mx-auto mt-12 max-w-[1320px] px-4 sm:px-6 md:mt-20 md:px-0 overflow-hidden">

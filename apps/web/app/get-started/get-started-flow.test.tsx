@@ -43,22 +43,10 @@ describe("GetStartedFlow - github status auto-open", () => {
 
     const html = renderToStaticMarkup(<GetStartedFlow />);
 
-    // Step 2's panel must be the one in the expanded (grid-rows-[1fr]) state,
-    // not collapsed (grid-rows-[0fr]), even though `step` is absent.
     const lowerHtml = html.toLowerCase();
-    const step2PanelStart = lowerHtml.lastIndexOf(">connect github<");
-    expect(step2PanelStart).toBeGreaterThan(-1);
-    const panelStart = lowerHtml.lastIndexOf(
-      '<div class="border-b border-white/10">',
-      step2PanelStart,
-    );
-    const panelSection = html.slice(panelStart);
-    const gridDivStart = panelSection.indexOf(
-      '<div class="grid transition-all',
-    );
-    expect(panelSection.slice(gridDivStart, gridDivStart + 200)).toContain(
-      "grid-rows-[1fr]",
-    );
+    expect(lowerHtml).toContain("connect github");
+    expect(lowerHtml).toContain("github account not connected");
+    expect(html).not.toContain("grid-rows-[0fr]");
   });
 
   test("renders the GitHubStatusNotice inline state for the given status", async () => {

@@ -1,3 +1,5 @@
+import { sanitizeInternalRedirect } from "@/lib/redirect-safety";
+
 const GITHUB_REPO_PATH_SEGMENT_PATTERN = /^[.\w-]+$/;
 
 export function isValidGitHubRepoOwner(owner: string): boolean {
@@ -85,5 +87,11 @@ export function buildGitHubReconnectUrl(next: string): string {
     reconnect: "1",
     next,
   });
+  return `/get-started?${params.toString()}`;
+}
+
+export function buildGitHubConnectUrl(next: string): string {
+  const safeNext = sanitizeInternalRedirect(next, "/sessions");
+  const params = new URLSearchParams({ step: "github", next: safeNext });
   return `/get-started?${params.toString()}`;
 }

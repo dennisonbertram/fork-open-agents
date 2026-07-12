@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { usePrefersReducedMotion } from "@/hooks/use-prefers-reduced-motion";
 
 const sequence = [
   { state: "provisioning", ms: 1400 },
@@ -16,16 +17,17 @@ type State = (typeof sequence)[number]["state"];
 const descriptions: Record<State, string> = {
   provisioning: "spinning up isolated environment",
   active: "full filesystem, network, runtime access",
-  hibernating: "creating snapshot for instant restore",
+  hibernating: "creating a snapshot for later recovery",
   hibernated: "zero compute \u00B7 snapshot saved",
   restoring: "restoring from snapshot",
 };
 
 export function FeatureSandbox() {
+  const reducedMotion = usePrefersReducedMotion();
   const [idx, setIdx] = useState(0);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const entry = sequence[idx]!;
+  const entry = reducedMotion === false ? sequence[idx]! : sequence[1]!;
 
   const advance = useCallback(() => {
     setIdx((prev) => {
@@ -35,15 +37,19 @@ export function FeatureSandbox() {
   }, []);
 
   useEffect(() => {
+    if (reducedMotion !== false) return;
     timeoutRef.current = setTimeout(advance, entry.ms);
     return () => {
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
     };
-  }, [idx, entry.ms, advance]);
+  }, [idx, entry.ms, advance, reducedMotion]);
 
   return (
     <div className="flex h-[280px] flex-col bg-(--l-code-bg)">
       <div className="flex-1 px-5 py-4">
+        <p className="mb-3 text-[10px] text-(--l-panel-fg-4)">
+          Illustrative example
+        </p>
         <div className="flex items-center gap-3 font-mono text-[12px]">
           <span className="text-(--l-panel-fg-3)">sandbox</span>
           <span className="text-(--l-panel-fg-2)">feat/auth</span>
@@ -90,9 +96,7 @@ export function FeatureSandbox() {
           </div>
           <div>
             <div className="text-(--l-panel-fg-4)">cost</div>
-            <div className="mt-0.5 text-(--l-panel-fg-2)">
-              {entry.state === "hibernated" ? "$0.00" : "$0.02/m"}
-            </div>
+            <div className="mt-0.5 text-(--l-panel-fg-2)">varies by usage</div>
           </div>
         </div>
       </div>

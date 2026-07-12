@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { usePrefersReducedMotion } from "@/hooks/use-prefers-reduced-motion";
 
 const tools = [
   { name: "grep", detail: "auth patterns in src/" },
@@ -12,6 +13,7 @@ const tools = [
 ] as const;
 
 export function FeatureAgent() {
+  const reducedMotion = usePrefersReducedMotion();
   const [count, setCount] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pendingRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -47,13 +49,21 @@ export function FeatureAgent() {
   }, [clear]);
 
   useEffect(() => {
+    if (reducedMotion !== false) {
+      clear();
+      setCount(tools.length);
+      return clear;
+    }
     run();
     return clear;
-  }, [run, clear]);
+  }, [run, clear, reducedMotion]);
 
   return (
     <div className="flex h-[280px] flex-col bg-(--l-code-bg)">
       <div className="flex-1 px-5 py-4">
+        <p className="mb-3 text-[10px] text-(--l-panel-fg-4)">
+          Illustrative example
+        </p>
         <div className="space-y-[3px]">
           {tools.map((tool, i) => (
             <div

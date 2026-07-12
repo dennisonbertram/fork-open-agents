@@ -10,7 +10,10 @@ import { beforeEach, describe, expect, mock, test } from "bun:test";
 
 registerDomTestHooks();
 
-let params: Record<string, string | null> = { step: "github", next: "/sessions" };
+let params: Record<string, string | null> = {
+  step: "github",
+  next: "/sessions",
+};
 let connected = false;
 let installed = false;
 const pushes: string[] = [];
@@ -67,7 +70,9 @@ describe("GetStartedFlow interaction journey (#967)", () => {
 
     params = { step: "github", next: "/settings/profile" };
     const second = render(<GetStartedFlow />);
-    await userClick(within(second.container).getByRole("button", { name: "Continue" }));
+    await userClick(
+      within(second.container).getByRole("button", { name: "Continue" }),
+    );
     expect(pushes).toEqual(["/sessions", "/settings/profile"]);
   });
 
@@ -87,7 +92,7 @@ describe("GetStartedFlow interaction journey (#967)", () => {
     let rejectLink: ((reason: Error) => void) | undefined;
     linkSocial.mockImplementation(
       () =>
-        new Promise<void>((_resolve, reject) => {
+        new Promise<undefined>((_resolve, reject) => {
           rejectLink = reject;
         }),
     );
@@ -97,11 +102,11 @@ describe("GetStartedFlow interaction journey (#967)", () => {
     const connect = query.getByRole("button", { name: "Connect GitHub" });
 
     await userClick(connect);
-    expect(connect).toBeDisabled();
+    expect(connect.hasAttribute("disabled")).toBe(true);
 
     await act(async () => rejectLink?.(new Error("network down")));
     await waitFor(() => expect(query.getByRole("alert")).toBeTruthy());
     expect(query.getByRole("button", { name: "Try again" })).toBeTruthy();
-    expect(connect).not.toBeDisabled();
+    expect(connect.hasAttribute("disabled")).toBe(false);
   });
 });
