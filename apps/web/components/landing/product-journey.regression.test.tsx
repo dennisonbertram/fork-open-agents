@@ -34,6 +34,17 @@ describe("landing product journey (#967)", () => {
     }
   });
 
+  test("keeps the signed-out journey informational instead of linking to protected routes", () => {
+    const html = renderToStaticMarkup(<ProductJourney linked={false} />);
+
+    expect(html).toContain('<ol aria-label="Product journey"');
+    expect(html).not.toContain("<a");
+    expect(html).toContain("Connect GitHub");
+    expect(renderToStaticMarkup(<ProductJourney />)).toContain(
+      `href="${PRODUCT_JOURNEY[1].href}"`,
+    );
+  });
+
   test("removes unsupported absolutes and implementation-brand discovery", () => {
     for (const banned of [
       "autonomously until it's done",
