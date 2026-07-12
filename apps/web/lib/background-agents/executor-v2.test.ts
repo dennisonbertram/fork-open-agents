@@ -474,8 +474,18 @@ mock.module("@/lib/inference/model-option-id", () => ({
   getModelOptionSelectionId: (modelId: string | null | undefined) =>
     modelId ?? "",
 }));
+mock.module("@/lib/db/inference-profiles", () => ({
+  getInferenceProfileByIdForUser: mock(
+    async (_userId: string, profileId: string) => ({
+      id: profileId,
+      provider: "anthropic",
+      baseUrl: "https://inference.example.com/v1",
+    }),
+  ),
+}));
 mock.module("@/lib/inference/profile-resolution", () => ({
   assertInferenceProfileRouteAvailable: mock(async () => {
+    executionBoundaryOrder.push("inference_profile_availability");
     inferenceRouteAvailabilityCalls += 1;
     if (
       inferenceRouteAvailabilityFailureAt !== null &&
@@ -2000,6 +2010,93 @@ describe("normalized background execution boundary (#966)", () => {
       recordedEvent("background-agent.normalized-input.accepted")
         ?.sandboxName ?? null,
     ).toBeNull();
+  });
+
+  test("blocks learnings extraction when live pull-request read permission is removed", async () => {
+    const acceptedAgent = buildAgent({
+      instructions:
+        "[builtin:pr-review-learnings] Extract learnings from merged pull requests.",
+      permissions: {
+        github: { contents: "read", pullRequests: "read" },
+      },
+      githubActions: {},
+    });
+    currentRun = buildSnapshotRun(acceptedAgent, {
+      ref: "refs/heads/main",
+    });
+    currentAgent = buildAgent({
+      ...acceptedAgent,
+      permissions: { github: { contents: "read" } },
+    });
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-learnings-permission-removed",
+    });
+
+    expect(withScopedInstallationOctokit).not.toHaveBeenCalled();
+    expect(runLearningsExtraction).not.toHaveBeenCalled();
+  });
+
+  test("normalizes a persisted checkout before live inference-profile availability work", async () => {
+    currentRun = buildRun({ ref: "refs/heads/main" });
+    currentAgent = buildAgent({
+      modelId: "user-profile:profile-legacy:glm-4.6",
+    });
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-persisted-ref-inference-order",
+    });
+
+    expect(executionBoundaryOrder.indexOf("normalize")).toBeLessThan(
+      executionBoundaryOrder.indexOf("inference_profile_availability"),
+    );
+  });
+
+  test("concurrent valid deliveries share one normalized build and access path", async () => {
+    const acceptedAgent = buildAgent();
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    currentRun = buildSnapshotRun(acceptedAgent, {
+      id: "run-single-delivery-baseline",
+      ref: "refs/heads/main",
+    });
+    currentAgent = acceptedAgent;
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-single-delivery-baseline",
+    });
+    const singleDeliveryAccessCalls = verifyRepoAccess.mock.calls.length;
+    const singleDeliveryTokenCalls = mintInstallationToken.mock.calls.length;
+
+    verifyRepoAccess.mockClear();
+    mintInstallationToken.mockClear();
+    buildNormalizedBackgroundSandboxInput.mockClear();
+    currentRun = buildSnapshotRun(acceptedAgent, {
+      id: "run-concurrent-delivery",
+      ref: "refs/heads/main",
+    });
+    currentAgent = acceptedAgent;
+
+    await Promise.all([
+      executeBackgroundAgentRun({
+        runId: currentRun.id,
+        workflowRunId: "wf-concurrent-a",
+      }),
+      executeBackgroundAgentRun({
+        runId: currentRun.id,
+        workflowRunId: "wf-concurrent-b",
+      }),
+    ]);
+
+    expect(buildNormalizedBackgroundSandboxInput).toHaveBeenCalledTimes(1);
+    expect(verifyRepoAccess).toHaveBeenCalledTimes(singleDeliveryAccessCalls);
+    expect(mintInstallationToken).toHaveBeenCalledTimes(
+      singleDeliveryTokenCalls,
+    );
   });
 
   test("accepted evidence never serializes the normalized body, instructions, provider configuration, or runtime objects", async () => {
