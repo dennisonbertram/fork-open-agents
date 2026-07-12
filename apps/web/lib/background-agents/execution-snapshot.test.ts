@@ -46,6 +46,46 @@ function buildAgent(overrides: Partial<BackgroundAgent> = {}): BackgroundAgent {
 }
 
 describe("BackgroundAgentExecutionSnapshotV1", () => {
+  test("freezes a concrete structured gateway route instead of a nullable selector", () => {
+    const snapshot = buildBackgroundAgentExecutionSnapshot(buildAgent(), {
+      route: "gateway",
+      modelId: "anthropic/claude-haiku-4.5",
+    });
+
+    expect(snapshot).toMatchObject({
+      inference: {
+        route: "gateway",
+        modelId: "anthropic/claude-haiku-4.5",
+      },
+    });
+    expect(snapshot).not.toHaveProperty("modelId");
+  });
+
+  test("freezes user inference routing metadata without credential material", () => {
+    const snapshot = buildBackgroundAgentExecutionSnapshot(
+      buildAgent({ modelId: "user-profile:profile-1:glm-5.2" }),
+      {
+        route: "user",
+        modelId: "glm-5.2",
+        inferenceProfileId: "profile-1",
+        provider: "anthropic",
+        baseUrl: "https://api.example.com/v1",
+      },
+    );
+
+    expect(snapshot.inference).toEqual({
+      route: "user",
+      modelId: "glm-5.2",
+      inferenceProfileId: "profile-1",
+      provider: "anthropic",
+      baseUrl: "https://api.example.com/v1",
+    });
+    const serialized = JSON.stringify(snapshot);
+    expect(serialized).not.toContain("encryptedApiKey");
+    expect(serialized).not.toContain("keyFingerprint");
+    expect(serialized).not.toContain("keyLast4");
+  });
+
   test("builds a strict normalized non-secret execution contract", () => {
     const snapshot = buildBackgroundAgentExecutionSnapshot(buildAgent());
 
@@ -61,7 +101,10 @@ describe("BackgroundAgentExecutionSnapshotV1", () => {
       checkCommand: "bun --bun run ci",
       composioToolkitSlugs: ["github", "slack"],
       builtinToolNames: ["bash", "read_file"],
-      modelId: "anthropic/claude-haiku-4.5",
+      inference: {
+        route: "gateway",
+        modelId: "anthropic/claude-haiku-4.5",
+      },
     });
     expect(snapshot.githubActions).toEqual({
       open_pull_request: true,

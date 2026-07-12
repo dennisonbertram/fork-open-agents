@@ -44,8 +44,10 @@ mock.module("@/lib/db/inference-profiles", () => ({
   },
 }));
 
-const { resolveInferenceProfileModelSelection } =
-  await import("./profile-resolution");
+const {
+  assertInferenceProfileRouteAvailable,
+  resolveInferenceProfileModelSelection,
+} = await import("./profile-resolution");
 
 describe("resolveInferenceProfileModelSelection", () => {
   beforeEach(() => {
@@ -132,6 +134,55 @@ describe("resolveInferenceProfileModelSelection", () => {
       directInference: {
         provider: "anthropic",
         modelId: "claude-haiku-4-5",
+        apiKey: "decrypted-key",
+      },
+    });
+  });
+
+  test("rejects a provider or endpoint edit after the route was accepted", async () => {
+    profile = {
+      id: "profile-openai",
+      name: "Changed endpoint",
+      provider: "openai-compatible",
+      enabled: true,
+      baseUrl: "https://changed.example.com/v1",
+      encryptedApiKey: "rotated-encrypted-key",
+    };
+
+    await expect(
+      assertInferenceProfileRouteAvailable({
+        userId: "user-1",
+        inferenceProfileId: "profile-openai",
+        provider: "openai-compatible",
+        baseUrl: "https://accepted.example.com/v1",
+      }),
+    ).rejects.toThrow("changed");
+  });
+
+  test("allows key rotation when the accepted provider and endpoint are unchanged", async () => {
+    profile = {
+      id: "profile-openai",
+      name: "Rotated key",
+      provider: "openai-compatible",
+      enabled: true,
+      baseUrl: "https://accepted.example.com/chat/completions",
+      encryptedApiKey: "rotated-encrypted-key",
+    };
+
+    const selection = await resolveInferenceProfileModelSelection({
+      userId: "user-1",
+      inferenceProfileId: "profile-openai",
+      selection: { id: "custom/reasoner" as never },
+      expectedRoute: {
+        provider: "openai-compatible",
+        baseUrl: "https://accepted.example.com/v1",
+      },
+    });
+
+    expect(selection).toMatchObject({
+      directInference: {
+        provider: "openai-compatible",
+        baseURL: "https://accepted.example.com/v1",
         apiKey: "decrypted-key",
       },
     });
