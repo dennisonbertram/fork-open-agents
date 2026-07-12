@@ -347,6 +347,21 @@ describe("Runs source loaders", () => {
       automationName: "Frozen release",
       repository: { owner: "acme", name: "shop" },
     });
+
+    const filtered = await createDbRunSourceLoaders({
+      userId: "user-1",
+    }).agent_loop({
+      filters: {
+        view: "all",
+        repoOwner: "acme",
+        repoName: "shop",
+        automationSource: "agent_loop",
+        automationId: "deleted-loop",
+      },
+      limit: 26,
+      now,
+    });
+    expect(filtered).toHaveLength(1);
   });
 
   test("corrupt deleted snapshot falls back to a generic label and no repository", async () => {
@@ -389,5 +404,20 @@ describe("Runs source loaders", () => {
       repository: null,
     });
     expect(JSON.stringify(items)).not.toContain("Unverified canary");
+
+    const filtered = await createDbRunSourceLoaders({
+      userId: "user-1",
+    }).agent_loop({
+      filters: {
+        view: "all",
+        repoOwner: "unverified",
+        repoName: "canary",
+        automationSource: "agent_loop",
+        automationId: "forged-loop",
+      },
+      limit: 26,
+      now,
+    });
+    expect(filtered).toEqual([]);
   });
 });

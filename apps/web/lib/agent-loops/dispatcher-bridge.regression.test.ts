@@ -25,7 +25,34 @@ let createRunCallCount = 0;
 const createAgentLoopRun = mock(async () => {
   createRunCallCount++;
   return {
-    run: { id: `loop-run-${createRunCallCount}`, status: "queued" },
+    run: {
+      id: `loop-run-${createRunCallCount}`,
+      status: "queued",
+      definitionSnapshot: {
+        nodes: [
+          {
+            id: "start-node",
+            kind: "start",
+            label: "Start",
+            position: { x: 0, y: 0 },
+          },
+          {
+            id: "end-node",
+            kind: "end",
+            label: "End",
+            position: { x: 100, y: 0 },
+          },
+        ],
+        edges: [
+          {
+            id: "e1",
+            source: "start-node",
+            target: "end-node",
+            when: "always",
+          },
+        ],
+      },
+    },
     created: true,
   };
 });

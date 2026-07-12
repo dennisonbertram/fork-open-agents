@@ -300,7 +300,18 @@ mock.module("./store", () => ({
   getAgentLoopRunWithLoop: getAgentLoopRunWithLoopMock,
   updateAgentLoopRunStatus: updateRunStatusMock,
   conditionallyTransitionRunStatus: mock(
-    async (params: { runId: string; toStatus: string }) => {
+    async (params: {
+      runId: string;
+      toStatus: string;
+      errorKind?: string | null;
+      errorMessage?: string | null;
+    }) => {
+      recordedRunStatusUpdates.push({
+        runId: params.runId,
+        status: params.toStatus,
+        errorKind: params.errorKind,
+        errorMessage: params.errorMessage,
+      });
       // Default: transition succeeds (returns a non-null run)
       currentLoopRun = {
         ...currentLoopRun,

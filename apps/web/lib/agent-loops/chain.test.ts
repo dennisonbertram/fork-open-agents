@@ -336,12 +336,16 @@ const conditionallyTransitionRunStatusMock = mock(
     runId: string;
     toStatus: AgentLoopRun["status"];
     fromStatuses: AgentLoopRun["status"][];
+    errorKind?: string | null;
+    errorMessage?: string | null;
   }): Promise<AgentLoopRun | null> => {
     if (!transitionShouldWin) return null;
     // Record as a status update so existing assertions still pass
     recordedRunStatusUpdates.push({
       runId: params.runId,
       status: params.toStatus,
+      errorKind: params.errorKind,
+      errorMessage: params.errorMessage,
     });
     currentLoopRun = {
       ...currentLoopRun,
@@ -1149,6 +1153,37 @@ describe("BT-C05: guardrails", () => {
     );
     expect(failedUpdate).toBeDefined();
     expect(failedUpdate?.errorKind).toBe("guardrail_exceeded");
+  });
+
+  test("cancel winning the guardrail CAS suppresses terminal and step evidence", async () => {
+    const sr = makeStepRunForNode("work", "step-guard-cancelled");
+    currentStepRun = sr;
+    currentLoopRun = makeRunningRun({
+      definitionSnapshot: makeDefinitionWithWork() as Record<string, unknown>,
+      executionSnapshot: null,
+      definitionVersion: null,
+      definitionHash: null,
+      currentNodeId: "work",
+      currentStepRunId: sr.id,
+      stepCount: 50,
+    });
+    transitionShouldWin = false;
+
+    const { runAgentLoopStep } = await chainPromise;
+    await runAgentLoopStep({
+      stepRunId: sr.id,
+      workflowRunId: "wf-cancelled",
+    });
+
+    expect(conditionallyTransitionRunStatusMock).toHaveBeenCalledTimes(1);
+    expect(updateAgentLoopStepRunMock).not.toHaveBeenCalled();
+    expect(
+      recordedEvents.some(
+        (event) =>
+          event.eventName === "agent-loop.guardrail.tripped" ||
+          event.eventName === "agent-loop.run.failed",
+      ),
+    ).toBe(false);
   });
 
   test("BT-C05: wall-clock exceeds maxRunDurationMs → guardrail.tripped", async () => {

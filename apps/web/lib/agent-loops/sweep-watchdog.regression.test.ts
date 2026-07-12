@@ -124,11 +124,12 @@ const retryCurrentStepForWatchdogMock = mock(
 
 const pauseLoopRunSystemMock = mock(async (runId: string) => {
   pauseLoopRunSystemCalls.push(runId);
+  return true;
 });
 
 const advanceToFailureEdgeMock = mock(async (params: { loopRunId: string }) => {
   advanceToFailureEdgeCalls.push(params.loopRunId);
-  return null; // no failure edge by default
+  return { outcome: "no_failure_edge" as const };
 });
 
 const countWatchdogRetryDecisionsMockFn = mock(
@@ -137,9 +138,7 @@ const countWatchdogRetryDecisionsMockFn = mock(
   },
 );
 
-const dispatchStepWorkflowMock = mock(async (_stepRunId: string) => ({
-  id: "wf-1",
-}));
+const dispatchStepWorkflowMock = mock(async (_stepRunId: string) => true);
 
 const recordAgentLoopEventMock = mock(
   async (input: { loopRunId: string; eventName: string }) => ({
@@ -320,18 +319,19 @@ describe("sweep-watchdog regression tests (M3-02-A)", () => {
 
     pauseLoopRunSystemMock.mockImplementation(async (runId: string) => {
       pauseLoopRunSystemCalls.push(runId);
+      return true;
     });
 
     advanceToFailureEdgeMock.mockImplementation(async (params) => {
       advanceToFailureEdgeCalls.push(params.loopRunId);
-      return null;
+      return { outcome: "no_failure_edge" as const };
     });
 
     countWatchdogRetryDecisionsMockFn.mockImplementation(async () => {
       return countWatchdogRetryDecisionsMock;
     });
 
-    dispatchStepWorkflowMock.mockImplementation(async () => ({ id: "wf-1" }));
+    dispatchStepWorkflowMock.mockImplementation(async () => true);
     recordAgentLoopEventMock.mockImplementation(async (input) => ({
       id: "ev-1",
       ...input,
