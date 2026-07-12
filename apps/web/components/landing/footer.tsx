@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { PRODUCT_JOURNEY } from "@/lib/product-journey";
 import { ThemeToggle } from "./theme-toggle";
 
 export function LandingFooter() {
@@ -25,7 +26,7 @@ export function LandingFooter() {
             </div>
             <div className="mt-4 flex flex-col gap-2">
               <Link
-                href="/get-started?step=github&amp;next=%2Fsessions"
+                href={PRODUCT_JOURNEY[0].href}
                 className="font-sans text-sm text-(--l-fg-2) transition-colors hover:text-(--l-fg)"
               >
                 Connect GitHub

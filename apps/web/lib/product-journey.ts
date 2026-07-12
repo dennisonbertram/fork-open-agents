@@ -1,3 +1,5 @@
+import { buildGitHubConnectUrl } from "@/lib/github/urls";
+
 export type ProductJourneyStep = {
   readonly id: "github" | "session" | "automation" | "run";
   readonly label: string;
@@ -10,7 +12,7 @@ export const PRODUCT_JOURNEY = [
     id: "github",
     label: "Connect GitHub",
     description: "Choose the repositories Open Agents may access.",
-    href: "/get-started?step=github&next=%2Fsessions",
+    href: buildGitHubConnectUrl("/sessions"),
   },
   {
     id: "session",
