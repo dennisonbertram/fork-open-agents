@@ -67,10 +67,9 @@ export function SessionStarter({
 }: SessionStarterProps) {
   const repositorySeed = initialRepository ?? lastRepo;
   const [sessionTitle, setSessionTitle] = useState("");
-  // Default to a lightweight sandbox-free "New Chat" — even for returning users
-  // who have a lastRepo — so chats start instantly without provisioning a
-  // sandbox. lastRepo still pre-fills the repo fields below for one-click opt-in
-  // to repo mode.
+  // Default to a lightweight standalone session — even for returning users who
+  // have a lastRepo — so no sandbox is provisioned until code execution needs
+  // one. lastRepo still pre-fills the repo fields for one-click repository mode.
   const [mode, setMode] = useState<SessionMode>(() =>
     initialRepository ? "repo" : "empty",
   );
@@ -365,7 +364,7 @@ export function SessionStarter({
             )}
           >
             <MessageSquare className="h-3.5 w-3.5" />
-            New chat
+            Standalone session
           </button>
           <button
             type="button"
@@ -381,7 +380,7 @@ export function SessionStarter({
             )}
           >
             <GitBranch className="h-3.5 w-3.5" />
-            Connect a repo
+            Repository session
           </button>
         </div>
 

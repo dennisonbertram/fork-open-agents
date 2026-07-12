@@ -85,9 +85,9 @@ export function NewSessionDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="w-[calc(100%-2rem)] max-w-none gap-0 overflow-hidden border-none bg-transparent p-0 shadow-none [&>button]:hidden">
         <DialogHeader className="sr-only">
-          <DialogTitle>New chat</DialogTitle>
+          <DialogTitle>New session</DialogTitle>
           <DialogDescription>
-            Start a new chat or connect a repo for a repo session.
+            Start a standalone or repository session.
           </DialogDescription>
         </DialogHeader>
         <div className="min-w-0 rounded-2xl sm:rounded-[28px] border border-border/60 bg-card shadow-[0_10px_30px_rgba(0,0,0,0.08)]">

@@ -21,8 +21,9 @@ import { useSessionsShell } from "./sessions-shell-context";
 // optionally tied to a repo) instead of assuming sidebar familiarity, and
 // only offers a GitHub-connect path when there is nothing to connect yet.
 export function SessionsIndexShell() {
-  const { openNewSessionDialog } = useSessionsShell();
+  const { activeSessionCount, openNewSessionDialog } = useSessionsShell();
   const { hasGitHubInstallations } = useSession();
+  const hasActiveSessions = activeSessionCount > 0;
 
   return (
     <>
@@ -37,11 +38,15 @@ export function SessionsIndexShell() {
             <EmptyMedia variant="icon">
               <MessageSquare />
             </EmptyMedia>
-            <EmptyTitle>Start your first session</EmptyTitle>
+            <EmptyTitle>
+              {hasActiveSessions
+                ? "Choose a session or start a new one"
+                : "Start your first session"}
+            </EmptyTitle>
             <EmptyDescription>
-              A session is a scoped conversation with the agent — optionally
-              tied to a repo, or standalone. Create one to get started, or
-              connect GitHub first if you want repo-scoped sessions.
+              {hasActiveSessions
+                ? "Choose an existing session from the sidebar, or start a new standalone or repository session."
+                : "A session is a scoped conversation with the agent — optionally tied to a repo, or standalone. Create one to get started, or connect GitHub first if you want repo-scoped sessions."}
             </EmptyDescription>
           </EmptyHeader>
           <EmptyContent>

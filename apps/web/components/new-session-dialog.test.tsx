@@ -77,6 +77,24 @@ const BASE_INPUT = {
 };
 
 describe("NewSessionDialog — create-session failure surfacing", () => {
+  test("uses Session terminology in its accessible title and description", async () => {
+    const { NewSessionDialog } = await dialogModulePromise;
+    const html = renderToStaticMarkup(
+      <NewSessionDialog
+        open
+        onOpenChange={() => {}}
+        lastRepo={null}
+        createSession={async () => ({
+          session: { id: "session-1" },
+          chat: { id: "chat-1" },
+        })}
+      />,
+    );
+
+    expect(html).toContain("New session");
+    expect(html).toContain("standalone or repository session");
+    expect(html).not.toContain("New chat");
+  });
   beforeEach(() => {
     push.mockClear();
     capturedInitialRepository = undefined;
