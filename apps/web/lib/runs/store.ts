@@ -368,12 +368,12 @@ function createLoopRunLoader(userId: string): RunsSourceLoader {
             triggerId: row.triggerId,
             triggerKind: row.triggerKind,
             title:
-              redactText(row.loopName ?? frozenEvidence?.name, 120) ??
+              redactText(frozenEvidence?.name ?? row.loopName, 120) ??
               "Deleted automation",
             nativeStatus: row.status,
             nativeSource: row.source,
-            repoOwner: row.repoOwner ?? frozenEvidence?.repoOwner ?? null,
-            repoName: row.repoName ?? frozenEvidence?.repoName ?? null,
+            repoOwner: frozenEvidence?.repoOwner ?? row.repoOwner ?? null,
+            repoName: frozenEvidence?.repoName ?? row.repoName ?? null,
             currentNodeId: row.currentNodeId,
             stepCount: row.stepCount,
             totalStepCount: null,

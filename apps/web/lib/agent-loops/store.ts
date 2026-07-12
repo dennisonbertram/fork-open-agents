@@ -2072,7 +2072,7 @@ export async function retryCurrentStepForWatchdog(params: {
       .where(
         and(
           eq(agentLoopRuns.id, params.runId),
-          inArray(agentLoopRuns.status, ["failed", "stalled", "running"]),
+          inArray(agentLoopRuns.status, ["stalled", "running"]),
           eq(agentLoopRuns.currentStepRunId, observedStepRunId),
           isNotNull(agentLoopRuns.loopId),
         ),
@@ -2106,7 +2106,7 @@ export async function pauseLoopRunSystem(runId: string): Promise<boolean> {
     .where(
       and(
         eq(agentLoopRuns.id, runId),
-        sql`${agentLoopRuns.status} IN ('running', 'queued', 'failed', 'stalled')`,
+        sql`${agentLoopRuns.status} IN ('running', 'queued', 'stalled')`,
         isNotNull(agentLoopRuns.loopId),
       ),
     )
