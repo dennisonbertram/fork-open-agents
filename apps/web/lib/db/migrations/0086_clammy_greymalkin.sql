@@ -19,6 +19,8 @@ BEGIN
           OR (
             definition_version = 1
             AND definition_hash ~ '^[0-9a-f]{64}$'
+            AND jsonb_typeof(execution_snapshot) = 'object'
+            AND (execution_snapshot ->> 'snapshotVersion') IS NOT NULL
             AND execution_snapshot ->> 'snapshotVersion' = definition_version::text
           )
         )

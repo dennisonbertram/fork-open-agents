@@ -56,21 +56,22 @@ function detailData(
           checks: "read",
         },
       },
-      checkCommand: "bun --bun run ci",
+      checkConfigured: true,
     },
     events: [
       {
         id: "event-1",
         eventName: "background-agent.check.completed",
         status: "succeeded",
-        summary: "Command passed: bun --bun run ci",
+        summary: "Command passed: required_check.",
         workflowRunId: "workflow-1",
         sandboxName: "background_agent_run_123",
         requestId: "req_123",
         errorKind: null,
         redactionStatus: "passed",
         payload: {
-          command: "bun --bun run ci",
+          commandLabel: "required_check",
+          commandHash: "a".repeat(64),
           durationMs: 1234,
           stdout: "all tests passed",
         },
@@ -107,16 +108,16 @@ describe("BackgroundRunDetail", () => {
     expect(html).toContain("Permissions");
     expect(html).toContain("contents:write, pullRequests:write, checks:read");
     expect(html).toContain("Checks");
-    expect(html).toContain("succeeded · bun --bun run ci");
+    expect(html).toContain("succeeded");
     expect(html).toContain("Output");
     expect(html).toContain("ready_pr · created");
     expect(html).toContain("Duration");
     expect(html).toContain("Running");
     expect(html).toContain("Live timeline");
     expect(html).toContain("Refreshing");
-    expect(html).toContain("Command passed: bun --bun run ci");
+    expect(html).toContain("Command passed: required_check.");
     expect(html).toContain("background-agent.check.completed");
-    expect(html).toContain("bun --bun run ci");
+    expect(html).toContain("required_check");
     expect(html).toContain("1234ms");
     expect(html).toContain("all tests passed");
     // Run-level metadata (workflow run, request id, sandbox) is shown ONCE in

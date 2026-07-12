@@ -98,11 +98,10 @@ function formatCheckSummary(
 ) {
   const checkEvent = getLatestCheckEvent(events);
   if (!checkEvent) {
-    return agent?.checkCommand?.trim() ? "Pending" : "Not configured";
+    return agent?.checkConfigured ? "Pending" : "Not configured";
   }
 
-  const command = stringifyPayloadValue(checkEvent.payload.command);
-  return command ? `${checkEvent.status} · ${command}` : checkEvent.status;
+  return checkEvent.status;
 }
 
 function formatOutputSummary(outputs: SerializedBackgroundOutput[]) {

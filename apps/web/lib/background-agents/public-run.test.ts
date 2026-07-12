@@ -35,7 +35,9 @@ function buildAgent(overrides: Partial<BackgroundAgent> = {}): BackgroundAgent {
   };
 }
 
-function buildRun(overrides: Partial<BackgroundAgentRun> = {}): BackgroundAgentRun {
+function buildRun(
+  overrides: Partial<BackgroundAgentRun> = {},
+): BackgroundAgentRun {
   const now = new Date("2026-07-11T12:00:00.000Z");
   return {
     id: "run-1",
@@ -113,7 +115,7 @@ describe("background agent public snapshot provenance", () => {
       getBackgroundAgentSnapshotSource({
         ...frozenRun,
         executionSnapshot: { snapshotVersion: 1, instructions: "private" },
-      }),
+      } as unknown as BackgroundAgentRun),
     ).toBe("invalid");
   });
 
@@ -162,7 +164,7 @@ describe("background agent public snapshot provenance", () => {
             snapshotVersion: 1,
             source: { name: "Unverified attacker-controlled name" },
           },
-        },
+        } as unknown as BackgroundAgentRun,
         liveAgent,
       ),
     ).toBeNull();
@@ -178,7 +180,7 @@ describe("background agent public snapshot provenance", () => {
       id: "agent-1",
       name: "Live mutable name",
       permissions: { github: { contents: "read" } },
-      checkCommand: "bun --bun run ci",
+      checkConfigured: true,
       sourceDeleted: false,
     });
   });

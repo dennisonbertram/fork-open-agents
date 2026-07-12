@@ -40,7 +40,7 @@ describe("Run detail summary adapters", () => {
         id: "agent-1",
         name: "Review PRs",
         permissions: { token: "raw-secret", prompt: "private prompt" },
-        checkCommand: "curl https://secret.invalid",
+        checkConfigured: true,
       },
       events: [
         {

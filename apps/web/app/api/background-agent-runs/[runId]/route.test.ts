@@ -227,7 +227,7 @@ describe("GET /api/background-agent-runs/[runId]", () => {
       id: "agent-1",
       name: "PR reviewer",
       permissions: { github: { contents: "write" } },
-      checkCommand: "bun --bun run ci",
+      checkConfigured: true,
       sourceDeleted: false,
     });
     expect(body.events[0]).toMatchObject({

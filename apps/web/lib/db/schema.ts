@@ -1443,7 +1443,7 @@ export const backgroundAgentRuns = pgTable(
     ),
     check(
       "background_agent_runs_execution_snapshot_all_or_none",
-      sql`num_nonnulls(execution_snapshot, definition_version, definition_hash) in (0, 3) and (num_nonnulls(execution_snapshot, definition_version, definition_hash) = 0 or (definition_version = 1 and definition_hash ~ '^[0-9a-f]{64}$' and execution_snapshot ->> 'snapshotVersion' = definition_version::text))`,
+      sql`num_nonnulls(execution_snapshot, definition_version, definition_hash) in (0, 3) and (num_nonnulls(execution_snapshot, definition_version, definition_hash) = 0 or (definition_version = 1 and definition_hash ~ '^[0-9a-f]{64}$' and jsonb_typeof(execution_snapshot) = 'object' and (execution_snapshot ->> 'snapshotVersion') is not null and execution_snapshot ->> 'snapshotVersion' = definition_version::text))`,
     ),
   ],
 );

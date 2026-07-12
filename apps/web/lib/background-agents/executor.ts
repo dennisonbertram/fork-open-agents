@@ -53,6 +53,7 @@ import {
 } from "@/lib/github/app";
 import { getGitHubUserProfile } from "@/lib/github/users";
 import type {
+  BackgroundAgentRun,
   BackgroundAgentGithubActions,
   NewBackgroundAgentOutput,
 } from "@/lib/db/schema";
@@ -80,7 +81,10 @@ import {
   persistRunSummary,
   recordSummaryFailedEvent,
 } from "./run-summary-persist";
-import { buildBackgroundCommandObservation } from "./runtime-observability";
+import {
+  buildBackgroundCommandObservation,
+  type BackgroundCommandLabel,
+} from "./runtime-observability";
 import {
   buildBackgroundAgentRunbookPrompt,
   buildBackgroundBranchName,
@@ -570,6 +574,32 @@ async function recordFailure(params: {
   }
 }
 
+function isSnapshotValidationErrorKind(errorKind: string): boolean {
+  return (
+    errorKind === "snapshot_missing" ||
+    errorKind === "snapshot_invalid" ||
+    errorKind === "snapshot_version_unsupported" ||
+    errorKind === "snapshot_hash_mismatch"
+  );
+}
+
+function safeSnapshotMetadata(run: BackgroundAgentRun) {
+  return {
+    definitionVersion:
+      typeof run.definitionVersion === "number" &&
+      Number.isSafeInteger(run.definitionVersion) &&
+      run.definitionVersion >= 0 &&
+      run.definitionVersion <= 1000
+        ? run.definitionVersion
+        : null,
+    definitionHash:
+      typeof run.definitionHash === "string" &&
+      /^[a-f0-9]{64}$/.test(run.definitionHash)
+        ? run.definitionHash
+        : null,
+  };
+}
+
 /**
  * Builds and persists a run summary at a terminal path.
  * MUST be wrapped in try/catch by the caller — summary failure must NOT
@@ -623,6 +653,7 @@ async function execObservedCommand(params: {
   sandbox: Sandbox;
   eventName: string;
   command: string;
+  commandLabel: BackgroundCommandLabel;
   timeoutMs?: number;
 }) {
   await recordBackgroundAgentEvent({
@@ -631,12 +662,13 @@ async function execObservedCommand(params: {
     userId: params.userId,
     eventName: `${params.eventName}.started`,
     status: "running",
-    summary: `Running ${params.command}`,
+    summary: `Running ${params.commandLabel}.`,
     workflowRunId: params.workflowRunId,
     requestId: params.requestId,
     sandboxName: params.sandboxName,
     payload: {
-      command: params.command,
+      commandLabel: params.commandLabel,
+      commandHash: createHash("sha256").update(params.command).digest("hex"),
       timeoutMs: params.timeoutMs ?? DEFAULT_CHECK_TIMEOUT_MS,
     },
   });
@@ -650,6 +682,7 @@ async function execObservedCommand(params: {
   const finishedAt = new Date();
   const observation = buildBackgroundCommandObservation({
     command: params.command,
+    commandLabel: params.commandLabel,
     startedAt,
     finishedAt,
     result,
@@ -663,8 +696,8 @@ async function execObservedCommand(params: {
     status: result.success ? "succeeded" : "failed",
     level: result.success ? "info" : "warn",
     summary: result.success
-      ? `Command passed: ${params.command}`
-      : `Command failed: ${params.command}`,
+      ? `Command passed: ${params.commandLabel}.`
+      : `Command failed: ${params.commandLabel}.`,
     workflowRunId: params.workflowRunId,
     requestId: params.requestId,
     sandboxName: params.sandboxName,
@@ -1298,6 +1331,7 @@ async function prepareWorkingBranch(params: {
     sandbox: params.sandbox,
     eventName: "background-agent.git.branch",
     command: `git checkout ${params.branchName} 2>/dev/null || git checkout -b ${params.branchName}`,
+    commandLabel: "working_branch_setup",
     timeoutMs: 30_000,
   });
 
@@ -1494,6 +1528,23 @@ export async function executeBackgroundAgentRun(params: {
     const snapshotError =
       error instanceof BackgroundAgentSnapshotError ? error : null;
     const freshRow = await getBackgroundAgentRunWithAgent(run.id);
+    const errorKind = snapshotError?.errorKind ?? "snapshot_invalid";
+    if (isSnapshotValidationErrorKind(errorKind)) {
+      await recordBackgroundAgentEvent({
+        runId: run.id,
+        agentId: freshRow?.run.agentId ?? null,
+        userId: run.userId,
+        eventName: "background-agent.snapshot.invalid",
+        status: "failed",
+        level: "error",
+        summary: "Background execution snapshot validation failed.",
+        workflowRunId: params.workflowRunId,
+        requestId: run.requestId,
+        sandboxName,
+        errorKind,
+        payload: safeSnapshotMetadata(run),
+      });
+    }
     await recordFailure({
       runId: run.id,
       agentId: freshRow?.run.agentId ?? null,
@@ -1501,7 +1552,7 @@ export async function executeBackgroundAgentRun(params: {
       workflowRunId: params.workflowRunId,
       requestId: run.requestId,
       sandboxName,
-      errorKind: snapshotError?.errorKind ?? "snapshot_invalid",
+      errorKind,
       summary:
         snapshotError?.message ?? "Background execution snapshot is invalid.",
     });
@@ -1743,6 +1794,7 @@ export async function executeBackgroundAgentRun(params: {
     sandbox,
     eventName: "background-agent.git.context",
     command: "git status --short && git rev-parse --short HEAD",
+    commandLabel: "git_context",
     timeoutMs: 15_000,
   });
 
@@ -2070,6 +2122,7 @@ export async function executeBackgroundAgentRun(params: {
       sandbox,
       eventName: "background-agent.check",
       command: definition.checkCommand.trim(),
+      commandLabel: "required_check",
       timeoutMs: DEFAULT_CHECK_TIMEOUT_MS,
     });
 

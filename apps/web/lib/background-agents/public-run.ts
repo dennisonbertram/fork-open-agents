@@ -1,5 +1,9 @@
 import type { BackgroundAgent, BackgroundAgentRun } from "@/lib/db/schema";
-import { parseBackgroundAgentExecutionSnapshot } from "./execution-snapshot";
+import {
+  hashBackgroundAgentExecutionSnapshot,
+  parseBackgroundAgentExecutionSnapshot,
+  type BackgroundAgentExecutionSnapshotV1,
+} from "./execution-snapshot";
 
 export type BackgroundAgentSnapshotSource =
   | "frozen"
@@ -11,19 +15,66 @@ export type PublicBackgroundAgentRun = Omit<
   "executionSnapshot"
 > & { snapshotSource: BackgroundAgentSnapshotSource };
 
-export function getBackgroundAgentSnapshotSource(
+type PublicSnapshotResolution =
+  | { source: "legacy_live_fallback"; snapshot: null }
+  | { source: "invalid"; snapshot: null }
+  | { source: "frozen"; snapshot: BackgroundAgentExecutionSnapshotV1 };
+
+function resolvePublicSnapshot(
   run: Pick<
     BackgroundAgentRun,
-    "executionSnapshot" | "definitionVersion" | "definitionHash"
+    | "executionSnapshot"
+    | "definitionVersion"
+    | "definitionHash"
+    | "repoOwner"
+    | "repoName"
+    | "agentId"
   >,
-): BackgroundAgentSnapshotSource {
-  const present = [
+): PublicSnapshotResolution {
+  const tuple = [
     run.executionSnapshot,
     run.definitionVersion,
     run.definitionHash,
-  ].filter((value) => value != null).length;
-  if (present === 0) return "legacy_live_fallback";
-  return present === 3 ? "frozen" : "invalid";
+  ];
+  const present = tuple.filter((value) => value != null).length;
+  if (present === 0) {
+    return { source: "legacy_live_fallback", snapshot: null };
+  }
+  if (present !== 3 || run.definitionVersion !== 1) {
+    return { source: "invalid", snapshot: null };
+  }
+
+  try {
+    const snapshot = parseBackgroundAgentExecutionSnapshot(
+      run.executionSnapshot,
+    );
+    if (
+      snapshot.snapshotVersion !== run.definitionVersion ||
+      hashBackgroundAgentExecutionSnapshot(snapshot) !== run.definitionHash ||
+      snapshot.repository.owner.toLowerCase() !== run.repoOwner.toLowerCase() ||
+      snapshot.repository.name.toLowerCase() !== run.repoName.toLowerCase() ||
+      (run.agentId !== null && snapshot.source.definitionId !== run.agentId)
+    ) {
+      return { source: "invalid", snapshot: null };
+    }
+    return { source: "frozen", snapshot };
+  } catch {
+    return { source: "invalid", snapshot: null };
+  }
+}
+
+export function getBackgroundAgentSnapshotSource(
+  run: Pick<
+    BackgroundAgentRun,
+    | "executionSnapshot"
+    | "definitionVersion"
+    | "definitionHash"
+    | "repoOwner"
+    | "repoName"
+    | "agentId"
+  >,
+): BackgroundAgentSnapshotSource {
+  return resolvePublicSnapshot(run).source;
 }
 
 export function toPublicBackgroundAgentRun(
@@ -37,7 +88,7 @@ export type SafeBackgroundAgentEvidence = {
   id: string;
   name: string;
   permissions: unknown;
-  checkCommand: string | null;
+  checkConfigured: boolean;
   sourceDeleted: boolean;
 };
 
@@ -45,40 +96,23 @@ export function toSafeBackgroundAgentEvidence(
   run: BackgroundAgentRun,
   liveAgent: BackgroundAgent | null,
 ): SafeBackgroundAgentEvidence | null {
-  if (
-    run.executionSnapshot &&
-    run.definitionVersion === 1 &&
-    run.definitionHash
-  ) {
-    try {
-      const snapshot = parseBackgroundAgentExecutionSnapshot(
-        run.executionSnapshot,
-      );
-      return {
-        id: snapshot.source.definitionId,
-        name: snapshot.source.name,
-        permissions: snapshot.permissions,
-        checkCommand: snapshot.checkCommand,
-        sourceDeleted: liveAgent === null,
-      };
-    } catch {
-      return liveAgent
-        ? {
-            id: liveAgent.id,
-            name: liveAgent.name,
-            permissions: {},
-            checkCommand: null,
-            sourceDeleted: false,
-          }
-        : null;
-    }
+  const resolved = resolvePublicSnapshot(run);
+  if (resolved.source === "invalid") return null;
+  if (resolved.source === "frozen") {
+    return {
+      id: resolved.snapshot.source.definitionId,
+      name: resolved.snapshot.source.name,
+      permissions: resolved.snapshot.permissions,
+      checkConfigured: Boolean(resolved.snapshot.checkCommand?.trim()),
+      sourceDeleted: liveAgent === null,
+    };
   }
   return liveAgent
     ? {
         id: liveAgent.id,
         name: liveAgent.name,
         permissions: liveAgent.permissions,
-        checkCommand: liveAgent.checkCommand,
+        checkConfigured: Boolean(liveAgent.checkCommand?.trim()),
         sourceDeleted: false,
       }
     : null;
