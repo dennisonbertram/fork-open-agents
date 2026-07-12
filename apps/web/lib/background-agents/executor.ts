@@ -407,7 +407,7 @@ function retainedDeclaredRead(
   live: DeclaredGithubPermissions | undefined,
   key: "contents" | "pullRequests",
 ): boolean {
-  return requested?.[key] !== "read" || live?.[key] != null;
+  return requested?.[key] == null || live?.[key] != null;
 }
 
 function maskActionsByDeclaredPermissions(
@@ -1952,6 +1952,7 @@ export async function executeBackgroundAgentRun(params: {
       const checkoutLiveCheck = await assertLiveBackgroundExecution({
         runId: run.id,
         expectedWorkflowRunId: params.workflowRunId,
+        verifyInferenceAvailability: false,
       });
       defaultBranch = checkoutLiveCheck.githubAccess?.defaultBranch ?? null;
     } catch (error) {
