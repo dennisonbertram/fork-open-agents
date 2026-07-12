@@ -543,10 +543,10 @@ describe("execution snapshot binding", () => {
     currentAgent = buildAgent({
       name: "Edited definition",
       instructions: "MUTATED-INSTRUCTIONS-CANARY",
-      builtinToolNames: null,
-      githubActions: { push: true },
-      writeScope: { mode: "all_repos" },
-      requireCiGreenForMerge: false,
+      builtinToolNames: ["bash"],
+      githubActions: { comment_on_pr_or_issue: true },
+      writeScope: { mode: "this_repo" },
+      requireCiGreenForMerge: true,
       modelId: null,
     });
     const { executeBackgroundAgentRun } = await executorModulePromise;
@@ -570,6 +570,39 @@ describe("execution snapshot binding", () => {
     expect(Object.keys(call?.tools ?? {})).toEqual([
       "github_comment_on_pr_or_issue",
     ]);
+  });
+
+  test("live security edits may revoke frozen GitHub actions", async () => {
+    currentRun = buildSnapshotRun(
+      buildAgent({ githubActions: { comment_on_pr_or_issue: true } }),
+    );
+    currentAgent = buildAgent({ githubActions: {} });
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-live-revoke",
+    });
+
+    expect(Object.keys(generateCalls[0]?.tools ?? {})).toEqual([]);
+  });
+
+  test("later live expansion never grants more than frozen intent", async () => {
+    currentRun = buildSnapshotRun(buildAgent({ githubActions: {} }));
+    currentAgent = buildAgent({ githubActions: { push: true } });
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-live-expand",
+    });
+
+    expect(Object.keys(generateCalls[0]?.tools ?? {})).toEqual([]);
+    expect(
+      sandboxExec.mock.calls.some(([command]) =>
+        (command as string).includes("git checkout"),
+      ),
+    ).toBe(false);
   });
 
   const invalidCases: Array<{
