@@ -45,7 +45,8 @@ const db = {
 mock.module("@/lib/db/client", () => ({ db }));
 mock.module("nanoid", () => ({ nanoid: () => "run-snapshot-1" }));
 
-const { createRunForTrigger } = await import("./store");
+const { createRunForTrigger, recordBackgroundAgentEvent } =
+  await import("./store");
 
 function buildAgent(
   overrides: Partial<BackgroundAgent> = {},
@@ -166,5 +167,21 @@ describe("createRunForTrigger execution snapshots", () => {
     );
     expect(returned.definitionHash).toBe(original.definitionHash);
     expect(recordedEvents.filter((entry) => entry.eventName === "background-agent.snapshot.frozen")).toHaveLength(1);
+  });
+});
+
+describe("background event source identity", () => {
+  test("uses the Run's fresh nullable agent id after source deletion", async () => {
+    persistedRun = { id: "run-snapshot-1", agentId: null };
+
+    await recordBackgroundAgentEvent({
+      runId: "run-snapshot-1",
+      agentId: "stale-agent-id",
+      userId: "user-1",
+      eventName: "background-agent.progress.observed",
+      status: "succeeded",
+    });
+
+    expect(recordedEvents.at(-1)).toMatchObject({ agentId: null });
   });
 });
