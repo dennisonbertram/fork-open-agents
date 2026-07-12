@@ -57,10 +57,11 @@ import {
 } from "./execution-snapshot";
 import { NormalizedUnattendedInputError } from "@/lib/unattended-runtime/normalized-step-input";
 import type { AgentLoop } from "@/lib/db/schema";
+import { resolveWorkingBranchIntent } from "./resolve-working-branch";
 
 // ── Public types ───────────────────────────────────────────────────────────────
 
-export type StepOutcome = "success" | "failure" | "true" | "false";
+export type StepOutcome = "success" | "failure" | "true" | "false" | "replay";
 
 export type StepExecutionResult = {
   outcome: StepOutcome;
@@ -132,7 +133,7 @@ async function recordStepFailure(params: {
  * Implements the github_check, condition, end, start, and agent_step (stub) arms.
  * Does NOT evaluate edges or dispatch the next step (that is M1-06 chain.ts).
  */
-export async function executeAgentLoopStep(params: {
+export type ExecuteAgentLoopStepParams = {
   stepRunId: string;
   workflowRunId: string;
   /**
@@ -147,7 +148,28 @@ export async function executeAgentLoopStep(params: {
    * Forwarded to executeAgentStep; ignored by other node kinds.
    */
   maxAgentTurnsPerStep?: number;
-}): Promise<StepExecutionResult> {
+};
+
+const activeStepDeliveries = new Set<string>();
+
+export async function executeAgentLoopStep(
+  params: ExecuteAgentLoopStepParams,
+): Promise<StepExecutionResult> {
+  const deliveryKey = `${params.stepRunId}:${params.workflowRunId}`;
+  if (activeStepDeliveries.has(deliveryKey)) {
+    return { outcome: "failure", errorKind: "step_ownership_lost" };
+  }
+  activeStepDeliveries.add(deliveryKey);
+  try {
+    return await executeAgentLoopStepDelivery(params);
+  } finally {
+    activeStepDeliveries.delete(deliveryKey);
+  }
+}
+
+async function executeAgentLoopStepDelivery(
+  params: ExecuteAgentLoopStepParams,
+): Promise<StepExecutionResult> {
   const { stepRunId, workflowRunId, stepTimeoutMs, maxAgentTurnsPerStep } =
     params;
   const startedAt = nowMs();
@@ -184,7 +206,7 @@ export async function executeAgentLoopStep(params: {
   // its evidence and side effects, so a duplicate delivery is a strict no-op.
   if (["succeeded", "failed", "skipped"].includes(stepRun.status)) {
     return {
-      outcome: stepRun.status === "succeeded" ? "success" : "failure",
+      outcome: "replay",
       ...(stepRun.errorKind ? { errorKind: stepRun.errorKind } : {}),
       ...(stepRun.errorMessage ? { errorMessage: stepRun.errorMessage } : {}),
     };
@@ -334,37 +356,9 @@ export async function executeAgentLoopStep(params: {
       ctx.liveSource ??
       projectAgentLoopLiveSource(loop as unknown as AgentLoop, stepRun.nodeId);
 
-    // The live default branch is the only repository fact unavailable in the
-    // frozen Run. Resolve it before normalization, but do not mint a token or
-    // allocate a sandbox until strict V1 validation succeeds.
-    const repository = resolvedDefinition.definition.repository;
-    const checkoutAccess = await verifyRepoAccess({
-      userId: loopRun.userId,
-      owner: repository.owner,
-      repo: repository.name,
-      requiredUserPermission: "write",
-    });
-    if (!checkoutAccess.ok) {
-      return recordStepFailure({
-        ...failureCtx,
-        errorKind:
-          checkoutAccess.reason === "no_installation"
-            ? "installation_missing"
-            : "permission_missing",
-        errorMessage: `Repo access denied: ${checkoutAccess.reason}`,
-      });
-    }
-
-    let normalizedInput: ReturnType<typeof buildAgentLoopNormalizedStepInput>;
-    try {
-      normalizedInput = buildAgentLoopNormalizedStepInput({
-        resolvedDefinition,
-        loopRun,
-        stepRun,
-        workflowRunId,
-        defaultBranch: checkoutAccess.defaultBranch,
-      });
-    } catch (error) {
+    const rejectNormalizedInput = async (
+      error: unknown,
+    ): Promise<StepExecutionResult> => {
       const normalizedError =
         error instanceof NormalizedUnattendedInputError ? error : null;
       const errorKind =
@@ -396,6 +390,63 @@ export async function executeAgentLoopStep(params: {
         errorKind,
         errorMessage: "Normalized loop step input was rejected.",
       });
+    };
+
+    // If accepted Run context already determines the checkout, validate every
+    // dynamic value before making even a read-only credentialed GitHub lookup.
+    // The live default branch is only required when no context branch exists.
+    const repository = resolvedDefinition.definition.repository;
+    const contextCheckout = resolveWorkingBranchIntent(
+      loopRun.context ?? {},
+      stepRun.nodeId,
+      "",
+    );
+    let normalizedInput:
+      | ReturnType<typeof buildAgentLoopNormalizedStepInput>
+      | undefined;
+    if (contextCheckout.ref) {
+      try {
+        normalizedInput = buildAgentLoopNormalizedStepInput({
+          resolvedDefinition,
+          loopRun,
+          stepRun,
+          workflowRunId,
+          defaultBranch: null,
+        });
+      } catch (error) {
+        return rejectNormalizedInput(error);
+      }
+    }
+
+    const checkoutAccess = await verifyRepoAccess({
+      userId: loopRun.userId,
+      owner: repository.owner,
+      repo: repository.name,
+      requiredUserPermission: "write",
+    });
+    if (!checkoutAccess.ok) {
+      return recordStepFailure({
+        ...failureCtx,
+        errorKind:
+          checkoutAccess.reason === "no_installation"
+            ? "installation_missing"
+            : "permission_missing",
+        errorMessage: `Repo access denied: ${checkoutAccess.reason}`,
+      });
+    }
+
+    if (!normalizedInput) {
+      try {
+        normalizedInput = buildAgentLoopNormalizedStepInput({
+          resolvedDefinition,
+          loopRun,
+          stepRun,
+          workflowRunId,
+          defaultBranch: checkoutAccess.defaultBranch,
+        });
+      } catch (error) {
+        return rejectNormalizedInput(error);
+      }
     }
 
     await recordAgentLoopEvent({

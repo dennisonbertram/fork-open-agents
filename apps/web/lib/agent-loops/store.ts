@@ -1994,6 +1994,7 @@ export async function listWatchdogRunsForLoopRun(
  */
 export async function retryCurrentStepForWatchdog(params: {
   runId: string;
+  expectedStepRunId: string;
   hint?: string;
 }): Promise<AgentLoopStepRun> {
   return db.transaction(async (tx) => {
@@ -2015,6 +2016,11 @@ export async function retryCurrentStepForWatchdog(params: {
     if (!run.currentNodeId || !run.currentStepRunId) {
       throw new Error(
         `Watchdog retry: run ${params.runId} missing currentNodeId or currentStepRunId`,
+      );
+    }
+    if (run.currentStepRunId !== params.expectedStepRunId) {
+      throw new Error(
+        `Watchdog retry: current step changed for run ${params.runId} (TOCTOU race — rejected)`,
       );
     }
 
@@ -2098,6 +2104,7 @@ export async function retryCurrentStepForWatchdog(params: {
           eq(agentLoopRuns.id, params.runId),
           inArray(agentLoopRuns.status, ["stalled", "running"]),
           eq(agentLoopRuns.currentStepRunId, observedStepRunId),
+          eq(agentLoopRuns.currentStepRunId, params.expectedStepRunId),
           isNotNull(agentLoopRuns.loopId),
         ),
       )

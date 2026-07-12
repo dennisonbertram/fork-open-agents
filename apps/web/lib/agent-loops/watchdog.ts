@@ -450,6 +450,7 @@ export async function invokeWatchdog(
     try {
       const newStepRun = await retryCurrentStepForWatchdog({
         runId: loopRunId,
+        expectedStepRunId: stepRunId,
         hint,
       });
 

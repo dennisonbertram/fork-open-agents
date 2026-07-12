@@ -76,13 +76,13 @@ export function buildAgentLoopNormalizedStepInput(input: {
   loopRun: AgentLoopRun;
   stepRun: AgentLoopStepRun;
   workflowRunId: string;
-  defaultBranch: string;
+  defaultBranch: string | null;
 }): NormalizedLoopStepInput {
   const context = input.loopRun.context ?? {};
   const checkout = resolveWorkingBranchIntent(
     context,
     input.stepRun.nodeId,
-    input.defaultBranch,
+    input.defaultBranch ?? "",
   );
   const rawStepInput = (input.stepRun.stepInput ?? {}) as Record<
     string,
