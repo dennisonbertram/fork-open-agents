@@ -20,6 +20,7 @@ let eventInsertFails: boolean;
 let runInsertWins: boolean;
 let conflictWinner: AgentLoopRun | null;
 let activeRun: AgentLoopRun | null;
+let txRunLookupResults: Array<AgentLoopRun | null>;
 let nextId: number;
 
 const queryTerminal = (rows: unknown[]) => {
@@ -34,7 +35,9 @@ const queryTerminal = (rows: unknown[]) => {
 
 const tx = {
   query: {
-    agentLoopRuns: { findFirst: async () => activeRun },
+    agentLoopRuns: {
+      findFirst: async () => txRunLookupResults.shift() ?? null,
+    },
   },
   select: () => ({
     from: () => ({
@@ -133,6 +136,7 @@ beforeEach(() => {
   runInsertWins = true;
   conflictWinner = null;
   activeRun = null;
+  txRunLookupResults = [null, null];
   nextId = 1;
 });
 
@@ -213,6 +217,7 @@ describe("createAgentLoopRun frozen transaction", () => {
   test("serializes distinct idempotency keys behind the source lock and returns the active run", async () => {
     const first = await createAgentLoopRun(input);
     activeRun = first?.run ?? null;
+    txRunLookupResults = [null, activeRun];
     persistedRun = null;
     insertedRun = null;
     insertedEvents = [];
@@ -222,6 +227,20 @@ describe("createAgentLoopRun frozen transaction", () => {
       idempotencyKey: "manual:2",
     });
     expect(second).toEqual({ activeRunId: activeRun?.id });
+    expect(insertedRun).toBeNull();
+    expect(insertedEvents).toHaveLength(0);
+  });
+
+  test("same-key winner observed after the source lock remains an idempotent duplicate", async () => {
+    const first = await createAgentLoopRun(input);
+    const winner = first?.run ?? null;
+    persistedRun = null;
+    insertedRun = null;
+    insertedEvents = [];
+    txRunLookupResults = [winner, null];
+
+    const duplicate = await createAgentLoopRun(input);
+    expect(duplicate).toEqual({ run: winner, created: false });
     expect(insertedRun).toBeNull();
     expect(insertedEvents).toHaveLength(0);
   });
