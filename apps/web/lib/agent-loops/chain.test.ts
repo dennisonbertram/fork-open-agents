@@ -22,6 +22,7 @@ import type {
   AgentLoopRun,
   AgentLoopStepRun,
 } from "@/lib/db/schema";
+import { AgentLoopSnapshotError } from "./execution-snapshot";
 
 mock.module("server-only", () => ({}));
 
@@ -73,6 +74,7 @@ let recordedStepRunCreations: {
 let workflowStartCalls: Array<{ stepRunId: string }> = [];
 let atomicAdvanceSourceDeleted = false;
 let sourceLiveBeforeDispatch = true;
+let contextLoadError: Error | null = null;
 
 // ── Store mock state ──────────────────────────────────────────────────────────
 
@@ -137,6 +139,7 @@ let stepRunIdToNodeId: Record<string, string> = {};
 // ── Store mocks ───────────────────────────────────────────────────────────────
 
 const getAgentLoopStepRunWithContextMock = mock(async (stepRunId: string) => {
+  if (contextLoadError) throw contextLoadError;
   // Return context for the given stepRunId
   const stepRun = stepRunIdToStepRun[stepRunId] ?? currentStepRun;
   return {
@@ -144,6 +147,43 @@ const getAgentLoopStepRunWithContextMock = mock(async (stepRunId: string) => {
     loopRun: currentLoopRun,
     loop: currentLoop,
   };
+});
+
+describe("execution snapshot fail-closed boundary", () => {
+  test("snapshot loader failure uses winner-only CAS and safe terminal evidence", async () => {
+    currentLoopRun = makeLoopRun({ status: "queued" });
+    currentLoop = makeLoop();
+    currentStepRun = makeStepRun();
+    contextLoadError = new AgentLoopSnapshotError(
+      "snapshot_hash_mismatch",
+      "Execution snapshot hash verification failed.",
+      currentLoopRun.id,
+    );
+    try {
+      const { runAgentLoopStep } = await chainPromise;
+      await runAgentLoopStep({
+        stepRunId: currentStepRun.id,
+        workflowRunId: "wf-snapshot-invalid",
+      });
+    } finally {
+      contextLoadError = null;
+    }
+
+    expect(conditionallyTransitionRunStatusMock).toHaveBeenCalledWith({
+      runId: currentLoopRun.id,
+      toStatus: "failed",
+      fromStatuses: ["queued", "running", "stalled"],
+      errorKind: "snapshot_hash_mismatch",
+      errorMessage: "Execution snapshot hash verification failed.",
+    });
+    expect(recordedEvents).toContainEqual(
+      expect.objectContaining({
+        eventName: "agent-loop.snapshot.invalid",
+        payload: { errorKind: "snapshot_hash_mismatch" },
+      }),
+    );
+    expect(executeAgentLoopStepMock).not.toHaveBeenCalled();
+  });
 });
 
 // Maps stepRunId → stepRun object

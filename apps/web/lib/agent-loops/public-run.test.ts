@@ -115,6 +115,7 @@ describe("public loop run evidence", () => {
       repoName: "widgets",
       guardrails: snapshot.guardrails,
       sourceDeleted: true,
+      sourceActive: false,
     });
   });
 
