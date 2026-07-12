@@ -402,6 +402,14 @@ function retainedDeclaredWrite(
   return requested?.[key] !== "write" || live?.[key] === "write";
 }
 
+function retainedDeclaredRead(
+  requested: DeclaredGithubPermissions | undefined,
+  live: DeclaredGithubPermissions | undefined,
+  key: "contents" | "pullRequests",
+): boolean {
+  return requested?.[key] !== "read" || live?.[key] != null;
+}
+
 function maskActionsByDeclaredPermissions(
   toggles: GitHubActionToggles,
   requested: DeclaredGithubPermissions | undefined,
@@ -481,19 +489,37 @@ function buildEffectiveSecurityPolicyFromDefinition(
 function buildEffectiveSecurityPolicy(
   normalizedInput: NormalizedBackgroundStepInput,
   liveAgent: import("@/lib/db/schema").BackgroundAgent,
+  acceptedDeclaredPermissions?: BackgroundAgentExecutionSnapshotV1["permissions"],
 ) {
   if (normalizedInput.executionKind === "background_builtin_learnings") {
+    const requestedDeclaredPermissions = acceptedDeclaredPermissions?.github;
+    const liveDeclaredPermissions = liveAgent.permissions.github;
+    const effectiveDeclaredPermissions = intersectDeclaredGithubPermissions(
+      requestedDeclaredPermissions,
+      liveDeclaredPermissions,
+    );
     return {
       githubActionToggles: toGitHubActionToggles({}),
       allowedBuiltinToolNames: [] as string[],
       requestedComposioSlugs: [] as string[],
       effectiveWriteScope: { mode: "this_repo" as const },
       requireCiGreenForMerge: true,
-      declaredPermissions: {
-        requested: normalizedInput.requestedPolicy,
-        live: liveAgent.permissions,
-      },
-      installationPermissionCeiling: null,
+      declaredPermissions: effectiveDeclaredPermissions
+        ? { github: effectiveDeclaredPermissions }
+        : {},
+      installationPermissionCeiling:
+        toInstallationPermissionCeiling(effectiveDeclaredPermissions) ?? null,
+      learningsReadPermissionRetained:
+        retainedDeclaredRead(
+          requestedDeclaredPermissions,
+          liveDeclaredPermissions,
+          "contents",
+        ) &&
+        retainedDeclaredRead(
+          requestedDeclaredPermissions,
+          liveDeclaredPermissions,
+          "pullRequests",
+        ),
     };
   }
 
@@ -536,6 +562,7 @@ function buildEffectiveSecurityPolicy(
       : {},
     installationPermissionCeiling:
       toInstallationPermissionCeiling(effectiveDeclaredPermissions) ?? null,
+    learningsReadPermissionRetained: true,
   };
 }
 
@@ -545,6 +572,8 @@ async function assertLiveBackgroundExecution(params: {
   normalizedInput?: NormalizedBackgroundStepInput;
   expectedWorkflowRunId?: string;
   verifyGithubAccess?: boolean;
+  verifyInferenceAvailability?: boolean;
+  acceptedDeclaredPermissions?: BackgroundAgentExecutionSnapshotV1["permissions"];
 }): Promise<{
   row: NonNullable<Awaited<ReturnType<typeof getBackgroundAgentRunWithAgent>>>;
   resolved: ReturnType<typeof resolveBackgroundAgentExecutionDefinition> | null;
@@ -635,7 +664,10 @@ async function assertLiveBackgroundExecution(params: {
       : params.normalizedInput
         ? null
         : resolved!.definition.inference;
-  if (inference?.route === "user") {
+  if (
+    inference?.route === "user" &&
+    params.verifyInferenceAvailability !== false
+  ) {
     try {
       await assertInferenceProfileRouteAvailable({
         userId: row.run.userId,
@@ -653,11 +685,25 @@ async function assertLiveBackgroundExecution(params: {
     }
   }
   const policy = params.normalizedInput
-    ? buildEffectiveSecurityPolicy(params.normalizedInput, row.agent)
+    ? buildEffectiveSecurityPolicy(
+        params.normalizedInput,
+        row.agent,
+        params.acceptedDeclaredPermissions,
+      )
     : buildEffectiveSecurityPolicyFromDefinition(
         resolved!.definition,
         row.agent,
       );
+  if (
+    params.normalizedInput?.executionKind === "background_builtin_learnings" &&
+    "learningsReadPermissionRetained" in policy &&
+    !policy.learningsReadPermissionRetained
+  ) {
+    throw new BackgroundAgentSnapshotError(
+      "permission_missing",
+      "Live GitHub permissions no longer allow pull-request learning extraction.",
+    );
+  }
   if (
     params.expectedPolicyHash &&
     sha256CanonicalJson(policy) !== params.expectedPolicyHash
@@ -1836,7 +1882,8 @@ export async function executeBackgroundAgentRun(params: {
   try {
     initialLiveCheck = await assertLiveBackgroundExecution({
       runId: run.id,
-      verifyGithubAccess: !hasPersistedCheckout,
+      verifyGithubAccess: false,
+      verifyInferenceAvailability: false,
     });
     if (!initialLiveCheck.resolved) {
       throw new BackgroundAgentSnapshotError(
@@ -1883,6 +1930,52 @@ export async function executeBackgroundAgentRun(params: {
     return;
   }
 
+  const claimSandboxName =
+    resolvedDefinition.definition.source.builtinKind === "pr_review_learnings"
+      ? null
+      : sandboxName;
+  const claimed =
+    run.status === "running" && run.workflowRunId === params.workflowRunId
+      ? run
+      : await updateBackgroundAgentRunStatus({
+          runId: run.id,
+          status: "running",
+          workflowRunId: params.workflowRunId,
+          sandboxName: claimSandboxName,
+          expectedStatuses: ["queued"],
+        });
+  if (!claimed) return;
+
+  let defaultBranch: string | null = null;
+  if (!hasPersistedCheckout) {
+    try {
+      const checkoutLiveCheck = await assertLiveBackgroundExecution({
+        runId: run.id,
+        expectedWorkflowRunId: params.workflowRunId,
+      });
+      defaultBranch = checkoutLiveCheck.githubAccess?.defaultBranch ?? null;
+    } catch (error) {
+      if (error === backgroundAgentOwnershipLostError) return;
+      await recordFailure({
+        runId: run.id,
+        agentId: run.agentId,
+        userId: run.userId,
+        workflowRunId: params.workflowRunId,
+        requestId: run.requestId,
+        sandboxName: claimSandboxName,
+        errorKind:
+          error instanceof BackgroundAgentSnapshotError
+            ? error.errorKind
+            : "workflow_failed",
+        summary:
+          error instanceof Error
+            ? error.message
+            : "Failed to resolve the default checkout branch.",
+      });
+      return;
+    }
+  }
+
   let normalizedInput: NormalizedBackgroundStepInput;
   try {
     normalizedInput = buildNormalizedBackgroundStepInput({
@@ -1890,7 +1983,7 @@ export async function executeBackgroundAgentRun(params: {
       resolvedDefinition,
       workflowRunId: params.workflowRunId,
       sandboxName,
-      defaultBranch: initialLiveCheck.githubAccess?.defaultBranch,
+      defaultBranch,
     });
   } catch (error) {
     const normalizedError =
@@ -1902,9 +1995,8 @@ export async function executeBackgroundAgentRun(params: {
       userId: run.userId,
       workflowRunId: params.workflowRunId,
       requestId: run.requestId,
-      sandboxName,
+      sandboxName: claimSandboxName,
       errorKind,
-      expectedStatuses: ["queued"],
       summary: "Normalized background execution input was rejected.",
       onTransitionWon: async () => {
         await recordBackgroundAgentEvent({
@@ -1917,7 +2009,7 @@ export async function executeBackgroundAgentRun(params: {
           summary: "Normalized background execution input was rejected.",
           workflowRunId: params.workflowRunId,
           requestId: run.requestId,
-          sandboxName,
+          sandboxName: claimSandboxName,
           errorKind,
           payload: {
             runId: run.id,
@@ -1943,8 +2035,11 @@ export async function executeBackgroundAgentRun(params: {
     acceptedLiveCheck = await assertLiveBackgroundExecution({
       runId: run.id,
       normalizedInput,
+      acceptedDeclaredPermissions: resolvedDefinition.definition.permissions,
+      expectedWorkflowRunId: params.workflowRunId,
     });
   } catch (error) {
+    if (error === backgroundAgentOwnershipLostError) return;
     const snapshotError =
       error instanceof BackgroundAgentSnapshotError ? error : null;
     await recordFailure({
@@ -1962,7 +2057,6 @@ export async function executeBackgroundAgentRun(params: {
         error instanceof Error
           ? error.message
           : "Live authorization check failed.",
-      expectedStatuses: ["queued"],
     });
     return;
   }
@@ -1972,17 +2066,6 @@ export async function executeBackgroundAgentRun(params: {
       ? null
       : normalizedInput.workspace.sandboxName;
 
-  const claimed =
-    run.status === "running" && run.workflowRunId === params.workflowRunId
-      ? run
-      : await updateBackgroundAgentRunStatus({
-          runId: run.id,
-          status: "running",
-          workflowRunId: params.workflowRunId,
-          sandboxName: executionSandboxName,
-          expectedStatuses: ["queued"],
-        });
-  if (!claimed) return;
   await recordBackgroundAgentEvent({
     runId: run.id,
     agentId: run.agentId,
@@ -2055,15 +2138,24 @@ export async function executeBackgroundAgentRun(params: {
     effectiveWriteScope,
     requireCiGreenForMerge,
     installationPermissionCeiling,
-  } = buildEffectiveSecurityPolicy(normalizedInput, liveAgent);
+  } = buildEffectiveSecurityPolicy(
+    normalizedInput,
+    liveAgent,
+    resolvedDefinition.definition.permissions,
+  );
   const expectedPolicyHash = sha256CanonicalJson(
-    buildEffectiveSecurityPolicy(normalizedInput, liveAgent),
+    buildEffectiveSecurityPolicy(
+      normalizedInput,
+      liveAgent,
+      resolvedDefinition.definition.permissions,
+    ),
   );
   const assertLiveAuthorization = async () => {
     await assertLiveBackgroundExecution({
       runId: run.id,
       expectedPolicyHash,
       normalizedInput,
+      acceptedDeclaredPermissions: resolvedDefinition.definition.permissions,
       expectedWorkflowRunId: params.workflowRunId,
     });
   };

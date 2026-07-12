@@ -1919,19 +1919,19 @@ describe("normalized background execution boundary (#966)", () => {
   test("a stale normalization rejection cannot terminalize a concurrent owner", async () => {
     currentRun = buildSnapshotRun(buildAgent(), { ref: "refs/heads/main" });
     normalizedSandboxImpl = () => {
+      beforeStatusUpdate = (input) => {
+        if (input.status === "failed") {
+          currentRun = {
+            ...currentRun,
+            status: "running",
+            workflowRunId: "wf-concurrent-owner",
+          };
+        }
+      };
       throw new normalizedRuntime.NormalizedUnattendedInputError(
         "normalized_input_invalid",
         [{ code: "invalid", path: ["prompt"] }],
       );
-    };
-    beforeStatusUpdate = (input) => {
-      if (input.status === "failed") {
-        currentRun = {
-          ...currentRun,
-          status: "running",
-          workflowRunId: "wf-concurrent-owner",
-        };
-      }
     };
     const { executeBackgroundAgentRun } = await executorModulePromise;
 
