@@ -72,6 +72,7 @@ let recordedStepRunCreations: {
 }[] = [];
 let workflowStartCalls: Array<{ stepRunId: string }> = [];
 let atomicAdvanceSourceDeleted = false;
+let sourceLiveBeforeDispatch = true;
 
 // ── Store mock state ──────────────────────────────────────────────────────────
 
@@ -275,8 +276,12 @@ const conditionallyTransitionRunStatusMock = mock(
   },
 );
 
+const isAgentLoopRunSourceLiveMock = mock(
+  async (_runId: string) => sourceLiveBeforeDispatch,
+);
+
 mock.module("./store", () => ({
-  isAgentLoopRunSourceLive: mock(async () => true),
+  isAgentLoopRunSourceLive: isAgentLoopRunSourceLiveMock,
   createAndAdvanceAgentLoopStep: mock(
     async (input: {
       runId: string;
@@ -521,6 +526,7 @@ function resetAll() {
   recordedStepRunCreations = [];
   workflowStartCalls = [];
   atomicAdvanceSourceDeleted = false;
+  sourceLiveBeforeDispatch = true;
   executedNodeIds = [];
   stepRunIdToNodeId = {};
   stepRunIdToStepRun = {};
@@ -550,6 +556,7 @@ function resetAll() {
   getMaxAttemptForNodeMock.mockClear();
   executeAgentLoopStepMock.mockClear();
   workflowStartMock.mockClear();
+  isAgentLoopRunSourceLiveMock.mockClear();
   invokeWatchdogMock.mockClear();
 }
 
@@ -1375,6 +1382,32 @@ describe("source deletion during atomic advance", () => {
             "duplicate_advance",
       ),
     ).toBe(false);
+  });
+});
+
+describe("source deletion after atomic advance", () => {
+  beforeEach(() => {
+    resetAll();
+    currentLoopRun = makeLoopRun({
+      status: "running",
+      currentStepRunId: "step-run-1",
+    });
+    executorOutcomes["start"] = { outcome: "success" };
+    sourceLiveBeforeDispatch = false;
+  });
+
+  test("rechecks the source and skips dispatch after the advance commits", async () => {
+    const { runAgentLoopStep } = await chainPromise;
+
+    await runAgentLoopStep({
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+    });
+
+    expect(recordedStepRunCreations).toHaveLength(1);
+    expect(recordedAdvanceCalls).toHaveLength(1);
+    expect(isAgentLoopRunSourceLiveMock).toHaveBeenCalledWith("loop-run-1");
+    expect(workflowStartCalls).toHaveLength(0);
   });
 });
 

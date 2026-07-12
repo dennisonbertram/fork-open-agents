@@ -102,8 +102,11 @@ const txInsertMock = mock((_table: unknown) => ({
 // Default: mirrors inserted values + set values (existing behaviour).
 // Tests that simulate a TOCTOU race override this to return [].
 let txUpdateReturningOverride: unknown[] | null = null;
-const txUpdateMock = mock((_table: unknown) => ({
-  set: mock((setVals: unknown) => ({
+let transactionUpdates: Array<{ table: unknown; values: unknown }> = [];
+const txUpdateMock = mock((table: unknown) => ({
+  set: mock((setVals: unknown) => {
+    transactionUpdates.push({ table, values: setVals });
+    return {
     where: mock(() => ({
       returning: mock(() => {
         if (txUpdateReturningOverride !== null) {
@@ -112,7 +115,8 @@ const txUpdateMock = mock((_table: unknown) => ({
         return [{ ...(insertedValues[0] as object), ...(setVals as object) }];
       }),
     })),
-  })),
+    };
+  }),
 }));
 const txFindFirstMock = mock(async () => (queryResult[0] ?? null) as unknown);
 
@@ -221,6 +225,7 @@ function resetMocks() {
   _deletedWhere = null;
   queryResult = [];
   txUpdateReturningOverride = null;
+  transactionUpdates = [];
   txSelectResult = [{ maxAttempt: 1 }];
   txSelectResultsQueue = [];
   insertMock.mockClear();
@@ -447,11 +452,38 @@ describe("deleteAgentLoop", () => {
 
       expect(result).toBe(true);
       expect(transactionMock).toHaveBeenCalledTimes(1);
-      expect(txUpdateMock).toHaveBeenCalledTimes(1);
+      expect(txUpdateMock).toHaveBeenCalledTimes(3);
       expect(txInsertMock).toHaveBeenCalledTimes(1);
       expect(deleteMock).toHaveBeenCalledTimes(1);
-      const revokedValues = txUpdateMock.mock.calls[0]?.[0];
-      expect(revokedValues).toBe(agentLoopRunsTable);
+      expect(transactionUpdates).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            table: agentLoopRunsTable,
+            values: expect.objectContaining({
+              status: "cancelled",
+              errorKind: "source_deleted",
+              finishedAt: expect.any(Date),
+            }),
+          }),
+          expect.objectContaining({
+            table: agentLoopStepRunsTable,
+            values: expect.objectContaining({
+              status: "skipped",
+              errorKind: "source_deleted",
+              errorMessage: "Source Automation deleted",
+              finishedAt: expect.any(Date),
+            }),
+          }),
+          expect.objectContaining({
+            table: agentLoopWatchdogRunsTable,
+            values: expect.objectContaining({
+              status: "failed",
+              diagnosis: "Source Automation deleted",
+              finishedAt: expect.any(Date),
+            }),
+          }),
+        ]),
+      );
       const eventInput = valuesMock.mock.calls.at(-1)?.[0] as
         | Record<string, unknown>
         | undefined;

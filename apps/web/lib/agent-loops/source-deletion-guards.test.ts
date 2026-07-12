@@ -14,6 +14,23 @@ function functionBody(name: string, nextName: string): string {
 }
 
 describe("source deletion write guards", () => {
+  test("deletion terminalizes only active step and watchdog evidence", () => {
+    const body = functionBody("deleteAgentLoop", "listAgentLoops");
+
+    expect(body).toContain(".update(agentLoopStepRuns)");
+    expect(body).toContain(
+      'inArray(agentLoopStepRuns.status, ["queued", "running"])',
+    );
+    expect(body).toContain('status: "skipped"');
+    expect(body).toContain('errorKind: "source_deleted"');
+    expect(body).toContain(".update(agentLoopWatchdogRuns)");
+    expect(body).toContain(
+      'inArray(agentLoopWatchdogRuns.status, ["pending", "running"])',
+    );
+    expect(body).toContain('status: "failed"');
+    expect(body).toContain('diagnosis: "Source Automation deleted"');
+  });
+
   test("run status, context, and advance writes require a live source FK", () => {
     expect(
       functionBody("updateAgentLoopRunStatus", "updateAgentLoopRunContext"),
