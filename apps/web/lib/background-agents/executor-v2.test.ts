@@ -84,6 +84,7 @@ let recordedOutputs: OutputRow[] = [];
 let outputIdCounter = 0;
 let accessUserPermission: "read" | "write" = "write";
 let accessRequiredPermissionSeen: string[] = [];
+const executionBoundaryOrder: string[] = [];
 let beforeStatusUpdate:
   | ((input: StatusUpdateInput) => void | Promise<void>)
   | null = null;
@@ -226,6 +227,7 @@ mock.module("@/lib/sandbox/config", () => ({
 
 const verifyRepoAccess = mock(
   async (params: { requiredUserPermission?: string }) => {
+    executionBoundaryOrder.push("verify_repo_access");
     accessRequiredPermissionSeen.push(params.requiredUserPermission ?? "read");
     return {
       ok: true,
@@ -314,6 +316,10 @@ mock.module("@/lib/github/users", () => ({
 
 type LearningsRunnerParams = {
   assertLiveAuthorization?: () => Promise<void>;
+  event?: {
+    source?: string;
+    externalId?: string;
+  };
 };
 let learningsRunImpl: (
   params: LearningsRunnerParams,
@@ -361,13 +367,17 @@ let normalizedLearningsImpl = (input: NormalizedLearningsBuilderInput) =>
   realBuildNormalizedBackgroundLearningsInput(input);
 const buildNormalizedBackgroundSandboxInput = mock(
   (input: NormalizedSandboxBuilderInput) => {
+    executionBoundaryOrder.push("normalize");
     const result = normalizedSandboxImpl(input);
     normalizedSandboxOutputs.push(result);
     return result;
   },
 );
 const buildNormalizedBackgroundLearningsInput = mock(
-  (input: NormalizedLearningsBuilderInput) => normalizedLearningsImpl(input),
+  (input: NormalizedLearningsBuilderInput) => {
+    executionBoundaryOrder.push("normalize");
+    return normalizedLearningsImpl(input);
+  },
 );
 
 mock.module("@/lib/unattended-runtime/normalized-step-input", () => ({
@@ -588,6 +598,7 @@ beforeEach(() => {
   outputIdCounter = 0;
   accessUserPermission = "write";
   accessRequiredPermissionSeen = [];
+  executionBoundaryOrder.length = 0;
   beforeStatusUpdate = null;
   afterEventRecorded = null;
   afterSandboxConnected = null;
@@ -1767,6 +1778,221 @@ describe("normalized background execution boundary (#966)", () => {
         workspacePolicy: "persistent_resume",
       },
     });
+  });
+
+  test("normalizes accepted ref or branch before GitHub access and token work", async () => {
+    const acceptedAgent = buildAgent();
+    const cases: Array<Partial<BackgroundAgentRun>> = [
+      { id: "run-ref-order", ref: "refs/pull/7/head", branch: null },
+      { id: "run-branch-order", ref: null, branch: "feature/order" },
+    ];
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    for (const overrides of cases) {
+      currentRun = buildSnapshotRun(acceptedAgent, overrides);
+      currentAgent = acceptedAgent;
+      executionBoundaryOrder.length = 0;
+
+      await executeBackgroundAgentRun({
+        runId: currentRun.id,
+        workflowRunId: `wf-${currentRun.id}`,
+      });
+
+      expect(executionBoundaryOrder.indexOf("normalize")).toBeLessThan(
+        executionBoundaryOrder.indexOf("verify_repo_access"),
+      );
+    }
+  });
+
+  test("masks GitHub actions when live declared permissions are downgraded", async () => {
+    const acceptedAgent = buildAgent({
+      permissions: { github: { contents: "write" } },
+      githubActions: { push: true },
+    });
+    currentRun = buildSnapshotRun(acceptedAgent, {
+      ref: "refs/heads/main",
+    });
+    currentAgent = buildAgent({
+      permissions: { github: { contents: "read" } },
+      githubActions: { push: true },
+    });
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-permission-downgrade",
+    });
+
+    expect(Object.keys(generateCalls[0]?.tools ?? {})).not.toContain(
+      "github_push",
+    );
+    expect(
+      normalizedSandboxOutputs[0]?.requestedPolicy.declaredPermissions,
+    ).toEqual({ github: { contents: "write" } });
+  });
+
+  test("keeps the normalized legacy model stable after the input is built", async () => {
+    currentRun = buildRun({ ref: "refs/heads/main" });
+    currentAgent = buildAgent({ modelId: "anthropic/claude-haiku-4.5" });
+    normalizedSandboxImpl = (input) => {
+      const normalized = realBuildNormalizedBackgroundSandboxInput(input);
+      currentAgent = currentAgent
+        ? { ...currentAgent, modelId: "user-profile:" }
+        : null;
+      return normalized;
+    };
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-legacy-model-stable",
+    });
+
+    expect(generateCalls[0]?.options.model).toMatchObject({
+      id: "anthropic/claude-haiku-4.5",
+    });
+    expect(currentRun.status).toBe("succeeded");
+  });
+
+  test("stops side effects when the claimed run becomes terminal", async () => {
+    currentRun = buildSnapshotRun(buildAgent(), { ref: "refs/heads/main" });
+    afterEventRecorded = (event) => {
+      if (event.eventName === "background-agent.normalized-input.accepted") {
+        currentRun = { ...currentRun, status: "cancelled" };
+      }
+    };
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-terminal-ownership",
+    });
+
+    expect(connectSandbox).not.toHaveBeenCalled();
+    expect(generate).not.toHaveBeenCalled();
+    expect(currentRun.status).toBe("cancelled");
+  });
+
+  test("stops side effects after workflow ownership changes", async () => {
+    currentRun = buildSnapshotRun(buildAgent(), { ref: "refs/heads/main" });
+    afterEventRecorded = (event) => {
+      if (event.eventName === "background-agent.normalized-input.accepted") {
+        currentRun = {
+          ...currentRun,
+          status: "running",
+          workflowRunId: "wf-new-owner",
+        };
+      }
+    };
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-stale-owner",
+    });
+
+    expect(connectSandbox).not.toHaveBeenCalled();
+    expect(generate).not.toHaveBeenCalled();
+    expect(currentRun).toMatchObject({
+      status: "running",
+      workflowRunId: "wf-new-owner",
+    });
+  });
+
+  test("a stale normalization rejection cannot terminalize a concurrent owner", async () => {
+    currentRun = buildSnapshotRun(buildAgent(), { ref: "refs/heads/main" });
+    normalizedSandboxImpl = () => {
+      throw new normalizedRuntime.NormalizedUnattendedInputError(
+        "normalized_input_invalid",
+        [{ code: "invalid", path: ["prompt"] }],
+      );
+    };
+    beforeStatusUpdate = (input) => {
+      if (input.status === "failed") {
+        currentRun = {
+          ...currentRun,
+          status: "running",
+          workflowRunId: "wf-concurrent-owner",
+        };
+      }
+    };
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-stale-rejection",
+    });
+
+    expect(currentRun).toMatchObject({
+      status: "running",
+      workflowRunId: "wf-concurrent-owner",
+    });
+    expect(
+      recordedEvent("background-agent.normalized-input.rejected"),
+    ).toBeUndefined();
+    expect(recordedEvent("background-agent.run.failed")).toBeUndefined();
+  });
+
+  test("preserves truthful source and external ID for learnings", async () => {
+    const learningsAgent = buildAgent({
+      instructions:
+        "[builtin:pr-review-learnings] Extract learnings from merged pull requests.",
+      githubActions: {},
+    });
+    currentRun = buildSnapshotRun(learningsAgent, {
+      source: "schedule",
+      externalId: "schedule:learnings:2026-07-12T01:00:00Z",
+      ref: "refs/heads/main",
+    });
+    currentAgent = learningsAgent;
+    let eventSeen: LearningsRunnerParams["event"];
+    learningsRunImpl = async (params) => {
+      eventSeen = params.event;
+      return {
+        candidatesExtracted: 0,
+        accepted: 0,
+        merged: 0,
+        rejected: 0,
+      };
+    };
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-learnings-provenance",
+    });
+
+    expect(eventSeen).toMatchObject({
+      source: currentRun.source,
+      externalId: currentRun.externalId,
+    });
+  });
+
+  test("does not persist sandbox attribution for the no-workspace learnings path", async () => {
+    const learningsAgent = buildAgent({
+      instructions:
+        "[builtin:pr-review-learnings] Extract learnings from merged pull requests.",
+      githubActions: {},
+    });
+    currentRun = buildSnapshotRun(learningsAgent, {
+      ref: "refs/heads/main",
+    });
+    currentAgent = learningsAgent;
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-learnings-no-sandbox",
+    });
+
+    const runningUpdate = updateBackgroundAgentRunStatus.mock.calls
+      .map(([input]) => input)
+      .find((input) => input.status === "running");
+    expect(runningUpdate?.sandboxName ?? null).toBeNull();
+    expect(
+      recordedEvent("background-agent.normalized-input.accepted")
+        ?.sandboxName ?? null,
+    ).toBeNull();
   });
 
   test("accepted evidence never serializes the normalized body, instructions, provider configuration, or runtime objects", async () => {
