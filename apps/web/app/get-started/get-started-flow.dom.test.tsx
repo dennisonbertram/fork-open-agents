@@ -1,4 +1,11 @@
-import { registerDomTestHooks, render, within } from "@/tests/dom";
+import {
+  act,
+  registerDomTestHooks,
+  render,
+  userClick,
+  waitFor,
+  within,
+} from "@/tests/dom";
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 
 registerDomTestHooks();
@@ -32,13 +39,15 @@ describe("GetStartedFlow interaction journey (#967)", () => {
     installed = false;
     pushes.length = 0;
     linkSocial.mockClear();
+    linkSocial.mockImplementation(async () => undefined);
   });
 
   test("disconnected Connect GitHub uses the sanitized post-link callback", async () => {
     const { GetStartedFlow } = await flowPromise;
     const { container } = render(<GetStartedFlow />);
-    within(container).getByRole("button", { name: "Connect GitHub" }).click();
-    await Promise.resolve();
+    await userClick(
+      within(container).getByRole("button", { name: "Connect GitHub" }),
+    );
     expect(linkSocial).toHaveBeenCalledWith({
       provider: "github",
       callbackURL: "/api/github/post-link?next=%2Fsessions",
@@ -50,13 +59,15 @@ describe("GetStartedFlow interaction journey (#967)", () => {
     installed = true;
     const { GetStartedFlow } = await flowPromise;
     const first = render(<GetStartedFlow />);
-    within(first.container).getByRole("button", { name: "Start a Session" }).click();
+    await userClick(
+      within(first.container).getByRole("button", { name: "Start a Session" }),
+    );
     expect(pushes).toEqual(["/sessions"]);
     first.unmount();
 
     params = { step: "github", next: "/settings/profile" };
     const second = render(<GetStartedFlow />);
-    within(second.container).getByRole("button", { name: "Continue" }).click();
+    await userClick(within(second.container).getByRole("button", { name: "Continue" }));
     expect(pushes).toEqual(["/sessions", "/settings/profile"]);
   });
 
@@ -66,8 +77,31 @@ describe("GetStartedFlow interaction journey (#967)", () => {
     params = { step: "github", reconnect: "1", next: "/sessions" };
     const { GetStartedFlow } = await flowPromise;
     const { container } = render(<GetStartedFlow />);
-    within(container).getByRole("button", { name: "Reconnect GitHub" }).click();
-    await Promise.resolve();
+    await userClick(
+      within(container).getByRole("button", { name: "Reconnect GitHub" }),
+    );
     expect(linkSocial).toHaveBeenCalledTimes(1);
+  });
+
+  test("pending disables Connect and rejection renders an alert with retry", async () => {
+    let rejectLink: ((reason: Error) => void) | undefined;
+    linkSocial.mockImplementation(
+      () =>
+        new Promise<void>((_resolve, reject) => {
+          rejectLink = reject;
+        }),
+    );
+    const { GetStartedFlow } = await flowPromise;
+    const { container } = render(<GetStartedFlow />);
+    const query = within(container);
+    const connect = query.getByRole("button", { name: "Connect GitHub" });
+
+    await userClick(connect);
+    expect(connect).toBeDisabled();
+
+    await act(async () => rejectLink?.(new Error("network down")));
+    await waitFor(() => expect(query.getByRole("alert")).toBeTruthy());
+    expect(query.getByRole("button", { name: "Try again" })).toBeTruthy();
+    expect(connect).not.toBeDisabled();
   });
 });
