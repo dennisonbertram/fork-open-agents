@@ -105,6 +105,7 @@ let currentLoop = makeLoop();
 let currentRun = makeRun(currentLoop);
 let currentStep = makeStep();
 let claimWins = true;
+let durableRunningClaimHeld = false;
 let updateCalls: Array<Record<string, unknown>> = [];
 let eventCalls: Array<Record<string, unknown>> = [];
 
@@ -124,6 +125,10 @@ const getContextMock = mock(async () => {
 const updateStepMock = mock(async (input: Record<string, unknown>) => {
   updateCalls.push(input);
   if (input.expectedStatuses && !claimWins) return null;
+  if (input.executionClaimGeneration) {
+    if (durableRunningClaimHeld) return null;
+    durableRunningClaimHeld = true;
+  }
   return { ...currentStep, ...input } as AgentLoopStepRun;
 });
 
@@ -182,7 +187,7 @@ let executionGate: Promise<void> = Promise.resolve();
 let releaseExecutions: (() => void) | null = null;
 let enteredExecutions = 0;
 
-const executeAgentStepMock = mock(async () => {
+const executeAgentStepMock = mock(async (_params?: Record<string, unknown>) => {
   tokenSideEffects += 1;
   sandboxSideEffects += 1;
   enteredExecutions += 1;
@@ -202,6 +207,7 @@ beforeEach(() => {
   currentRun = makeRun(currentLoop);
   currentStep = makeStep();
   claimWins = true;
+  durableRunningClaimHeld = false;
   updateCalls = [];
   eventCalls = [];
   normalizedBuildCount = 0;
@@ -233,6 +239,27 @@ describe("agent-loop step ownership regressions", () => {
     const result = await executeAgentLoopStep({
       stepRunId: currentStep.id,
       workflowRunId: "workflow-invalid",
+    });
+
+    expect(result).toMatchObject({
+      outcome: "failure",
+      errorKind: "normalized_input_invalid",
+    });
+    expect(verifyRepoAccessMock).not.toHaveBeenCalled();
+    expect(executeAgentStepMock).not.toHaveBeenCalled();
+  });
+
+  test("invalid normalized input without a persisted branch performs no credentialed repo access", async () => {
+    currentRun = makeRun(currentLoop, {
+      context: {
+        trigger: { token: "PRIVATE-CONTEXT-CANARY" },
+      },
+    });
+
+    const { executeAgentLoopStep } = await executorPromise;
+    const result = await executeAgentLoopStep({
+      stepRunId: currentStep.id,
+      workflowRunId: "workflow-invalid-no-branch",
     });
 
     expect(result).toMatchObject({
@@ -308,6 +335,59 @@ describe("agent-loop step ownership regressions", () => {
     }
     releaseExecutions?.();
     await Promise.all([first, second]);
+
+    expect(normalizedBuildCount).toBe(1);
+    expect(tokenSideEffects).toBe(1);
+    expect(sandboxSideEffects).toBe(1);
+    expect(commitSideEffects).toBe(1);
+  });
+
+  test("running execution acquires a durable claim generation before side effects", async () => {
+    currentStep = makeStep({
+      status: "running",
+      workflowRunId: "workflow-owner",
+    });
+    executionGate = Promise.resolve();
+    const { executeAgentLoopStep } = await executorPromise;
+
+    await executeAgentLoopStep({
+      stepRunId: currentStep.id,
+      workflowRunId: "workflow-owner",
+    });
+
+    expect(updateCalls).toContainEqual(
+      expect.objectContaining({
+        stepRunId: currentStep.id,
+        expectedStatuses: ["running"],
+        expectedWorkflowRunId: "workflow-owner",
+        executionClaimGeneration: expect.any(String),
+      }),
+    );
+    expect(executeAgentStepMock.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({
+        executionClaimGeneration: expect.any(String),
+      }),
+    );
+  });
+
+  test("separate-worker replay after the local guard clears owns no second side-effect path", async () => {
+    currentStep = makeStep({
+      status: "running",
+      workflowRunId: "workflow-owner",
+    });
+    executionGate = Promise.resolve();
+    const { executeAgentLoopStep } = await executorPromise;
+
+    await executeAgentLoopStep({
+      stepRunId: currentStep.id,
+      workflowRunId: "workflow-owner",
+    });
+    // The wrapper's module-local Set is now empty. A second worker/process has
+    // the same effective view, so only durable claim state can reject replay.
+    await executeAgentLoopStep({
+      stepRunId: currentStep.id,
+      workflowRunId: "workflow-owner",
+    });
 
     expect(normalizedBuildCount).toBe(1);
     expect(tokenSideEffects).toBe(1);
