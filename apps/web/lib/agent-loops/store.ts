@@ -1386,6 +1386,12 @@ export async function resumeLoopRun(
         `Cannot resume run ${runId}: source Automation was deleted`,
       );
     }
+    if (existing.status !== "paused") {
+      throw new RunControlError(
+        "illegal_transition",
+        `Cannot resume run ${runId}: not in paused status`,
+      );
+    }
     const activeSource = await tx.query.agentLoops.findFirst({
       where: and(
         eq(agentLoops.id, existing.loopId),
@@ -1399,13 +1405,6 @@ export async function resumeLoopRun(
         `Cannot resume run ${runId}: source Automation is no longer active`,
       );
     }
-    if (existing.status !== "paused") {
-      throw new RunControlError(
-        "illegal_transition",
-        `Cannot resume run ${runId}: not in paused status`,
-      );
-    }
-
     const now = new Date();
     const [run] = await tx
       .update(agentLoopRuns)
@@ -2095,10 +2094,10 @@ export async function retryCurrentStepForWatchdog(params: {
  * Used by the watchdog when it decides to pause the run.
  * Never exposed through any API route — system path only.
  */
-export async function pauseLoopRunSystem(runId: string): Promise<void> {
+export async function pauseLoopRunSystem(runId: string): Promise<boolean> {
   const now = new Date();
 
-  await db
+  const paused = await db
     .update(agentLoopRuns)
     .set({
       status: "paused",
@@ -2110,8 +2109,15 @@ export async function pauseLoopRunSystem(runId: string): Promise<void> {
         sql`${agentLoopRuns.status} IN ('running', 'queued', 'failed', 'stalled')`,
         isNotNull(agentLoopRuns.loopId),
       ),
-    );
+    )
+    .returning({ id: agentLoopRuns.id });
+  return paused.length > 0;
 }
+
+export type AdvanceToFailureEdgeResult =
+  | { outcome: "advanced"; stepRun: AgentLoopStepRun }
+  | { outcome: "no_failure_edge" }
+  | { outcome: "race_lost" };
 
 /**
  * Advances the run to the failure-edge target from a given nodeId, using the
@@ -2124,22 +2130,23 @@ export async function pauseLoopRunSystem(runId: string): Promise<void> {
  */
 export async function advanceToFailureEdge(params: {
   loopRunId: string;
+  expectedStepRunId: string;
   nodeId: string;
   snapshotDefinition: unknown;
-}): Promise<AgentLoopStepRun | null> {
+}): Promise<AdvanceToFailureEdgeResult> {
   const { evaluateEdges } = await import("./edge-evaluator");
   const { loopDefinitionSchema } = await import("./types");
 
   const parsed = loopDefinitionSchema.safeParse(params.snapshotDefinition);
   if (!parsed.success) {
-    return null;
+    return { outcome: "no_failure_edge" };
   }
 
   const definition = parsed.data;
   const { nextNodeId } = evaluateEdges(definition, params.nodeId, "failure");
 
   if (!nextNodeId) {
-    return null;
+    return { outcome: "no_failure_edge" };
   }
 
   // Find the next node's kind
@@ -2148,17 +2155,23 @@ export async function advanceToFailureEdge(params: {
 
   return db.transaction(async (tx) => {
     const [liveRun] = await tx
-      .select({ id: agentLoopRuns.id })
+      .select({
+        id: agentLoopRuns.id,
+        status: agentLoopRuns.status,
+        currentStepRunId: agentLoopRuns.currentStepRunId,
+      })
       .from(agentLoopRuns)
       .where(
         and(
           eq(agentLoopRuns.id, params.loopRunId),
+          inArray(agentLoopRuns.status, ["running", "stalled"]),
+          eq(agentLoopRuns.currentStepRunId, params.expectedStepRunId),
           isNotNull(agentLoopRuns.loopId),
         ),
       )
       .for("update")
       .limit(1);
-    if (!liveRun) return null;
+    if (!liveRun) return { outcome: "race_lost" };
 
     const [attemptRow] = await tx
       .select({ maxAttempt: sql<number>`MAX(${agentLoopStepRuns.attempt})` })
@@ -2182,7 +2195,9 @@ export async function advanceToFailureEdge(params: {
         status: "queued",
       })
       .returning();
-    if (!nextStepRun) return null;
+    if (!nextStepRun) {
+      throw new Error("Watchdog advance failed to create next step");
+    }
 
     const [advanced] = await tx
       .update(agentLoopRuns)
@@ -2196,12 +2211,14 @@ export async function advanceToFailureEdge(params: {
       .where(
         and(
           eq(agentLoopRuns.id, params.loopRunId),
+          inArray(agentLoopRuns.status, ["running", "stalled"]),
+          eq(agentLoopRuns.currentStepRunId, params.expectedStepRunId),
           isNotNull(agentLoopRuns.loopId),
         ),
       )
       .returning({ id: agentLoopRuns.id });
     if (!advanced) throw new Error("Watchdog advance lost its locked source");
-    return nextStepRun;
+    return { outcome: "advanced", stepRun: nextStepRun };
   });
 }
 
@@ -2210,7 +2227,9 @@ export async function advanceToFailureEdge(params: {
  * Factored from run-controls.ts dispatch pattern.
  * Used by watchdog retry and skip paths.
  */
-export async function dispatchStepWorkflow(stepRunId: string): Promise<void> {
+export async function dispatchStepWorkflow(
+  stepRunId: string,
+): Promise<boolean> {
   const [liveStep] = await db
     .select({ id: agentLoopStepRuns.id })
     .from(agentLoopStepRuns)
@@ -2218,15 +2237,30 @@ export async function dispatchStepWorkflow(stepRunId: string): Promise<void> {
       agentLoopRuns,
       and(
         eq(agentLoopRuns.id, agentLoopStepRuns.loopRunId),
+        eq(agentLoopRuns.currentStepRunId, agentLoopStepRuns.id),
+        eq(agentLoopRuns.status, "running"),
         isNotNull(agentLoopRuns.loopId),
       ),
     )
-    .where(eq(agentLoopStepRuns.id, stepRunId))
+    .innerJoin(
+      agentLoops,
+      and(
+        eq(agentLoops.id, agentLoopRuns.loopId),
+        eq(agentLoops.status, "active"),
+      ),
+    )
+    .where(
+      and(
+        eq(agentLoopStepRuns.id, stepRunId),
+        eq(agentLoopStepRuns.status, "queued"),
+      ),
+    )
     .limit(1);
-  if (!liveStep) return;
+  if (!liveStep) return false;
 
   const { start } = await import("workflow/api");
   const { runAgentLoopStepWorkflow } =
     await import("@/app/workflows/agent-loop-step");
   await start(runAgentLoopStepWorkflow, [{ stepRunId }]);
+  return true;
 }

@@ -61,6 +61,25 @@ function repositoryConditions(
   ];
 }
 
+function loopRepositoryConditions(
+  filters: RunsFilters,
+): Array<SQL | undefined> {
+  return [
+    filters.repoOwner
+      ? sql`(
+          lower(${agentLoops.repoOwner}) = ${filters.repoOwner.toLowerCase()}
+          or lower(${agentLoopRuns.executionSnapshot} #>> '{repository,owner}') = ${filters.repoOwner.toLowerCase()}
+        )`
+      : undefined,
+    filters.repoName
+      ? sql`(
+          lower(${agentLoops.repoName}) = ${filters.repoName.toLowerCase()}
+          or lower(${agentLoopRuns.executionSnapshot} #>> '{repository,name}') = ${filters.repoName.toLowerCase()}
+        )`
+      : undefined,
+  ];
+}
+
 function backgroundViewCondition(
   filters: RunsFilters,
   now: Date,
@@ -299,13 +318,12 @@ function createLoopRunLoader(userId: string): RunsSourceLoader {
         and(
           ...compactConditions([
             eq(agentLoopRuns.userId, userId),
-            ...repositoryConditions(
-              query.filters,
-              agentLoops.repoOwner,
-              agentLoops.repoName,
-            ),
+            ...loopRepositoryConditions(query.filters),
             query.filters.automationId
-              ? eq(agentLoopRuns.loopId, query.filters.automationId)
+              ? sql`(
+                  ${agentLoopRuns.loopId} = ${query.filters.automationId}
+                  or ${agentLoopRuns.executionSnapshot} #>> '{source,definitionId}' = ${query.filters.automationId}
+                )`
               : undefined,
             query.filters.triggerSource
               ? sql`${agentLoopRuns.source} = ${query.filters.triggerSource}`
@@ -329,6 +347,11 @@ function createLoopRunLoader(userId: string): RunsSourceLoader {
       .orderBy(desc(agentLoopRuns.createdAt), desc(agentLoopRuns.id))
       .limit(query.limit);
 
+    // Snapshot JSON paths only widen the SQL candidate set. Every retained-row
+    // filter below uses hash/parity-verified frozen evidence, so corrupt JSON is
+    // never trusted for inclusion or display. Because filtering happens after
+    // the bounded query, corrupt candidates can under-fill a page; the cursor
+    // remains deterministic and a later page can still be requested.
     return rows
       .map((row) => {
         const frozenEvidence = getSafeFrozenAgentLoopEvidence({
@@ -338,7 +361,7 @@ function createLoopRunLoader(userId: string): RunsSourceLoader {
           definitionVersion: row.definitionVersion,
           definitionHash: row.definitionHash,
         });
-        return adaptAgentLoopRun(
+        const run = adaptAgentLoopRun(
           {
             id: row.id,
             loopId: row.loopId,
@@ -365,8 +388,33 @@ function createLoopRunLoader(userId: string): RunsSourceLoader {
           },
           { now: query.now },
         );
+        return { run, frozenEvidence };
       })
-      .filter((run) => matchesView(run, query.filters));
+      .filter(({ run, frozenEvidence }) => {
+        if (
+          query.filters.repoOwner &&
+          run.repository?.owner.toLowerCase() !==
+            query.filters.repoOwner.toLowerCase()
+        ) {
+          return false;
+        }
+        if (
+          query.filters.repoName &&
+          run.repository?.name.toLowerCase() !==
+            query.filters.repoName.toLowerCase()
+        ) {
+          return false;
+        }
+        if (
+          query.filters.automationId &&
+          run.automation?.sourceId !== query.filters.automationId &&
+          frozenEvidence?.id !== query.filters.automationId
+        ) {
+          return false;
+        }
+        return matchesView(run, query.filters);
+      })
+      .map(({ run }) => run);
   };
 }
 

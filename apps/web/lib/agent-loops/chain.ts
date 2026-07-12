@@ -51,7 +51,6 @@ import { extractDefinitionGuardrails } from "./definition-guardrails";
 import {
   getAgentLoopStepRunWithContext,
   getAgentLoopRunWithLoop,
-  updateAgentLoopRunStatus,
   conditionallyTransitionRunStatus,
   updateAgentLoopStepRun,
   recordAgentLoopEvent,
@@ -328,6 +327,16 @@ export async function runAgentLoopStep(
       payload["elapsedMs"] = now - loopRun.startedAt.getTime();
     }
 
+    const guardrailErrorMessage = `Guardrail exceeded: ${whichGuardrail}`;
+    const guardrailWinner = await conditionallyTransitionRunStatus({
+      runId: loopRunId,
+      toStatus: "failed",
+      fromStatuses: ["queued", "running", "stalled"],
+      errorKind: "guardrail_exceeded",
+      errorMessage: guardrailErrorMessage,
+    });
+    if (!guardrailWinner) return;
+
     await recordAgentLoopEvent({
       loopRunId,
       stepRunId,
@@ -348,14 +357,6 @@ export async function runAgentLoopStep(
       stepRunId,
       status: "skipped",
       finishedAt: guardrailNow,
-    });
-
-    const guardrailErrorMessage = `Guardrail exceeded: ${whichGuardrail}`;
-    await updateAgentLoopRunStatus({
-      runId: loopRunId,
-      status: "failed",
-      errorKind: "guardrail_exceeded",
-      errorMessage: guardrailErrorMessage,
     });
 
     await recordAgentLoopEvent({
@@ -421,7 +422,7 @@ export async function runAgentLoopStep(
 
   // Re-load loopRun to see if status changed (end node sets it to completed)
   // We detect this by checking if the run's status is now completed/failed
-  // The executor's end-node path calls updateAgentLoopRunStatus(completed).
+  // The executor's end-node path owns the completion transition.
   // We check by looking at the result: if the node was "end", there's no
   // outgoing edge — we check the outcome + whether run is now completed.
   // Actually, we check via the definition snapshot to avoid re-loading.
@@ -664,12 +665,14 @@ async function advanceLoopRun(params: AdvanceParams): Promise<void> {
       const noFailureEdgeMessage = `Step failed with no failure edge: ${nodeId}`;
       const resolvedErrorMessage = errorMessage ?? noFailureEdgeMessage;
 
-      await updateAgentLoopRunStatus({
+      const failed = await conditionallyTransitionRunStatus({
         runId: loopRunId,
-        status: "failed",
+        toStatus: "failed",
+        fromStatuses: ["queued", "running", "stalled"],
         errorKind: resolvedErrorKind,
         errorMessage: resolvedErrorMessage,
       });
+      if (!failed) return;
 
       await recordAgentLoopEvent({
         loopRunId,
@@ -692,6 +695,16 @@ async function advanceLoopRun(params: AdvanceParams): Promise<void> {
       });
     } else {
       // Successful/true/false outcome with no matching edge (dangling or graph gap)
+      const routeMissingMsg = `No outgoing edge from '${nodeId}' for outcome '${outcome}' (dangling or missing edge)`;
+      const failed = await conditionallyTransitionRunStatus({
+        runId: loopRunId,
+        toStatus: "failed",
+        fromStatuses: ["queued", "running", "stalled"],
+        errorKind: "chain_route_missing",
+        errorMessage: routeMissingMsg,
+      });
+      if (!failed) return;
+
       await recordAgentLoopEvent({
         loopRunId,
         stepRunId,
@@ -702,14 +715,6 @@ async function advanceLoopRun(params: AdvanceParams): Promise<void> {
         summary: `No route from ${nodeId} for outcome: ${outcome}`,
         payload: { nodeId, outcome, edgeId },
         workflowRunId,
-      });
-
-      const routeMissingMsg = `No outgoing edge from '${nodeId}' for outcome '${outcome}' (dangling or missing edge)`;
-      await updateAgentLoopRunStatus({
-        runId: loopRunId,
-        status: "failed",
-        errorKind: "chain_route_missing",
-        errorMessage: routeMissingMsg,
       });
 
       await recordAgentLoopEvent({
