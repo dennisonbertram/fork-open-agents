@@ -170,6 +170,36 @@ beforeEach(() => {
 });
 
 describe("resolveComposioToolsForBgRun — typed outcome contract", () => {
+  test("rechecks repository policy without re-resolving the cached session", async () => {
+    const { assertComposioRepoToolkitsStillAllowed } =
+      await composioToolsModulePromise;
+    repoSettingsValues = {
+      selectedToolkitSlugs: ["github"],
+      blockedToolkitSlugs: [],
+    };
+
+    await expect(
+      assertComposioRepoToolkitsStillAllowed({
+        userId: "user-1",
+        repoOwner: "acme",
+        repoName: "widgets",
+        toolkitSlugs: ["github"],
+      }),
+    ).resolves.toBeUndefined();
+    expect(resolveComposioToolsForToolkitList).not.toHaveBeenCalled();
+
+    repoSettingsValues.blockedToolkitSlugs = ["GITHUB"];
+    await expect(
+      assertComposioRepoToolkitsStillAllowed({
+        userId: "user-1",
+        repoOwner: "acme",
+        repoName: "widgets",
+        toolkitSlugs: ["github"],
+      }),
+    ).rejects.toThrow("github");
+    expect(resolveComposioToolsForToolkitList).not.toHaveBeenCalled();
+  });
+
   test("BT-CT-001: empty slugs -> off with reason no_slugs_selected, no blockedSlugs", async () => {
     const { resolveComposioToolsForBgRun } = await composioToolsModulePromise;
 

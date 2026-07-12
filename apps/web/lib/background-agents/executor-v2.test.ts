@@ -365,6 +365,9 @@ mock.module("@open-agents/agent", () => ({
 }));
 
 let inferenceProfileResolutionShouldFail = false;
+let inferenceRouteAvailabilityFailureAt: number | null = null;
+let inferenceRouteAvailabilityCalls = 0;
+const inferenceResolutionCalls: Array<Record<string, unknown>> = [];
 mock.module("@/lib/inference/model-option-id", () => ({
   USER_INFERENCE_OPTION_PREFIX: "user-profile:",
   parseModelOptionSelection: (optionId: string) => {
@@ -379,8 +382,18 @@ mock.module("@/lib/inference/model-option-id", () => ({
     modelId ?? "",
 }));
 mock.module("@/lib/inference/profile-resolution", () => ({
+  assertInferenceProfileRouteAvailable: mock(async () => {
+    inferenceRouteAvailabilityCalls += 1;
+    if (
+      inferenceRouteAvailabilityFailureAt !== null &&
+      inferenceRouteAvailabilityCalls >= inferenceRouteAvailabilityFailureAt
+    ) {
+      throw new Error("Selected inference profile changed after queueing.");
+    }
+  }),
   resolveInferenceProfileModelSelection: mock(
-    async (params: { selection: unknown }) => {
+    async (params: { selection: unknown } & Record<string, unknown>) => {
+      inferenceResolutionCalls.push(params);
       if (inferenceProfileResolutionShouldFail) {
         throw new Error(
           "Selected inference profile is unavailable. Choose another User model or switch back to Vercel AI Gateway.",
@@ -500,6 +513,9 @@ beforeEach(() => {
   beforeStatusUpdate = null;
   sanitizerShouldDeny = null;
   inferenceProfileResolutionShouldFail = false;
+  inferenceRouteAvailabilityFailureAt = null;
+  inferenceRouteAvailabilityCalls = 0;
+  inferenceResolutionCalls.length = 0;
   generateCalls.length = 0;
   generateImpl = async () => ({
     finishReason: "stop",
@@ -974,6 +990,27 @@ describe("(b) required-permission derivation per toggle set", () => {
 });
 
 describe("(c) model resolution", () => {
+  test("uses the concrete default frozen at queue time after the live source changes", async () => {
+    const acceptedAgent = buildAgent({ modelId: null });
+    currentRun = buildSnapshotRun(acceptedAgent, {
+      executionSnapshot: buildBackgroundAgentExecutionSnapshot(acceptedAgent, {
+        route: "gateway",
+        modelId: "anthropic/claude-haiku-4.5",
+      }),
+    });
+    currentAgent = buildAgent({ modelId: "anthropic/claude-opus-4.6" });
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-1",
+    });
+
+    expect(generateCalls[0]?.options.model).toMatchObject({
+      id: "anthropic/claude-haiku-4.5",
+    });
+  });
+
   test("passes the agent's plain gateway modelId as options.model and records it on usage", async () => {
     currentAgent = buildAgent({ modelId: "anthropic/claude-haiku-4.5" });
     const { executeBackgroundAgentRun } = await executorModulePromise;
@@ -994,9 +1031,21 @@ describe("(c) model resolution", () => {
   });
 
   test("resolves a user-profile: selection via resolveInferenceProfileModelSelection", async () => {
-    currentAgent = buildAgent({
+    const acceptedAgent = buildAgent({
       modelId: "user-profile:profile-1:glm-4.6",
     });
+    const executionSnapshot = buildBackgroundAgentExecutionSnapshot(
+      acceptedAgent,
+      {
+        route: "user",
+        modelId: "glm-4.6",
+        inferenceProfileId: "profile-1",
+        provider: "anthropic",
+        baseUrl: "https://inference.example.com/v1",
+      },
+    );
+    currentRun = buildSnapshotRun(acceptedAgent, { executionSnapshot });
+    currentAgent = acceptedAgent;
     const { executeBackgroundAgentRun } = await executorModulePromise;
 
     await executeBackgroundAgentRun({
@@ -1010,6 +1059,43 @@ describe("(c) model resolution", () => {
       "user-v2",
       expect.objectContaining({ model: "glm-4.6" }),
     );
+    expect(inferenceResolutionCalls[0]).toMatchObject({
+      inferenceProfileId: "profile-1",
+      expectedRoute: {
+        provider: "anthropic",
+        baseUrl: "https://inference.example.com/v1",
+      },
+    });
+  });
+
+  test("revokes an accepted user route when the live profile changes before the model turn", async () => {
+    const acceptedAgent = buildAgent({
+      modelId: "user-profile:profile-1:glm-4.6",
+    });
+    const executionSnapshot = buildBackgroundAgentExecutionSnapshot(
+      acceptedAgent,
+      {
+        route: "user",
+        modelId: "glm-4.6",
+        inferenceProfileId: "profile-1",
+        provider: "anthropic",
+        baseUrl: "https://inference.example.com/v1",
+      },
+    );
+    currentRun = buildSnapshotRun(acceptedAgent, { executionSnapshot });
+    currentAgent = acceptedAgent;
+    inferenceRouteAvailabilityFailureAt = 2;
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-1",
+    });
+
+    expect(generate).not.toHaveBeenCalled();
+    expect(recordedEvent("background-agent.run.failed")).toMatchObject({
+      errorKind: "model_resolution_failed",
+    });
   });
 
   test("fails the run with model_resolution_failed instead of silently falling back", async () => {

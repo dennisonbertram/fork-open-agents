@@ -11,6 +11,15 @@ let insertedRunValues: Record<string, unknown> | null = null;
 let persistedRun: Record<string, unknown> | null = null;
 let runInsertWins = true;
 let eventInsertFails = false;
+let inferenceProfile:
+  | {
+      id: string;
+      provider: "anthropic" | "openai-compatible";
+      baseUrl: string | null;
+      enabled: boolean;
+    }
+  | null = null;
+let inferenceProfileLookupCount = 0;
 const recordedEvents: Array<Record<string, unknown>> = [];
 
 const db = {
@@ -61,6 +70,12 @@ const db = {
 };
 
 mock.module("@/lib/db/client", () => ({ db }));
+mock.module("@/lib/db/inference-profiles", () => ({
+  getInferenceProfileByIdForUser: async () => {
+    inferenceProfileLookupCount += 1;
+    return inferenceProfile;
+  },
+}));
 mock.module("nanoid", () => ({ nanoid: () => "run-snapshot-1" }));
 
 const { createRunForTrigger, recordBackgroundAgentEvent } =
@@ -125,6 +140,8 @@ beforeEach(() => {
   persistedRun = null;
   runInsertWins = true;
   eventInsertFails = false;
+  inferenceProfile = null;
+  inferenceProfileLookupCount = 0;
   recordedEvents.length = 0;
 });
 
@@ -144,6 +161,10 @@ describe("createRunForTrigger execution snapshots", () => {
       executionSnapshot: {
         snapshotVersion: 1,
         instructions: "accepted instructions",
+        inference: {
+          route: "gateway",
+          modelId: "anthropic/claude-haiku-4.5",
+        },
       },
     });
     expect(recordedEvents).toContainEqual(
@@ -156,6 +177,23 @@ describe("createRunForTrigger execution snapshots", () => {
         }),
       }),
     );
+  });
+
+  test("freezes the concrete package default when the source inherits it", async () => {
+    await createRunForTrigger({
+      agent: buildAgent({ modelId: null }),
+      trigger,
+      event,
+    });
+
+    expect(insertedRunValues).toMatchObject({
+      executionSnapshot: {
+        inference: {
+          route: "gateway",
+          modelId: "anthropic/claude-opus-4.6",
+        },
+      },
+    });
   });
 
   test("duplicate delivery returns the original immutable snapshot after source edit", async () => {
@@ -188,6 +226,40 @@ describe("createRunForTrigger execution snapshots", () => {
         (entry) => entry.eventName === "background-agent.snapshot.frozen",
       ),
     ).toHaveLength(1);
+  });
+
+  test("duplicate delivery returns the winner without re-resolving a deleted inference profile", async () => {
+    inferenceProfile = {
+      id: "profile-1",
+      provider: "openai-compatible",
+      baseUrl: "https://inference.example.com/v1",
+      enabled: true,
+    };
+    const agent = buildAgent({
+      modelId: "user-profile:profile-1:custom%2Freasoner",
+    });
+    const first = await createRunForTrigger({ agent, trigger, event });
+    expect(first.created).toBe(true);
+    expect(inferenceProfileLookupCount).toBe(1);
+
+    inferenceProfile = null;
+    runInsertWins = false;
+    const duplicate = await createRunForTrigger({ agent, trigger, event });
+
+    expect(duplicate.created).toBe(false);
+    expect(duplicate.run.id).toBe(first.run.id);
+    expect(inferenceProfileLookupCount).toBe(1);
+  });
+
+  test("does not insert a new run when its selected inference profile is missing", async () => {
+    await expect(
+      createRunForTrigger({
+        agent: buildAgent({ modelId: "user-profile:missing:glm-5.2" }),
+        trigger,
+        event,
+      }),
+    ).rejects.toThrow("unavailable");
+    expect(persistedRun).toBeNull();
   });
 
   test("rolls back the winning Run when frozen evidence cannot be inserted", async () => {
