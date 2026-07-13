@@ -15,7 +15,7 @@ function words(value: string): string {
 
 function formatTimestamp(value: string | null): string | null {
   if (!value) return null;
-  return formatRunTimestamp(value);
+  return formatRunTimestamp(value, { includeSeconds: true });
 }
 
 function statusClasses(summary: RunDetailShellSummary): string {

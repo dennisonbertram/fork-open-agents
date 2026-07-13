@@ -58,7 +58,7 @@ describe("RunDetailShell", () => {
     expect(html).toContain("request-1");
     expect(html).toContain("sandbox-1");
     expect(html).toContain("Created");
-    expect(html).toContain("Jul 11, 2026, 10:00 AM UTC");
+    expect(html).toContain("Jul 11, 2026, 10:00:00 AM UTC");
     expect(html).toContain("Updated");
     expect(html).toContain("Started");
     expect(html).toContain("Finished");
