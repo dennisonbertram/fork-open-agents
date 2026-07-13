@@ -34,7 +34,7 @@ let mockInstallationRow: { installationId: number } | undefined = {
 // Controls whether the installation-scoped octokit check succeeds or throws.
 let mockScopedOctokitShouldFail = false;
 let mockScopedOctokitFailStatus = 404;
-let mockServiceRepoGrant = false;
+let mockServiceRepoGrant: { repositoryId: number } | null = null;
 
 // ── Module mocks ───────────────────────────────────────────────────────────────
 
@@ -50,7 +50,7 @@ mock.module("@/lib/db/installations", () => ({
 }));
 
 mock.module("@/lib/db/service-identities", () => ({
-  hasGitHubAppServiceRepoGrant: async (
+  getGitHubAppServiceRepoGrant: async (
     _userId: string,
     _owner: string,
     _repo: string,
@@ -139,7 +139,7 @@ function resetToDefaults() {
   mockInstallationRow = { installationId: 42 };
   mockScopedOctokitShouldFail = false;
   mockScopedOctokitFailStatus = 404;
-  mockServiceRepoGrant = false;
+  mockServiceRepoGrant = null;
 }
 
 beforeEach(resetToDefaults);
@@ -348,7 +348,7 @@ describe("verifyRepoAccess — denial paths", () => {
 describe("verifyRepoAccess — installation-scoped service identity", () => {
   test("permits an exact-repo service grant for read access", async () => {
     mockUserOctokit = null;
-    mockServiceRepoGrant = true;
+    mockServiceRepoGrant = { repositoryId: 99 };
 
     const result = await verifyRepoAccess({
       userId: "service-user",
@@ -368,7 +368,7 @@ describe("verifyRepoAccess — installation-scoped service identity", () => {
 
   test("never promotes an installation-scoped service identity to write", async () => {
     mockUserOctokit = null;
-    mockServiceRepoGrant = true;
+    mockServiceRepoGrant = { repositoryId: 99 };
 
     const result = await verifyRepoAccess({
       userId: "service-user",
@@ -382,7 +382,7 @@ describe("verifyRepoAccess — installation-scoped service identity", () => {
 
   test("keeps missing-token denial without an exact service grant", async () => {
     mockUserOctokit = null;
-    mockServiceRepoGrant = false;
+    mockServiceRepoGrant = null;
 
     const result = await verifyRepoAccess({
       userId: "service-user",

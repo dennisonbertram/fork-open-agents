@@ -1,4 +1,5 @@
 import { getInstallationByAccountLogin } from "@/lib/db/installations";
+import { getGitHubAppServiceRepoGrant } from "@/lib/db/service-identities";
 import { withScopedInstallationOctokit } from "./app";
 import { getUserOctokit } from "./client";
 
@@ -77,34 +78,48 @@ export async function verifyRepoAccess(params: {
 
   // 1. check user can see the repo
   const userOctokit = await getUserOctokit(userId);
-  if (!userOctokit) {
-    return { ok: false, reason: "no_user_token" };
-  }
-
   let repositoryId: number;
   let defaultBranch: string;
   let resolvedUserPermission: "read" | "write" = "read";
-  try {
-    const userRepoResponse = await userOctokit.rest.repos.get({ owner, repo });
-    repositoryId = userRepoResponse.data.id;
-    defaultBranch = userRepoResponse.data.default_branch;
-    resolvedUserPermission = hasUserWritePermission(
-      userRepoResponse.data.permissions,
-    )
-      ? "write"
-      : "read";
-    if (
-      requiredUserPermission === "write" &&
-      resolvedUserPermission === "read"
-    ) {
+  const serviceGrant = userOctokit
+    ? null
+    : await getGitHubAppServiceRepoGrant(userId, owner, repo);
+
+  if (!userOctokit) {
+    if (!serviceGrant) {
+      return { ok: false, reason: "no_user_token" };
+    }
+    if (requiredUserPermission === "write") {
       return { ok: false, reason: "user_no_write" };
     }
-  } catch (error: unknown) {
-    const status = getGitHubHttpStatus(error);
-    if (status === 404 || status === 403) {
-      return { ok: false, reason: "user_no_access" };
+    repositoryId = serviceGrant.repositoryId;
+    defaultBranch = "";
+  } else {
+    try {
+      const userRepoResponse = await userOctokit.rest.repos.get({
+        owner,
+        repo,
+      });
+      repositoryId = userRepoResponse.data.id;
+      defaultBranch = userRepoResponse.data.default_branch;
+      resolvedUserPermission = hasUserWritePermission(
+        userRepoResponse.data.permissions,
+      )
+        ? "write"
+        : "read";
+      if (
+        requiredUserPermission === "write" &&
+        resolvedUserPermission === "read"
+      ) {
+        return { ok: false, reason: "user_no_write" };
+      }
+    } catch (error: unknown) {
+      const status = getGitHubHttpStatus(error);
+      if (status === 404 || status === 403) {
+        return { ok: false, reason: "user_no_access" };
+      }
+      throw error;
     }
-    throw error;
   }
 
   // 2. check installation exists for this owner
@@ -115,14 +130,22 @@ export async function verifyRepoAccess(params: {
 
   // 3. check installation covers this specific repo
   try {
-    await withScopedInstallationOctokit({
+    const installationRepo = await withScopedInstallationOctokit({
       installationId: installation.installationId,
       repositoryId,
       permissions: { contents: "read" },
-      operation: async (installationOctokit) => {
-        await installationOctokit.rest.repos.get({ owner, repo });
-      },
+      operation: (installationOctokit) =>
+        installationOctokit.rest.repos.get({ owner, repo }),
     });
+    if (serviceGrant) {
+      if (
+        installationRepo.data.id !== repositoryId ||
+        !installationRepo.data.default_branch
+      ) {
+        return { ok: false, reason: "app_no_access" };
+      }
+      defaultBranch = installationRepo.data.default_branch;
+    }
   } catch (error: unknown) {
     const status = getGitHubHttpStatus(error);
     const message = error instanceof Error ? error.message : "";
