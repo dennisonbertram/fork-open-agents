@@ -2149,7 +2149,10 @@ describe("BT-S25: configurable stepTimeoutMs is passed to the agent invocation",
     const call = openAgentGenerateMock.mock.calls[0]?.[0] as {
       timeout?: { totalMs?: number };
     };
-    expect(call?.timeout?.totalMs).toBe(5 * 60 * 1000);
+    // The deadline is created before repository and sandbox setup, so the
+    // remaining budget can be slightly below the configured value.
+    expect(call?.timeout?.totalMs).toBeGreaterThanOrEqual(5 * 60 * 1000 - 1000);
+    expect(call?.timeout?.totalMs).toBeLessThanOrEqual(5 * 60 * 1000);
   });
 
   test("BT-S25b: omitted stepTimeoutMs falls back to the 10-minute default", async () => {
@@ -2170,7 +2173,9 @@ describe("BT-S25: configurable stepTimeoutMs is passed to the agent invocation",
     };
     // The executor passes the remaining time against a deadline created before
     // sandbox setup, so a millisecond or two may already have elapsed.
-    expect(call?.timeout?.totalMs).toBeGreaterThan(0);
+    expect(call?.timeout?.totalMs).toBeGreaterThanOrEqual(
+      10 * 60 * 1000 - 1000,
+    );
     expect(call?.timeout?.totalMs).toBeLessThanOrEqual(10 * 60 * 1000);
   });
 
