@@ -38,12 +38,17 @@ mock.module("sonner", () => ({
 mock.module("../../agent-spec-editor", () => ({
   AgentSpecEditor: ({
     onRunTest,
+    testAlert,
   }: {
     onRunTest: () => void | Promise<void>;
+    testAlert?: string | null;
   }) => (
-    <button onClick={() => void onRunTest()} type="button">
-      Run a test
-    </button>
+    <>
+      <button onClick={() => void onRunTest()} type="button">
+        Run a test
+      </button>
+      {testAlert ? <div role="alert">{testAlert}</div> : null}
+    </>
   ),
 }));
 
