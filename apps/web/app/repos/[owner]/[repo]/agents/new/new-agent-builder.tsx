@@ -229,6 +229,7 @@ export function NewAgentBuilder({
         readinessReady={readinessReady}
         persistedEnabled={persistedEnabled}
         testRunId={testRunId}
+        testAlert={testAlert}
         onSave={handleSave}
         onRunTest={handleRunTest}
       />
@@ -263,14 +264,6 @@ export function NewAgentBuilder({
         <p className="text-sm text-destructive" role="alert">
           {saveError}
         </p>
-      )}
-      {testAlert && (
-        <div
-          className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive"
-          role="alert"
-        >
-          {testAlert}
-        </div>
       )}
       {message && <p className="text-xs text-muted-foreground">{message}</p>}
     </div>
