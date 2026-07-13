@@ -647,7 +647,13 @@ function resetMocks() {
   mintInstallationTokenMock.mockClear();
   revokeInstallationTokenMock.mockClear();
   withScopedInstallationOctokitMock.mockClear();
-  connectSandboxMock.mockClear();
+  connectSandboxMock.mockReset();
+  connectSandboxMock.mockImplementation(async (_config: unknown) => {
+    if (sandboxConnectShouldThrow) {
+      throw sandboxConnectShouldThrow;
+    }
+    return sandboxMock;
+  });
   sandboxMock.readFile.mockClear();
   sandboxMock.exec.mockClear();
   sandboxMock.stop.mockClear();
@@ -1561,6 +1567,45 @@ describe("BT-S11: connectSandbox throws → sandbox_unavailable", () => {
 
     expect(result.outcome).toBe("failure");
     expect(result.errorKind).toBe("sandbox_unavailable");
+  });
+
+  test("BT-S11a: hanging sandbox connection is bounded by the step timeout", async () => {
+    connectSandboxMock.mockImplementation(
+      () => new Promise<never>(() => undefined),
+    );
+
+    const result = await Promise.race([
+      executeAgentStep({
+        stepRunId: "step-run-1",
+        workflowRunId: "wf-run-1",
+        loopRunId: "loop-run-1",
+        node: makeAgentStepNode() as Parameters<
+          typeof executeAgentStep
+        >[0]["node"],
+        loopRun: currentLoopRun,
+        loop: currentLoop,
+        startedAt: Date.now(),
+        stepTimeoutMs: 25,
+      }),
+      new Promise<Awaited<ReturnType<typeof executeAgentStep>>>((resolve) => {
+        setTimeout(
+          () =>
+            resolve({
+              outcome: "failure",
+              errorKind: "test_timeout",
+              errorMessage: "executeAgentStep did not return",
+            }),
+          100,
+        );
+      }),
+    ]);
+
+    expect(result.outcome).toBe("failure");
+    expect(result.errorKind).toBe("sandbox_unavailable");
+    expect(result.errorMessage).toContain("timed out");
+    expect(revokeInstallationTokenMock).toHaveBeenCalledWith(
+      "ghs_SHOULD_NOT_APPEAR_IN_EVENTS",
+    );
   });
 });
 
