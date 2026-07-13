@@ -3,18 +3,12 @@
 import { Clock3, ShieldAlert } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { AgentLoopWatchdogRun } from "@/lib/db/schema";
+import { formatRunTimestamp } from "@/lib/date/format-run-timestamp";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function formatDate(value: Date | string | null): string {
-  if (!value) return "-";
-  return new Intl.DateTimeFormat(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    second: "2-digit",
-  }).format(new Date(value));
+  return formatRunTimestamp(value, { includeSeconds: true });
 }
 
 function capitalize(s: string): string {

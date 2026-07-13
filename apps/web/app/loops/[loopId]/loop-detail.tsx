@@ -220,6 +220,7 @@ export function LoopDetail({
 
   const { loop } = loopData ?? initialLoopData;
   const runs = runsData?.runs ?? [];
+  const [runNowError, setRunNowError] = useState<string | null>(null);
   // triggersData (from the #762 triggers route) carries the humanized
   // schedule + nextRunAt; fall back to the loop-detail page's initial
   // trigger summary (no humanized fields) until the client fetch resolves,
@@ -245,7 +246,11 @@ export function LoopDetail({
   const { runNow: handleRunNow, runningNow } = useLoopRunNow({
     loopId,
     surface,
-    onStart: () => setActiveRunNotice(null),
+    onStart: () => {
+      setActiveRunNotice(null);
+      setRunNowError(null);
+    },
+    onError: setRunNowError,
     onActiveRun: (id) => setActiveRunNotice(id),
     resolveActiveRunId: () =>
       runs.find(
@@ -357,6 +362,15 @@ export function LoopDetail({
             </Button>
           </div>
         </div>
+
+        {runNowError ? (
+          <p
+            role="alert"
+            className="rounded-md border border-red-500/25 bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-300"
+          >
+            {runNowError}
+          </p>
+        ) : null}
 
         {automationSurface ? (
           <>

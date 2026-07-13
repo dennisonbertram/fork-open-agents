@@ -2,11 +2,11 @@
  * run-detail.revalidation.test.ts (#767, walk-3 finding)
  *
  * After a control action (pause/resume/cancel/retry) completes, run-detail
- * must revalidate BOTH its own run SWR key and the loop's runs-list SWR key
+ * must revalidate its own run SWR resource and the loop's runs-list SWR key
  * (loop-detail.tsx) — otherwise the two surfaces can show contradictory
- * statuses for the same run. Pinned via source inspection, consistent with
- * this repo's existing pattern for handler wiring that isn't easily driven
- * through a DOM click event (see run-actions.dispatch-failed.test.tsx).
+ * statuses for the same run. The run resource is refreshed through the
+ * polling hook's mutate function so the detail page receives the new status
+ * before the action reports success.
  */
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "fs";
@@ -20,12 +20,13 @@ describe("RunDetail SWR revalidation on control actions (#767)", () => {
     expect(SOURCE).toContain('import { mutate as globalMutate } from "swr"');
   });
 
-  test("onActionComplete revalidates both the run key and the loop's runs-list key", () => {
-    const onActionCompleteIdx = SOURCE.indexOf("onActionComplete={() => {");
+  test("onActionComplete awaits the run refresh and revalidates the loop's runs-list key", () => {
+    const onActionCompleteIdx = SOURCE.indexOf(
+      "onActionComplete={async () => {",
+    );
     expect(onActionCompleteIdx).toBeGreaterThan(-1);
     const block = SOURCE.slice(onActionCompleteIdx, onActionCompleteIdx + 400);
-    expect(block).toContain("globalMutate(");
-    expect(block).toContain("/api/agent-loop-runs/");
+    expect(block).toContain("await refreshRun()");
     expect(block).toContain("globalMutate(loopRunsListSwrKey(loop.id))");
   });
 });

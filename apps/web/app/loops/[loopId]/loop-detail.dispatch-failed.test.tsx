@@ -112,4 +112,13 @@ describe("BT-DF-03: handleRunNow surfaces dispatch_failed (502) as a typed failu
     expect(source).toContain("res.status === 502");
     expect(source).toContain(EXPECTED_COPY);
   });
+
+  test("Run now exposes dispatch failures inline for users who miss transient toasts", () => {
+    const source = readFileSync(
+      join(import.meta.dir, "loop-detail.tsx"),
+      "utf8",
+    );
+    expect(source).toContain("onError: setRunNowError");
+    expect(source).toContain('role="alert"');
+  });
 });

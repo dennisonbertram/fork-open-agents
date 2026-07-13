@@ -25,6 +25,7 @@ type UseLoopRunNowOptions = {
   loopId: string;
   surface?: "legacy" | "automation";
   onStart?: () => void;
+  onError?: (message: string) => void;
   onActiveRun?: (activeRunId: string) => void;
   resolveActiveRunId?: () => string | undefined;
   onStarted?: (runId: string) => void;
@@ -34,6 +35,7 @@ export function useLoopRunNow({
   loopId,
   surface = "legacy",
   onStart,
+  onError,
   onActiveRun,
   resolveActiveRunId,
   onStarted,
@@ -48,6 +50,10 @@ export function useLoopRunNow({
   async function runNow() {
     setRunningNow(true);
     onStart?.();
+    const reportError = (message: string) => {
+      onError?.(message);
+      toast.error(message);
+    };
     try {
       const res = await fetch(`/api/agent-loops/${loopId}/runs`, {
         method: "POST",
@@ -65,7 +71,7 @@ export function useLoopRunNow({
           onActiveRun?.(activeId);
           return;
         }
-        toast.error(body.message ?? "Cannot start run right now.");
+        reportError(body.message ?? "Cannot start run right now.");
         return;
       }
 
@@ -77,7 +83,7 @@ export function useLoopRunNow({
           errorKind?: string;
           runId?: string;
         };
-        toast.error(DISPATCH_FAILED_TOAST);
+        reportError(DISPATCH_FAILED_TOAST);
         if (body.runId) {
           router.push(runHref(body.runId));
         }
@@ -88,7 +94,7 @@ export function useLoopRunNow({
         const body = (await res.json().catch(() => ({}))) as {
           message?: string;
         };
-        toast.error(body.message ?? "Failed to start run.");
+        reportError(body.message ?? "Failed to start run.");
         return;
       }
 
@@ -97,7 +103,7 @@ export function useLoopRunNow({
       onStarted?.(runId);
       router.push(runHref(runId));
     } catch {
-      toast.error("Failed to start run.");
+      reportError("Failed to start run.");
     } finally {
       setRunningNow(false);
     }
