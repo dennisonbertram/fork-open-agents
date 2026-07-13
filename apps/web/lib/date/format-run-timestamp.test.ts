@@ -14,6 +14,12 @@ describe("formatRunTimestamp (#863)", () => {
     );
   });
 
+  test("can preserve seconds for run-detail evidence", () => {
+    expect(
+      formatRunTimestamp("2026-07-03T21:20:34Z", { includeSeconds: true }),
+    ).toBe("Jul 3, 2026, 9:20:34 PM UTC");
+  });
+
   test("never renders the browser/server-local-timezone-shifted hour", () => {
     const result = formatRunTimestamp(new Date("2026-07-03T21:20:00Z"));
     expect(result).not.toMatch(/5:20/);
