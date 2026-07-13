@@ -2,8 +2,8 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { GitHubRepositoryCombobox } from "@/components/github-repository-combobox";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { canonicalNewAutomationUrl } from "@/lib/automations/definition-routes";
 
@@ -22,18 +22,17 @@ export function parseAutomationRepository(value: string): {
 
 export function AutomationRepositoryPicker() {
   const router = useRouter();
-  const [repository, setRepository] = useState("");
+  const [repository, setRepository] = useState({ owner: "", name: "" });
   const [error, setError] = useState<string | null>(null);
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const parsed = parseAutomationRepository(repository);
-    if (!parsed) {
-      setError("Enter a repository as owner/name.");
+    if (!repository.owner || !repository.name) {
+      setError("Choose a connected GitHub repository.");
       return;
     }
     setError(null);
-    router.push(canonicalNewAutomationUrl(parsed));
+    router.push(canonicalNewAutomationUrl(repository));
   }
 
   return (
@@ -42,18 +41,19 @@ export function AutomationRepositoryPicker() {
       className="space-y-4 rounded-lg border border-border bg-card p-5"
     >
       <div className="space-y-2">
-        <Label htmlFor="automation-repository">Repository</Label>
-        <Input
-          id="automation-repository"
+        <Label>Repository</Label>
+        <GitHubRepositoryCombobox
           value={repository}
-          onChange={(event) => setRepository(event.target.value)}
-          placeholder="owner/repository"
-          aria-describedby={error ? "automation-repository-error" : undefined}
-          aria-invalid={error ? true : undefined}
+          onChange={(nextRepository) => {
+            setRepository(nextRepository);
+            setError(null);
+          }}
+          placeholder="Search connected repositories"
         />
         <p className="text-pretty text-xs text-muted-foreground">
-          Choose the GitHub repository this Automation will observe and modify
-          according to its configured permissions.
+          Search the GitHub repositories connected to your account. The
+          Automation will observe and modify the selected repository according
+          to its configured permissions.
         </p>
         {error ? (
           <p
