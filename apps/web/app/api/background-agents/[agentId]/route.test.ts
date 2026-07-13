@@ -137,6 +137,46 @@ describe("/api/background-agents/[agentId]", () => {
     );
   });
 
+  test("PATCH forwards only fields explicitly supplied by the caller", async () => {
+    const { PATCH } = await routeModulePromise;
+
+    const response = await PATCH(
+      new Request("http://localhost/api/background-agents/agent-1", {
+        method: "PATCH",
+        body: JSON.stringify({ status: "enabled" }),
+      }),
+      context(),
+    );
+
+    expect(response.status).toBe(200);
+    expect(updateBackgroundAgent).toHaveBeenCalledWith("user-1", "agent-1", {
+      status: "enabled",
+    });
+  });
+
+  test("PATCH preserves explicit empty execution config values", async () => {
+    const { PATCH } = await routeModulePromise;
+
+    const response = await PATCH(
+      new Request("http://localhost/api/background-agents/agent-1", {
+        method: "PATCH",
+        body: JSON.stringify({
+          permissions: {},
+          composioToolkitSlugs: [],
+          githubActions: {},
+        }),
+      }),
+      context(),
+    );
+
+    expect(response.status).toBe(200);
+    expect(updateBackgroundAgent).toHaveBeenCalledWith("user-1", "agent-1", {
+      permissions: {},
+      composioToolkitSlugs: [],
+      githubActions: {},
+    });
+  });
+
   test("PATCH returns not found for agents outside the user scope", async () => {
     updateBackgroundAgent.mockImplementationOnce(async () => null);
     const { PATCH } = await routeModulePromise;
