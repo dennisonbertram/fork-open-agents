@@ -71,6 +71,9 @@ describe("background agent config surface (#745)", () => {
   test("createBackgroundAgentSchema defaults githubActions, writeScope, requireCiGreenForMerge, modelId", () => {
     const parsed = createBackgroundAgentSchema.parse(baseInput);
 
+    expect(parsed.status).toBe("disabled");
+    expect(parsed.permissions).toEqual({});
+    expect(parsed.composioToolkitSlugs).toEqual([]);
     expect(parsed.githubActions).toEqual({
       open_pull_request: true,
       comment_on_pr_or_issue: true,
@@ -78,6 +81,7 @@ describe("background agent config surface (#745)", () => {
     expect(parsed.writeScope).toEqual({ mode: "this_repo" });
     expect(parsed.requireCiGreenForMerge).toBe(true);
     expect(parsed.modelId).toBeNull();
+    expect(parsed.runBudgetPerTarget).toBe(10);
   });
 
   test("createBackgroundAgentSchema accepts a full githubActions toggle set", () => {
@@ -200,15 +204,49 @@ describe("background agent config surface (#745)", () => {
   });
 
   test("updateBackgroundAgentSchema allows partial config-surface updates", () => {
-    // Note: like the existing outputMode/permissions/status fields on this
-    // schema, defaulted fields fill in on `.partial()` even when omitted from
-    // the update payload — store.ts guards persistence with `!== undefined`
-    // checks against the *input* object, not this parsed result.
     const parsed = updateBackgroundAgentSchema.parse({
       requireCiGreenForMerge: false,
     });
 
     expect(parsed.requireCiGreenForMerge).toBe(false);
+  });
+
+  test("updateBackgroundAgentSchema does not apply create defaults to omitted fields", () => {
+    expect(updateBackgroundAgentSchema.parse({ status: "enabled" })).toEqual({
+      status: "enabled",
+    });
+  });
+
+  test("updateBackgroundAgentSchema does not retain create-time default parsers", () => {
+    for (const field of [
+      "status",
+      "permissions",
+      "composioToolkitSlugs",
+      "githubActions",
+      "writeScope",
+      "requireCiGreenForMerge",
+      "modelId",
+      "runBudgetPerTarget",
+    ] as const) {
+      const result = updateBackgroundAgentSchema.shape[field]
+        .unwrap()
+        .safeParse(undefined);
+      expect(result.success && result.data !== undefined).toBe(false);
+    }
+  });
+
+  test("updateBackgroundAgentSchema preserves explicit empty values", () => {
+    expect(
+      updateBackgroundAgentSchema.parse({
+        permissions: {},
+        composioToolkitSlugs: [],
+        githubActions: {},
+      }),
+    ).toEqual({
+      permissions: {},
+      composioToolkitSlugs: [],
+      githubActions: {},
+    });
   });
 
   test("updateBackgroundAgentSchema rejects invalid modelId shape", () => {
