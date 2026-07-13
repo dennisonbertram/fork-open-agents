@@ -34,6 +34,7 @@ let mockInstallationRow: { installationId: number } | undefined = {
 // Controls whether the installation-scoped octokit check succeeds or throws.
 let mockScopedOctokitShouldFail = false;
 let mockScopedOctokitFailStatus = 404;
+let mockServiceRepoGrant = false;
 
 // ── Module mocks ───────────────────────────────────────────────────────────────
 
@@ -46,6 +47,14 @@ mock.module("@/lib/db/installations", () => ({
     _userId: string,
     _accountLogin: string,
   ) => mockInstallationRow,
+}));
+
+mock.module("@/lib/db/service-identities", () => ({
+  hasGitHubAppServiceRepoGrant: async (
+    _userId: string,
+    _owner: string,
+    _repo: string,
+  ) => mockServiceRepoGrant,
 }));
 
 mock.module("./app", () => ({
@@ -67,7 +76,9 @@ mock.module("./app", () => ({
     const installationOctokit = {
       rest: {
         repos: {
-          get: async (_args: unknown) => ({ data: {} }),
+          get: async (_args: unknown) => ({
+            data: { id: 99, default_branch: "main" },
+          }),
         },
       },
     };
@@ -128,6 +139,7 @@ function resetToDefaults() {
   mockInstallationRow = { installationId: 42 };
   mockScopedOctokitShouldFail = false;
   mockScopedOctokitFailStatus = 404;
+  mockServiceRepoGrant = false;
 }
 
 beforeEach(resetToDefaults);
@@ -330,5 +342,55 @@ describe("verifyRepoAccess — denial paths", () => {
     if (!result.ok) {
       expect(result.reason).toBe("app_no_access");
     }
+  });
+});
+
+describe("verifyRepoAccess — installation-scoped service identity", () => {
+  test("permits an exact-repo service grant for read access", async () => {
+    mockUserOctokit = null;
+    mockServiceRepoGrant = true;
+
+    const result = await verifyRepoAccess({
+      userId: "service-user",
+      owner: "acme",
+      repo: "disposable-proof",
+      requiredUserPermission: "read",
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      installationId: 42,
+      repositoryId: 99,
+      defaultBranch: "main",
+      userPermission: "read",
+    });
+  });
+
+  test("never promotes an installation-scoped service identity to write", async () => {
+    mockUserOctokit = null;
+    mockServiceRepoGrant = true;
+
+    const result = await verifyRepoAccess({
+      userId: "service-user",
+      owner: "acme",
+      repo: "disposable-proof",
+      requiredUserPermission: "write",
+    });
+
+    expect(result).toEqual({ ok: false, reason: "user_no_write" });
+  });
+
+  test("keeps missing-token denial without an exact service grant", async () => {
+    mockUserOctokit = null;
+    mockServiceRepoGrant = false;
+
+    const result = await verifyRepoAccess({
+      userId: "service-user",
+      owner: "acme",
+      repo: "other-repo",
+      requiredUserPermission: "read",
+    });
+
+    expect(result).toEqual({ ok: false, reason: "no_user_token" });
   });
 });
