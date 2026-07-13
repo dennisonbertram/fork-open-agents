@@ -3,6 +3,7 @@ import {
   canaryExitCodeForStatus,
   findDiagnosisHref,
   formatCanaryResult,
+  isHealthyAccountSnapshot,
   isCanaryConfigRequired,
   readCanaryConfig,
   runAuthenticatedCanary,
@@ -171,11 +172,51 @@ describe("ops authenticated canary", () => {
     ).toBeNull();
   });
 
+  test("requires every account snapshot source to be healthy", () => {
+    const healthy = {
+      sourceStatus: [
+        { source: "session", status: "ok", itemCount: 0 },
+        { source: "chat_workflow", status: "ok", itemCount: 0 },
+        { source: "background_agent", status: "ok", itemCount: 0 },
+        { source: "agent_loop", status: "ok", itemCount: 0 },
+        { source: "scheduled_agents", status: "ok", itemCount: 0 },
+      ],
+      needsAttention: [],
+      running: [],
+      recentlyCompleted: [],
+      waitingOnUser: [],
+      stale: [],
+    };
+
+    expect(isHealthyAccountSnapshot(healthy)).toBe(true);
+    expect(
+      isHealthyAccountSnapshot({
+        ...healthy,
+        sourceStatus: [
+          ...healthy.sourceStatus.slice(0, 4),
+          {
+            source: "scheduled_agents",
+            status: "failed",
+            itemCount: 0,
+          },
+        ],
+      }),
+    ).toBe(false);
+    expect(isHealthyAccountSnapshot({ running: [] })).toBe(false);
+  });
+
   test("passes a new disposable identity without inventing a diagnosis target", async () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = Object.assign(
       async () =>
-        Response.json({
+      Response.json({
+          sourceStatus: [
+            { source: "session", status: "ok", itemCount: 0 },
+            { source: "chat_workflow", status: "ok", itemCount: 0 },
+            { source: "background_agent", status: "ok", itemCount: 0 },
+            { source: "agent_loop", status: "ok", itemCount: 0 },
+            { source: "scheduled_agents", status: "ok", itemCount: 0 },
+          ],
           needsAttention: [],
           running: [],
           recentlyCompleted: [],
@@ -222,6 +263,13 @@ describe("ops authenticated canary", () => {
         requestedUrls.push(url);
         return url.includes("/api/account/status")
           ? Response.json({
+              sourceStatus: [
+                { source: "session", status: "ok", itemCount: 0 },
+                { source: "chat_workflow", status: "ok", itemCount: 0 },
+                { source: "background_agent", status: "ok", itemCount: 1 },
+                { source: "agent_loop", status: "ok", itemCount: 0 },
+                { source: "scheduled_agents", status: "ok", itemCount: 0 },
+              ],
               running: [
                 {
                   diagnosisHref:
