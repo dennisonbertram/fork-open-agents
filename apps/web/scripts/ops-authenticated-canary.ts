@@ -157,6 +157,51 @@ const diagnosisSources = new Set([
   "agent_loop",
 ]);
 
+const accountSnapshotSources = new Set([
+  "session",
+  "chat_workflow",
+  "background_agent",
+  "agent_loop",
+  "scheduled_agents",
+]);
+
+export function isHealthyAccountSnapshot(body: unknown): boolean {
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return false;
+  }
+
+  const snapshot = body as Record<string, unknown>;
+  const sourceStatus = snapshot.sourceStatus;
+  if (!Array.isArray(sourceStatus) || sourceStatus.length !== 5) {
+    return false;
+  }
+
+  const observedSources = new Set<string>();
+  for (const item of sourceStatus) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      return false;
+    }
+    const record = item as Record<string, unknown>;
+    if (
+      typeof record.source !== "string" ||
+      !accountSnapshotSources.has(record.source) ||
+      record.status !== "ok" ||
+      typeof record.itemCount !== "number"
+    ) {
+      return false;
+    }
+    observedSources.add(record.source);
+  }
+
+  if (observedSources.size !== accountSnapshotSources.size) {
+    return false;
+  }
+
+  return [...diagnosisSections, "scheduledAgents"].every((section) =>
+    Array.isArray(snapshot[section]),
+  );
+}
+
 export function findDiagnosisHref(body: unknown): string | null {
   if (!body || typeof body !== "object" || Array.isArray(body)) {
     return null;
@@ -266,6 +311,23 @@ export async function runAuthenticatedCanary(
       status: "passed",
       evidence: "account/status accepted the test session.",
     };
+
+    if (!isHealthyAccountSnapshot(account.body)) {
+      steps.push({
+        name: "account-snapshot",
+        status: "failed",
+        errorKind: "account_snapshot_unhealthy",
+        evidence:
+          "account/status returned malformed or degraded source evidence.",
+      });
+      return {
+        requestId,
+        status: "failed",
+        targetUrl: config.targetUrl,
+        repo: config.testRepo,
+        steps,
+      };
+    }
 
     const diagnosisHref = findDiagnosisHref(account.body);
     if (!diagnosisHref) {

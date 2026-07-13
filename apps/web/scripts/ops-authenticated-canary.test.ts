@@ -186,6 +186,7 @@ describe("ops authenticated canary", () => {
       recentlyCompleted: [],
       waitingOnUser: [],
       stale: [],
+      scheduledAgents: [],
     };
 
     expect(isHealthyAccountSnapshot(healthy)).toBe(true);
@@ -209,7 +210,7 @@ describe("ops authenticated canary", () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = Object.assign(
       async () =>
-      Response.json({
+        Response.json({
           sourceStatus: [
             { source: "session", status: "ok", itemCount: 0 },
             { source: "chat_workflow", status: "ok", itemCount: 0 },
@@ -222,6 +223,7 @@ describe("ops authenticated canary", () => {
           recentlyCompleted: [],
           waitingOnUser: [],
           stale: [],
+          scheduledAgents: [],
         }),
       { preconnect: originalFetch.preconnect },
     );
@@ -276,6 +278,11 @@ describe("ops authenticated canary", () => {
                     "/api/account/diagnosis?source=agent_loop&id=loop-run-1",
                 },
               ],
+              needsAttention: [],
+              recentlyCompleted: [],
+              waitingOnUser: [],
+              stale: [],
+              scheduledAgents: [],
             })
           : Response.json({ diagnosis: { status: "running" } });
       },
