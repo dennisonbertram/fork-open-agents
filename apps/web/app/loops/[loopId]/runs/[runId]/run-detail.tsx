@@ -410,8 +410,11 @@ export function RunDetail({
         sourceAvailable={loop !== null}
         status={run.status}
         onActionComplete={async () => {
-          await refreshRun();
-          if (loop) void globalMutate(loopRunsListSwrKey(loop.id));
+          try {
+            await refreshRun();
+          } finally {
+            if (loop) void globalMutate(loopRunsListSwrKey(loop.id));
+          }
         }}
       />
 

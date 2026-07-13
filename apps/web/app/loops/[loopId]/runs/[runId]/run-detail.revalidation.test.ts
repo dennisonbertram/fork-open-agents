@@ -26,7 +26,9 @@ describe("RunDetail SWR revalidation on control actions (#767)", () => {
     );
     expect(onActionCompleteIdx).toBeGreaterThan(-1);
     const block = SOURCE.slice(onActionCompleteIdx, onActionCompleteIdx + 400);
+    expect(block).toContain("try {");
     expect(block).toContain("await refreshRun()");
+    expect(block).toContain("finally {");
     expect(block).toContain("globalMutate(loopRunsListSwrKey(loop.id))");
   });
 });
