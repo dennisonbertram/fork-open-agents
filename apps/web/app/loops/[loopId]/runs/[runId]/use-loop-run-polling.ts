@@ -99,6 +99,7 @@ export type UseLoopRunPollingResult = {
   data: GetAgentLoopRunDetailResponse | undefined;
   error: unknown;
   liveness: LoopRunLiveness;
+  refresh: () => Promise<GetAgentLoopRunDetailResponse | undefined>;
 };
 
 /**
@@ -184,7 +185,7 @@ export function useLoopRunPolling(
     staleAfterMs: options.staleAfterMs,
   });
 
-  return { data: swr.data, error: swr.error, liveness };
+  return { data: swr.data, error: swr.error, liveness, refresh: swr.mutate };
 }
 
 /**

@@ -33,7 +33,7 @@ type RunActionsProps = {
   sourceAvailable?: boolean;
   /** Present when a previous "Run now" returned 409 active_run — render a notice */
   activeRunId?: string;
-  onActionComplete?: () => void;
+  onActionComplete?: () => void | Promise<void>;
 };
 
 /**
@@ -76,6 +76,7 @@ export function RunActions({
   onActionComplete,
 }: RunActionsProps) {
   const [loading, setLoading] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const isRetryable = RETRYABLE_STATUSES.has(status);
   const isNonTerminal = NON_TERMINAL_STATUSES.has(status);
 
@@ -83,18 +84,20 @@ export function RunActions({
 
   async function handleAction(action: string, label: string) {
     setLoading(action);
+    setActionError(null);
     try {
       await postControl(runId, action);
       toast.success(`${label} successful`);
-      onActionComplete?.();
+      await onActionComplete?.();
     } catch (err) {
       const message =
         err instanceof Error ? err.message : `Failed to ${action}`;
+      setActionError(message);
       toast.error(message);
       // dispatch_failed means the server already marked the run failed;
       // refresh the run view since terminal statuses are not polled.
       if ((err as { errorKind?: string }).errorKind === "dispatch_failed") {
-        onActionComplete?.();
+        await onActionComplete?.();
       }
     } finally {
       setLoading(null);
@@ -103,6 +106,25 @@ export function RunActions({
 
   return (
     <div className="flex flex-wrap items-center gap-2">
+      {loading ? (
+        <p
+          role="status"
+          aria-live="polite"
+          className="w-full text-xs text-muted-foreground"
+        >
+          {loading === "cancel"
+            ? "Cancelling run…"
+            : `${loading[0]?.toUpperCase()}${loading.slice(1)}ing run…`}
+        </p>
+      ) : null}
+      {actionError ? (
+        <p
+          role="alert"
+          className="w-full rounded-md border border-red-500/25 bg-red-500/10 px-3 py-2 text-xs text-red-700 dark:text-red-300"
+        >
+          {actionError}
+        </p>
+      ) : null}
       {/* 409 active run notice */}
       {activeRunId && (
         <p className="w-full rounded-md border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
