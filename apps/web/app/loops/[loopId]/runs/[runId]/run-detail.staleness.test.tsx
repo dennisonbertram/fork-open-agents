@@ -126,4 +126,36 @@ describe("RunDetail liveness indicator (#880)", () => {
     expect(html).not.toContain("Updated");
     expect(html).not.toContain("Live updates stalled");
   });
+
+  test("step timestamps are deterministic and explicitly labeled UTC", async () => {
+    mockLiveness = { kind: "terminal" };
+    const { RunDetail } = await runDetailModulePromise;
+    const data = makeRunDetail({
+      run: { ...makeRunDetail().run, status: "failed" },
+      steps: [
+        {
+          id: "step_1",
+          loopRunId: "run_abc",
+          nodeId: "node_step1",
+          nodeKind: "agent_step",
+          attempt: 1,
+          status: "failed",
+          stepInput: null,
+          stepOutput: null,
+          sandboxName: null,
+          workflowRunId: null,
+          errorKind: "workflow_failed",
+          errorMessage: "failed",
+          durationMs: 1000,
+          startedAt: new Date("2026-01-01T00:00:00.000Z"),
+          finishedAt: new Date("2026-01-01T00:00:01.000Z"),
+          createdAt: new Date("2026-01-01T00:00:00.000Z"),
+        },
+      ],
+    });
+
+    const html = renderToStaticMarkup(<RunDetail initialData={data} />);
+
+    expect(html).toContain("Jan 1, 2026, 12:00:00 AM UTC");
+  });
 });
