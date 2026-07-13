@@ -197,10 +197,37 @@ export const createBackgroundAgentSchema = z
   })
   .strict();
 
-export const updateBackgroundAgentSchema = createBackgroundAgentSchema
-  .omit({ triggers: true })
-  .partial()
-  .extend({
+export const updateBackgroundAgentSchema = z
+  .object({
+    name: createBackgroundAgentSchema.shape.name.optional(),
+    description: createBackgroundAgentSchema.shape.description.optional(),
+    status: createBackgroundAgentSchema.shape.status.removeDefault().optional(),
+    repoOwner: createBackgroundAgentSchema.shape.repoOwner.optional(),
+    repoName: createBackgroundAgentSchema.shape.repoName.optional(),
+    instructions: createBackgroundAgentSchema.shape.instructions.optional(),
+    permissions: createBackgroundAgentSchema.shape.permissions
+      .removeDefault()
+      .optional(),
+    checkCommand: createBackgroundAgentSchema.shape.checkCommand.optional(),
+    composioToolkitSlugs: createBackgroundAgentSchema.shape.composioToolkitSlugs
+      .removeDefault()
+      .optional(),
+    githubActions: createBackgroundAgentSchema.shape.githubActions
+      .removeDefault()
+      .optional(),
+    writeScope: createBackgroundAgentSchema.shape.writeScope
+      .removeDefault()
+      .optional(),
+    requireCiGreenForMerge:
+      createBackgroundAgentSchema.shape.requireCiGreenForMerge
+        .removeDefault()
+        .optional(),
+    modelId: createBackgroundAgentSchema.shape.modelId
+      .removeDefault()
+      .optional(),
+    runBudgetPerTarget: createBackgroundAgentSchema.shape.runBudgetPerTarget
+      .removeDefault()
+      .optional(),
     triggers: createBackgroundAgentSchema.shape.triggers.optional(),
   })
   .strict();

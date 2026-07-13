@@ -212,9 +212,9 @@ describe("background agent config surface (#745)", () => {
   });
 
   test("updateBackgroundAgentSchema does not apply create defaults to omitted fields", () => {
-    expect(
-      updateBackgroundAgentSchema.parse({ status: "enabled" }),
-    ).toEqual({ status: "enabled" });
+    expect(updateBackgroundAgentSchema.parse({ status: "enabled" })).toEqual({
+      status: "enabled",
+    });
   });
 
   test("updateBackgroundAgentSchema does not retain create-time default parsers", () => {
@@ -228,11 +228,10 @@ describe("background agent config surface (#745)", () => {
       "modelId",
       "runBudgetPerTarget",
     ] as const) {
-      expect(
-        updateBackgroundAgentSchema.shape[field]
-          .unwrap()
-          .safeParse(undefined).success,
-      ).toBe(false);
+      const result = updateBackgroundAgentSchema.shape[field]
+        .unwrap()
+        .safeParse(undefined);
+      expect(result.success && result.data !== undefined).toBe(false);
     }
   });
 
