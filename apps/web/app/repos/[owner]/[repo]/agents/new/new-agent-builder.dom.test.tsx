@@ -68,6 +68,7 @@ mock.module("../agent-spec-editor", () => ({
     surface,
     readinessReady,
     persistedEnabled,
+    testAlert,
     onSave,
     onRunTest,
   }: {
@@ -76,12 +77,14 @@ mock.module("../agent-spec-editor", () => ({
     surface?: string;
     readinessReady?: boolean;
     persistedEnabled?: boolean;
+    testAlert?: string | null;
     onSave: (payload: unknown) => void | Promise<void>;
     onRunTest: () => void | Promise<void>;
   }) => {
     const [enabled, setEnabled] = useState(false);
     return (
       <div>
+        {testAlert ? <div role="alert">{testAlert}</div> : null}
         <span data-testid="created-agent-id">{createdAgentId ?? "none"}</span>
         <span data-testid="test-run-id">{testRunId ?? "none"}</span>
         <span data-testid="editor-surface">{surface ?? "legacy"}</span>
