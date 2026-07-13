@@ -1,3 +1,86 @@
+# Active Task: Searchable repository, model, and workspace-path selectors
+
+Issue [#1003](https://github.com/dennisonbertram/fork-open-agents/issues/1003)
+tracks this UI consistency slice. The existing product-reset plan below is
+preserved because it is unrelated durable work owned by the repository.
+
+## Summary
+
+Replace opaque repository and model text inputs in the protected Session,
+Automation, Runs, and agent-configuration paths with controlled searchable
+selectors backed by the existing GitHub installation and model-option sources.
+Keep genuinely open-ended values such as URLs, commands, secrets, JSON, branch
+creation, and user-authored names as text. Use the existing workspace file
+suggestion inventory for file/context paths instead of inventing a second file
+browser.
+
+## Context
+
+- Searchable repository selectors already exist in
+  `apps/web/components/repo-selector.tsx` and
+  `apps/web/components/repo-selector-compact.tsx`.
+- Searchable model selectors already exist in
+  `apps/web/components/model-combobox.tsx` and
+  `apps/web/components/model-selector-compact.tsx`.
+- The remaining gaps are raw repository fields in the Automation entry picker,
+  Runs filters, and GitHub Actions write scope, plus a raw model ID in the
+  GitHub Actions panel.
+- Loop repository suggestions currently come from existing loops and should
+  prefer connected GitHub repositories while preserving explicit fallback where
+  needed by the route contract.
+- Local app startup initially lacked installed dependencies; after
+  `bun install --frozen-lockfile`, `bun run web` serves localhost:3000. Signed
+  out routes correctly stop at the Vercel auth boundary; authenticated UI smoke
+  needs local auth/database configuration that is not present in this checkout.
+
+## System Impact
+
+Repository options remain sourced from GitHub installation APIs, model options
+remain sourced from `useModelOptions`, and selected values remain controlled by
+each existing form. No schema or route contract changes are planned. Search
+state is local to each combobox and must not become persisted domain state.
+
+## Approach
+
+Reuse the existing Command/Popover selector primitives and existing data hooks.
+Extract only the shared repository option contract needed by the newly covered
+forms; do not merge all repository selectors into a risky universal component.
+Use `ModelCombobox` for the raw model-ID field and add a clear default option
+that maps back to the existing null/blank semantics. Keep context-path fields
+that already use the file suggestion dropdown aligned with the same searchable
+Command/Popover behavior while retaining typed fallback.
+
+## Changes
+
+- `apps/web/components/github-repository-combobox.tsx` and
+  `apps/web/hooks/use-github-repository-options.ts` (new) — controlled
+  repository selector backed by connected installations and installation repos.
+- `apps/web/app/automations/new/repository-picker.tsx` — replace owner/repo
+  text entry with the repository selector.
+- `apps/web/app/runs/runs-list.tsx` — replace the two repository filter inputs
+  with the selector while preserving query parameters.
+- `apps/web/app/repos/[owner]/[repo]/agents/github-actions-panel.tsx` — use
+  searchable repository and model controls for specific write scope and model
+  selection.
+- `apps/web/app/loops/repo-combobox.tsx` and related tests — prefer connected
+  repository options and preserve explicit fallback behavior.
+- `apps/web/components/context-path-combobox.tsx` and the loop builder — use a
+  searchable workspace-context path selector while retaining typed fallback.
+- `apps/web/components/github-repository-combobox.test.ts` — cover repository
+  slug parsing and selector semantics.
+- Focused component tests — assert selector semantics, blank/default handling,
+  and route/query compatibility.
+
+## Verification
+
+- Run focused component tests for repository/model selectors and affected forms.
+- Run `git diff --check`, `bun --bun run check`, and `bun --bun run ci`.
+- Run `bun run web` and use Agent Browser against localhost:3000 for signed-out
+  auth-boundary smoke; run authenticated selector flows when local auth/env is
+  available.
+- After merge to `develop`, smoke the shared dev alias. Promote through a
+  release PR to `main`, then run production ops/public smoke and browser smoke.
+
 # Sessions, Automations, and Runs Product Reset
 
 ## Summary
