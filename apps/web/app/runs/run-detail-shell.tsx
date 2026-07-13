@@ -5,6 +5,7 @@ import {
   RunMetadataTable,
   type RunMetadataRow,
 } from "@/components/run-metadata-table";
+import { formatRunTimestamp } from "@/lib/date/format-run-timestamp";
 import { cn } from "@/lib/utils";
 import type { RunDetailShellSummary } from "./run-detail-summary";
 
@@ -14,13 +15,7 @@ function words(value: string): string {
 
 function formatTimestamp(value: string | null): string | null {
   if (!value) return null;
-  return new Intl.DateTimeFormat(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    second: "2-digit",
-  }).format(new Date(value));
+  return formatRunTimestamp(value);
 }
 
 function statusClasses(summary: RunDetailShellSummary): string {
