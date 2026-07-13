@@ -647,7 +647,13 @@ function resetMocks() {
   mintInstallationTokenMock.mockClear();
   revokeInstallationTokenMock.mockClear();
   withScopedInstallationOctokitMock.mockClear();
-  connectSandboxMock.mockClear();
+  connectSandboxMock.mockReset();
+  connectSandboxMock.mockImplementation(async (_config: unknown) => {
+    if (sandboxConnectShouldThrow) {
+      throw sandboxConnectShouldThrow;
+    }
+    return sandboxMock;
+  });
   sandboxMock.readFile.mockClear();
   sandboxMock.exec.mockClear();
   sandboxMock.stop.mockClear();
@@ -1562,6 +1568,45 @@ describe("BT-S11: connectSandbox throws → sandbox_unavailable", () => {
     expect(result.outcome).toBe("failure");
     expect(result.errorKind).toBe("sandbox_unavailable");
   });
+
+  test("BT-S11a: hanging sandbox connection is bounded by the step timeout", async () => {
+    connectSandboxMock.mockImplementation(
+      () => new Promise<never>(() => undefined),
+    );
+
+    const result = await Promise.race([
+      executeAgentStep({
+        stepRunId: "step-run-1",
+        workflowRunId: "wf-run-1",
+        loopRunId: "loop-run-1",
+        node: makeAgentStepNode() as Parameters<
+          typeof executeAgentStep
+        >[0]["node"],
+        loopRun: currentLoopRun,
+        loop: currentLoop,
+        startedAt: Date.now(),
+        stepTimeoutMs: 25,
+      }),
+      new Promise<Awaited<ReturnType<typeof executeAgentStep>>>((resolve) => {
+        setTimeout(
+          () =>
+            resolve({
+              outcome: "failure",
+              errorKind: "test_timeout",
+              errorMessage: "executeAgentStep did not return",
+            }),
+          100,
+        );
+      }),
+    ]);
+
+    expect(result.outcome).toBe("failure");
+    expect(result.errorKind).toBe("sandbox_unavailable");
+    expect(result.errorMessage).toContain("timed out");
+    expect(revokeInstallationTokenMock).toHaveBeenCalledWith(
+      "ghs_SHOULD_NOT_APPEAR_IN_EVENTS",
+    );
+  });
 });
 
 // ── BT-S12: Timeout (openAgent throws) ───────────────────────────────────────
@@ -2104,7 +2149,10 @@ describe("BT-S25: configurable stepTimeoutMs is passed to the agent invocation",
     const call = openAgentGenerateMock.mock.calls[0]?.[0] as {
       timeout?: { totalMs?: number };
     };
-    expect(call?.timeout?.totalMs).toBe(5 * 60 * 1000);
+    // The deadline is created before repository and sandbox setup, so the
+    // remaining budget can be slightly below the configured value.
+    expect(call?.timeout?.totalMs).toBeGreaterThanOrEqual(5 * 60 * 1000 - 1000);
+    expect(call?.timeout?.totalMs).toBeLessThanOrEqual(5 * 60 * 1000);
   });
 
   test("BT-S25b: omitted stepTimeoutMs falls back to the 10-minute default", async () => {
@@ -2123,7 +2171,12 @@ describe("BT-S25: configurable stepTimeoutMs is passed to the agent invocation",
     const call = openAgentGenerateMock.mock.calls[0]?.[0] as {
       timeout?: { totalMs?: number };
     };
-    expect(call?.timeout?.totalMs).toBe(10 * 60 * 1000);
+    // The executor passes the remaining time against a deadline created before
+    // sandbox setup, so a millisecond or two may already have elapsed.
+    expect(call?.timeout?.totalMs).toBeGreaterThanOrEqual(
+      10 * 60 * 1000 - 1000,
+    );
+    expect(call?.timeout?.totalMs).toBeLessThanOrEqual(10 * 60 * 1000);
   });
 
   test("BT-S25c: stepTimeoutMs budget is cumulative across the tool-call loop, not reset per call", async () => {
