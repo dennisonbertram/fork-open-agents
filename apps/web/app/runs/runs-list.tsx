@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { GitHubRepositoryCombobox } from "@/components/github-repository-combobox";
 import { Button } from "@/components/ui/button";
+import { formatRunTimestamp } from "@/lib/date/format-run-timestamp";
 import { cn } from "@/lib/utils";
 import type { RunsListResponse } from "@/lib/runs/list";
 import type { NormalizedAutomationRun } from "@/lib/runs/types";
@@ -32,12 +33,7 @@ function hrefWith(
 }
 
 function formatTimestamp(value: string): string {
-  return new Intl.DateTimeFormat(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(new Date(value));
+  return formatRunTimestamp(value);
 }
 
 function titleCase(value: string): string {
