@@ -36,6 +36,7 @@ import {
 import type { CreateLoopBuilderStoreReturn } from "./use-loop-builder";
 import { cn } from "@/lib/utils";
 import { AgentConfigFields } from "@/components/agent-config-fields";
+import { ContextPathCombobox } from "@/components/context-path-combobox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -523,22 +524,13 @@ function ConditionConfig({
       {/* Path */}
       <div className="space-y-1">
         <FieldLabel htmlFor="cond-path">Context path</FieldLabel>
-        <Input
+        <ContextPathCombobox
           id="cond-path"
-          type="text"
-          list="cond-path-refs"
-          className="font-mono"
           value={cond.path}
-          onChange={(e) => handleUpdate("path", e.target.value)}
+          suggestions={outputRefs}
+          onChange={(nextPath) => handleUpdate("path", nextPath)}
           placeholder="previous_step.output"
         />
-        {outputRefs.length > 0 ? (
-          <datalist id="cond-path-refs">
-            {outputRefs.map((ref) => (
-              <option key={ref} value={ref} />
-            ))}
-          </datalist>
-        ) : null}
         {outputRefs.length > 0 ? (
           <div className="flex flex-wrap gap-1 pt-0.5">
             {outputRefs.map((ref) => (

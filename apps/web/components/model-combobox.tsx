@@ -39,6 +39,7 @@ interface ModelComboboxProps {
   emptyText?: string;
   disabled?: boolean;
   className?: string;
+  emptyOption?: string;
   onChange: (value: string) => void;
 }
 
@@ -81,6 +82,7 @@ export function ModelCombobox({
   emptyText = "No results found.",
   disabled = false,
   className,
+  emptyOption,
   onChange,
 }: ModelComboboxProps) {
   const [open, setOpen] = useState(false);
@@ -131,6 +133,25 @@ export function ModelCombobox({
           <CommandInput placeholder={searchPlaceholder} />
           <CommandList>
             <CommandEmpty>{emptyText}</CommandEmpty>
+            {emptyOption ? (
+              <CommandGroup heading="Default">
+                <CommandItem
+                  value={`default ${emptyOption}`}
+                  onSelect={() => {
+                    onChange("");
+                    setOpen(false);
+                  }}
+                >
+                  <CheckIcon
+                    className={cn(
+                      "mr-2 size-4",
+                      value === "" ? "opacity-100" : "opacity-0",
+                    )}
+                  />
+                  <span className="truncate">{emptyOption}</span>
+                </CommandItem>
+              </CommandGroup>
+            ) : null}
             {groups.map((group) => (
               <CommandGroup key={group.provider} heading={group.label}>
                 {group.options.map((item) => {
