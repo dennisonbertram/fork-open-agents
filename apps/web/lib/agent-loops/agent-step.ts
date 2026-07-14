@@ -549,7 +549,7 @@ async function recordAgentStepFailure(params: {
       : {}),
   });
   if (updated === null) {
-    return { outcome: "failure", errorKind: "step_ownership_lost" };
+    return { outcome: "replay", errorKind: "step_ownership_lost" };
   }
 
   await recordAgentLoopEvent({
@@ -1458,7 +1458,7 @@ export async function executeAgentStep(
         : {}),
     });
     if (completed === null) {
-      return { outcome: "failure", errorKind: "step_ownership_lost" };
+      return { outcome: "replay", errorKind: "step_ownership_lost" };
     }
 
     await recordAgentLoopEvent({

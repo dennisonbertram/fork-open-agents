@@ -276,7 +276,7 @@ describe("agent-loop step ownership regressions", () => {
     expect(executeAgentStepMock).not.toHaveBeenCalled();
   });
 
-  test("queued claim uses expectedStatuses and losing it returns step_ownership_lost", async () => {
+  test("queued claim uses expectedStatuses and losing it replays safely", async () => {
     claimWins = false;
     const { executeAgentLoopStep } = await executorPromise;
 
@@ -286,7 +286,7 @@ describe("agent-loop step ownership regressions", () => {
     });
 
     expect(result).toEqual({
-      outcome: "failure",
+      outcome: "replay",
       errorKind: "step_ownership_lost",
     });
     expect(updateCalls[0]).toMatchObject({
@@ -299,7 +299,7 @@ describe("agent-loop step ownership regressions", () => {
     expect(buildNormalizedMock).not.toHaveBeenCalled();
   });
 
-  test("running step owned by another workflow returns step_ownership_lost", async () => {
+  test("running step owned by another workflow replays safely", async () => {
     currentStep = makeStep({
       status: "running",
       workflowRunId: "workflow-owner",
@@ -313,7 +313,7 @@ describe("agent-loop step ownership regressions", () => {
     });
 
     expect(result).toEqual({
-      outcome: "failure",
+      outcome: "replay",
       errorKind: "step_ownership_lost",
     });
     expect(updateCalls).toContainEqual(
