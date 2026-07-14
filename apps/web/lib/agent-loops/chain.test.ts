@@ -113,6 +113,9 @@ let executorOutcomes: Record<string, ExecutorOutcome> = {};
 let executedNodeIds: string[] = [];
 // Whether the executor should simulate an end-node finalizing the run
 let endNodeIds = new Set<string>();
+let executorThrows: Error | null = null;
+let executorThrowsAfterTerminal = false;
+let terminalStepFailureUpdateReturnsNull = false;
 
 const executeAgentLoopStepMock = mock(
   async (params: {
@@ -120,6 +123,13 @@ const executeAgentLoopStepMock = mock(
     workflowRunId: string;
     stepTimeoutMs?: number;
   }): Promise<ExecutorOutcome> => {
+    if (executorThrows) {
+      if (executorThrowsAfterTerminal) {
+        currentStepRun = { ...currentStepRun, status: "succeeded" };
+      }
+      throw executorThrows;
+    }
+
     // Find the node by stepRunId (via currentStepRun mapping)
     const nodeId = stepRunIdToNodeId[params.stepRunId] ?? currentStepRun.nodeId;
     executedNodeIds.push(nodeId);
@@ -304,6 +314,7 @@ const countStepRunsForNodeMock = mock(
 );
 
 const updateAgentLoopStepRunMock = mock(async (_input: unknown) => {
+  if (terminalStepFailureUpdateReturnsNull) return null;
   return currentStepRun;
 });
 
@@ -614,6 +625,9 @@ function resetAll() {
   stepRunIdToStepRun = {};
   executorOutcomes = {};
   endNodeIds = new Set(["end"]);
+  executorThrows = null;
+  executorThrowsAfterTerminal = false;
+  terminalStepFailureUpdateReturnsNull = false;
   advanceRunRowsUpdated = 1;
   priorStepRunCountForNode = {};
   workflowStartThrows = null;
@@ -1667,6 +1681,78 @@ describe("BT-C09: dispatch-throw — start() throws → dispatch_failed, run rec
       (u) => u.status === "failed",
     );
     expect(finalRunUpdate.length).toBe(0);
+  });
+});
+
+// ── BT-C10: unexpected executor errors are terminal and observable ───────────
+
+describe("BT-C10: unexpected executor error — fail closed without workflow retry", () => {
+  beforeEach(() => {
+    resetAll();
+
+    currentStepRun = makeStepRun({ id: "step-run-1", nodeId: "work" });
+    stepRunIdToNodeId["step-run-1"] = "work";
+    stepRunIdToStepRun["step-run-1"] = currentStepRun;
+    currentLoopRun = makeLoopRun({
+      status: "running",
+      currentNodeId: "work",
+      currentStepRunId: "step-run-1",
+    });
+    executorThrows = new Error("unexpected executor failure");
+  });
+
+  test("records a typed step failure and fails the run", async () => {
+    const { runAgentLoopStep } = await chainPromise;
+
+    await runAgentLoopStep({
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+    });
+
+    expect(updateAgentLoopStepRunMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        stepRunId: "step-run-1",
+        status: "failed",
+        errorKind: "workflow_failed",
+        errorMessage: "unexpected executor failure",
+      }),
+    );
+    expect(recordedEvents).toContainEqual(
+      expect.objectContaining({
+        eventName: "agent-loop.step.failed",
+        status: "failed",
+        payload: expect.objectContaining({
+          errorKind: "workflow_failed",
+        }),
+      }),
+    );
+    expect(recordedEvents).toContainEqual(
+      expect.objectContaining({
+        eventName: "agent-loop.run.failed",
+        status: "failed",
+      }),
+    );
+  });
+
+  test("fails the run even when the step became terminal before the throw", async () => {
+    executorThrowsAfterTerminal = true;
+    terminalStepFailureUpdateReturnsNull = true;
+
+    const { runAgentLoopStep } = await chainPromise;
+    await runAgentLoopStep({
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+    });
+
+    expect(recordedEvents).toContainEqual(
+      expect.objectContaining({
+        eventName: "agent-loop.run.failed",
+        status: "failed",
+        payload: expect.objectContaining({
+          errorKind: "workflow_failed",
+        }),
+      }),
+    );
   });
 });
 
