@@ -17,6 +17,8 @@
  *     carries that scope — agent-step.ts:permissionsToInstallationToken).
  *   BP-014/#765: all other steps (no permission, or read-only) keep the
  *     PR-creation prohibition verbatim.
+ *   BP-016: declared output fields and their JSON types are included in the
+ *     prompt so the model can satisfy executor-side validation.
  */
 
 import { describe, expect, mock, test } from "bun:test";
@@ -243,5 +245,25 @@ describe("buildLoopStepPrompt", () => {
     expect(lower).toMatch(
       /do not.*pull request|never.*pr|must not.*open.*pr|do not.*open.*pr/,
     );
+  });
+
+  test("BP-016: prompt includes declared output fields and type-sensitive guidance", () => {
+    const nodeWithOutputs = {
+      ...baseNode,
+      outputSchema: { pr: "string", prUrl: "string" },
+    };
+    const prompt = buildLoopStepPrompt({
+      node: nodeWithOutputs,
+      contextSlice: baseContextSlice,
+      repo: "acme/my-repo",
+      branch: "codex/test-branch",
+    });
+
+    expect(prompt).toContain('- `"pr"` (string, required)');
+    expect(prompt).toContain('- `"prUrl"` (string, required)');
+    expect(prompt).toContain(
+      "Do not put a JSON object or array in a field declared as `string`",
+    );
+    expect(prompt).toContain("scalar number and URL before writing");
   });
 });
