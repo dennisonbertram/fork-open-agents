@@ -415,24 +415,24 @@ export async function runAgentLoopStep(
         ? { expectedWorkflowRunId: workflowRunId }
         : {}),
     });
-    if (!failureUpdated) return;
-
-    await recordAgentLoopEvent({
-      loopRunId,
-      stepRunId,
-      nodeId,
-      eventName: "agent-loop.step.failed",
-      status: "failed",
-      level: "error",
-      summary: errorMessage,
-      payload: {
-        errorKind: "workflow_failed",
-        errorMessage,
-        nodeKind: ctx.stepRun.nodeKind,
-        attempt: ctx.stepRun.attempt,
-      },
-      workflowRunId,
-    });
+    if (failureUpdated) {
+      await recordAgentLoopEvent({
+        loopRunId,
+        stepRunId,
+        nodeId,
+        eventName: "agent-loop.step.failed",
+        status: "failed",
+        level: "error",
+        summary: errorMessage,
+        payload: {
+          errorKind: "workflow_failed",
+          errorMessage,
+          nodeKind: ctx.stepRun.nodeKind,
+          attempt: ctx.stepRun.attempt,
+        },
+        workflowRunId,
+      });
+    }
 
     const failed = await conditionallyTransitionRunStatus({
       runId: loopRunId,

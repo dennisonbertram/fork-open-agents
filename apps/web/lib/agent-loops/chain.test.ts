@@ -114,6 +114,8 @@ let executedNodeIds: string[] = [];
 // Whether the executor should simulate an end-node finalizing the run
 let endNodeIds = new Set<string>();
 let executorThrows: Error | null = null;
+let executorThrowsAfterTerminal = false;
+let terminalStepFailureUpdateReturnsNull = false;
 
 const executeAgentLoopStepMock = mock(
   async (params: {
@@ -122,6 +124,9 @@ const executeAgentLoopStepMock = mock(
     stepTimeoutMs?: number;
   }): Promise<ExecutorOutcome> => {
     if (executorThrows) {
+      if (executorThrowsAfterTerminal) {
+        currentStepRun = { ...currentStepRun, status: "succeeded" };
+      }
       throw executorThrows;
     }
 
@@ -309,6 +314,7 @@ const countStepRunsForNodeMock = mock(
 );
 
 const updateAgentLoopStepRunMock = mock(async (_input: unknown) => {
+  if (terminalStepFailureUpdateReturnsNull) return null;
   return currentStepRun;
 });
 
@@ -620,6 +626,8 @@ function resetAll() {
   executorOutcomes = {};
   endNodeIds = new Set(["end"]);
   executorThrows = null;
+  executorThrowsAfterTerminal = false;
+  terminalStepFailureUpdateReturnsNull = false;
   advanceRunRowsUpdated = 1;
   priorStepRunCountForNode = {};
   workflowStartThrows = null;
@@ -1722,6 +1730,27 @@ describe("BT-C10: unexpected executor error — fail closed without workflow ret
       expect.objectContaining({
         eventName: "agent-loop.run.failed",
         status: "failed",
+      }),
+    );
+  });
+
+  test("fails the run even when the step became terminal before the throw", async () => {
+    executorThrowsAfterTerminal = true;
+    terminalStepFailureUpdateReturnsNull = true;
+
+    const { runAgentLoopStep } = await chainPromise;
+    await runAgentLoopStep({
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+    });
+
+    expect(recordedEvents).toContainEqual(
+      expect.objectContaining({
+        eventName: "agent-loop.run.failed",
+        status: "failed",
+        payload: expect.objectContaining({
+          errorKind: "workflow_failed",
+        }),
       }),
     );
   });
