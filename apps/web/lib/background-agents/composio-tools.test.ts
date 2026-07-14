@@ -55,6 +55,9 @@ mock.module("@/lib/db/client", () => ({
       backgroundAgentToolSessions: {
         findFirst: mock(async () => null),
       },
+      agentLoopToolSessions: {
+        findFirst: mock(async () => null),
+      },
     },
     insert: () => ({
       values: () => ({
@@ -72,6 +75,7 @@ mock.module("@/lib/db/client", () => ({
 }));
 
 mock.module("@/lib/db/schema", () => ({
+  agentLoopToolSessions: {},
   backgroundAgentToolSessions: {},
 }));
 
@@ -399,5 +403,21 @@ describe("resolveComposioToolsForBgRun — typed outcome contract", () => {
       expect(typeof result.message).toBe("string");
       expect(result).not.toHaveProperty("error");
     }
+  });
+
+  test("BT-CT-006 (regression): agent-loop sessions use the loop-run cache table", async () => {
+    const { resolveComposioToolsForBgRun } = await composioToolsModulePromise;
+
+    const result = await resolveComposioToolsForBgRun({
+      agentId: null,
+      runId: "loop-run-1",
+      userId: "user-1",
+      slugs: ["github"],
+      repoOwner: "acme",
+      repoName: "widgets",
+      runKind: "agent_loop",
+    });
+
+    expect(result.status).toBe("ready");
   });
 });
