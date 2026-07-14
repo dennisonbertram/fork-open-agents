@@ -147,7 +147,9 @@ async function recordStepFailure(params: {
       : {}),
   });
   if (updated === null) {
-    return { outcome: "failure", errorKind: "step_ownership_lost" };
+    // A competing delivery owns the durable step now. Replaying is critical:
+    // chain.ts must not route this duplicate as a real step failure.
+    return { outcome: "replay", errorKind: "step_ownership_lost" };
   }
 
   await recordAgentLoopEvent({
@@ -205,7 +207,7 @@ export async function executeAgentLoopStep(
 ): Promise<StepExecutionResult> {
   const deliveryKey = `${params.stepRunId}:${params.workflowRunId}`;
   if (activeStepDeliveries.has(deliveryKey)) {
-    return { outcome: "failure", errorKind: "step_ownership_lost" };
+    return { outcome: "replay", errorKind: "step_ownership_lost" };
   }
   activeStepDeliveries.add(deliveryKey);
   try {
@@ -348,13 +350,14 @@ async function executeAgentLoopStepDelivery(
       expectedStatuses: ["queued"],
     });
     if (!claimed) {
-      return { outcome: "failure", errorKind: "step_ownership_lost" };
+      return { outcome: "replay", errorKind: "step_ownership_lost" };
     }
   } else if (
+    node.kind !== "agent_step" &&
     stepRun.status === "running" &&
     stepRun.workflowRunId !== workflowRunId
   ) {
-    return { outcome: "failure", errorKind: "step_ownership_lost" };
+    return { outcome: "replay", errorKind: "step_ownership_lost" };
   }
 
   // A workflow correlation identifies the durable delivery, while this
@@ -367,12 +370,12 @@ async function executeAgentLoopStepDelivery(
     const claimedExecution = await updateAgentLoopStepRun({
       stepRunId,
       expectedStatuses: ["running"],
-      expectedWorkflowRunId: workflowRunId,
       expectedExecutionClaimGeneration: null,
       executionClaimGeneration,
+      workflowRunId,
     });
     if (!claimedExecution) {
-      return { outcome: "failure", errorKind: "step_ownership_lost" };
+      return { outcome: "replay", errorKind: "step_ownership_lost" };
     }
   }
 
