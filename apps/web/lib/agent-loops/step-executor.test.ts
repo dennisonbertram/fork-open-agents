@@ -155,7 +155,8 @@ let verifyRepoAccessResult: {
   defaultBranch: "main",
 };
 
-const verifyRepoAccessMock = mock(async () => verifyRepoAccessResult);
+let verifyRepoAccessImpl = async () => verifyRepoAccessResult;
+const verifyRepoAccessMock = mock(async () => verifyRepoAccessImpl());
 
 let mintInstallationTokenResult: { token: string } = {
   token: "ghs_test_token",
@@ -443,6 +444,7 @@ function resetMocks() {
     repositoryId: 7,
     defaultBranch: "main",
   };
+  verifyRepoAccessImpl = async () => verifyRepoAccessResult;
   mintInstallationTokenResult = { token: "ghs_test_token" };
 
   listIssuesResult = [];
@@ -1454,6 +1456,30 @@ describe("agent_step node", () => {
     expect(result.errorKind).not.toBe("not_implemented");
     // Verify it attempted to connect a sandbox (reached executeAgentStep)
     expect(verifyRepoAccessMock.mock.calls.length).toBeGreaterThan(0);
+  });
+
+  test("BT-009a: hanging repo access is bounded by the step timeout", async () => {
+    verifyRepoAccessImpl = async () => new Promise<never>(() => undefined);
+
+    const { executeAgentLoopStep } = await executorPromise;
+    const startedAt = Date.now();
+    const result = await executeAgentLoopStep({
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+      stepTimeoutMs: 25,
+    });
+
+    expect(result.outcome).toBe("failure");
+    expect(result.errorKind).toBe("sandbox_unavailable");
+    expect(result.errorMessage).toContain("Repository access timed out after");
+    expect(Date.now() - startedAt).toBeLessThan(500);
+    expect(
+      recordedStepUpdates.some(
+        (update) =>
+          update.status === "failed" &&
+          update.errorKind === "sandbox_unavailable",
+      ),
+    ).toBe(true);
   });
 });
 
