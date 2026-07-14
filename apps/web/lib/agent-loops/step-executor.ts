@@ -351,6 +351,7 @@ async function executeAgentLoopStepDelivery(
       return { outcome: "failure", errorKind: "step_ownership_lost" };
     }
   } else if (
+    node.kind !== "agent_step" &&
     stepRun.status === "running" &&
     stepRun.workflowRunId !== workflowRunId
   ) {
@@ -367,9 +368,9 @@ async function executeAgentLoopStepDelivery(
     const claimedExecution = await updateAgentLoopStepRun({
       stepRunId,
       expectedStatuses: ["running"],
-      expectedWorkflowRunId: workflowRunId,
       expectedExecutionClaimGeneration: null,
       executionClaimGeneration,
+      workflowRunId,
     });
     if (!claimedExecution) {
       return { outcome: "failure", errorKind: "step_ownership_lost" };
