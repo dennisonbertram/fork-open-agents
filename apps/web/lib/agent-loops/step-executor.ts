@@ -576,6 +576,19 @@ async function executeAgentLoopStepDelivery(
       });
     }
 
+    const executionNormalizedInput = normalizedInput
+      ? {
+          ...normalizedInput,
+          budgets: {
+            ...normalizedInput.budgets,
+            timeoutMs: Math.min(
+              normalizedInput.budgets.timeoutMs,
+              remainingStepTimeoutMs,
+            ),
+          },
+        }
+      : undefined;
+
     return executeAgentStep({
       stepRunId,
       workflowRunId,
@@ -584,7 +597,7 @@ async function executeAgentLoopStepDelivery(
       loopRun,
       loop: loop as AgentLoopExecutionPolicy,
       startedAt,
-      normalizedInput,
+      normalizedInput: executionNormalizedInput,
       liveSource,
       stepTimeoutMs: remainingStepTimeoutMs,
       maxAgentTurnsPerStep,
