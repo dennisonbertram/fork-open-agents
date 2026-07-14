@@ -372,10 +372,24 @@ async function executeAgentLoopStepDelivery(
       expectedStatuses: ["running"],
       expectedExecutionClaimGeneration: null,
       executionClaimGeneration,
-      workflowRunId,
     });
     if (!claimedExecution) {
       return { outcome: "replay", errorKind: "step_ownership_lost" };
+    }
+
+    // Claim the side-effect generation first, then repair a stale workflow
+    // correlation in a separate CAS. Keeping these updates separate avoids
+    // coupling the JSONB claim expression to the correlation-column update.
+    if (stepRun.workflowRunId !== workflowRunId) {
+      const correlatedExecution = await updateAgentLoopStepRun({
+        stepRunId,
+        expectedStatuses: ["running"],
+        expectedExecutionClaimGeneration: executionClaimGeneration,
+        workflowRunId,
+      });
+      if (!correlatedExecution) {
+        return { outcome: "replay", errorKind: "step_ownership_lost" };
+      }
     }
   }
 
