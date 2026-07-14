@@ -76,6 +76,42 @@ function nowMs(): number {
   return Date.now();
 }
 
+const DEFAULT_AGENT_STEP_TIMEOUT_MS = 10 * 60 * 1000;
+const STEP_PREPARATION_TIMEOUT_ERROR = "AgentStepPreparationTimeoutError";
+
+function stepPreparationTimeoutError(timeoutMs: number): Error {
+  const error = new Error(
+    `Repository access timed out after ${timeoutMs}ms before sandbox startup`,
+  );
+  error.name = STEP_PREPARATION_TIMEOUT_ERROR;
+  return error;
+}
+
+function withStepPreparationTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+): Promise<T> {
+  if (timeoutMs <= 0) {
+    return Promise.reject(stepPreparationTimeoutError(timeoutMs));
+  }
+
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(stepPreparationTimeoutError(timeoutMs));
+    }, timeoutMs);
+
+    void promise
+      .then((value) => {
+        clearTimeout(timer);
+        resolve(value);
+      })
+      .catch((error: unknown) => {
+        clearTimeout(timer);
+        reject(error);
+      });
+  });
+}
+
 /**
  * Builds a failure result and updates the step run + emits the step.failed event.
  * All failure paths must call this — never return failure without recording.
@@ -185,6 +221,8 @@ async function executeAgentLoopStepDelivery(
   const { stepRunId, workflowRunId, stepTimeoutMs, maxAgentTurnsPerStep } =
     params;
   const startedAt = nowMs();
+  const stepDeadlineAt =
+    startedAt + (stepTimeoutMs ?? DEFAULT_AGENT_STEP_TIMEOUT_MS);
 
   // ── 1. Load step run + loop run + loop ─────────────────────────────────────
 
@@ -455,12 +493,31 @@ async function executeAgentLoopStepDelivery(
       }
     }
 
-    const checkoutAccess = await verifyRepoAccess({
-      userId: loopRun.userId,
-      owner: repository.owner,
-      repo: repository.name,
-      requiredUserPermission: "write",
-    });
+    let checkoutAccess: Awaited<ReturnType<typeof verifyRepoAccess>>;
+    try {
+      checkoutAccess = await withStepPreparationTimeout(
+        verifyRepoAccess({
+          userId: loopRun.userId,
+          owner: repository.owner,
+          repo: repository.name,
+          requiredUserPermission: "write",
+        }),
+        Math.max(0, stepDeadlineAt - nowMs()),
+      );
+    } catch (error) {
+      if (
+        !(error instanceof Error) ||
+        error.name !== STEP_PREPARATION_TIMEOUT_ERROR
+      ) {
+        throw error;
+      }
+
+      return recordStepFailure({
+        ...failureCtx,
+        errorKind: "sandbox_unavailable",
+        errorMessage: error.message,
+      });
+    }
     if (!checkoutAccess.ok) {
       return recordStepFailure({
         ...failureCtx,
@@ -510,6 +567,28 @@ async function executeAgentLoopStepDelivery(
       workflowRunId,
     });
 
+    const remainingStepTimeoutMs = stepDeadlineAt - nowMs();
+    if (remainingStepTimeoutMs <= 0) {
+      return recordStepFailure({
+        ...failureCtx,
+        errorKind: "sandbox_unavailable",
+        errorMessage: `Agent step timed out after ${stepTimeoutMs ?? DEFAULT_AGENT_STEP_TIMEOUT_MS}ms before sandbox startup`,
+      });
+    }
+
+    const executionNormalizedInput = normalizedInput
+      ? {
+          ...normalizedInput,
+          budgets: {
+            ...normalizedInput.budgets,
+            timeoutMs: Math.min(
+              normalizedInput.budgets.timeoutMs,
+              remainingStepTimeoutMs,
+            ),
+          },
+        }
+      : undefined;
+
     return executeAgentStep({
       stepRunId,
       workflowRunId,
@@ -518,9 +597,9 @@ async function executeAgentLoopStepDelivery(
       loopRun,
       loop: loop as AgentLoopExecutionPolicy,
       startedAt,
-      normalizedInput,
+      normalizedInput: executionNormalizedInput,
       liveSource,
-      stepTimeoutMs,
+      stepTimeoutMs: remainingStepTimeoutMs,
       maxAgentTurnsPerStep,
       executionClaimGeneration,
     });
