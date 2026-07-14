@@ -41,10 +41,18 @@ make the Vercel preview deployment required too.
 ## Faster isolated test runner
 
 `bun run test:isolated` ([`scripts/test-isolated.ts`](../../scripts/test-isolated.ts))
-runs each test file in its own process so state cannot leak between files. It
-now runs files with a bounded worker pool and **reports every failing file in
-one run** instead of stopping at the first failure. Override parallelism with
-`TEST_CONCURRENCY` (`TEST_CONCURRENCY=1` reproduces strict serial runs).
+runs each unit test file in its own process so state cannot leak between files.
+Before discovery it resolves declared workspace dependencies and checks the
+running Bun version against root `packageManager`. A setup problem emits a JSON
+summary and exits `2` with `dependency_missing` or
+`toolchain_version_mismatch`, before any product test process starts.
+
+Contract, integration, and journey directories are intentionally excluded from
+this lane. Unit failures still run to completion through the bounded worker pool
+and exit `1` with every failing file; a green lane exits `0`. The final JSON line
+records Bun version, discovered/pass/fail counts, observed Bun skip-summary
+counts, duration, and status. Override parallelism with `TEST_CONCURRENCY`
+(`TEST_CONCURRENCY=1` reproduces strict serial runs).
 
 ## Migration safety (`bun run check:migration-safety`)
 

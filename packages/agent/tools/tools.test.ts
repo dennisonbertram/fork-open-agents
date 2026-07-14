@@ -1803,12 +1803,12 @@ describe("tools execute behavior", () => {
     }
 
     const iterator = result[Symbol.asyncIterator]();
-    const firstOutput = await Promise.race([
-      iterator.next(),
-      new Promise((resolve) => setTimeout(() => resolve("timed-out"), 250)),
-    ]);
+    // The mocked stream promise never resolves, so this only completes when
+    // the tool yields status before awaiting subagent startup. Rely on Bun's
+    // test timeout instead of racing a wall-clock threshold that changes with
+    // filesystem and scheduler load.
+    const firstOutput = await iterator.next();
 
-    expect(firstOutput).not.toBe("timed-out");
     expect(firstOutput).toMatchObject({
       done: false,
       value: {

@@ -18,16 +18,22 @@ database migrations.
 
 1. Verifies required tools are available: `git` and `bun`.
 2. Installs dependencies with `bun install --frozen-lockfile`.
-3. Ensures `apps/web/.env.local` exists.
-4. Pulls Vercel **Development** environment variables when the env file is
+3. Installs the tracked `.githooks` path in both ordinary checkouts and linked
+   Git worktrees.
+4. Ensures `apps/web/.env.local` exists.
+5. Pulls Vercel **Development** environment variables when the env file is
    missing or `--force-env-pull` is passed.
-5. Generates a local `BETTER_AUTH_SECRET` only when that value is missing.
-6. Validates the env file and prints clear warnings for partially configured
+6. Generates a local `BETTER_AUTH_SECRET` only when that value is missing.
+7. Validates the env file and prints clear warnings for partially configured
    auth, repo access, inference, Redis, and local OAuth state.
-7. Runs typecheck and a temporary local server smoke only when requested with
+8. Runs typecheck and a temporary local server smoke only when requested with
    `--verify` or `--ci`.
 
 The script always writes local secrets only to ignored files.
+
+Use the exact Bun version declared by root `packageManager` (`bun@1.3.14`). The
+unit lane validates both that version and workspace dependency resolution before
+discovering or spawning any product test files.
 
 ## What `init.sh` Does Not Do
 

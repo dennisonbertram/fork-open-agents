@@ -166,7 +166,7 @@ install_dependencies() {
 }
 
 install_git_hooks() {
-  if [[ ! -d "$ROOT_DIR/.git" ]]; then
+  if ! (cd "$ROOT_DIR" && git rev-parse --is-inside-work-tree >/dev/null 2>&1); then
     return 0
   fi
   if [[ ! -d "$ROOT_DIR/.githooks" ]]; then

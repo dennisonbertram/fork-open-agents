@@ -5,7 +5,7 @@ Detailed coding conventions, tool implementation patterns, and common patterns f
 ## Package Manager
 
 - Use **Bun exclusively** (not Node/npm/pnpm)
-- The monorepo uses `bun@1.2.14` as the package manager
+- The monorepo uses `bun@1.3.14` as the package manager
 
 ## TypeScript Configuration
 
@@ -87,9 +87,10 @@ accessible feedback, use the DOM-interaction convention instead:
   `waitFor`/`findByRole` under CI's pinned Bun version.
 - Call `registerDomTestHooks()` from `@/tests/dom` at the top level of the
   test file itself (not from within `describe`/`test`). Registering the
-  `afterEach(cleanup)` hook from an *imported* helper module silently no-ops
-  under CI's pinned Bun 1.2.14, leaking rendered DOM across tests in the
-  same file — it must be called from the test file's own module scope.
+  `afterEach(cleanup)` hook from an *imported* helper module silently no-opped
+  under the former Bun 1.2.14 CI pin, leaking rendered DOM across tests in the
+  same file. Keep registration in the test file's own module scope so the
+  portable cleanup contract remains explicit.
 - Scope queries to the render's own container via `within(container)`
   (destructure `container` from `render(...)`'s return value) rather than
   querying the ambient `document.body`. This keeps any accidental cleanup
