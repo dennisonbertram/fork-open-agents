@@ -7,6 +7,7 @@ import {
   desc,
   eq,
   inArray,
+  isNull,
   isNotNull,
   like,
   sql,
@@ -1080,12 +1081,7 @@ export async function updateAgentLoopStepRun(
         ? { workflowRunId: params.workflowRunId }
         : {}),
       ...(params.executionClaimGeneration !== undefined
-        ? {
-            stepInput:
-              params.executionClaimGeneration === null
-                ? sql`coalesce(${agentLoopStepRuns.stepInput}, '{}'::jsonb) - 'executionClaimGeneration'`
-                : sql`coalesce(${agentLoopStepRuns.stepInput}, '{}'::jsonb) || jsonb_build_object('executionClaimGeneration', ${params.executionClaimGeneration})`,
-          }
+        ? { executionClaimGeneration: params.executionClaimGeneration }
         : {}),
       ...(params.errorKind !== undefined
         ? { errorKind: params.errorKind }
@@ -1113,12 +1109,13 @@ export async function updateAgentLoopStepRun(
           ? [eq(agentLoopStepRuns.workflowRunId, params.expectedWorkflowRunId)]
           : []),
         ...(params.expectedExecutionClaimGeneration === null
-          ? [
-              sql`not (coalesce(${agentLoopStepRuns.stepInput}, '{}'::jsonb) ? 'executionClaimGeneration')`,
-            ]
+          ? [isNull(agentLoopStepRuns.executionClaimGeneration)]
           : params.expectedExecutionClaimGeneration !== undefined
             ? [
-                sql`${agentLoopStepRuns.stepInput} ->> 'executionClaimGeneration' = ${params.expectedExecutionClaimGeneration}`,
+                eq(
+                  agentLoopStepRuns.executionClaimGeneration,
+                  params.expectedExecutionClaimGeneration,
+                ),
               ]
             : []),
         sql`exists (

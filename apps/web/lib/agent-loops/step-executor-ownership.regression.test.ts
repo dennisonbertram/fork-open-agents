@@ -91,6 +91,7 @@ function makeStep(overrides: Partial<AgentLoopStepRun> = {}): AgentLoopStepRun {
     stepOutput: null,
     sandboxName: null,
     workflowRunId: null,
+    executionClaimGeneration: null,
     errorKind: null,
     errorMessage: null,
     startedAt: null,
@@ -126,11 +127,7 @@ const updateStepMock = mock(async (input: Record<string, unknown>) => {
   updateCalls.push(input);
   if (input.expectedStatuses && !claimWins) return null;
   if (input.executionClaimGeneration) {
-    if (
-      durableRunningClaimHeld ||
-      (currentStep.stepInput as Record<string, unknown> | null)
-        ?.executionClaimGeneration
-    ) {
+    if (durableRunningClaimHeld || currentStep.executionClaimGeneration) {
       return null;
     }
     durableRunningClaimHeld = true;
@@ -303,7 +300,7 @@ describe("agent-loop step ownership regressions", () => {
     currentStep = makeStep({
       status: "running",
       workflowRunId: "workflow-owner",
-      stepInput: { executionClaimGeneration: "existing-claim" },
+      executionClaimGeneration: "existing-claim",
     });
     const { executeAgentLoopStep } = await executorPromise;
 
