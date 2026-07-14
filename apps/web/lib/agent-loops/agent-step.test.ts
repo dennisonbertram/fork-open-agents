@@ -643,7 +643,10 @@ function resetMocks() {
   updateAgentLoopRunContextMock.mockClear();
   isAgentLoopRunSourceLiveMock.mockClear();
   getAgentLoopRunWithLoopMock.mockClear();
-  verifyRepoAccessMock.mockClear();
+  verifyRepoAccessMock.mockReset();
+  verifyRepoAccessMock.mockImplementation(
+    async (_params?: unknown) => verifyRepoAccessResult,
+  );
   mintInstallationTokenMock.mockClear();
   revokeInstallationTokenMock.mockClear();
   withScopedInstallationOctokitMock.mockClear();
@@ -2257,6 +2260,39 @@ describe("BT-S25: configurable stepTimeoutMs is passed to the agent invocation",
     expect(totalMsPerCall[totalMsPerCall.length - 1]).toBeLessThan(
       stepTimeoutMs,
     );
+  });
+});
+
+describe("BT-S26: duplicate repository access verification is bounded", () => {
+  beforeEach(() => {
+    resetMocks();
+    currentStepRun = makeStepRun();
+    currentLoopRun = makeLoopRun();
+    currentLoop = makeLoop();
+  });
+
+  test("BT-S26a: a hanging second verifyRepoAccess fails closed before sandbox startup", async () => {
+    verifyRepoAccessMock.mockImplementation(
+      () => new Promise<never>(() => undefined),
+    );
+
+    const result = await executeAgentStep({
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+      loopRunId: "loop-run-1",
+      node: makeAgentStepNode() as Parameters<
+        typeof executeAgentStep
+      >[0]["node"],
+      loopRun: currentLoopRun,
+      loop: currentLoop,
+      startedAt: Date.now(),
+      stepTimeoutMs: 25,
+    });
+
+    expect(result.outcome).toBe("failure");
+    expect(result.errorKind).toBe("sandbox_unavailable");
+    expect(result.errorMessage).toContain("before sandbox startup");
+    expect(connectSandboxMock.mock.calls.length).toBe(0);
   });
 });
 
