@@ -1755,6 +1755,8 @@ export const agentLoopStepRuns = pgTable(
     sandboxName: text("sandbox_name"),
     /** Durable workflow correlation */
     workflowRunId: text("workflow_run_id"),
+    /** Durable side-effect ownership generation for agent_step delivery */
+    executionClaimGeneration: text("execution_claim_generation"),
     errorKind: text("error_kind"),
     errorMessage: text("error_message"),
     startedAt: timestamp("started_at"),
@@ -3206,7 +3208,15 @@ export type AgentLoop = typeof agentLoops.$inferSelect;
 export type NewAgentLoop = typeof agentLoops.$inferInsert;
 export type AgentLoopRun = typeof agentLoopRuns.$inferSelect;
 export type NewAgentLoopRun = typeof agentLoopRuns.$inferInsert;
-export type AgentLoopStepRun = typeof agentLoopStepRuns.$inferSelect;
+// Keep the claim column optional at the application boundary so older
+// persisted/API-shaped step rows remain readable while the migration rolls
+// out. Store writes and CAS predicates still use the dedicated column.
+export type AgentLoopStepRun = Omit<
+  typeof agentLoopStepRuns.$inferSelect,
+  "executionClaimGeneration"
+> & {
+  executionClaimGeneration?: string | null;
+};
 export type NewAgentLoopStepRun = typeof agentLoopStepRuns.$inferInsert;
 export type AgentLoopEvent = typeof agentLoopEvents.$inferSelect;
 export type NewAgentLoopEvent = typeof agentLoopEvents.$inferInsert;
