@@ -320,7 +320,6 @@ describe("agent-loop step ownership regressions", () => {
       expect.objectContaining({
         expectedStatuses: ["running"],
         expectedExecutionClaimGeneration: null,
-        workflowRunId: "workflow-replay",
       }),
     );
     expect(eventCalls).toEqual([]);
@@ -372,7 +371,6 @@ describe("agent-loop step ownership regressions", () => {
       expect.objectContaining({
         stepRunId: currentStep.id,
         expectedStatuses: ["running"],
-        workflowRunId: "workflow-owner",
         executionClaimGeneration: expect.any(String),
       }),
     );
@@ -401,8 +399,14 @@ describe("agent-loop step ownership regressions", () => {
       expect.objectContaining({
         expectedStatuses: ["running"],
         expectedExecutionClaimGeneration: null,
-        workflowRunId: "workflow-current",
         executionClaimGeneration: expect.any(String),
+      }),
+    );
+    expect(updateCalls).toContainEqual(
+      expect.objectContaining({
+        expectedStatuses: ["running"],
+        expectedExecutionClaimGeneration: expect.any(String),
+        workflowRunId: "workflow-current",
       }),
     );
     expect(executeAgentStepMock).toHaveBeenCalledTimes(1);
