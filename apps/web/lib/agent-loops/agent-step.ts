@@ -644,7 +644,7 @@ export async function executeAgentStep(
   const allowedBuiltinToolNames = normalizedInput
     ? intersectBuiltinToolNames(
         normalizedInput.requestedPolicy.builtinToolNames,
-        liveSource?.stepPolicy?.builtinToolNames ?? [],
+        liveSource?.stepPolicy?.builtinToolNames ?? null,
       )
     : (node.builtinToolNames ?? null);
   const toolkitSlugs = normalizedInput
