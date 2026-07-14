@@ -385,12 +385,77 @@ export async function runAgentLoopStep(
 
   // ── 5. Execute the step ────────────────────────────────────────────────────
 
-  const result = await executeAgentLoopStep({
-    stepRunId,
-    workflowRunId,
-    stepTimeoutMs: guardrails.stepTimeoutMs,
-    maxAgentTurnsPerStep: guardrails.maxAgentTurnsPerStep,
-  });
+  let result: Awaited<ReturnType<typeof executeAgentLoopStep>>;
+  try {
+    result = await executeAgentLoopStep({
+      stepRunId,
+      workflowRunId,
+      stepTimeoutMs: guardrails.stepTimeoutMs,
+      maxAgentTurnsPerStep: guardrails.maxAgentTurnsPerStep,
+    });
+  } catch (error) {
+    // Workflow steps retry uncaught errors. That is useful for transient
+    // failures, but unsafe here: this chain entrypoint has already claimed
+    // the app-level step and the retry would restart its deadline while
+    // leaving the run looking permanently active. Convert unexpected executor
+    // errors into the same durable failure evidence as a typed step failure.
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const failureUpdated = await updateAgentLoopStepRun({
+      stepRunId,
+      status: "failed",
+      errorKind: "workflow_failed",
+      errorMessage,
+      finishedAt: new Date(),
+      durationMs: Math.max(
+        0,
+        Date.now() - (ctx.stepRun.startedAt?.getTime() ?? Date.now()),
+      ),
+      expectedStatuses: ["queued", "running"],
+      ...(ctx.stepRun.workflowRunId
+        ? { expectedWorkflowRunId: workflowRunId }
+        : {}),
+    });
+    if (failureUpdated) {
+      await recordAgentLoopEvent({
+        loopRunId,
+        stepRunId,
+        nodeId,
+        eventName: "agent-loop.step.failed",
+        status: "failed",
+        level: "error",
+        summary: errorMessage,
+        payload: {
+          errorKind: "workflow_failed",
+          errorMessage,
+          nodeKind: ctx.stepRun.nodeKind,
+          attempt: ctx.stepRun.attempt,
+        },
+        workflowRunId,
+      });
+    }
+
+    const failed = await conditionallyTransitionRunStatus({
+      runId: loopRunId,
+      toStatus: "failed",
+      fromStatuses: ["queued", "running", "stalled"],
+      errorKind: "workflow_failed",
+      errorMessage,
+    });
+    if (failed) {
+      await recordAgentLoopEvent({
+        loopRunId,
+        stepRunId,
+        nodeId,
+        eventName: "agent-loop.run.failed",
+        status: "failed",
+        level: "error",
+        summary: errorMessage,
+        payload: { errorKind: "workflow_failed", errorMessage },
+        workflowRunId,
+      });
+    }
+    return;
+  }
 
   if (result.outcome === "replay") return;
 
