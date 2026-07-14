@@ -137,6 +137,7 @@ const AGENT_STEP_TIMEOUT_MS = 10 * 60 * 1000;
 
 /** Error name used when sandbox startup consumes the whole agent-step budget. */
 const SANDBOX_CONNECT_TIMEOUT_ERROR = "SandboxConnectTimeoutError";
+const AGENT_STEP_PREPARATION_TIMEOUT_ERROR = "AgentStepPreparationTimeoutError";
 
 function sandboxConnectTimeoutError(timeoutMs: number): Error {
   const error = new Error(`Sandbox connection timed out after ${timeoutMs}ms`);
@@ -146,6 +147,39 @@ function sandboxConnectTimeoutError(timeoutMs: number): Error {
 
 function isSandboxConnectTimeoutError(error: unknown): error is Error {
   return error instanceof Error && error.name === SANDBOX_CONNECT_TIMEOUT_ERROR;
+}
+
+function agentStepPreparationTimeoutError(timeoutMs: number): Error {
+  const error = new Error(
+    `Repository access timed out after ${timeoutMs}ms before sandbox startup`,
+  );
+  error.name = AGENT_STEP_PREPARATION_TIMEOUT_ERROR;
+  return error;
+}
+
+function withAgentStepPreparationTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+): Promise<T> {
+  if (timeoutMs <= 0) {
+    return Promise.reject(agentStepPreparationTimeoutError(timeoutMs));
+  }
+
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(agentStepPreparationTimeoutError(timeoutMs));
+    }, timeoutMs);
+
+    void promise
+      .then((value) => {
+        clearTimeout(timer);
+        resolve(value);
+      })
+      .catch((error: unknown) => {
+        clearTimeout(timer);
+        reject(error);
+      });
+  });
 }
 
 /** Timeout for checkCommand execution (2 minutes). */
@@ -683,12 +717,40 @@ export async function executeAgentStep(
 
   // ── 1. Verify repo access (write required for agent_step commit/push) ────────
 
-  const accessResult = await verifyRepoAccess({
-    userId: executionUserId,
-    owner: repoOwner,
-    repo: repoName,
-    requiredUserPermission: "write",
-  });
+  const remainingPreparationTimeoutMs = stepDeadlineAt - Date.now();
+  if (remainingPreparationTimeoutMs <= 0) {
+    return recordAgentStepFailure({
+      ...failureCtx,
+      errorKind: "sandbox_unavailable",
+      errorMessage: `Repository access timed out after ${effectiveStepTimeoutMs}ms before sandbox startup`,
+    });
+  }
+
+  let accessResult: Awaited<ReturnType<typeof verifyRepoAccess>>;
+  try {
+    accessResult = await withAgentStepPreparationTimeout(
+      verifyRepoAccess({
+        userId: executionUserId,
+        owner: repoOwner,
+        repo: repoName,
+        requiredUserPermission: "write",
+      }),
+      remainingPreparationTimeoutMs,
+    );
+  } catch (error) {
+    if (
+      !(error instanceof Error) ||
+      error.name !== AGENT_STEP_PREPARATION_TIMEOUT_ERROR
+    ) {
+      throw error;
+    }
+
+    return recordAgentStepFailure({
+      ...failureCtx,
+      errorKind: "sandbox_unavailable",
+      errorMessage: error.message,
+    });
+  }
 
   if (!accessResult.ok) {
     const errorKind =
