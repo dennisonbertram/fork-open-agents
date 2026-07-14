@@ -158,6 +158,10 @@ let verifyRepoAccessResult: {
 let verifyRepoAccessImpl = async () => verifyRepoAccessResult;
 const verifyRepoAccessMock = mock(async () => verifyRepoAccessImpl());
 
+let connectSandboxImpl = async () => {
+  throw new Error("Sandbox unavailable in step-executor test suite");
+};
+
 let mintInstallationTokenResult: { token: string } = {
   token: "ghs_test_token",
 };
@@ -192,9 +196,7 @@ mock.module("@/lib/github/app", () => ({
 // fails at connectSandbox (sandbox_unavailable) in the step-executor suite.
 
 mock.module("@open-agents/sandbox", () => ({
-  connectSandbox: mock(async () => {
-    throw new Error("Sandbox unavailable in step-executor test suite");
-  }),
+  connectSandbox: mock(async () => connectSandboxImpl()),
   hasUncommittedChanges: mock(async () => false),
   stageAll: mock(async () => undefined),
   getCurrentBranch: mock(async () => "main"),
@@ -445,6 +447,9 @@ function resetMocks() {
     defaultBranch: "main",
   };
   verifyRepoAccessImpl = async () => verifyRepoAccessResult;
+  connectSandboxImpl = async () => {
+    throw new Error("Sandbox unavailable in step-executor test suite");
+  };
   mintInstallationTokenResult = { token: "ghs_test_token" };
 
   listIssuesResult = [];
@@ -1480,6 +1485,27 @@ describe("agent_step node", () => {
           update.errorKind === "sandbox_unavailable",
       ),
     ).toBe(true);
+  });
+
+  test("BT-009b: remaining timeout reaches normalized sandbox startup", async () => {
+    verifyRepoAccessImpl = async () => {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      return verifyRepoAccessResult;
+    };
+    connectSandboxImpl = async () => new Promise<never>(() => undefined);
+
+    const { executeAgentLoopStep } = await executorPromise;
+    const startedAt = Date.now();
+    const result = await executeAgentLoopStep({
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+      stepTimeoutMs: 40,
+    });
+
+    expect(result.outcome).toBe("failure");
+    expect(result.errorKind).toBe("sandbox_unavailable");
+    expect(result.errorMessage).toContain("Sandbox connection timed out");
+    expect(Date.now() - startedAt).toBeLessThan(500);
   });
 });
 
