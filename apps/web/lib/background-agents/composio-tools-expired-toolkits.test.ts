@@ -33,7 +33,10 @@ mock.module("@/lib/db/client", () => ({
   },
 }));
 
-mock.module("@/lib/db/schema", () => ({ backgroundAgentToolSessions: {} }));
+mock.module("@/lib/db/schema", () => ({
+  agentLoopToolSessions: {},
+  backgroundAgentToolSessions: {},
+}));
 mock.module("nanoid", () => ({ nanoid: () => "test-nanoid" }));
 
 mock.module("@/lib/composio/config", () => ({

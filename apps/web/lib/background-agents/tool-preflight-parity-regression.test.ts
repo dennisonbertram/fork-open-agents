@@ -68,6 +68,7 @@ mock.module("@/lib/db/client", () => ({
 }));
 
 mock.module("@/lib/db/schema", () => ({
+  agentLoopToolSessions: {},
   backgroundAgentToolSessions: {},
 }));
 

@@ -4,7 +4,10 @@ import type { ToolSet } from "ai";
 import { and, eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { db } from "@/lib/db/client";
-import { backgroundAgentToolSessions } from "@/lib/db/schema";
+import {
+  agentLoopToolSessions,
+  backgroundAgentToolSessions,
+} from "@/lib/db/schema";
 import { getComposioConfig } from "@/lib/composio/config";
 import { getComposioClient } from "@/lib/composio/client";
 import { resolveComposioToolsForToolkitList } from "@/lib/composio/resolve-toolkit-list";
@@ -90,16 +93,26 @@ async function getBgRunToolSession(params: {
   agentId: string | null;
   userId: string;
   configHash: string;
+  runKind: "background_agent" | "agent_loop";
 }): Promise<
   import("@/lib/composio/resolve-toolkit-list").ToolkitListCacheRow | null
 > {
-  const row = await db.query.backgroundAgentToolSessions.findFirst({
-    where: and(
-      eq(backgroundAgentToolSessions.runId, params.runId),
-      eq(backgroundAgentToolSessions.userId, params.userId),
-      eq(backgroundAgentToolSessions.configHash, params.configHash),
-    ),
-  });
+  const row =
+    params.runKind === "agent_loop"
+      ? await db.query.agentLoopToolSessions.findFirst({
+          where: and(
+            eq(agentLoopToolSessions.loopRunId, params.runId),
+            eq(agentLoopToolSessions.userId, params.userId),
+            eq(agentLoopToolSessions.configHash, params.configHash),
+          ),
+        })
+      : await db.query.backgroundAgentToolSessions.findFirst({
+          where: and(
+            eq(backgroundAgentToolSessions.runId, params.runId),
+            eq(backgroundAgentToolSessions.userId, params.userId),
+            eq(backgroundAgentToolSessions.configHash, params.configHash),
+          ),
+        });
   if (!row) return null;
 
   // Map from backgroundAgentToolSessions schema to the ToolkitListCacheRow shape.
@@ -116,32 +129,64 @@ async function upsertBgRunToolSession(params: {
   userId: string;
   composioSessionId: string;
   configHash: string;
+  runKind: "background_agent" | "agent_loop";
 }): Promise<{ id: string }> {
   const now = new Date();
-  const [row] = await db
-    .insert(backgroundAgentToolSessions)
-    .values({
-      id: nanoid(),
-      runId: params.runId,
-      agentId: params.agentId ?? null,
-      userId: params.userId,
-      provider: "composio",
-      profileId: "direct",
-      agentRole: "main",
-      phase: "always",
-      providerSessionId: params.composioSessionId,
-      configHash: params.configHash,
-      status: "ready",
-      createdAt: now,
-      lastUsedAt: now,
-    })
-    .onConflictDoNothing()
-    .returning({ id: backgroundAgentToolSessions.id });
+  const [row] =
+    params.runKind === "agent_loop"
+      ? await db
+          .insert(agentLoopToolSessions)
+          .values({
+            id: nanoid(),
+            loopRunId: params.runId,
+            userId: params.userId,
+            provider: "composio",
+            profileId: "direct",
+            agentRole: "main",
+            phase: "always",
+            providerSessionId: params.composioSessionId,
+            configHash: params.configHash,
+            status: "ready",
+            createdAt: now,
+            lastUsedAt: now,
+          })
+          .onConflictDoNothing()
+          .returning({ id: agentLoopToolSessions.id })
+      : await db
+          .insert(backgroundAgentToolSessions)
+          .values({
+            id: nanoid(),
+            runId: params.runId,
+            agentId: params.agentId ?? null,
+            userId: params.userId,
+            provider: "composio",
+            profileId: "direct",
+            agentRole: "main",
+            phase: "always",
+            providerSessionId: params.composioSessionId,
+            configHash: params.configHash,
+            status: "ready",
+            createdAt: now,
+            lastUsedAt: now,
+          })
+          .onConflictDoNothing()
+          .returning({ id: backgroundAgentToolSessions.id });
 
   return { id: row?.id ?? nanoid() };
 }
 
-async function touchBgRunToolSession(id: string): Promise<void> {
+async function touchBgRunToolSession(
+  id: string,
+  runKind: "background_agent" | "agent_loop",
+): Promise<void> {
+  if (runKind === "agent_loop") {
+    await db
+      .update(agentLoopToolSessions)
+      .set({ lastUsedAt: new Date() })
+      .where(eq(agentLoopToolSessions.id, id));
+    return;
+  }
+
   await db
     .update(backgroundAgentToolSessions)
     .set({ lastUsedAt: new Date() })
@@ -160,6 +205,7 @@ export type ResolveComposioToolsForBgRunParams = {
   slugs: string[];
   repoOwner: string;
   repoName: string;
+  runKind?: "background_agent" | "agent_loop";
 };
 
 export class ComposioRepoPolicyError extends Error {
@@ -285,6 +331,7 @@ export async function resolveComposioToolsForBgRun(
   params: ResolveComposioToolsForBgRunParams,
 ): Promise<ResolveComposioToolsForBgRunResult> {
   const { agentId, runId, userId, slugs, repoOwner, repoName } = params;
+  const runKind = params.runKind ?? "background_agent";
 
   if (slugs.length === 0) {
     return { status: "off", reason: "no_slugs_selected" };
@@ -335,7 +382,13 @@ export async function resolveComposioToolsForBgRun(
       composio,
       connectedAccountIdsByToolkit,
       getCachedSession: (configHash) =>
-        getBgRunToolSession({ runId, agentId, userId, configHash }),
+        getBgRunToolSession({
+          runId,
+          agentId,
+          userId,
+          configHash,
+          runKind,
+        }),
       upsertSession: ({ composioSessionId, configHash }) =>
         upsertBgRunToolSession({
           runId,
@@ -343,8 +396,9 @@ export async function resolveComposioToolsForBgRun(
           userId,
           composioSessionId,
           configHash,
+          runKind,
         }),
-      touchSession: (id) => touchBgRunToolSession(id),
+      touchSession: (id) => touchBgRunToolSession(id, runKind),
     });
 
     if (resolved.status !== "ready") {

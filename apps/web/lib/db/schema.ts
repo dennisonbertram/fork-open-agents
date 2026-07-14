@@ -1729,6 +1729,40 @@ export const agentLoopRuns = pgTable(
   ],
 );
 
+export const agentLoopToolSessions = pgTable(
+  "agent_loop_tool_sessions",
+  {
+    id: text("id").primaryKey(),
+    loopRunId: text("loop_run_id")
+      .notNull()
+      .references(() => agentLoopRuns.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    provider: text("provider", {
+      enum: ["composio"],
+    }).notNull(),
+    profileId: text("profile_id"),
+    agentRole: text("agent_role", {
+      enum: ["main", "explorer", "executor", "design"],
+    }).notNull(),
+    phase: text("phase", {
+      enum: ["investigate", "mutate", "notify", "always"],
+    }).notNull(),
+    providerSessionId: text("provider_session_id"),
+    configHash: text("config_hash"),
+    status: text("status", {
+      enum: ["planned", "ready", "failed", "skipped"],
+    }).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    lastUsedAt: timestamp("last_used_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("agent_loop_tool_sessions_run_idx").on(table.loopRunId),
+    index("agent_loop_tool_sessions_user_idx").on(table.userId),
+  ],
+);
+
 // ── Agent Loop Step Runs ──────────────────────────────────────────────────────
 
 export const agentLoopStepRuns = pgTable(

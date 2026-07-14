@@ -941,6 +941,7 @@ export async function executeAgentStep(
         slugs: toolkitSlugs,
         repoOwner,
         repoName,
+        runKind: "agent_loop",
       });
       if (composioResult.status === "ready") {
         composioTools = guardToolSet(composioResult.tools, async () => {
