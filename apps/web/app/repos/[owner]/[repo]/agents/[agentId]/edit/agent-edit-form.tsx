@@ -8,6 +8,7 @@ import {
   buildFormFromAgent,
   type FormState,
 } from "@/lib/background-agents/agent-spec";
+import { readApiError } from "@/lib/api/read-api-error";
 import type { BackgroundAgentWithTriggers } from "@/lib/background-agents/store";
 import { canonicalBackgroundAutomationDetailUrl } from "@/lib/automations/definition-routes";
 import { AgentSpecEditor } from "../../agent-spec-editor";
@@ -75,17 +76,15 @@ export function AgentEditForm({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      const body = (await res.json()) as {
-        error?: string;
-        details?: Record<string, string[]>;
-      };
       if (!res.ok) {
-        const detail =
-          body.error ??
-          (body.details
-            ? Object.values(body.details).flat().join("; ")
-            : "Failed to save agent");
-        setSaveError(detail);
+        const body = (await res.json().catch(() => null)) as {
+          error?: string;
+          details?: Record<string, string[]>;
+        } | null;
+        const fallback = body?.details
+          ? Object.values(body.details).flat().join("; ")
+          : "Failed to save agent";
+        setSaveError(readApiError(body, fallback).message);
         return;
       }
       setPersistedEnabled(payload.status === "enabled");
@@ -106,16 +105,18 @@ export function AgentEditForm({
       const res = await fetch(`/api/background-agents/${agent.id}/test`, {
         method: "POST",
       });
-      const body = (await res.json()) as ManualTestResponse;
+      const body = (await res
+        .json()
+        .catch(() => null)) as ManualTestResponse | null;
       if (!res.ok) {
-        setRunError(body.error ?? "Failed to start test run");
+        setRunError(readApiError(body, "Failed to start test run").message);
         return;
       }
-      if (body.skipReason) {
+      if (body?.skipReason) {
         setRunError(manualTestSkipMessages[body.skipReason]);
         return;
       }
-      const runId = body.runIds[0];
+      const runId = body?.runIds[0];
       if (!runId) {
         setRunError("No background run was created for this test");
         return;
