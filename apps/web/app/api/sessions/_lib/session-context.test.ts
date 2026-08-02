@@ -44,6 +44,11 @@ async function getErrorMessage(
   return body.error;
 }
 
+async function getErrorKind(response: Response): Promise<string | undefined> {
+  const body = (await response.json()) as { errorKind?: string };
+  return body.errorKind;
+}
+
 describe("session context guards", () => {
   beforeEach(() => {
     authSession = { user: { id: "user-1" } };
@@ -260,6 +265,43 @@ describe("session context guards", () => {
     if (result.ok) {
       expect(result.sessionRecord.id).toBe("session-1");
       expect(result.chat.id).toBe("chat-1");
+    }
+  });
+
+  test("gate failures carry the shared error envelope kind", async () => {
+    const { requireAuthenticatedUser, requireOwnedSession } =
+      await sessionContextModulePromise;
+
+    authSession = null;
+    const unauth = await requireAuthenticatedUser();
+    expect(unauth.ok).toBe(false);
+    if (!unauth.ok) {
+      expect(await getErrorKind(unauth.response)).toBe("unauthorized");
+    }
+
+    authSession = { user: { id: "user-1" } };
+    sessionRecord = {
+      id: "session-1",
+      userId: "someone-else",
+      sandboxState: { type: "vercel" },
+    };
+    const forbidden = await requireOwnedSession({
+      userId: "user-1",
+      sessionId: "session-1",
+    });
+    expect(forbidden.ok).toBe(false);
+    if (!forbidden.ok) {
+      expect(await getErrorKind(forbidden.response)).toBe("forbidden");
+    }
+
+    sessionRecord = null;
+    const missing = await requireOwnedSession({
+      userId: "user-1",
+      sessionId: "session-1",
+    });
+    expect(missing.ok).toBe(false);
+    if (!missing.ok) {
+      expect(await getErrorKind(missing.response)).toBe("not_found");
     }
   });
 });
