@@ -17,9 +17,36 @@ function jsonError(error: string, status: number) {
   return Response.json({ error }, { status });
 }
 
+const UNIQUE_VIOLATION_CODE = "23505";
+
+/**
+ * drizzle-orm wraps driver errors in DrizzleQueryError, whose message is
+ * "Failed query: ...\nparams: ..." — the postgres unique-violation details only
+ * live on `cause`, so walk the chain instead of reading the top message.
+ * Wrapper messages embed query params (including the submitted profile name),
+ * so only unwrapped errors are matched by text.
+ */
+function isDuplicateNameError(error: unknown): boolean {
+  let current: unknown = error;
+  for (let depth = 0; depth < 5 && current instanceof Error; depth++) {
+    const candidate = current as Error & { code?: unknown; query?: unknown };
+    if (candidate.code === UNIQUE_VIOLATION_CODE) {
+      return true;
+    }
+    if (
+      candidate.query === undefined &&
+      /unique|duplicate/i.test(candidate.message)
+    ) {
+      return true;
+    }
+    current = candidate.cause;
+  }
+  return false;
+}
+
 function getProfileErrorMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
-  if (/unique|duplicate/i.test(message)) {
+  if (isDuplicateNameError(error)) {
     return "An inference profile with that name already exists.";
   }
   if (/OpenAI-compatible profiles require a base URL/i.test(message)) {
@@ -81,7 +108,10 @@ export async function POST(req: Request) {
     }
     return Response.json({ profile }, { status: 201 });
   } catch (error) {
-    return jsonError(getProfileErrorMessage(error), 400);
+    return jsonError(
+      getProfileErrorMessage(error),
+      isDuplicateNameError(error) ? 409 : 400,
+    );
   }
 }
 
@@ -113,7 +143,10 @@ export async function PATCH(req: Request) {
     }
     return Response.json({ profile });
   } catch (error) {
-    return jsonError(getProfileErrorMessage(error), 400);
+    return jsonError(
+      getProfileErrorMessage(error),
+      isDuplicateNameError(error) ? 409 : 400,
+    );
   }
 }
 
