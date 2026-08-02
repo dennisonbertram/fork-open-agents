@@ -2,7 +2,11 @@ import "server-only";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import { accounts } from "@/lib/db/schema";
+import { GitHubRateLimitedError } from "./rate-limit-error";
 import { getUserGitHubToken } from "./token";
+import { GitHubTokenRejectedError } from "./user-errors";
+
+export { GitHubRateLimitedError, GitHubTokenRejectedError };
 
 export interface GitHubUserProfile {
   username: string;
@@ -106,55 +110,72 @@ interface GitHubOrg {
   avatar_url: string;
 }
 
+function isRateLimited(response: Response, body: string): boolean {
+  if (response.status === 429) return true;
+  if (response.headers.get("x-ratelimit-remaining") === "0") return true;
+  if (response.headers.get("retry-after") !== null) return true;
+  return /rate limit|abuse detection/i.test(body);
+}
+
+async function throwIfRejectedOrRateLimited(response: Response): Promise<void> {
+  if (response.ok) return;
+
+  const body = await response.clone().text();
+  if (isRateLimited(response, body)) {
+    const retryAfter = Number(response.headers.get("retry-after"));
+    throw new GitHubRateLimitedError(
+      Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : null,
+    );
+  }
+
+  if (response.status === 401 || response.status === 403) {
+    throw new GitHubTokenRejectedError(response.status);
+  }
+}
+
 /**
  * Fetch the authenticated GitHub user's profile.
  */
 export async function fetchGitHubUser(token: string) {
-  try {
-    const response = await fetch("https://api.github.com/user", {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: "application/vnd.github.v3+json",
-      },
-    });
+  const response = await fetch("https://api.github.com/user", {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: "application/vnd.github.v3+json",
+    },
+  });
 
-    if (!response.ok) return null;
+  await throwIfRejectedOrRateLimited(response);
+  if (!response.ok) return null;
 
-    const user = (await response.json()) as GitHubUser;
-    return {
-      login: user.login,
-      name: user.name,
-      avatar_url: user.avatar_url,
-    };
-  } catch {
-    return null;
-  }
+  const user = (await response.json()) as GitHubUser;
+  return {
+    login: user.login,
+    name: user.name,
+    avatar_url: user.avatar_url,
+  };
 }
 
 /**
  * Fetch the authenticated GitHub user's organizations.
  */
 export async function fetchGitHubOrgs(token: string) {
-  try {
-    const response = await fetch(
-      "https://api.github.com/user/orgs?per_page=100",
-      {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          Accept: "application/vnd.github.v3+json",
-        },
+  const response = await fetch(
+    "https://api.github.com/user/orgs?per_page=100",
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/vnd.github.v3+json",
       },
-    );
+    },
+  );
 
-    if (!response.ok) return null;
+  await throwIfRejectedOrRateLimited(response);
+  if (!response.ok) return null;
 
-    const orgs = (await response.json()) as GitHubOrg[];
-    return orgs.map((org) => ({
-      login: org.login,
-      name: org.login,
-      avatar_url: org.avatar_url,
-    }));
-  } catch {
-    return null;
-  }
+  const orgs = (await response.json()) as GitHubOrg[];
+  return orgs.map((org) => ({
+    login: org.login,
+    name: org.login,
+    avatar_url: org.avatar_url,
+  }));
 }
