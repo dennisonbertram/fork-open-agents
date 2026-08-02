@@ -816,7 +816,16 @@ IMPORTANT:
         completionPacket,
         completionPacketValidation,
       };
-      throw error;
+      if (abortSignal?.aborted) {
+        throw error;
+      }
+      // The worker only fails in here after the workspace checks already passed,
+      // so surface the model/provider failure instead of leaving the parent agent
+      // to guess at a workspace cause.
+      throw new Error(
+        `subagent_model_failed: the delegated worker model "${subagentModelId}" failed before returning output: ${error instanceof Error ? error.message : String(error)}. Check that the model is reachable and configured; the shared workspace was not the cause.`,
+        { cause: error },
+      );
     } finally {
       releaseSharedWriterLease(
         abortSignal?.aborted ? "worker_cancelled" : "worker_terminal",
