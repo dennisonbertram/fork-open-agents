@@ -1,3 +1,7 @@
+import {
+  type ApiErrorKind,
+  apiErrorKindForStatus,
+} from "@/lib/api/error-response";
 import { requireAuthenticatedUser } from "@/app/api/sessions/_lib/session-context";
 import {
   createInferenceProfile,
@@ -13,8 +17,11 @@ import {
   updateInferenceProfileInputSchema,
 } from "@/lib/inference/types";
 
-function jsonError(error: string, status: number) {
-  return Response.json({ error }, { status });
+function jsonError(error: string, status: number, kind?: ApiErrorKind) {
+  return Response.json(
+    { error, errorKind: kind ?? apiErrorKindForStatus(status) },
+    { status },
+  );
 }
 
 const UNIQUE_VIOLATION_CODE = "23505";
