@@ -1585,6 +1585,48 @@ describe("tools execute behavior", () => {
     expect(message).not.toContain("baseline");
   });
 
+  test("taskTool preserves a non-model worker failure instead of blaming the model", async () => {
+    const workspace = await createGitWorkspace();
+    mockToolLoopAgentStream = mock(() => ({
+      fullStream: (async function* () {
+        yield { type: "tool-call", toolName: "bash", input: {} };
+        throw new Error("bash tool exploded");
+      })(),
+      response: Promise.resolve({ messages: [] }),
+      usage: Promise.resolve({}),
+    }));
+
+    const result = taskTool.execute?.(
+      {
+        subagentType: "executor",
+        workspacePolicy: "shared",
+        task: "Apply change",
+        instructions: "Update the implementation.",
+      },
+      executionOptions({
+        ...createContext({ workingDirectory: workspace }),
+        sessionId: "session-tool-failure",
+      }),
+    ) as AsyncIterable<unknown> | undefined;
+
+    if (!result) {
+      throw new Error("taskTool execute missing in test");
+    }
+
+    let thrown: unknown;
+    try {
+      for await (const _output of result) {
+        // drain
+      }
+    } catch (error) {
+      thrown = error;
+    }
+
+    const message = (thrown as Error | undefined)?.message ?? "";
+    expect(message).toBe("bash tool exploded");
+    expect(message).not.toContain("subagent_model_failed");
+  });
+
   test("taskTool provisions an isolated child workspace before worker launch", async () => {
     const parentWorkspace = await createGitWorkspace();
     const childWorkspace = await mkdtemp(path.join(tmpdir(), "task-child-"));
