@@ -10,6 +10,7 @@ import { getGitHubUserProfile } from "@/lib/github/users";
 import { updateSession } from "@/lib/db/sessions";
 import { parseGitHubHttpsUrl } from "@/lib/github/urls";
 import {
+  getRepoAccessErrorStatus,
   verifyRepoAccess,
   getRepoAccessErrorMessage,
 } from "@/lib/github/access";
@@ -225,8 +226,11 @@ export async function POST(req: Request) {
 
     if (!access.ok) {
       return Response.json(
-        { error: getRepoAccessErrorMessage(access.reason) },
-        { status: 403 },
+        {
+          error: getRepoAccessErrorMessage(access.reason),
+          reason: access.reason,
+        },
+        { status: getRepoAccessErrorStatus(access.reason) },
       );
     }
 
