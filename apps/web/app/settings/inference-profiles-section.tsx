@@ -755,18 +755,22 @@ export function InferenceProfilesSection() {
 
     try {
       const isEditing = editingProfile !== null;
-      const response = await fetch("/api/inference-profiles", {
-        method: isEditing ? "PATCH" : "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...(isEditing ? { profileId: editingProfile.id } : {}),
-          name: input.name,
-          provider: input.provider,
-          baseUrl: input.baseUrl || null,
-          ...(input.apiKey ? { apiKey: input.apiKey } : {}),
-          enabled: input.enabled,
-        }),
-      });
+      const response = await fetch(
+        isEditing
+          ? `/api/inference-profiles/${editingProfile.id}`
+          : "/api/inference-profiles",
+        {
+          method: isEditing ? "PATCH" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: input.name,
+            provider: input.provider,
+            baseUrl: input.baseUrl || null,
+            ...(input.apiKey ? { apiKey: input.apiKey } : {}),
+            enabled: input.enabled,
+          }),
+        },
+      );
       const responseData = (await response.json()) as
         | { profile: SafeInferenceProfile }
         | { error?: string };
@@ -806,10 +810,8 @@ export function InferenceProfilesSection() {
     setIsSaving(true);
     setError(null);
     try {
-      const response = await fetch("/api/inference-profiles", {
+      const response = await fetch(`/api/inference-profiles/${profileId}`, {
         method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ profileId }),
       });
       if (!response.ok) {
         const responseData = (await response.json()) as { error?: string };
@@ -884,13 +886,10 @@ export function InferenceProfilesSection() {
     setError(null);
 
     try {
-      const response = await fetch("/api/inference-profiles", {
+      const response = await fetch(`/api/inference-profiles/${profile.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          profileId: profile.id,
-          enabled,
-        }),
+        body: JSON.stringify({ enabled }),
       });
       const responseData = (await response.json()) as
         | { profile: SafeInferenceProfile }

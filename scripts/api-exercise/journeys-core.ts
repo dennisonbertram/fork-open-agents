@@ -117,9 +117,8 @@ const journeys: Journey[] = [
         },
       },
       {
-        // Collection-level PATCH/DELETE with the id in the body, unlike every
-        // other resource in this API, which uses /resource/[id]. Recorded as
-        // observed, not as it ought to be.
+        // Collection-level PATCH/DELETE with the id in the body are deprecated
+        // (issue #1055) but still supported, so both shapes stay covered.
         name: "rename-only PATCH succeeds without resending baseUrl (issue #1062)",
         method: "PATCH",
         path: "/api/inference-profiles",
@@ -142,11 +141,29 @@ const journeys: Journey[] = [
         skipIf: (ctx) => !ctx.profileId,
       },
       {
-        name: "per-id read route does not exist",
+        name: "per-id read route returns the profile",
         method: "GET",
         path: (ctx) => `/api/inference-profiles/${ctx.profileId}`,
         skipIf: (ctx) => !ctx.profileId,
-        expect: [404],
+        expect: [200],
+        assert: (body, ctx) => {
+          const profile = (body as { profile?: { id?: string; name?: string } })
+            .profile;
+          if (profile?.id !== ctx.profileId) {
+            return "per-id GET did not return the created profile";
+          }
+          return profile.name === "Contract Probe Renamed"
+            ? null
+            : `per-id GET name is "${profile.name}"`;
+        },
+      },
+      {
+        name: "per-id PATCH renames without resending baseUrl",
+        method: "PATCH",
+        path: (ctx) => `/api/inference-profiles/${ctx.profileId}`,
+        body: { name: "Contract Probe Renamed" },
+        skipIf: (ctx) => !ctx.profileId,
+        expect: [200],
       },
       {
         name: "list reflects the rename",
@@ -164,11 +181,18 @@ const journeys: Journey[] = [
         },
       },
       {
-        name: "delete the profile via collection-level DELETE",
+        name: "delete the profile via collection-level DELETE (deprecated shape)",
         method: "DELETE",
         path: "/api/inference-profiles",
         body: (ctx) => ({ profileId: ctx.profileId }),
         skipIf: (ctx) => !ctx.profileId,
+      },
+      {
+        name: "per-id DELETE reports the profile is gone as JSON 404",
+        method: "DELETE",
+        path: (ctx) => `/api/inference-profiles/${ctx.profileId}`,
+        skipIf: (ctx) => !ctx.profileId,
+        expect: [404],
       },
     ],
   },
