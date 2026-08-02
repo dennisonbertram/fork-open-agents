@@ -21,6 +21,14 @@ import {
  */
 const GH_OWNER = "dennisonbertram";
 const GH_REPO = "fork-open-agents";
+// The /api/github/repos/* routes previously answered a bare 500 with an empty
+// body for an identity with no usable GitHub credential. PR #1070 fixed that:
+// they now return 403 { ok, errorKind: "repo_access_denied", error }. These
+// steps were retargeted from 500 to 403 when that landed, which is the harness
+// working as intended — it went red the moment the defect was fixed.
+//
+// Remaining nit worth noting: `error` carries the kind string rather than a
+// human-readable message, so it does not yet match the envelope in #1054.
 const GH_REPO_PATH = `/api/github/repos/${GH_OWNER}/${GH_REPO}`;
 
 const journeys: Journey[] = [
@@ -245,30 +253,30 @@ const journeys: Journey[] = [
         // the most likely thrower when token-decryption env is absent), but the
         // 500 body is empty and this run had no access to the server log.
         // Expectations below record the 500 as observed, not as intended.
-        name: "list repo secrets returns an untyped 500 for an unconnected identity",
+        name: "list repo secrets is denied with a typed 403 for an unconnected identity",
         method: "GET",
         path: `${GH_REPO_PATH}/secrets`,
-        expect: [500],
+        expect: [403],
       },
       {
-        name: "create a repo secret returns an untyped 500",
+        name: "create a repo secret is denied with a typed 403",
         method: "POST",
         path: `${GH_REPO_PATH}/secrets`,
         body: { name: "OPEN_AGENTS_CONTRACT_PROBE", value: "not-a-real-value" },
-        expect: [500],
+        expect: [403],
       },
       {
-        name: "update a repo secret returns an untyped 500",
+        name: "update a repo secret is denied with a typed 403",
         method: "PUT",
         path: `${GH_REPO_PATH}/secrets/OPEN_AGENTS_CONTRACT_PROBE`,
         body: { value: "not-a-real-value" },
-        expect: [500],
+        expect: [403],
       },
       {
-        name: "delete a repo secret returns an untyped 500",
+        name: "delete a repo secret is denied with a typed 403",
         method: "DELETE",
         path: `${GH_REPO_PATH}/secrets/OPEN_AGENTS_CONTRACT_PROBE`,
-        expect: [500],
+        expect: [403],
       },
       {
         name: "anonymous caller cannot list Actions workflows",
@@ -278,31 +286,31 @@ const journeys: Journey[] = [
         expect: [401],
       },
       {
-        name: "list Actions workflows returns an untyped 500",
+        name: "list Actions workflows is denied with a typed 403",
         method: "GET",
         path: `${GH_REPO_PATH}/actions/workflows`,
-        expect: [500],
+        expect: [403],
       },
       {
-        name: "dispatch a workflow returns an untyped 500",
+        name: "dispatch a workflow is denied with a typed 403",
         method: "POST",
         path: `${GH_REPO_PATH}/actions/workflows/ci.yml/dispatch`,
         body: { ref: "develop" },
-        expect: [500],
+        expect: [403],
       },
       {
         // The invalid-job-id guard lives *after* the access check, so even a
         // non-numeric job id cannot reach its 400 branch here.
-        name: "job logs with a non-numeric id returns an untyped 500",
+        name: "job logs with a non-numeric id is denied with a typed 403",
         method: "GET",
         path: `${GH_REPO_PATH}/actions/jobs/not-a-number/logs`,
-        expect: [500],
+        expect: [403],
       },
       {
-        name: "job logs for a numeric id returns an untyped 500",
+        name: "job logs for a numeric id is denied with a typed 403",
         method: "GET",
         path: `${GH_REPO_PATH}/actions/jobs/123456789/logs`,
-        expect: [500],
+        expect: [403],
       },
     ],
   },
