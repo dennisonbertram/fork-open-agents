@@ -1,62 +1,18 @@
 import { requireAuthenticatedUser } from "@/app/api/sessions/_lib/session-context";
 import {
   createInferenceProfile,
-  deleteInferenceProfile,
   listInferenceProfiles,
   setInferenceProfileModels,
-  updateInferenceProfile,
 } from "@/lib/db/inference-profiles";
 import { fetchInferenceProfileModels } from "@/lib/inference/fetch-profile-models";
+import { createInferenceProfileInputSchema } from "@/lib/inference/types";
 import {
-  createInferenceProfileInputSchema,
-  deleteInferenceProfileInputSchema,
-  updateInferenceProfileInputSchema,
-} from "@/lib/inference/types";
-
-function jsonError(error: string, status: number) {
-  return Response.json({ error }, { status });
-}
-
-const UNIQUE_VIOLATION_CODE = "23505";
-
-/**
- * drizzle-orm wraps driver errors in DrizzleQueryError, whose message is
- * "Failed query: ...\nparams: ..." — the postgres unique-violation details only
- * live on `cause`, so walk the chain instead of reading the top message.
- * Wrapper messages embed query params (including the submitted profile name),
- * so only unwrapped errors are matched by text.
- */
-function isDuplicateNameError(error: unknown): boolean {
-  let current: unknown = error;
-  for (let depth = 0; depth < 5 && current instanceof Error; depth++) {
-    const candidate = current as Error & { code?: unknown; query?: unknown };
-    if (candidate.code === UNIQUE_VIOLATION_CODE) {
-      return true;
-    }
-    if (
-      candidate.query === undefined &&
-      /unique|duplicate/i.test(candidate.message)
-    ) {
-      return true;
-    }
-    current = candidate.cause;
-  }
-  return false;
-}
-
-function getProfileErrorMessage(error: unknown): string {
-  const message = error instanceof Error ? error.message : String(error);
-  if (isDuplicateNameError(error)) {
-    return "An inference profile with that name already exists.";
-  }
-  if (/OpenAI-compatible profiles require a base URL/i.test(message)) {
-    return "OpenAI-compatible profiles require a base URL.";
-  }
-  if (/base url/i.test(message) || /invalid url/i.test(message)) {
-    return "Base URL must be a valid HTTP URL.";
-  }
-  return "Failed to save inference profile.";
-}
+  getProfileErrorMessage,
+  handleDeleteInferenceProfile,
+  handleUpdateInferenceProfile,
+  isDuplicateNameError,
+  jsonError,
+} from "./_lib/profile-handlers";
 
 export async function GET() {
   const authResult = await requireAuthenticatedUser();
@@ -115,66 +71,12 @@ export async function POST(req: Request) {
   }
 }
 
+/** @deprecated Use PATCH /api/inference-profiles/[profileId]. Kept for existing callers. */
 export async function PATCH(req: Request) {
-  const authResult = await requireAuthenticatedUser();
-  if (!authResult.ok) {
-    return authResult.response;
-  }
-
-  let body: unknown;
-  try {
-    body = await req.json();
-  } catch {
-    return jsonError("Invalid JSON body", 400);
-  }
-
-  const parsed = updateInferenceProfileInputSchema.safeParse(body);
-  if (!parsed.success) {
-    return jsonError("Invalid inference profile payload", 400);
-  }
-
-  try {
-    const profile = await updateInferenceProfile(
-      authResult.userId,
-      parsed.data,
-    );
-    if (!profile) {
-      return jsonError("Inference profile not found", 404);
-    }
-    return Response.json({ profile });
-  } catch (error) {
-    return jsonError(
-      getProfileErrorMessage(error),
-      isDuplicateNameError(error) ? 409 : 400,
-    );
-  }
+  return await handleUpdateInferenceProfile(req);
 }
 
+/** @deprecated Use DELETE /api/inference-profiles/[profileId]. Kept for existing callers. */
 export async function DELETE(req: Request) {
-  const authResult = await requireAuthenticatedUser();
-  if (!authResult.ok) {
-    return authResult.response;
-  }
-
-  let body: unknown;
-  try {
-    body = await req.json();
-  } catch {
-    return jsonError("Invalid JSON body", 400);
-  }
-
-  const parsed = deleteInferenceProfileInputSchema.safeParse(body);
-  if (!parsed.success) {
-    return jsonError("Invalid inference profile id", 400);
-  }
-
-  const deleted = await deleteInferenceProfile(
-    authResult.userId,
-    parsed.data.profileId,
-  );
-  if (!deleted) {
-    return jsonError("Inference profile not found", 404);
-  }
-
-  return Response.json({ success: true });
+  return await handleDeleteInferenceProfile(req);
 }

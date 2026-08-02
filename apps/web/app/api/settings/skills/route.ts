@@ -1,4 +1,8 @@
 import {
+  type ApiErrorKind,
+  apiErrorKindForStatus,
+} from "@/lib/api/error-response";
+import {
   createUserSkill,
   deleteUserSkill,
   listUserSkills,
@@ -12,8 +16,11 @@ import {
   updateUserSkillInputSchema,
 } from "@/lib/skills/skill-types";
 
-function jsonError(error: string, status: number) {
-  return Response.json({ error }, { status });
+function jsonError(error: string, status: number, kind?: ApiErrorKind) {
+  return Response.json(
+    { error, errorKind: kind ?? apiErrorKindForStatus(status) },
+    { status },
+  );
 }
 
 export async function GET() {

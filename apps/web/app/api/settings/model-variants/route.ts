@@ -1,3 +1,7 @@
+import {
+  type ApiErrorKind,
+  apiErrorKindForStatus,
+} from "@/lib/api/error-response";
 import { nanoid } from "nanoid";
 import {
   createModelVariantInputSchema,
@@ -33,8 +37,11 @@ function isProviderOptionsTooLarge(
   );
 }
 
-function jsonError(error: string, status: number) {
-  return Response.json({ error }, { status });
+function jsonError(error: string, status: number, kind?: ApiErrorKind) {
+  return Response.json(
+    { error, errorKind: kind ?? apiErrorKindForStatus(status) },
+    { status },
+  );
 }
 
 export async function GET(_req: Request) {

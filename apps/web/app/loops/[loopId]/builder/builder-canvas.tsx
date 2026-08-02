@@ -79,6 +79,7 @@ import { StatusPill } from "../status-pill";
 import { useLoopRunNow } from "../use-loop-run-now";
 import type { LoopDefinition, LoopGuardrails } from "@/lib/agent-loops/types";
 import type { AgentLoop } from "@/lib/db/schema";
+import { readApiError } from "@/lib/api/read-api-error";
 import type { LoopFlowEdge } from "./definition-mapping";
 
 const edgeTypes = {
@@ -460,11 +461,11 @@ function BuilderCanvasInner({
       });
 
       if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as {
-          message?: string;
-          errors?: unknown[];
-        };
-        toast.error(body.message ?? "Failed to save loop definition.");
+        const { message } = readApiError(
+          await res.json().catch(() => ({})),
+          "Failed to save loop definition.",
+        );
+        toast.error(message);
         return;
       }
       markClean();
