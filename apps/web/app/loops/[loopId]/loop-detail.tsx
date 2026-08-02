@@ -40,6 +40,7 @@ import {
   canonicalLoopAutomationDetailUrl,
   canonicalLoopAutomationEditUrl,
 } from "@/lib/automations/definition-routes";
+import { readApiError } from "@/lib/api/read-api-error";
 import { canonicalRunDetailUrl } from "@/lib/runs/detail-routes";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -275,10 +276,11 @@ export function LoopDetail({
         body: JSON.stringify({ status: newStatus }),
       });
       if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as {
-          message?: string;
-        };
-        toast.error(body.message ?? "Failed to update loop status.");
+        const { message } = readApiError(
+          await res.json().catch(() => ({})),
+          "Failed to update loop status.",
+        );
+        toast.error(message);
       } else {
         const body = (await res.json().catch(() => null)) as {
           loop?: GetAgentLoopResponse["loop"];

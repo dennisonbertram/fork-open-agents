@@ -22,6 +22,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { readApiError } from "@/lib/api/read-api-error";
 import { humanizeSchedule } from "@/lib/background-agents/schedule-humanize";
 import { StatusPill } from "./status-pill";
 import { getTriggerKindLabel } from "./loop-trigger-kind-labels";
@@ -90,10 +91,11 @@ export function LoopTriggersCard({
         body: JSON.stringify(input),
       });
       if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as {
-          message?: string;
-        };
-        setFormError(body.message ?? "Failed to create trigger.");
+        const { message } = readApiError(
+          await res.json().catch(() => ({})),
+          "Failed to create trigger.",
+        );
+        setFormError(message);
         return;
       }
       toast.success("Trigger added");

@@ -17,6 +17,7 @@
 import { useCallback, useEffect, useState } from "react";
 import useSWR from "swr";
 import type { GetAgentLoopRunDetailResponse } from "@/app/api/agent-loops/types";
+import { readApiError } from "@/lib/api/read-api-error";
 import { getLoopRunLiveness, type LoopRunLiveness } from "./run-liveness";
 
 const ACTIVE_STATUSES = new Set(["queued", "running", "paused"]);
@@ -75,7 +76,11 @@ export async function fetchRunDetailWithTimeout(
       timeoutPromise,
     ]);
     if (!res.ok) {
-      throw new Error("Failed to load run detail");
+      const { message } = readApiError(
+        await res.json().catch(() => ({})),
+        "Failed to load run detail",
+      );
+      throw new Error(message);
     }
     return (await res.json()) as GetAgentLoopRunDetailResponse;
   } finally {
