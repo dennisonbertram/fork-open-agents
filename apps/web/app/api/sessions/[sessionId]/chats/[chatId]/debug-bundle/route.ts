@@ -74,7 +74,10 @@ async function authorizeBundleRead(params: {
       return {
         ok: false as const,
         response: Response.json(
-          { error: "Invalid or expired diagnostic token" },
+          {
+            error: "Invalid or expired diagnostic token",
+            errorKind: "unauthorized",
+          },
           { status: 401 },
         ),
       };
@@ -87,7 +90,10 @@ async function authorizeBundleRead(params: {
     if (!sessionRecord || !chat || chat.sessionId !== params.sessionId) {
       return {
         ok: false as const,
-        response: Response.json({ error: "Chat not found" }, { status: 404 }),
+        response: Response.json(
+          { error: "Chat not found", errorKind: "not_found" },
+          { status: 404 },
+        ),
       };
     }
 

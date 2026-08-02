@@ -26,7 +26,7 @@ export async function GET(_req: Request, context: RouteContext) {
   });
   if (!row) {
     return Response.json(
-      { error: "Background run not found" },
+      { error: "Background run not found", errorKind: "not_found" },
       { status: 404 },
     );
   }

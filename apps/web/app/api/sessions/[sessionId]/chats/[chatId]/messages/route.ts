@@ -50,13 +50,19 @@ export async function POST(req: Request, context: RouteContext) {
   try {
     body = (await req.json()) as PersistAssistantMessageRequest;
   } catch {
-    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+    return Response.json(
+      { error: "Invalid JSON body", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   const message = isRecord(body) ? body.message : undefined;
   if (!isAssistantMessage(message)) {
     return Response.json(
-      { error: "A valid assistant message is required" },
+      {
+        error: "A valid assistant message is required",
+        errorKind: "invalid_request",
+      },
       { status: 400 },
     );
   }
@@ -70,7 +76,10 @@ export async function POST(req: Request, context: RouteContext) {
 
   if (result.status === "conflict") {
     return Response.json(
-      { error: "Message ID already belongs to a different chat or role" },
+      {
+        error: "Message ID already belongs to a different chat or role",
+        errorKind: "conflict",
+      },
       { status: 409 },
     );
   }

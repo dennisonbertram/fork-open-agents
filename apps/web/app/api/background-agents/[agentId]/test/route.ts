@@ -19,14 +19,17 @@ export async function POST(req: Request, context: RouteContext) {
   });
   if (!agent) {
     return Response.json(
-      { error: "Background agent not found" },
+      { error: "Background agent not found", errorKind: "not_found" },
       { status: 404 },
     );
   }
 
   if (agent.triggers.length === 0) {
     return Response.json(
-      { error: "Background agent has no triggers to test" },
+      {
+        error: "Background agent has no triggers to test",
+        errorKind: "invalid_request",
+      },
       { status: 400 },
     );
   }
@@ -41,6 +44,7 @@ export async function POST(req: Request, context: RouteContext) {
       {
         ...result,
         error: "Background agents are disabled",
+        errorKind: "forbidden",
       },
       { status: 403 },
     );

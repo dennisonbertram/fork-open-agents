@@ -23,12 +23,18 @@ export async function POST(req: Request) {
   // 1. validate session
   const session = await getServerSession();
   if (!session?.user) {
-    return Response.json({ error: "Not authenticated" }, { status: 401 });
+    return Response.json(
+      { error: "Not authenticated", errorKind: "unauthorized" },
+      { status: 401 },
+    );
   }
 
   const botVerification = await checkBotProtection();
   if (botVerification.isBot) {
-    return Response.json({ error: "Access denied" }, { status: 403 });
+    return Response.json(
+      { error: "Access denied", errorKind: "forbidden" },
+      { status: 403 },
+    );
   }
 
   const limited = await checkRateLimit({
@@ -45,39 +51,57 @@ export async function POST(req: Request) {
   try {
     body = (await req.json()) as GeneratePRRequest;
   } catch {
-    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+    return Response.json(
+      { error: "Invalid JSON body", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   const { sessionId, sessionTitle, baseBranch, branchName, createBranchOnly } =
     body;
 
   if (!sessionId) {
-    return Response.json({ error: "Session ID is required" }, { status: 400 });
+    return Response.json(
+      { error: "Session ID is required", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   const sessionRecord = await getSessionById(sessionId);
   if (!sessionRecord) {
-    return Response.json({ error: "Session not found" }, { status: 404 });
+    return Response.json(
+      { error: "Session not found", errorKind: "not_found" },
+      { status: 404 },
+    );
   }
   if (sessionRecord.userId !== session.user.id) {
-    return Response.json({ error: "Forbidden" }, { status: 403 });
+    return Response.json(
+      { error: "Forbidden", errorKind: "forbidden" },
+      { status: 403 },
+    );
   }
   if (!isSandboxActive(sessionRecord.sandboxState)) {
     return sandboxNotInitializedResponse();
   }
 
   if (!branchName) {
-    return Response.json({ error: "Branch name is required" }, { status: 400 });
+    return Response.json(
+      { error: "Branch name is required", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   if (!baseBranch) {
-    return Response.json({ error: "Base branch is required" }, { status: 400 });
+    return Response.json(
+      { error: "Base branch is required", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   const safeBranchPattern = /^[\w\-/.]+$/;
   if (!safeBranchPattern.test(baseBranch)) {
     return Response.json(
-      { error: "Invalid base branch name" },
+      { error: "Invalid base branch name", errorKind: "invalid_request" },
       { status: 400 },
     );
   }
@@ -173,7 +197,10 @@ export async function POST(req: Request) {
     );
     if (!checkoutResult.success) {
       return Response.json(
-        { error: `Failed to create branch: ${checkoutResult.stdout}` },
+        {
+          error: `Failed to create branch: ${checkoutResult.stdout}`,
+          errorKind: "internal_error",
+        },
         { status: 500 },
       );
     }
@@ -181,7 +208,10 @@ export async function POST(req: Request) {
   }
 
   if (!safeBranchPattern.test(resolvedBranch)) {
-    return Response.json({ error: "Invalid branch name" }, { status: 400 });
+    return Response.json(
+      { error: "Invalid branch name", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   if (resolvedBranch !== branchName) {
@@ -202,6 +232,7 @@ export async function POST(req: Request) {
       {
         error:
           "Uncommitted changes — commit first before generating PR content",
+        errorKind: "invalid_request",
       },
       { status: 400 },
     );
@@ -218,7 +249,10 @@ export async function POST(req: Request) {
   });
 
   if (!prContentResult.success) {
-    return Response.json({ error: prContentResult.error }, { status: 400 });
+    return Response.json(
+      { error: prContentResult.error, errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   return Response.json({

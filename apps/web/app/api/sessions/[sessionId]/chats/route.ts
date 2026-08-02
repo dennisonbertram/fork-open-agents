@@ -64,7 +64,10 @@ export async function POST(req: Request, context: RouteContext) {
       body.id !== undefined
     ) {
       if (typeof body.id !== "string" || body.id.length === 0) {
-        return Response.json({ error: "Invalid chat id" }, { status: 400 });
+        return Response.json(
+          { error: "Invalid chat id", errorKind: "invalid_request" },
+          { status: 400 },
+        );
       }
       requestedChatId = body.id;
     }
@@ -76,7 +79,10 @@ export async function POST(req: Request, context: RouteContext) {
     const existing = await getChatById(requestedChatId);
     if (existing) {
       if (existing.sessionId !== sessionId) {
-        return Response.json({ error: "Chat ID conflict" }, { status: 409 });
+        return Response.json(
+          { error: "Chat ID conflict", errorKind: "conflict" },
+          { status: 409 },
+        );
       }
       return Response.json({ chat: existing });
     }

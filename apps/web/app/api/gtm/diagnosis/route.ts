@@ -42,13 +42,17 @@ export async function GET(req: Request): Promise<Response> {
           "distribution",
           "audience",
         ],
+        errorKind: "invalid_request",
       },
       { status: 400 },
     );
   }
 
   if (!id) {
-    return Response.json({ error: "Missing id" }, { status: 400 });
+    return Response.json(
+      { error: "Missing id", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   const limit = parseLimit(url.searchParams.get("limit"));
@@ -71,7 +75,10 @@ export async function GET(req: Request): Promise<Response> {
   });
 
   if (!diagnosis) {
-    return Response.json({ error: "GTM item not found" }, { status: 404 });
+    return Response.json(
+      { error: "GTM item not found", errorKind: "not_found" },
+      { status: 404 },
+    );
   }
 
   return Response.json(diagnosis);

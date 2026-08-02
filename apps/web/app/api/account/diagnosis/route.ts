@@ -31,13 +31,17 @@ export async function GET(req: Request): Promise<Response> {
           "background_agent",
           "agent_loop",
         ],
+        errorKind: "invalid_request",
       },
       { status: 400 },
     );
   }
 
   if (!id) {
-    return Response.json({ error: "Missing id" }, { status: 400 });
+    return Response.json(
+      { error: "Missing id", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   const diagnosis = await buildDbBackedAccountDiagnosis({
@@ -48,7 +52,10 @@ export async function GET(req: Request): Promise<Response> {
   });
 
   if (!diagnosis) {
-    return Response.json({ error: "Work item not found" }, { status: 404 });
+    return Response.json(
+      { error: "Work item not found", errorKind: "not_found" },
+      { status: 404 },
+    );
   }
 
   return Response.json(diagnosis);
