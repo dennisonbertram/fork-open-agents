@@ -71,9 +71,41 @@ export function isApiErrorBody(value: unknown): value is ApiErrorBody {
     return false;
   }
   const candidate = value as Record<string, unknown>;
-  return (
-    typeof candidate.error === "string" &&
-    typeof candidate.errorKind === "string" &&
-    candidate.errorKind in STATUS_BY_KIND
-  );
+
+  if (typeof candidate.error !== "string") {
+    return false;
+  }
+
+  // Object.hasOwn, not `in`: `in` walks the prototype chain, so a body
+  // carrying errorKind "toString" or "constructor" would otherwise pass.
+  if (
+    typeof candidate.errorKind !== "string" ||
+    !Object.hasOwn(STATUS_BY_KIND, candidate.errorKind)
+  ) {
+    return false;
+  }
+
+  // The guard narrows the whole value, so the optional members have to hold up
+  // too — otherwise a caller reads fields.foo off null, or backs off for
+  // "soon" milliseconds.
+  if (candidate.fields !== undefined) {
+    if (
+      typeof candidate.fields !== "object" ||
+      candidate.fields === null ||
+      Array.isArray(candidate.fields) ||
+      !Object.values(candidate.fields).every((v) => typeof v === "string")
+    ) {
+      return false;
+    }
+  }
+
+  if (
+    candidate.retryAfterSeconds !== undefined &&
+    (typeof candidate.retryAfterSeconds !== "number" ||
+      !Number.isFinite(candidate.retryAfterSeconds))
+  ) {
+    return false;
+  }
+
+  return true;
 }

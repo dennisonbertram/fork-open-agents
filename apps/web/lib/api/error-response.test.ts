@@ -70,3 +70,54 @@ describe("isApiErrorBody", () => {
     expect(isApiErrorBody("error")).toBe(false);
   });
 });
+
+describe("isApiErrorBody rejects values that only look valid", () => {
+  // Raised in review of #1067: `in` walks the prototype chain.
+  test("an inherited property name is not an error kind", () => {
+    for (const kind of [
+      "toString",
+      "constructor",
+      "__proto__",
+      "hasOwnProperty",
+    ]) {
+      expect(isApiErrorBody({ error: "nope", errorKind: kind })).toBe(false);
+    }
+  });
+
+  test("malformed optional members fail the guard rather than being narrowed", () => {
+    expect(
+      isApiErrorBody({ error: "x", errorKind: "not_found", fields: null }),
+    ).toBe(false);
+    expect(
+      isApiErrorBody({ error: "x", errorKind: "not_found", fields: ["a"] }),
+    ).toBe(false);
+    expect(
+      isApiErrorBody({ error: "x", errorKind: "not_found", fields: { a: 1 } }),
+    ).toBe(false);
+    expect(
+      isApiErrorBody({
+        error: "x",
+        errorKind: "rate_limited",
+        retryAfterSeconds: "soon",
+      }),
+    ).toBe(false);
+    expect(
+      isApiErrorBody({
+        error: "x",
+        errorKind: "rate_limited",
+        retryAfterSeconds: Number.NaN,
+      }),
+    ).toBe(false);
+  });
+
+  test("well-formed optional members still pass", () => {
+    expect(
+      isApiErrorBody({
+        error: "x",
+        errorKind: "invalid_request",
+        fields: { name: "required" },
+        retryAfterSeconds: 30,
+      }),
+    ).toBe(true);
+  });
+});
