@@ -78,6 +78,7 @@ describe("/api/github/create-repo", () => {
     expect(await response.json()).toEqual({
       error:
         "Creating repositories from Open Agents is temporarily disabled. Create the repository on GitHub first, then connect it to a session.",
+      errorKind: "not_implemented",
     });
   });
 });

@@ -67,7 +67,10 @@ describe("GET /api/github/orgs", () => {
     const { body, status } = await callRoute();
 
     expect(status).toBe(429);
-    expect(body).toEqual({ error: "GitHub rate limit exceeded" });
+    expect(body).toEqual({
+      error: "GitHub rate limit exceeded",
+      errorKind: "rate_limited",
+    });
   });
 
   test("returns 429 for a secondary rate limit 403 with Retry-After", async () => {

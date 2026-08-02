@@ -26,6 +26,7 @@ export async function POST(req: Request) {
     {
       error:
         "Creating repositories from Open Agents is temporarily disabled. Create the repository on GitHub first, then connect it to a session.",
+      errorKind: "not_implemented",
     },
     { status: 501 },
   );

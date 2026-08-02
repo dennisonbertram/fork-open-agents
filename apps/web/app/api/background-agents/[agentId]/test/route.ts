@@ -44,6 +44,7 @@ export async function POST(req: Request, context: RouteContext) {
       {
         ...result,
         error: "Background agents are disabled",
+        errorKind: "forbidden",
       },
       { status: 403 },
     );

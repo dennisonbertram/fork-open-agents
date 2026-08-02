@@ -240,6 +240,7 @@ export async function POST(req: Request) {
         return Response.json(
           {
             error: "Verified Build could not be started",
+            errorKind: "upstream_unavailable",
             requestId,
           },
           { status: 502, headers: { "X-Request-ID": requestId } },

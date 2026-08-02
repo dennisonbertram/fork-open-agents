@@ -40,7 +40,7 @@ export async function GET() {
   } catch (error) {
     if (error instanceof GitHubRateLimitedError) {
       return NextResponse.json(
-        { error: "GitHub rate limit exceeded" },
+        { error: "GitHub rate limit exceeded", errorKind: "rate_limited" },
         {
           status: 429,
           headers: error.retryAfterSeconds

@@ -1,3 +1,4 @@
+import { apiErrorKindForStatus } from "@/lib/api/error-response";
 import { sandboxNotInitializedResponse } from "@/app/api/sessions/_lib/sandbox-lifecycle-response";
 import type { NextRequest } from "next/server";
 import { connectSandbox } from "@open-agents/sandbox";
@@ -82,7 +83,13 @@ export async function GET(_req: NextRequest, context: RouteContext) {
     }
 
     if (error instanceof DownloadDiffError) {
-      return Response.json({ error: error.message }, { status: error.status });
+      return Response.json(
+        {
+          error: error.message,
+          errorKind: apiErrorKindForStatus(error.status),
+        },
+        { status: error.status },
+      );
     }
 
     console.error("Failed to download diff:", error);
