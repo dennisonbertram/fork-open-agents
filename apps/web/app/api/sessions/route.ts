@@ -97,7 +97,10 @@ function parseNonNegativeInteger(value: string | null): number | null {
 export async function GET(req: Request) {
   const session = await getServerSession();
   if (!session?.user) {
-    return Response.json({ error: "Not authenticated" }, { status: 401 });
+    return Response.json(
+      { error: "Not authenticated", errorKind: "unauthorized" },
+      { status: 401 },
+    );
   }
 
   const { searchParams } = new URL(req.url);
@@ -108,7 +111,10 @@ export async function GET(req: Request) {
     rawStatus !== "active" &&
     rawStatus !== "archived"
   ) {
-    return Response.json({ error: "Invalid status filter" }, { status: 400 });
+    return Response.json(
+      { error: "Invalid status filter", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   const statusParam: SessionsStatusFilter = rawStatus ?? "all";
@@ -119,14 +125,14 @@ export async function GET(req: Request) {
 
     if (searchParams.get("limit") !== null && rawLimit === null) {
       return Response.json(
-        { error: "Invalid archived limit" },
+        { error: "Invalid archived limit", errorKind: "invalid_request" },
         { status: 400 },
       );
     }
 
     if (searchParams.get("offset") !== null && rawOffset === null) {
       return Response.json(
-        { error: "Invalid archived offset" },
+        { error: "Invalid archived offset", errorKind: "invalid_request" },
         { status: 400 },
       );
     }
@@ -176,12 +182,18 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   const session = await getServerSession();
   if (!session?.user) {
-    return Response.json({ error: "Not authenticated" }, { status: 401 });
+    return Response.json(
+      { error: "Not authenticated", errorKind: "unauthorized" },
+      { status: 401 },
+    );
   }
 
   const botVerification = await checkBotProtection();
   if (botVerification.isBot) {
-    return Response.json({ error: "Access denied" }, { status: 403 });
+    return Response.json(
+      { error: "Access denied", errorKind: "forbidden" },
+      { status: 403 },
+    );
   }
 
   const limited = await checkRateLimit({
@@ -197,11 +209,17 @@ export async function POST(req: Request) {
   try {
     body = (await req.json()) as CreateSessionRequest;
   } catch {
-    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+    return Response.json(
+      { error: "Invalid JSON body", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   if (body.sandboxType && body.sandboxType !== "vercel") {
-    return Response.json({ error: "Invalid sandbox type" }, { status: 400 });
+    return Response.json(
+      { error: "Invalid sandbox type", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   if (
@@ -209,7 +227,10 @@ export async function POST(req: Request) {
     body.runtimeMode !== "classic" &&
     body.runtimeMode !== "managed_runtime"
   ) {
-    return Response.json({ error: "Invalid runtime mode" }, { status: 400 });
+    return Response.json(
+      { error: "Invalid runtime mode", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   if (body.managedRuntimeProfileId !== undefined) {
@@ -256,7 +277,7 @@ export async function POST(req: Request) {
     typeof body.autoCommitPush !== "boolean"
   ) {
     return Response.json(
-      { error: "Invalid autoCommitPush value" },
+      { error: "Invalid autoCommitPush value", errorKind: "invalid_request" },
       { status: 400 },
     );
   }
@@ -266,7 +287,7 @@ export async function POST(req: Request) {
     typeof body.autoCreatePr !== "boolean"
   ) {
     return Response.json(
-      { error: "Invalid autoCreatePr value" },
+      { error: "Invalid autoCreatePr value", errorKind: "invalid_request" },
       { status: 400 },
     );
   }
@@ -277,7 +298,7 @@ export async function POST(req: Request) {
       !isValidGitHubRepoOwner(body.repoOwner))
   ) {
     return Response.json(
-      { error: "Invalid repository owner" },
+      { error: "Invalid repository owner", errorKind: "invalid_request" },
       { status: 400 },
     );
   }
@@ -286,12 +307,18 @@ export async function POST(req: Request) {
     body.repoName !== undefined &&
     (typeof body.repoName !== "string" || !isValidGitHubRepoName(body.repoName))
   ) {
-    return Response.json({ error: "Invalid repository name" }, { status: 400 });
+    return Response.json(
+      { error: "Invalid repository name", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   if (body.cloneUrl !== undefined) {
     if (typeof body.cloneUrl !== "string") {
-      return Response.json({ error: "Invalid clone URL" }, { status: 400 });
+      return Response.json(
+        { error: "Invalid clone URL", errorKind: "invalid_request" },
+        { status: 400 },
+      );
     }
 
     const parsedCloneUrl = parseGitHubHttpsUrl(body.cloneUrl);
@@ -301,7 +328,10 @@ export async function POST(req: Request) {
       parsedCloneUrl.repo !== body.repoName
     ) {
       return Response.json(
-        { error: "Clone URL must match repository owner and name" },
+        {
+          error: "Clone URL must match repository owner and name",
+          errorKind: "invalid_request",
+        },
         { status: 400 },
       );
     }
@@ -316,7 +346,7 @@ export async function POST(req: Request) {
     );
     if (!parsedProject.success) {
       return Response.json(
-        { error: "Invalid Vercel project" },
+        { error: "Invalid Vercel project", errorKind: "invalid_request" },
         { status: 400 },
       );
     }
@@ -355,7 +385,10 @@ export async function POST(req: Request) {
         const vercelToken = await getUserVercelToken(session.user.id);
         if (!vercelToken) {
           return Response.json(
-            { error: "Connect Vercel to select a Vercel project" },
+            {
+              error: "Connect Vercel to select a Vercel project",
+              errorKind: "forbidden",
+            },
             { status: 403 },
           );
         }
@@ -374,6 +407,7 @@ export async function POST(req: Request) {
             {
               error:
                 "Selected Vercel project no longer matches this repository",
+              errorKind: "invalid_request",
             },
             { status: 400 },
           );
@@ -521,6 +555,7 @@ export async function POST(req: Request) {
           error: "Reconnect Vercel to select a Vercel project",
           kind: "vercel_reauth_required",
           actionUrl: "/settings",
+          errorKind: "forbidden",
         },
         { status: 403 },
       );
@@ -538,7 +573,11 @@ export async function POST(req: Request) {
       }),
     );
     return Response.json(
-      { error: "Failed to create session", kind: "unknown" },
+      {
+        error: "Failed to create session",
+        kind: "unknown",
+        errorKind: "internal_error",
+      },
       { status: 500 },
     );
   }

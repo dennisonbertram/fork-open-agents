@@ -165,13 +165,19 @@ export async function GET(_req: Request, context: RouteContext) {
           ...buildHibernatedLifecycleUpdate(),
         });
         return Response.json(
-          { error: "Sandbox is unavailable. Please resume sandbox." },
+          {
+            error: "Sandbox is unavailable. Please resume sandbox.",
+            errorKind: "conflict",
+          },
           { status: 409 },
         );
       }
       console.error("Git ls-files failed:", trackedResult.stderr);
       return Response.json(
-        { error: "Failed to list files. Ensure this is a git repository." },
+        {
+          error: "Failed to list files. Ensure this is a git repository.",
+          errorKind: "invalid_request",
+        },
         { status: 400 },
       );
     }
@@ -187,7 +193,10 @@ export async function GET(_req: Request, context: RouteContext) {
           ...buildHibernatedLifecycleUpdate(),
         });
         return Response.json(
-          { error: "Sandbox is unavailable. Please resume sandbox." },
+          {
+            error: "Sandbox is unavailable. Please resume sandbox.",
+            errorKind: "conflict",
+          },
           { status: 409 },
         );
       }
@@ -224,13 +233,16 @@ export async function GET(_req: Request, context: RouteContext) {
         ...buildHibernatedLifecycleUpdate(),
       });
       return Response.json(
-        { error: "Sandbox is unavailable. Please resume sandbox." },
+        {
+          error: "Sandbox is unavailable. Please resume sandbox.",
+          errorKind: "conflict",
+        },
         { status: 409 },
       );
     }
     console.error("Failed to list files:", error);
     return Response.json(
-      { error: "Failed to connect to sandbox" },
+      { error: "Failed to connect to sandbox", errorKind: "internal_error" },
       { status: 500 },
     );
   }

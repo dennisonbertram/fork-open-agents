@@ -127,18 +127,24 @@ function isUniqueConstraintError(error: unknown): boolean {
 function composioProfileErrorResponse(error: unknown): Response {
   if (isUniqueConstraintError(error)) {
     return Response.json(
-      { error: "A profile with that name already exists." },
+      {
+        error: "A profile with that name already exists.",
+        errorKind: "conflict",
+      },
       { status: 409 },
     );
   }
   // Surface domain-level validation messages that callers intentionally raise.
   const message = error instanceof Error ? error.message : String(error);
   if (/at least one toolkit/i.test(message)) {
-    return Response.json({ error: message }, { status: 400 });
+    return Response.json(
+      { error: message, errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
   console.error("[composio] Failed to save profile:", error);
   return Response.json(
-    { error: "Failed to save Composio profile." },
+    { error: "Failed to save Composio profile.", errorKind: "invalid_request" },
     { status: 400 },
   );
 }
@@ -153,13 +159,16 @@ export async function POST(req: Request) {
   try {
     body = await req.json();
   } catch {
-    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+    return Response.json(
+      { error: "Invalid JSON body", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   const parsed = composioToolProfileInputSchema.safeParse(body);
   if (!parsed.success) {
     return Response.json(
-      { error: "Invalid Composio profile" },
+      { error: "Invalid Composio profile", errorKind: "invalid_request" },
       { status: 400 },
     );
   }
@@ -185,13 +194,19 @@ export async function PATCH(req: Request) {
   try {
     body = await req.json();
   } catch {
-    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+    return Response.json(
+      { error: "Invalid JSON body", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   const parsed = updateComposioSettingsSchema.safeParse(body);
   if (!parsed.success) {
     return Response.json(
-      { error: "Invalid Composio settings payload" },
+      {
+        error: "Invalid Composio settings payload",
+        errorKind: "invalid_request",
+      },
       { status: 400 },
     );
   }
@@ -213,7 +228,10 @@ export async function PATCH(req: Request) {
         parsed.data.profile,
       );
       if (!profile) {
-        return Response.json({ error: "Profile not found" }, { status: 404 });
+        return Response.json(
+          { error: "Profile not found", errorKind: "not_found" },
+          { status: 404 },
+        );
       }
       updates.profile = profile;
     } catch (error) {
@@ -223,7 +241,10 @@ export async function PATCH(req: Request) {
 
   if (Object.keys(updates).length === 0) {
     return Response.json(
-      { error: "At least one update is required" },
+      {
+        error: "At least one update is required",
+        errorKind: "invalid_request",
+      },
       { status: 400 },
     );
   }
@@ -241,12 +262,18 @@ export async function DELETE(req: Request) {
   try {
     body = await req.json();
   } catch {
-    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+    return Response.json(
+      { error: "Invalid JSON body", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   const parsed = deleteComposioProfileSchema.safeParse(body);
   if (!parsed.success) {
-    return Response.json({ error: "Invalid profile id" }, { status: 400 });
+    return Response.json(
+      { error: "Invalid profile id", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   const deleted = await deleteComposioToolProfile(
@@ -254,7 +281,10 @@ export async function DELETE(req: Request) {
     parsed.data.profileId,
   );
   if (!deleted) {
-    return Response.json({ error: "Profile not found" }, { status: 404 });
+    return Response.json(
+      { error: "Profile not found", errorKind: "not_found" },
+      { status: 404 },
+    );
   }
 
   return Response.json({ success: true });

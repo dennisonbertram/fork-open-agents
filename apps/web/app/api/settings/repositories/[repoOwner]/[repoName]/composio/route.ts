@@ -96,7 +96,10 @@ export async function GET(_req: Request, context: RouteContext) {
 
   const parsedParams = await parseRouteParams(context);
   if (!parsedParams.success) {
-    return Response.json({ error: "Invalid repository" }, { status: 400 });
+    return Response.json(
+      { error: "Invalid repository", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   const result = await listComposioProfileOptionsForRepository({
@@ -120,20 +123,29 @@ export async function PATCH(req: Request, context: RouteContext) {
 
   const parsedParams = await parseRouteParams(context);
   if (!parsedParams.success) {
-    return Response.json({ error: "Invalid repository" }, { status: 400 });
+    return Response.json(
+      { error: "Invalid repository", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   let body: unknown;
   try {
     body = await req.json();
   } catch {
-    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+    return Response.json(
+      { error: "Invalid JSON body", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   const parsedBody = repositoryComposioSettingsInputSchema.safeParse(body);
   if (!parsedBody.success) {
     return Response.json(
-      { error: "Invalid repository Composio settings" },
+      {
+        error: "Invalid repository Composio settings",
+        errorKind: "invalid_request",
+      },
       { status: 400 },
     );
   }
@@ -149,7 +161,10 @@ export async function PATCH(req: Request, context: RouteContext) {
   );
   if (unknownProfileIds.length > 0) {
     return Response.json(
-      { error: "Repository Composio settings reference unknown profiles" },
+      {
+        error: "Repository Composio settings reference unknown profiles",
+        errorKind: "invalid_request",
+      },
       { status: 400 },
     );
   }
@@ -166,6 +181,7 @@ export async function PATCH(req: Request, context: RouteContext) {
       return Response.json(
         {
           error: `Could not validate blocked toolkits: ${catalogResult.message}`,
+          errorKind: "upstream_unavailable",
         },
         { status: 502 },
       );
@@ -178,6 +194,7 @@ export async function PATCH(req: Request, context: RouteContext) {
         return Response.json(
           {
             error: `Repository Composio settings reference unrecognized toolkit slugs: ${unknownToolkitSlugs.join(", ")}`,
+            errorKind: "invalid_request",
           },
           { status: 400 },
         );

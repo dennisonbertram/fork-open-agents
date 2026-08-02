@@ -97,7 +97,10 @@ export async function POST(req: Request) {
 
   const botVerification = await checkBotProtection();
   if (botVerification.isBot) {
-    return Response.json({ error: "Access denied" }, { status: 403 });
+    return Response.json(
+      { error: "Access denied", errorKind: "forbidden" },
+      { status: 403 },
+    );
   }
 
   const parsedBody = await parseChatRequestBody(req);
@@ -135,7 +138,10 @@ export async function POST(req: Request) {
   const { sessionRecord, chat } = chatContext;
 
   if (sessionRecord.status === "archived") {
-    return Response.json({ error: "Session is archived" }, { status: 400 });
+    return Response.json(
+      { error: "Session is archived", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   // Guard: if a workflow is already running for this chat, reconnect to it
@@ -156,7 +162,10 @@ export async function POST(req: Request) {
 
     if (existingStreamResolution.action === "conflict") {
       return Response.json(
-        { error: "Another workflow is already running for this chat" },
+        {
+          error: "Another workflow is already running for this chat",
+          errorKind: "conflict",
+        },
         { status: 409 },
       );
     }
@@ -193,7 +202,7 @@ export async function POST(req: Request) {
       const latestUserMessage = getLatestUserMessage(messages);
       if (!latestUserMessage) {
         return Response.json(
-          { error: "A user message is required" },
+          { error: "A user message is required", errorKind: "invalid_request" },
           { status: 400 },
         );
       }
@@ -362,7 +371,10 @@ export async function POST(req: Request) {
       // Best-effort cleanup.
     }
     return Response.json(
-      { error: "Another workflow is already running for this chat" },
+      {
+        error: "Another workflow is already running for this chat",
+        errorKind: "conflict",
+      },
       { status: 409 },
     );
   }

@@ -22,7 +22,10 @@ export async function POST(req: Request) {
   try {
     body = await req.json();
   } catch {
-    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+    return Response.json(
+      { error: "Invalid JSON body", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   const parsed = createMcpServerSchema.safeParse(body);
@@ -31,6 +34,7 @@ export async function POST(req: Request) {
       {
         error: "Invalid MCP server",
         details: parsed.error.flatten(),
+        errorKind: "invalid_request",
       },
       { status: 400 },
     );
@@ -42,13 +46,16 @@ export async function POST(req: Request) {
   } catch (error) {
     if (error instanceof McpServerConflictError) {
       return Response.json(
-        { error: "A server with that name already exists." },
+        {
+          error: "A server with that name already exists.",
+          errorKind: "conflict",
+        },
         { status: 409 },
       );
     }
 
     return Response.json(
-      { error: "Failed to save MCP server." },
+      { error: "Failed to save MCP server.", errorKind: "invalid_request" },
       { status: 400 },
     );
   }

@@ -23,18 +23,27 @@ export async function POST(
 ): Promise<Response> {
   const session = await getServerSession();
   if (!session?.user) {
-    return Response.json({ error: "Not authenticated" }, { status: 401 });
+    return Response.json(
+      { error: "Not authenticated", errorKind: "unauthorized" },
+      { status: 401 },
+    );
   }
 
   const { sessionId } = await params;
 
   const existingSession = await getSessionById(sessionId);
   if (!existingSession) {
-    return Response.json({ error: "Session not found" }, { status: 404 });
+    return Response.json(
+      { error: "Session not found", errorKind: "not_found" },
+      { status: 404 },
+    );
   }
 
   if (existingSession.userId !== session.user.id) {
-    return Response.json({ error: "Forbidden" }, { status: 403 });
+    return Response.json(
+      { error: "Forbidden", errorKind: "forbidden" },
+      { status: 403 },
+    );
   }
 
   // Idempotent: if sandbox is already present, no-op and return current state.
@@ -52,7 +61,7 @@ export async function POST(
 
   if (!updatedSession) {
     return Response.json(
-      { error: "Failed to update session" },
+      { error: "Failed to update session", errorKind: "internal_error" },
       { status: 500 },
     );
   }
@@ -85,18 +94,27 @@ export async function DELETE(
 ): Promise<Response> {
   const session = await getServerSession();
   if (!session?.user) {
-    return Response.json({ error: "Not authenticated" }, { status: 401 });
+    return Response.json(
+      { error: "Not authenticated", errorKind: "unauthorized" },
+      { status: 401 },
+    );
   }
 
   const { sessionId } = await params;
 
   const existingSession = await getSessionById(sessionId);
   if (!existingSession) {
-    return Response.json({ error: "Session not found" }, { status: 404 });
+    return Response.json(
+      { error: "Session not found", errorKind: "not_found" },
+      { status: 404 },
+    );
   }
 
   if (existingSession.userId !== session.user.id) {
-    return Response.json({ error: "Forbidden" }, { status: 403 });
+    return Response.json(
+      { error: "Forbidden", errorKind: "forbidden" },
+      { status: 403 },
+    );
   }
 
   if (
@@ -114,7 +132,7 @@ export async function DELETE(
 
   if (!updatedSession) {
     return Response.json(
-      { error: "Failed to update session" },
+      { error: "Failed to update session", errorKind: "internal_error" },
       { status: 500 },
     );
   }

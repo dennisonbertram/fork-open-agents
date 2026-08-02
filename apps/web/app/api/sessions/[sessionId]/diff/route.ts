@@ -62,7 +62,10 @@ export async function GET(_req: NextRequest, context: RouteContext) {
         ...buildHibernatedLifecycleUpdate(),
       });
       return Response.json(
-        { error: "Sandbox is unavailable. Please resume sandbox." },
+        {
+          error: "Sandbox is unavailable. Please resume sandbox.",
+          errorKind: "conflict",
+        },
         { status: 409 },
       );
     }
@@ -73,7 +76,7 @@ export async function GET(_req: NextRequest, context: RouteContext) {
 
     console.error("Failed to get diff:", error);
     return Response.json(
-      { error: "Failed to connect to sandbox" },
+      { error: "Failed to connect to sandbox", errorKind: "internal_error" },
       { status: 500 },
     );
   }

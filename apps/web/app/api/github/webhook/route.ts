@@ -154,7 +154,10 @@ export async function POST(req: Request): Promise<Response> {
   const webhookSecret = process.env.GITHUB_WEBHOOK_SECRET;
   if (!webhookSecret) {
     return Response.json(
-      { error: "GITHUB_WEBHOOK_SECRET is not configured" },
+      {
+        error: "GITHUB_WEBHOOK_SECRET is not configured",
+        errorKind: "internal_error",
+      },
       { status: 500 },
     );
   }
@@ -163,13 +166,16 @@ export async function POST(req: Request): Promise<Response> {
   const signature = req.headers.get("x-hub-signature-256");
 
   if (!event || !signature) {
-    return Response.json({ error: "Missing webhook headers" }, { status: 400 });
+    return Response.json(
+      { error: "Missing webhook headers", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   const payloadText = await req.text();
   if (!verifySignature(payloadText, signature, webhookSecret)) {
     return Response.json(
-      { error: "Invalid webhook signature" },
+      { error: "Invalid webhook signature", errorKind: "unauthorized" },
       { status: 401 },
     );
   }
@@ -182,14 +188,17 @@ export async function POST(req: Request): Promise<Response> {
   try {
     parsedPayload = JSON.parse(payloadText);
   } catch {
-    return Response.json({ error: "Invalid JSON payload" }, { status: 400 });
+    return Response.json(
+      { error: "Invalid JSON payload", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   if (event === "pull_request") {
     const parsed = pullRequestWebhookSchema.safeParse(parsedPayload);
     if (!parsed.success) {
       return Response.json(
-        { error: "Invalid webhook payload" },
+        { error: "Invalid webhook payload", errorKind: "invalid_request" },
         { status: 400 },
       );
     }
@@ -241,7 +250,7 @@ export async function POST(req: Request): Promise<Response> {
     );
     if (!backgroundEvent) {
       return Response.json(
-        { error: "Invalid webhook payload" },
+        { error: "Invalid webhook payload", errorKind: "invalid_request" },
         { status: 400 },
       );
     }
@@ -263,7 +272,10 @@ export async function POST(req: Request): Promise<Response> {
 
   const parsed = installationWebhookSchema.safeParse(parsedPayload);
   if (!parsed.success) {
-    return Response.json({ error: "Invalid webhook payload" }, { status: 400 });
+    return Response.json(
+      { error: "Invalid webhook payload", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   const installationId = parsed.data.installation.id;

@@ -22,7 +22,10 @@ function parseRepoParams(request: Request | undefined) {
     return {
       ok: false as const,
       response: Response.json(
-        { error: "repoOwner and repoName are both required" },
+        {
+          error: "repoOwner and repoName are both required",
+          errorKind: "invalid_request",
+        },
         { status: 400 },
       ),
     };

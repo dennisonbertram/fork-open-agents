@@ -41,7 +41,10 @@ describe("GET /api/github/user", () => {
     const { body, status } = await callRoute();
 
     expect(status).toBe(401);
-    expect(body).toEqual({ error: "GitHub not connected" });
+    expect(body).toEqual({
+      error: "GitHub not connected",
+      errorKind: "unauthorized",
+    });
   });
 
   test("returns 429 when a valid token is rate limited with 403", async () => {
@@ -101,7 +104,10 @@ describe("GET /api/github/user", () => {
     const { body, status } = await callRoute();
 
     expect(status).toBe(401);
-    expect(body).toEqual({ error: "GitHub not connected" });
+    expect(body).toEqual({
+      error: "GitHub not connected",
+      errorKind: "unauthorized",
+    });
   });
 
   test("returns 500 when GitHub fails for a non-auth reason", async () => {

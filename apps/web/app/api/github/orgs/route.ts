@@ -12,7 +12,7 @@ export async function GET() {
 
   if (!session?.user?.id) {
     return NextResponse.json(
-      { error: "GitHub not connected" },
+      { error: "GitHub not connected", errorKind: "unauthorized" },
       { status: 401 },
     );
   }
@@ -21,7 +21,7 @@ export async function GET() {
 
   if (!token) {
     return NextResponse.json(
-      { error: "GitHub not connected" },
+      { error: "GitHub not connected", errorKind: "unauthorized" },
       { status: 401 },
     );
   }
@@ -31,7 +31,7 @@ export async function GET() {
 
     if (!orgs) {
       return NextResponse.json(
-        { error: "Failed to fetch organizations" },
+        { error: "Failed to fetch organizations", errorKind: "internal_error" },
         { status: 500 },
       );
     }
@@ -52,14 +52,14 @@ export async function GET() {
 
     if (error instanceof GitHubTokenRejectedError) {
       return NextResponse.json(
-        { error: "GitHub not connected" },
+        { error: "GitHub not connected", errorKind: "unauthorized" },
         { status: 401 },
       );
     }
 
     console.error("Error fetching organizations:", error);
     return NextResponse.json(
-      { error: "Failed to fetch organizations" },
+      { error: "Failed to fetch organizations", errorKind: "internal_error" },
       { status: 500 },
     );
   }
