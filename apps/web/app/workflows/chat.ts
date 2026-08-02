@@ -886,7 +886,17 @@ function getSetupErrorMessage(error: unknown): string {
   // to fix. This has to be classified before the Composio fallback below:
   // the gateway's message ends in "Invalid API key", which that branch used to
   // match, sending users to change their Composio key instead.
-  if (message.includes("AI Gateway")) {
+  // Requires an auth signal alongside the "AI Gateway" mention. Other guidance
+  // legitimately names the gateway as a destination — "Selected inference
+  // profile is unavailable. Choose another User model or switch back to Vercel
+  // AI Gateway." — and matching the phrase alone would tell those users their
+  // gateway key was rejected, which is the same misattribution this branch
+  // exists to remove.
+  if (
+    message.includes("AI Gateway") &&
+    (message.includes("AI_GATEWAY_API_KEY") ||
+      matchesAnyPhrase(message, PROVIDER_AUTH_PHRASES))
+  ) {
     return "The AI Gateway rejected the API key. Update AI_GATEWAY_API_KEY in your deployment environment, or switch this chat to a User model in Settings → Models.";
   }
 

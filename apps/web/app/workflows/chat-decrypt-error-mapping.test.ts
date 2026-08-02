@@ -433,6 +433,36 @@ describe("credential failures name the credential that actually failed", () => {
     expect(delta).toContain("AI Gateway");
   });
 
+  // Raised in review of PR #1064: other guidance legitimately names the gateway
+  // as a destination rather than as the thing that failed. Matching the phrase
+  // "AI Gateway" alone would tell these users their gateway key was rejected.
+  test("profile-unavailable guidance that merely mentions the gateway is not treated as a gateway auth failure", async () => {
+    inferenceProfileError = Object.assign(
+      new Error(
+        'Step "step//./app/workflows/chat//runAgentStep" failed after 3 retries: ' +
+          "Selected inference profile is unavailable. Choose another User model or switch back to Vercel AI Gateway.",
+      ),
+      { name: "FatalError" },
+    );
+
+    try {
+      await runAgentWorkflow(makeOptions());
+    } catch {
+      // expected
+    }
+
+    const errorChunk = writtenChunks.find(
+      (chunk) =>
+        chunk.type === "text-delta" &&
+        "id" in chunk &&
+        chunk.id === "setup-error",
+    );
+
+    const delta = (errorChunk as { delta?: string }).delta ?? "";
+    expect(delta).not.toContain("AI_GATEWAY_API_KEY");
+    expect(delta).not.toContain("rejected the API key");
+  });
+
   test("a genuine Composio failure still names Composio", async () => {
     inferenceProfileError = new Error(
       'Composio request failed: {"code":10401,"message":"Invalid API key"}',
