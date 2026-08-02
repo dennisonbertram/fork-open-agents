@@ -14,6 +14,17 @@ import type { ModelMessage } from "ai";
  * requires thinking blocks to be preserved alongside tool use, so stripping
  * them unconditionally would break that path.
  */
+export function modelMessagesContainReasoning(
+  messages: ModelMessage[],
+): boolean {
+  return messages.some(
+    (message) =>
+      message.role === "assistant" &&
+      Array.isArray(message.content) &&
+      message.content.some((part) => part.type === "reasoning"),
+  );
+}
+
 export function stripModelMessageReasoning(
   messages: ModelMessage[],
 ): ModelMessage[] {

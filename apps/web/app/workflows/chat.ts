@@ -55,7 +55,15 @@ import {
   sendFinish,
 } from "./chat-post-finish";
 import { dedupeMessageReasoning } from "@/lib/chat/dedupe-message-reasoning";
-import { stripModelMessageReasoning } from "@/lib/chat/strip-model-message-reasoning";
+import {
+  buildProviderRejectionMessage,
+  describeProviderError,
+  getProviderErrorDetails,
+  isNonRetryableProviderError,
+  isProviderRejectionMessage,
+  PROVIDER_REJECTION_PREFIX,
+} from "@/lib/chat/provider-error";
+import { modelMessagesContainReasoning } from "@/lib/chat/strip-model-message-reasoning";
 import { sanitizeInterruptedToolCalls } from "@/lib/chat/sanitize-interrupted-tool-calls";
 import { getAllVariants } from "@/lib/model-variants";
 import { APP_DEFAULT_MODEL_ID } from "@/lib/models";
@@ -823,6 +831,14 @@ function getSetupErrorMessage(error: unknown): string {
 
   if (name === "InferenceProfileResolutionError") {
     return message;
+  }
+
+  // Already final, user-facing copy built at the point of failure, where the
+  // provider's own response and the chat's reasoning history were both in
+  // scope. Matched on the message because the workflow engine rethrows across
+  // a step boundary and the error class does not survive that.
+  if (isProviderRejectionMessage(message)) {
+    return message.slice(message.indexOf(PROVIDER_REJECTION_PREFIX));
   }
 
   // Defense-in-depth: catch raw crypto auth-tag failure that escaped wrapping,
@@ -1757,14 +1773,7 @@ export async function runAgentWorkflow(options: Options) {
     inferenceProfileId = modelRuntime.inferenceProfileId;
     inferenceProfileName = modelRuntime.inferenceProfileName;
     inferenceProvider = modelRuntime.inferenceProvider;
-    // Strict OpenAI-compatible endpoints reject the `reasoning_content` field
-    // the provider derives from prior assistant reasoning, which wedges every
-    // later turn in the chat. Anthropic keeps its reasoning: thinking blocks
-    // must survive alongside tool use there.
-    const modelMessages =
-      inferenceProvider === "openai-compatible"
-        ? stripModelMessageReasoning(convertedMessages)
-        : convertedMessages;
+    const modelMessages = convertedMessages;
     runtimeMode = runtime.runtimeMode;
     // sandboxState is null for sandbox-free sessions; keep as undefined so
     // subsequent guards that check `sandboxState` (persist, refresh, etc.) skip
@@ -3158,7 +3167,7 @@ const runAgentStep = async (
     const errorWithStepTiming =
       lastStreamError && baseError.message.includes("No output generated")
         ? new Error(
-            `${baseError.message}\n\nProvider error: ${getErrorMessage(lastStreamError)}`,
+            `${baseError.message}\n\nProvider error: ${describeProviderError(lastStreamError)}`,
           )
         : baseError;
     await emitSessionEvent({
@@ -3189,6 +3198,38 @@ const runAgentStep = async (
         errorWithStepTiming.name,
       ),
     });
+
+    // The provider refused the request itself, so the two identical retries
+    // that would follow cannot succeed — they only delay the message and bury
+    // the cause under "failed after 3 retries". Stop here and hand the user
+    // the provider's own reason plus the ways out.
+    if (isNonRetryableProviderError(lastStreamError)) {
+      const { statusCode, responseBody } =
+        getProviderErrorDetails(lastStreamError);
+      // Imported here rather than at module scope: `workflow` re-exports
+      // FatalError through a star-export chain that the test runner's
+      // resolver does not follow, and this step already loads its
+      // dependencies dynamically.
+      const { FatalError } = await import("workflow");
+      const rejection = new FatalError(
+        buildProviderRejectionMessage({
+          hasReasoningHistory: modelMessagesContainReasoning(messages),
+          responseBody,
+          statusCode,
+        }),
+      );
+      Object.assign(rejection, {
+        stepTiming: buildStepTiming(
+          stepNumber,
+          stepStartedAt,
+          stepFinishedAt,
+          "error",
+          "ProviderRequestRejected",
+        ),
+      });
+      throw rejection;
+    }
+
     throw errorWithStepTiming;
   } finally {
     stopMonitor.stop();
