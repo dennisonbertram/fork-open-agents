@@ -38,6 +38,7 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { readApiError } from "@/lib/api/read-api-error";
 import { cn } from "@/lib/utils";
 import { ReadinessVerdict } from "@/components/ui/readiness-verdict";
 import {
@@ -438,7 +439,9 @@ export function BackgroundAgentsSection() {
       });
       const body = (await response.json()) as ManualTestResponse;
       if (!response.ok) {
-        throw new Error(body.error ?? "Failed to start background agent test");
+        throw new Error(
+          readApiError(body, "Failed to start background agent test").message,
+        );
       }
       const runId = body.runIds[0];
       if (!runId) {
