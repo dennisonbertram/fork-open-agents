@@ -19,8 +19,15 @@ import {
  * anyway — deliberately not skipped — so the harness records the failure the
  * API actually produces for an unconnected identity.
  */
-const GH_OWNER = "dennisonbertram";
-const GH_REPO = "fork-open-agents";
+// Deliberately a repository that does not exist. The point of these steps is
+// the API's access-denial contract, which does not depend on the repo being
+// real — and pointing them at the actual fork would mean that the moment the
+// dev database gains working GitHub credentials, the POST/PUT/DELETE probes
+// below would create, overwrite and delete real repository secrets and
+// dispatch real workflow runs. The probe must not be one credential away from
+// mutating a live repo.
+const GH_OWNER = "open-agents-contract-probe";
+const GH_REPO = "repo-that-does-not-exist";
 // The /api/github/repos/* routes previously answered a bare 500 with an empty
 // body for an identity with no usable GitHub credential. PR #1070 fixed that:
 // they now return 403 { ok, errorKind: "repo_access_denied", error }. These
@@ -30,6 +37,11 @@ const GH_REPO = "fork-open-agents";
 // Remaining nit worth noting: `error` carries the kind string rather than a
 // human-readable message, so it does not yet match the envelope in #1054.
 const GH_REPO_PATH = `/api/github/repos/${GH_OWNER}/${GH_REPO}`;
+
+// The learnings routes are account-scoped and safe to exercise against a real
+// repo slug — they only read and toggle a row in this app's own database.
+const LEARNINGS_OWNER = "dennisonbertram";
+const LEARNINGS_REPO = "fork-open-agents";
 
 const journeys: Journey[] = [
   {
@@ -153,7 +165,7 @@ const journeys: Journey[] = [
       {
         name: "learnings feed for a specific repo",
         method: "GET",
-        path: `/api/learnings?repoOwner=${GH_OWNER}&repoName=${GH_REPO}`,
+        path: `/api/learnings?repoOwner=${LEARNINGS_OWNER}&repoName=${LEARNINGS_REPO}`,
         assert: (body) =>
           Array.isArray((body as { learnings?: unknown }).learnings)
             ? null
@@ -173,7 +185,11 @@ const journeys: Journey[] = [
         name: "disable the learnings agent for a repo",
         method: "POST",
         path: "/api/learnings",
-        body: { repoOwner: GH_OWNER, repoName: GH_REPO, enabled: false },
+        body: {
+          repoOwner: LEARNINGS_OWNER,
+          repoName: LEARNINGS_REPO,
+          enabled: false,
+        },
         assert: (body) => {
           const payload = body as {
             enabled?: unknown;
@@ -190,7 +206,7 @@ const journeys: Journey[] = [
       {
         name: "the disabled state is reflected in the feed",
         method: "GET",
-        path: `/api/learnings?repoOwner=${GH_OWNER}&repoName=${GH_REPO}`,
+        path: `/api/learnings?repoOwner=${LEARNINGS_OWNER}&repoName=${LEARNINGS_REPO}`,
         assert: (body) =>
           (body as { enabled?: unknown }).enabled === false
             ? null
@@ -206,6 +222,33 @@ const journeys: Journey[] = [
           return kind === "learning_not_found"
             ? null
             : `expected errorKind "learning_not_found", got ${JSON.stringify(kind)}`;
+        },
+      },
+      {
+        // Raised in review: the disable above is a persistent write, so the
+        // journey should put the state back. It cannot — and that asymmetry is
+        // the finding. Disabling needs no GitHub access; re-enabling requires a
+        // GitHub App installation, so an identity that can turn learnings OFF
+        // cannot necessarily turn them back ON. A user who disables by mistake
+        // is stuck until they connect the App.
+        //
+        // The step is kept, pinned to the real outcome, so it goes red if the
+        // route ever becomes symmetric.
+        name: "re-enabling is refused without a GitHub App installation (asymmetric toggle)",
+        method: "POST",
+        path: "/api/learnings",
+        body: {
+          repoOwner: LEARNINGS_OWNER,
+          repoName: LEARNINGS_REPO,
+          enabled: true,
+        },
+        expect: [404],
+        assert: (body) => {
+          const kind = (body as { verdict?: { errorKind?: string } }).verdict
+            ?.errorKind;
+          return kind === "no_installation"
+            ? null
+            : `expected verdict.errorKind "no_installation", got ${JSON.stringify(kind)}`;
         },
       },
       {
