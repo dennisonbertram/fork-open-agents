@@ -34,6 +34,7 @@ let mockInstallationRow: { installationId: number } | undefined = {
 // Controls whether the installation-scoped octokit check succeeds or throws.
 let mockScopedOctokitShouldFail = false;
 let mockScopedOctokitFailStatus = 404;
+let mockScopedOctokitFailMessage = "App repo access error";
 let mockServiceRepoGrant: { repositoryId: number } | null = null;
 
 // ── Module mocks ───────────────────────────────────────────────────────────────
@@ -67,7 +68,7 @@ mock.module("./app", () => ({
     }) => Promise<unknown>;
   }) => {
     if (mockScopedOctokitShouldFail) {
-      const err = Object.assign(new Error("App repo access error"), {
+      const err = Object.assign(new Error(mockScopedOctokitFailMessage), {
         status: mockScopedOctokitFailStatus,
       });
       throw err;
@@ -88,7 +89,11 @@ mock.module("./app", () => ({
 
 // ── Import the module under test (after mocks) ────────────────────────────────
 
-const { verifyRepoAccess } = await import("./access");
+const {
+  getRepoAccessErrorMessage,
+  getRepoAccessErrorStatus,
+  verifyRepoAccess,
+} = await import("./access");
 
 // ── Test helpers ───────────────────────────────────────────────────────────────
 
@@ -139,6 +144,7 @@ function resetToDefaults() {
   mockInstallationRow = { installationId: 42 };
   mockScopedOctokitShouldFail = false;
   mockScopedOctokitFailStatus = 404;
+  mockScopedOctokitFailMessage = "App repo access error";
   mockServiceRepoGrant = null;
 }
 
@@ -392,5 +398,108 @@ describe("verifyRepoAccess — installation-scoped service identity", () => {
     });
 
     expect(result).toEqual({ ok: false, reason: "no_user_token" });
+  });
+});
+
+// ── Regression: rejected credentials must not throw (issue #1056) ─────────────
+
+function makeThrowingOctokit(error: unknown) {
+  return {
+    rest: {
+      repos: {
+        get: async (_args: unknown) => {
+          throw error;
+        },
+      },
+    },
+  };
+}
+
+describe("verifyRepoAccess — credential and rate-limit errors", () => {
+  test("401 Bad credentials → ok:false reason 'user_token_rejected' (not thrown)", async () => {
+    mockUserOctokit = makeThrowingOctokit(
+      Object.assign(new Error("Bad credentials"), { status: 401 }),
+    );
+
+    const result = await verifyRepoAccess({
+      userId: "user-1",
+      owner: "acme",
+      repo: "my-repo",
+    });
+
+    expect(result).toEqual({ ok: false, reason: "user_token_rejected" });
+  });
+
+  test("403 rate limit → ok:false reason 'rate_limited' (never asks to reconnect)", async () => {
+    mockUserOctokit = makeThrowingOctokit(
+      Object.assign(new Error("API rate limit exceeded for user"), {
+        status: 403,
+      }),
+    );
+
+    const result = await verifyRepoAccess({
+      userId: "user-1",
+      owner: "acme",
+      repo: "my-repo",
+    });
+
+    expect(result).toEqual({ ok: false, reason: "rate_limited" });
+    expect(getRepoAccessErrorMessage("rate_limited")).not.toMatch(/reconnect/i);
+  });
+
+  test("plain 403 permission denial still maps to user_no_access", async () => {
+    mockUserOctokit = makeThrowingOctokit(
+      Object.assign(new Error("Resource not accessible by integration"), {
+        status: 403,
+      }),
+    );
+
+    const result = await verifyRepoAccess({
+      userId: "user-1",
+      owner: "acme",
+      repo: "my-repo",
+    });
+
+    expect(result).toEqual({ ok: false, reason: "user_no_access" });
+  });
+
+  test("genuine server fault (500) still throws", async () => {
+    mockUserOctokit = makeThrowingOctokit(
+      Object.assign(new Error("boom"), { status: 500 }),
+    );
+
+    expect(
+      verifyRepoAccess({ userId: "user-1", owner: "acme", repo: "my-repo" }),
+    ).rejects.toThrow("boom");
+  });
+
+  test("installation-scoped 403 rate limit → ok:false reason 'rate_limited'", async () => {
+    mockScopedOctokitShouldFail = true;
+    mockScopedOctokitFailStatus = 403;
+    mockScopedOctokitFailMessage = "You have exceeded a secondary rate limit";
+
+    const result = await verifyRepoAccess({
+      userId: "user-1",
+      owner: "acme",
+      repo: "my-repo",
+    });
+
+    expect(result).toEqual({ ok: false, reason: "rate_limited" });
+  });
+
+  test("installation-scoped 401 is an app credential fault and still throws", async () => {
+    mockScopedOctokitShouldFail = true;
+    mockScopedOctokitFailStatus = 401;
+
+    expect(
+      verifyRepoAccess({ userId: "user-1", owner: "acme", repo: "my-repo" }),
+    ).rejects.toThrow();
+  });
+
+  test("HTTP status maps to 401 for rejection, 429 for rate limit, 403 otherwise", () => {
+    expect(getRepoAccessErrorStatus("user_token_rejected")).toBe(401);
+    expect(getRepoAccessErrorStatus("no_user_token")).toBe(401);
+    expect(getRepoAccessErrorStatus("rate_limited")).toBe(429);
+    expect(getRepoAccessErrorStatus("user_no_access")).toBe(403);
   });
 });
