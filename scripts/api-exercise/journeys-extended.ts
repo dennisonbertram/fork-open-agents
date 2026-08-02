@@ -43,7 +43,7 @@ const GH_REPO_PATH = `/api/github/repos/${GH_OWNER}/${GH_REPO}`;
 const LEARNINGS_OWNER = "dennisonbertram";
 const LEARNINGS_REPO = "fork-open-agents";
 
-const journeys: Journey[] = [
+export const extendedJourneys: Journey[] = [
   {
     id: "J-X-AUTOMATIONS-01",
     title: "Unified automations and runs listings",
@@ -620,7 +620,9 @@ if (import.meta.main) {
   const only = process.argv
     .find((arg) => arg.startsWith("--only="))
     ?.split("=")[1];
-  const selected = only ? journeys.filter((j) => j.id === only) : journeys;
+  const selected = only
+    ? extendedJourneys.filter((j) => j.id === only)
+    : extendedJourneys;
   const sections: string[] = [];
   let failed = 0;
 
