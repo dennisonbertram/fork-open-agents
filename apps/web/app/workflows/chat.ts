@@ -882,14 +882,35 @@ function getSetupErrorMessage(error: unknown): string {
       : getComposioUserFacingError(message);
   }
 
+  // The AI Gateway names its own credential in the failure, so say which one
+  // to fix. This has to be classified before the Composio fallback below:
+  // the gateway's message ends in "Invalid API key", which that branch used to
+  // match, sending users to change their Composio key instead.
+  // Requires an auth signal alongside the "AI Gateway" mention. Other guidance
+  // legitimately names the gateway as a destination — "Selected inference
+  // profile is unavailable. Choose another User model or switch back to Vercel
+  // AI Gateway." — and matching the phrase alone would tell those users their
+  // gateway key was rejected, which is the same misattribution this branch
+  // exists to remove.
+  if (
+    message.includes("AI Gateway") &&
+    (message.includes("AI_GATEWAY_API_KEY") ||
+      matchesAnyPhrase(message, PROVIDER_AUTH_PHRASES))
+  ) {
+    return "The AI Gateway rejected the API key. Update AI_GATEWAY_API_KEY in your deployment environment, or switch this chat to a User model in Settings → Models.";
+  }
+
   // Fallback for errors that are NOT already a ComposioSetupError — e.g. a
   // raw, untyped Composio SDK error that leaked through some other path.
   // These still need classification, so this branch (unlike the one above)
   // always calls getComposioUserFacingError.
+  //
+  // Every marker here must be Composio-specific. A bare "Invalid API key" is
+  // generic English that every provider emits, so it is deliberately not one
+  // of them — the provider-auth branch further down handles that case.
   if (
     message.includes("Composio") ||
     message.includes("COMPOSIO_API_KEY") ||
-    message.includes("Invalid API key") ||
     message.includes('"code":10401') ||
     message.includes("HTTP_Unauthorized")
   ) {
