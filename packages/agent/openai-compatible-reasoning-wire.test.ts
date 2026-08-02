@@ -18,13 +18,20 @@ import { generateText, type ModelMessage } from "ai";
 type WireMessage = Record<string, unknown>;
 
 let server: ReturnType<typeof Bun.serve>;
-let lastRequestBody: { messages?: WireMessage[] } | null = null;
+
+// Held on an object rather than a bare `let`: TypeScript narrows a
+// module-scope `let` that is only assigned inside a callback down to `null`.
+const captured: { requestBody: { messages?: WireMessage[] } | null } = {
+  requestBody: null,
+};
 
 beforeAll(() => {
   server = Bun.serve({
     port: 0,
     async fetch(req) {
-      lastRequestBody = (await req.json()) as { messages?: WireMessage[] };
+      captured.requestBody = (await req.json()) as {
+        messages?: WireMessage[];
+      };
       return Response.json({
         id: "cmpl-test",
         object: "chat.completion",
@@ -60,10 +67,17 @@ function stripReasoning(messages: ModelMessage[]): ModelMessage[] {
   });
 }
 
+// Reset through a function: assigning `captured.requestBody = null` inline
+// narrows the property to `null` for the rest of the block, so the later read
+// collapses to `never`.
+function resetCapture(): void {
+  captured.requestBody = null;
+}
+
 async function sendAndCaptureAssistantMessage(
   messages: ModelMessage[],
 ): Promise<WireMessage> {
-  lastRequestBody = null;
+  resetCapture();
   const provider = createOpenAICompatible({
     name: "openai-compatible",
     baseURL: `http://localhost:${server.port}/v1`,
@@ -72,7 +86,7 @@ async function sendAndCaptureAssistantMessage(
 
   await generateText({ model: provider.chatModel("mock-model"), messages });
 
-  const sent = lastRequestBody?.messages ?? [];
+  const sent = captured.requestBody?.messages ?? [];
   const assistant = sent.find((message) => message.role === "assistant");
   expect(assistant).toBeDefined();
   return assistant as WireMessage;
