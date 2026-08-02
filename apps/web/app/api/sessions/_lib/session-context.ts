@@ -1,3 +1,4 @@
+import { sandboxNotInitializedResponse } from "@/app/api/sessions/_lib/sandbox-lifecycle-response";
 import { apiErrorKindForStatus } from "@/lib/api/error-response";
 import * as sessionsDb from "@/lib/db/sessions";
 import { getServerSession } from "@/lib/session/get-server-session";
@@ -116,7 +117,7 @@ export async function requireOwnedSessionWithSandboxGuard(
     forbiddenMessage,
     sandboxGuard,
     sandboxErrorMessage = "Sandbox not initialized",
-    sandboxErrorStatus = 400,
+    sandboxErrorStatus = 409,
   } = params;
 
   const ownedSessionResult = await requireOwnedSession({
@@ -131,7 +132,10 @@ export async function requireOwnedSessionWithSandboxGuard(
   if (!sandboxGuard(ownedSessionResult.sessionRecord.sandboxState)) {
     return {
       ok: false,
-      response: toErrorResponse(sandboxErrorMessage, sandboxErrorStatus),
+      response: sandboxNotInitializedResponse(
+        sandboxErrorMessage,
+        sandboxErrorStatus,
+      ),
     };
   }
 

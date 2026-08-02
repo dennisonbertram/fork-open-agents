@@ -186,10 +186,13 @@ describe("session context guards", () => {
 
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.response.status).toBe(400);
-      expect(await getErrorMessage(result.response)).toBe(
-        "Sandbox not initialized",
-      );
+      expect(result.response.status).toBe(409);
+      const body = (await result.response.json()) as {
+        error?: string;
+        errorKind?: string;
+      };
+      expect(body.error).toBe("Sandbox not initialized");
+      expect(body.errorKind).toBe("sandbox_not_initialized");
     }
   });
 

@@ -269,14 +269,20 @@ export const coreJourneys: Journey[] = [
         skipIf: (ctx) => !ctx.sessionId,
       },
       {
-        // Documented as a finding: a session with no sandbox yet is a normal
-        // lifecycle state, but the route reports it as a 400 client error.
-        // Expectation encodes what the API does today, not what it should do.
-        name: "diff before a sandbox exists reports 400 (see issue #1057)",
+        // A session with no sandbox yet is a normal lifecycle state, not a
+        // malformed request, so the route answers 409 with a typed errorKind
+        // (issue #1057).
+        name: "diff before a sandbox exists is a typed 409",
         method: "GET",
         path: (ctx) => `/api/sessions/${ctx.sessionId}/diff`,
         skipIf: (ctx) => !ctx.sessionId,
-        expect: [400],
+        expect: [409],
+        assert: (body) => {
+          const payload = body as { errorKind?: string };
+          return payload.errorKind === "sandbox_not_initialized"
+            ? null
+            : `expected errorKind "sandbox_not_initialized", got ${JSON.stringify(payload.errorKind)}`;
+        },
       },
       {
         name: "read session observability",

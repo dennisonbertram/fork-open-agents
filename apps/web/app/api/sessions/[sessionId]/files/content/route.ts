@@ -1,3 +1,4 @@
+import { sandboxNotInitializedResponse } from "@/app/api/sessions/_lib/sandbox-lifecycle-response";
 import { posix } from "node:path";
 import { connectSandbox } from "@open-agents/sandbox";
 import {
@@ -83,7 +84,7 @@ export async function GET(req: Request, context: RouteContext) {
   const { sessionRecord } = sessionContext;
   const sandboxState = sessionRecord.sandboxState;
   if (!sandboxState) {
-    return Response.json({ error: "Sandbox not initialized" }, { status: 400 });
+    return sandboxNotInitializedResponse();
   }
 
   try {
