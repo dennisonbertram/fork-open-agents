@@ -40,7 +40,7 @@ const KIND_BY_STATUS: Record<string, string> = {
  * so it is matched lazily up to the closing brace that precedes the status object.
  */
 const SINGLE_KEY_ERROR =
-  /Response\.json\(\s*\{\s*error:\s*((?:[^{}]|\{[^{}]*\})*?)\s*,?\s*\}\s*,\s*\{\s*status:\s*(\d{3})\s*\}/g;
+  /(?:Next)?Response\.json\(\s*\{\s*error:\s*((?:[^{}]|\{[^{}]*\})*?)\s*,?\s*\}\s*,\s*\{\s*status:\s*(\d{3})\s*\}/g;
 
 export type Edit = { file: string; count: number; kinds: string[] };
 
@@ -92,7 +92,9 @@ if (import.meta.main) {
     `${dryRun ? "Would add" : "Added"} errorKind to ${total} responses across ${edits.length} files\n`,
   );
   for (const edit of edits.slice(0, 40)) {
-    console.log(`  ${String(edit.count).padStart(3)}  ${edit.file}  [${edit.kinds.join(", ")}]`);
+    console.log(
+      `  ${String(edit.count).padStart(3)}  ${edit.file}  [${edit.kinds.join(", ")}]`,
+    );
   }
   if (edits.length > 40) {
     console.log(`  ... and ${edits.length - 40} more files`);
