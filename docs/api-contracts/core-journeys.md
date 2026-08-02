@@ -15,88 +15,61 @@ Result: **PASS** (4 passed, 0 failed, 0 skipped)
 
 ## J-PREFS-01: Read, update and re-read account preferences
 
-Result: **FAIL** (3 passed, 1 failed, 0 skipped)
+Result: **PASS** (4 passed, 0 failed, 0 skipped)
 
 | # | Step | Call | Status | Response keys |
 | - | ---- | ---- | ------ | ------------- |
 | 1 | ✓ read current preferences | `GET /api/settings/preferences` | 200 | preferences |
-| 2 | ✗ reject an unknown preference value | `PATCH /api/settings/preferences` | 200 | preferences |
+| 2 | ✓ reject an unknown preference value | `PATCH /api/settings/preferences` | 400 | error, fields |
 | 3 | ✓ set a valid preference | `PATCH /api/settings/preferences` | 200 | preferences |
 | 4 | ✓ preference survives a re-read | `GET /api/settings/preferences` | 200 | preferences |
 
-### Failures
-
-- **reject an unknown preference value** — `PATCH /api/settings/preferences` returned 200 (expected one of 400/422)
-  ```
-  {"preferences":{"defaultModelId":"user-profile:NCFsMdcF0NkYyxY4BJfib:local-pro","defaultSubagentModelId":"user-profile:NCFsMdcF0NkYyxY4BJfib:local-mini","defaultInferenceProfileId":null,"defaultSandboxType":"vercel","defaultManagedRuntimeProfileId":"user-profile-sDpTohhw9n6Z-cnTUEL7L","defaultDiffMo
-  ```
-
 ## J-INFPROF-01: Inference profile create, read, update, delete
 
-Result: **FAIL** (6 passed, 1 failed, 0 skipped)
+Result: **PASS** (8 passed, 0 failed, 0 skipped)
 
 | # | Step | Call | Status | Response keys |
 | - | ---- | ---- | ------ | ------------- |
 | 1 | ✓ list existing profiles | `GET /api/inference-profiles` | 200 | profiles |
 | 2 | ✓ reject a profile with no API key | `POST /api/inference-profiles` | 400 | error |
 | 3 | ✓ create a profile | `POST /api/inference-profiles` | 201 | profile |
-| 4 | ✗ rename the profile via collection-level PATCH | `PATCH /api/inference-profiles` | 400 | error |
-| 5 | ✓ per-id read route does not exist | `GET /api/inference-profiles/wj0Iu-lk8YhBRJLIT2w2K` | 404 | — |
-| 6 | ✓ list reflects the rename | `GET /api/inference-profiles` | 200 | profiles |
-| 7 | ✓ delete the profile via collection-level DELETE | `DELETE /api/inference-profiles` | 200 | success |
-
-### Failures
-
-- **rename the profile via collection-level PATCH** — `PATCH /api/inference-profiles` returned 400 (expected one of 200/201/202/204)
-  ```
-  {"error":"OpenAI-compatible profiles require a base URL."}
-  ```
+| 4 | ✓ rename-only PATCH is rejected without baseUrl (see issue #1062) | `PATCH /api/inference-profiles` | 400 | error |
+| 5 | ✓ the same rename succeeds when baseUrl is resent | `PATCH /api/inference-profiles` | 200 | profile |
+| 6 | ✓ per-id read route does not exist | `GET /api/inference-profiles/07CYInoodfSaG2gUFMRvB` | 404 | — |
+| 7 | ✓ list reflects the rename | `GET /api/inference-profiles` | 200 | profiles |
+| 8 | ✓ delete the profile via collection-level DELETE | `DELETE /api/inference-profiles` | 200 | success |
 
 ## J-SESSION-01: Session create, read, rename, archive without a sandbox
 
-Result: **FAIL** (9 passed, 1 failed, 0 skipped)
+Result: **PASS** (10 passed, 0 failed, 0 skipped)
 
 | # | Step | Call | Status | Response keys |
 | - | ---- | ---- | ------ | ------------- |
 | 1 | ✓ reject a session with an invalid sandbox type | `POST /api/sessions` | 400 | error |
 | 2 | ✓ create a session | `POST /api/sessions` | 200 | chat, session |
-| 3 | ✓ read the session | `GET /api/sessions/CR5h6CQLplPZKbhzj-hP9` | 200 | session |
-| 4 | ✓ list the session's chats | `GET /api/sessions/CR5h6CQLplPZKbhzj-hP9/chats` | 200 | chats, defaultModelId |
+| 3 | ✓ read the session | `GET /api/sessions/haFMGVTHqEYbrvIw4zD1N` | 200 | session |
+| 4 | ✓ list the session's chats | `GET /api/sessions/haFMGVTHqEYbrvIw4zD1N/chats` | 200 | chats, defaultModelId |
 | 5 | ✓ unknown session id is a 404, not a 500 | `GET /api/sessions/definitely-not-a-real-session-id` | 404 | error |
-| 6 | ✓ rename the session | `PATCH /api/sessions/CR5h6CQLplPZKbhzj-hP9` | 200 | session |
-| 7 | ✗ read the session diff | `GET /api/sessions/CR5h6CQLplPZKbhzj-hP9/diff` | 400 | error |
-| 8 | ✓ read session observability | `GET /api/sessions/CR5h6CQLplPZKbhzj-hP9/observability` | 200 | browserRuns, directToolUse, events, externalToolUse, profileRuns, runtimeMode, services, workers, workflowArtifacts, workflowGoals, workflowRuns |
-| 9 | ✓ delete the session | `DELETE /api/sessions/CR5h6CQLplPZKbhzj-hP9` | 200 | success |
-| 10 | ✓ deleted session is gone | `GET /api/sessions/CR5h6CQLplPZKbhzj-hP9` | 404 | error |
-
-### Failures
-
-- **read the session diff** — `GET /api/sessions/CR5h6CQLplPZKbhzj-hP9/diff` returned 400 (expected one of 200/201/202/204)
-  ```
-  {"error":"Sandbox not initialized"}
-  ```
+| 6 | ✓ rename the session | `PATCH /api/sessions/haFMGVTHqEYbrvIw4zD1N` | 200 | session |
+| 7 | ✓ diff before a sandbox exists reports 400 (see issue #1057) | `GET /api/sessions/haFMGVTHqEYbrvIw4zD1N/diff` | 400 | error |
+| 8 | ✓ read session observability | `GET /api/sessions/haFMGVTHqEYbrvIw4zD1N/observability` | 200 | browserRuns, directToolUse, events, externalToolUse, profileRuns, runtimeMode, services, workers, workflowArtifacts, workflowGoals, workflowRuns |
+| 9 | ✓ delete the session | `DELETE /api/sessions/haFMGVTHqEYbrvIw4zD1N` | 200 | success |
+| 10 | ✓ deleted session is gone | `GET /api/sessions/haFMGVTHqEYbrvIw4zD1N` | 404 | error |
 
 ## J-LOOP-01: Agent loop create, read, update, delete
 
-Result: **FAIL** (3 passed, 1 failed, 4 skipped)
+Result: **PASS** (8 passed, 0 failed, 0 skipped)
 
 | # | Step | Call | Status | Response keys |
 | - | ---- | ---- | ------ | ------------- |
 | 1 | ✓ list loops | `GET /api/agent-loops` | 200 | loops |
 | 2 | ✓ reject a loop with no name | `POST /api/agent-loops` | 400 | errorKind, message |
-| 3 | ✗ create a loop | `POST /api/agent-loops` | 400 | errorKind, message |
-| 4 | — read the loop | `GET /api/agent-loops/undefined` | skipped | — |
-| 5 | — list the loop's triggers | `GET /api/agent-loops/undefined/triggers` | skipped | — |
-| 6 | — list the loop's runs | `GET /api/agent-loops/undefined/runs` | skipped | — |
+| 3 | ✓ create a loop | `POST /api/agent-loops` | 201 | loop |
+| 4 | ✓ read the loop | `GET /api/agent-loops/xFGw2ieE7OHUt0INpOM1y` | 200 | loop, triggers |
+| 5 | ✓ list the loop's triggers | `GET /api/agent-loops/xFGw2ieE7OHUt0INpOM1y/triggers` | 200 | triggers |
+| 6 | ✓ list the loop's runs | `GET /api/agent-loops/xFGw2ieE7OHUt0INpOM1y/runs` | 200 | runs |
 | 7 | ✓ unknown loop id is a 404 | `GET /api/agent-loops/definitely-not-a-real-loop` | 404 | error |
-| 8 | — delete the loop | `DELETE /api/agent-loops/undefined` | skipped | — |
-
-### Failures
-
-- **create a loop** — `POST /api/agent-loops` returned 400 (expected one of 200/201)
-  ```
-  {"errorKind":"invalid_request","message":"Invalid request body: definition: Invalid input: expected record, received undefined"}
-  ```
+| 8 | ✓ delete the loop | `DELETE /api/agent-loops/xFGw2ieE7OHUt0INpOM1y` | 200 | success |
 
 ## J-BGAGENT-01: Background agent create, read, update, delete
 

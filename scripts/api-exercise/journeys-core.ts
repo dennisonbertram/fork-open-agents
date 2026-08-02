@@ -68,7 +68,7 @@ const journeys: Journey[] = [
         name: "set a valid preference",
         method: "PATCH",
         path: "/api/settings/preferences",
-        body: { autoCommit: true },
+        body: { autoCommitPush: true },
       },
       {
         name: "preference survives a re-read",
@@ -113,12 +113,24 @@ const journeys: Journey[] = [
         // Collection-level PATCH/DELETE with the id in the body, unlike every
         // other resource in this API, which uses /resource/[id]. Recorded as
         // observed, not as it ought to be.
-        name: "rename the profile via collection-level PATCH",
+        name: "rename-only PATCH is rejected without baseUrl (see issue #1062)",
         method: "PATCH",
         path: "/api/inference-profiles",
         body: (ctx) => ({
           profileId: ctx.profileId,
           name: "Contract Probe Renamed",
+        }),
+        skipIf: (ctx) => !ctx.profileId,
+        expect: [400],
+      },
+      {
+        name: "the same rename succeeds when baseUrl is resent",
+        method: "PATCH",
+        path: "/api/inference-profiles",
+        body: (ctx) => ({
+          profileId: ctx.profileId,
+          name: "Contract Probe Renamed",
+          baseUrl: "https://api.example.com/v1",
         }),
         skipIf: (ctx) => !ctx.profileId,
       },
@@ -195,10 +207,14 @@ const journeys: Journey[] = [
         skipIf: (ctx) => !ctx.sessionId,
       },
       {
-        name: "read the session diff",
+        // Documented as a finding: a session with no sandbox yet is a normal
+        // lifecycle state, but the route reports it as a 400 client error.
+        // Expectation encodes what the API does today, not what it should do.
+        name: "diff before a sandbox exists reports 400 (see issue #1057)",
         method: "GET",
         path: (ctx) => `/api/sessions/${ctx.sessionId}/diff`,
         skipIf: (ctx) => !ctx.sessionId,
+        expect: [400],
       },
       {
         name: "read session observability",
@@ -242,6 +258,25 @@ const journeys: Journey[] = [
           description: "Created by the API exercise harness",
           repoOwner: "dennisonbertram",
           repoName: "fork-open-agents",
+          definition: {
+            nodes: [
+              {
+                id: "start",
+                kind: "start",
+                label: "Start",
+                position: { x: 0, y: 0 },
+              },
+              {
+                id: "end",
+                kind: "end",
+                label: "End",
+                position: { x: 1, y: 0 },
+              },
+            ],
+            edges: [
+              { id: "e1", source: "start", target: "end", when: "always" },
+            ],
+          },
         },
         expect: [200, 201],
         capture: (body, ctx) => {
