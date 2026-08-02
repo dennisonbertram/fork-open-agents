@@ -1,3 +1,4 @@
+import { sandboxNotInitializedResponse } from "@/app/api/sessions/_lib/sandbox-lifecycle-response";
 import { connectSandbox, type SandboxState } from "@open-agents/sandbox";
 import {
   requireAuthenticatedUser,
@@ -64,7 +65,7 @@ export async function POST(req: Request) {
   const { sessionRecord } = sessionContext;
   const sandboxState = sessionRecord.sandboxState;
   if (!sandboxState) {
-    return Response.json({ error: "Sandbox not initialized" }, { status: 400 });
+    return sandboxNotInitializedResponse();
   }
 
   try {

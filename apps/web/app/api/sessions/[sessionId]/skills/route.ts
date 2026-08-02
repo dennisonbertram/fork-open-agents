@@ -1,3 +1,4 @@
+import { sandboxNotInitializedResponse } from "@/app/api/sessions/_lib/sandbox-lifecycle-response";
 import { discoverSkills } from "@open-agents/agent";
 import { connectSandbox } from "@open-agents/sandbox";
 import {
@@ -57,7 +58,7 @@ export async function GET(req: Request, context: RouteContext) {
   const { sessionRecord } = sessionContext;
   const sandboxState = sessionRecord.sandboxState;
   if (!sandboxState) {
-    return Response.json({ error: "Sandbox not initialized" }, { status: 400 });
+    return sandboxNotInitializedResponse();
   }
 
   const refresh = new URL(req.url).searchParams.get("refresh") === "1";
@@ -70,7 +71,7 @@ export async function GET(req: Request, context: RouteContext) {
   }
 
   if (!hasRuntimeSandboxState(sandboxState)) {
-    return Response.json({ error: "Sandbox not initialized" }, { status: 400 });
+    return sandboxNotInitializedResponse();
   }
 
   try {

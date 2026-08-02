@@ -138,7 +138,7 @@ and replay `-b cookies.txt` on every subsequent call. `$BASE` is
 
 ### Edge Cases
 - Auth failure: step 2 without cookie → `401 {"error":"Not authenticated"}`.
-- Conflict/state: `POST /api/sandbox/snapshot` on a session that never had a sandbox → `400 {"error":"Sandbox not initialized"}` (sandbox guard `canOperateOnSandbox`).
+- Conflict/state: `POST /api/sandbox/snapshot` on a session that never had a sandbox → `409 {"error":"Sandbox not initialized","errorKind":"sandbox_not_initialized"}` (sandbox guard `canOperateOnSandbox`).
 - Not found: `PUT /api/sandbox/snapshot` on a no-repo session with no `sandboxName` and no `snapshotUrl` → `404 {"error":"No sandbox available for resume","errorKind":"sandbox_resume_state_missing","retryable":false}`.
 - Not found (upstream deleted VM): `PUT /api/sandbox/snapshot` when the named sandbox no longer exists upstream → `404 {"error":"Saved sandbox is no longer available. Create a new sandbox.","errorKind":"sandbox_resume_unavailable","retryable":false}` and the session flips to `hibernated` with resume state cleared.
 - Provider failure: transient upstream error on resume → `500 {"error":"Sandbox resume failed. Try again.","errorKind":"sandbox_resume_failed","retryable":true}`.
@@ -172,7 +172,7 @@ and replay `-b cookies.txt` on every subsequent call. `$BASE` is
 - Not found: `{"sessionId":"sess_missing"}` → `404 {"error":"Session not found"}`.
 - Ownership: another user's session → `403 {"error":"Forbidden"}`.
 - Validation failure: `POST /api/sandbox/extend` body `{}` → `400 {"error":"Missing sessionId"}`; malformed JSON → `400 {"error":"Invalid JSON body"}`.
-- State failure: `POST /api/sandbox/extend` when the sandbox is not active → `400 {"error":"Sandbox not initialized"}` (guard `isSandboxActive`).
+- State failure: `POST /api/sandbox/extend` when the sandbox is not active → `409 {"error":"Sandbox not initialized","errorKind":"sandbox_not_initialized"}` (guard `isSandboxActive`).
 - Provider failure: extend throws upstream → `500 {"error":"Failed to extend sandbox timeout"}`.
 - Rate limit: 4 extends in 60s → the 4th is rate-limited (limit **3**/60s — much tighter than the other sandbox routes).
 

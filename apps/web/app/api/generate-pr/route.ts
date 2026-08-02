@@ -1,3 +1,4 @@
+import { sandboxNotInitializedResponse } from "@/app/api/sessions/_lib/sandbox-lifecycle-response";
 import { connectSandbox } from "@open-agents/sandbox";
 import { checkBotProtection } from "@/lib/botid";
 import { generateBranchName, looksLikeCommitHash } from "@/lib/git/helpers";
@@ -62,7 +63,7 @@ export async function POST(req: Request) {
     return Response.json({ error: "Forbidden" }, { status: 403 });
   }
   if (!isSandboxActive(sessionRecord.sandboxState)) {
-    return Response.json({ error: "Sandbox not initialized" }, { status: 400 });
+    return sandboxNotInitializedResponse();
   }
 
   if (!branchName) {

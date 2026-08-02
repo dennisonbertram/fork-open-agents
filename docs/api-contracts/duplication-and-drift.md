@@ -14,7 +14,7 @@ plus the live and static analysis in [README.md](README.md).
 | ---- | ----- | ---- |
 | `commandSchema` + `updateProfileSchema` | `app/api/settings/runtime-profiles/*` and `app/api/sessions/[sessionId]/managed-runtime/profiles/*` | The zod schemas are duplicated verbatim across the account-scoped and session-scoped copies of the same resource. They will drift. |
 | Cron/sweep handlers | `GET` and `POST` on `/api/background-agents/cron`; `GET` and `POST` on `/api/agent-loops/sweep` | Each pair shares one handler with identical semantics — two methods documented as one behavior. |
-| PR content generation | `POST /api/sessions/[sessionId]/git/pr/generate` and `POST /api/generate-pr` | Both call `generatePullRequestContentFromSandbox`. **Their error contracts disagree: 409 vs 400 for the same "Sandbox not initialized" condition.** |
+| PR content generation | `POST /api/sessions/[sessionId]/git/pr/generate` and `POST /api/generate-pr` | Both call `generatePullRequestContentFromSandbox`. Their "Sandbox not initialized" contracts were 409 vs 400; both now return `409 {"errorKind":"sandbox_not_initialized"}` (issue #1057). |
 
 That last row is the clearest evidence that duplication here is not harmless:
 two routes wrapping one function already return different status codes for the

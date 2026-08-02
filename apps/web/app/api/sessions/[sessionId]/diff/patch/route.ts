@@ -1,3 +1,4 @@
+import { sandboxNotInitializedResponse } from "@/app/api/sessions/_lib/sandbox-lifecycle-response";
 import type { NextRequest } from "next/server";
 import { connectSandbox } from "@open-agents/sandbox";
 import {
@@ -45,7 +46,7 @@ export async function GET(_req: NextRequest, context: RouteContext) {
   const { sessionRecord } = sessionContext;
   const sandboxState = sessionRecord.sandboxState;
   if (!sandboxState) {
-    return Response.json({ error: "Sandbox not initialized" }, { status: 400 });
+    return sandboxNotInitializedResponse();
   }
 
   try {
