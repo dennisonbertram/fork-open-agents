@@ -35,7 +35,7 @@ Result: **PASS** (8 passed, 0 failed, 0 skipped)
 | 3 | ✓ create a profile | `POST /api/inference-profiles` | 201 | profile |
 | 4 | ✓ rename-only PATCH is rejected without baseUrl (see issue #1062) | `PATCH /api/inference-profiles` | 400 | error |
 | 5 | ✓ the same rename succeeds when baseUrl is resent | `PATCH /api/inference-profiles` | 200 | profile |
-| 6 | ✓ per-id read route does not exist | `GET /api/inference-profiles/07CYInoodfSaG2gUFMRvB` | 404 | — |
+| 6 | ✓ per-id read route does not exist | `GET /api/inference-profiles/6kdBeeptEuERCDEOU2NOC` | 404 | — |
 | 7 | ✓ list reflects the rename | `GET /api/inference-profiles` | 200 | profiles |
 | 8 | ✓ delete the profile via collection-level DELETE | `DELETE /api/inference-profiles` | 200 | success |
 
@@ -47,14 +47,14 @@ Result: **PASS** (10 passed, 0 failed, 0 skipped)
 | - | ---- | ---- | ------ | ------------- |
 | 1 | ✓ reject a session with an invalid sandbox type | `POST /api/sessions` | 400 | error |
 | 2 | ✓ create a session | `POST /api/sessions` | 200 | chat, session |
-| 3 | ✓ read the session | `GET /api/sessions/haFMGVTHqEYbrvIw4zD1N` | 200 | session |
-| 4 | ✓ list the session's chats | `GET /api/sessions/haFMGVTHqEYbrvIw4zD1N/chats` | 200 | chats, defaultModelId |
+| 3 | ✓ read the session | `GET /api/sessions/Qta3DqaX8QWZcx-sJTWU5` | 200 | session |
+| 4 | ✓ list the session's chats | `GET /api/sessions/Qta3DqaX8QWZcx-sJTWU5/chats` | 200 | chats, defaultModelId |
 | 5 | ✓ unknown session id is a 404, not a 500 | `GET /api/sessions/definitely-not-a-real-session-id` | 404 | error |
-| 6 | ✓ rename the session | `PATCH /api/sessions/haFMGVTHqEYbrvIw4zD1N` | 200 | session |
-| 7 | ✓ diff before a sandbox exists reports 400 (see issue #1057) | `GET /api/sessions/haFMGVTHqEYbrvIw4zD1N/diff` | 400 | error |
-| 8 | ✓ read session observability | `GET /api/sessions/haFMGVTHqEYbrvIw4zD1N/observability` | 200 | browserRuns, directToolUse, events, externalToolUse, profileRuns, runtimeMode, services, workers, workflowArtifacts, workflowGoals, workflowRuns |
-| 9 | ✓ delete the session | `DELETE /api/sessions/haFMGVTHqEYbrvIw4zD1N` | 200 | success |
-| 10 | ✓ deleted session is gone | `GET /api/sessions/haFMGVTHqEYbrvIw4zD1N` | 404 | error |
+| 6 | ✓ rename the session | `PATCH /api/sessions/Qta3DqaX8QWZcx-sJTWU5` | 200 | session |
+| 7 | ✓ diff before a sandbox exists reports 400 (see issue #1057) | `GET /api/sessions/Qta3DqaX8QWZcx-sJTWU5/diff` | 400 | error |
+| 8 | ✓ read session observability | `GET /api/sessions/Qta3DqaX8QWZcx-sJTWU5/observability` | 200 | browserRuns, directToolUse, events, externalToolUse, profileRuns, runtimeMode, services, workers, workflowArtifacts, workflowGoals, workflowRuns |
+| 9 | ✓ delete the session | `DELETE /api/sessions/Qta3DqaX8QWZcx-sJTWU5` | 200 | success |
+| 10 | ✓ deleted session is gone | `GET /api/sessions/Qta3DqaX8QWZcx-sJTWU5` | 404 | error |
 
 ## J-LOOP-01: Agent loop create, read, update, delete
 
@@ -65,11 +65,11 @@ Result: **PASS** (8 passed, 0 failed, 0 skipped)
 | 1 | ✓ list loops | `GET /api/agent-loops` | 200 | loops |
 | 2 | ✓ reject a loop with no name | `POST /api/agent-loops` | 400 | errorKind, message |
 | 3 | ✓ create a loop | `POST /api/agent-loops` | 201 | loop |
-| 4 | ✓ read the loop | `GET /api/agent-loops/xFGw2ieE7OHUt0INpOM1y` | 200 | loop, triggers |
-| 5 | ✓ list the loop's triggers | `GET /api/agent-loops/xFGw2ieE7OHUt0INpOM1y/triggers` | 200 | triggers |
-| 6 | ✓ list the loop's runs | `GET /api/agent-loops/xFGw2ieE7OHUt0INpOM1y/runs` | 200 | runs |
+| 4 | ✓ read the loop | `GET /api/agent-loops/iRJVxcmtjNH4kwrDVxlSS` | 200 | loop, triggers |
+| 5 | ✓ list the loop's triggers | `GET /api/agent-loops/iRJVxcmtjNH4kwrDVxlSS/triggers` | 200 | triggers |
+| 6 | ✓ list the loop's runs | `GET /api/agent-loops/iRJVxcmtjNH4kwrDVxlSS/runs` | 200 | runs |
 | 7 | ✓ unknown loop id is a 404 | `GET /api/agent-loops/definitely-not-a-real-loop` | 404 | error |
-| 8 | ✓ delete the loop | `DELETE /api/agent-loops/xFGw2ieE7OHUt0INpOM1y` | 200 | success |
+| 8 | ✓ delete the loop | `DELETE /api/agent-loops/iRJVxcmtjNH4kwrDVxlSS` | 200 | success |
 
 ## J-BGAGENT-01: Background agent create, read, update, delete
 

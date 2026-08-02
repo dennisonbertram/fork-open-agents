@@ -45,10 +45,23 @@ export function buildRouteInventory(apiRoot: string): RouteEntry[] {
   return walk(apiRoot)
     .map((file) => {
       const source = readFileSync(file, "utf8");
-      const methods = METHODS.filter((method) =>
-        new RegExp(
-          `export\\s+(?:async\\s+)?(?:function\\s+${method}\\b|const\\s+${method}\\b)`,
-        ).test(source),
+      // Handlers are also exported by destructuring — the Better Auth
+      // catch-all uses `export const { GET, POST } = toNextJsHandler(auth)`.
+      // Missing that form silently drops whole routes from the inventory.
+      const destructured = new Set<string>();
+      for (const match of source.matchAll(
+        /export\s+const\s*\{([^}]*)\}\s*=/g,
+      )) {
+        for (const name of (match[1] as string).split(",")) {
+          destructured.add(name.split(":")[0]?.trim() ?? "");
+        }
+      }
+
+      const methods = METHODS.filter(
+        (method) =>
+          new RegExp(
+            `export\\s+(?:async\\s+)?(?:function\\s+${method}\\b|const\\s+${method}\\b)`,
+          ).test(source) || destructured.has(method),
       );
       const path = toUrlPath(file, apiRoot);
       const params = [...path.matchAll(/\[(\.\.\.)?([^\]]+)\]/g)].map(

@@ -24,6 +24,13 @@ export type Step = {
   expect?: number[];
   /** Pull values out of the response body into the journey context. */
   capture?: (body: unknown, ctx: JourneyContext) => void;
+  /**
+   * Assert something about the response body. A step that only checks status
+   * passes whenever the server answers 200, even if it silently ignored the
+   * request — which is exactly the class of defect this harness exists to
+   * catch. Return an error string to fail the step, or null to pass.
+   */
+  assert?: (body: unknown, ctx: JourneyContext) => string | null;
   /** Skip when a precondition from an earlier step is missing. */
   skipIf?: (ctx: JourneyContext) => boolean;
   anonymous?: boolean;
@@ -124,7 +131,11 @@ export async function runJourney(journey: Journey): Promise<JourneyResult> {
       }
 
       const expected = step.expect ?? [200, 201, 202, 204];
-      const ok = expected.includes(response.status);
+      const statusOk = expected.includes(response.status);
+      const assertionError = statusOk
+        ? (step.assert?.(parsed, ctx) ?? null)
+        : null;
+      const ok = statusOk && assertionError === null;
       if (ok) {
         step.capture?.(parsed, ctx);
       }
@@ -139,7 +150,11 @@ export async function runJourney(journey: Journey): Promise<JourneyResult> {
         requestBody,
         responseKeys: topLevelKeys(parsed),
         responseSample: text.slice(0, 500),
-        ...(ok ? {} : { note: `expected one of ${expected.join("/")}` }),
+        ...(ok
+          ? {}
+          : {
+              note: assertionError ?? `expected one of ${expected.join("/")}`,
+            }),
       });
     } catch (error) {
       const aborted = error instanceof Error && error.name === "AbortError";

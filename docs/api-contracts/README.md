@@ -27,8 +27,9 @@ bun run scripts/api-exercise/error-shape-census.ts
 | Method + path pairs | 230 |
 | Parameterless routes probed live | 52 route/method pairs |
 | Routes reachable without a session | 8 |
-| Error responses (`Response.json` with status ≥ 400) | 462 |
-| Distinct error body shapes | 62 |
+| Inline error responses (`Response.json` with status ≥ 400) | 464 |
+| Further error responses produced via a helper (shape unclassified) | 81 |
+| Distinct inline error body shapes | 63 |
 
 The 8 routes reachable without a session are `/api/auth/info`, `/api/health`,
 `/api/models`, `/api/harness/ready`, `/api/github/app/callback`,
@@ -39,11 +40,14 @@ in production. **No unintended auth gap was found.**
 
 ## Finding 1 — error bodies are not a contract
 
-462 error responses use **62 distinct body shapes**. The largest groups:
+464 inline error responses use **63 distinct body shapes**, and a further 81
+error responses are produced through helpers such as `jsonError(...)` whose
+shape this census does not classify. **464 is a floor, not a total.** The
+largest groups:
 
 | Shape | Count |
 | ----- | ----- |
-| `{ error }` | 321 |
+| `{ error }` | 322 |
 | `{ errorKind, message }` | 32 |
 | `{ error, errorKind }` | 16 |
 | `{ }` (empty body) | 11 |

@@ -47,6 +47,27 @@ function extractTopLevelKeys(literal: string): string[] {
   return [...new Set(keys)].sort();
 }
 
+/**
+ * Error responses produced through a helper rather than an inline
+ * `Response.json`, e.g. `jsonError("Not authenticated", 401)`. The shape is
+ * whatever the helper builds, so these are counted but not shape-classified —
+ * without them the census reads as far smaller and tidier than it is.
+ */
+const HELPER_ERROR_CALL =
+  /\b(jsonError|harnessError|errorResponse|badRequest|unauthorized|notFound|conflict)\s*\(/g;
+
+export function countHelperErrorCallSites(): { file: string; count: number }[] {
+  const out: { file: string; count: number }[] = [];
+  for (const route of buildRouteInventory(API_ROOT)) {
+    const source = readFileSync(route.file, "utf8");
+    const count = [...source.matchAll(HELPER_ERROR_CALL)].length;
+    if (count > 0) {
+      out.push({ file: relative(REPO_ROOT, route.file), count });
+    }
+  }
+  return out;
+}
+
 export function censusErrorShapes(): ErrorResponse[] {
   const found: ErrorResponse[] = [];
   for (const route of buildRouteInventory(API_ROOT)) {
@@ -67,6 +88,8 @@ export function censusErrorShapes(): ErrorResponse[] {
 
 if (import.meta.main) {
   const responses = censusErrorShapes();
+  const helpers = countHelperErrorCallSites();
+  const helperTotal = helpers.reduce((n, h) => n + h.count, 0);
   const byShape = new Map<string, ErrorResponse[]>();
   for (const response of responses) {
     const shape = response.keys.join(",") || "<empty>";
@@ -74,8 +97,12 @@ if (import.meta.main) {
   }
 
   console.log(
-    `${responses.length} error responses across the API, in ${byShape.size} distinct body shapes\n`,
+    `${responses.length} inline error responses across the API, in ${byShape.size} distinct body shapes`,
   );
+  console.log(
+    `plus ${helperTotal} more produced through a helper in ${helpers.length} files, whose shape this census does not classify`,
+  );
+  console.log(`so ${responses.length} is a floor, not a total\n`);
   for (const [shape, entries] of [...byShape].sort(
     (a, b) => b[1].length - a[1].length,
   )) {

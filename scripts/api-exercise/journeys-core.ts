@@ -74,6 +74,13 @@ const journeys: Journey[] = [
         name: "preference survives a re-read",
         method: "GET",
         path: "/api/settings/preferences",
+        assert: (body) => {
+          const prefs = (body as { preferences?: { autoCommitPush?: boolean } })
+            .preferences;
+          return prefs?.autoCommitPush === true
+            ? null
+            : `autoCommitPush did not persist (got ${JSON.stringify(prefs?.autoCommitPush)})`;
+        },
       },
     ],
   },
@@ -145,6 +152,16 @@ const journeys: Journey[] = [
         name: "list reflects the rename",
         method: "GET",
         path: "/api/inference-profiles",
+        assert: (body, ctx) => {
+          const profiles =
+            (body as { profiles?: { id: string; name: string }[] }).profiles ??
+            [];
+          const mine = profiles.find((p) => p.id === ctx.profileId);
+          if (!mine) return "the created profile is missing from the list";
+          return mine.name === "Contract Probe Renamed"
+            ? null
+            : `rename did not persist (name is "${mine.name}")`;
+        },
       },
       {
         name: "delete the profile via collection-level DELETE",
@@ -182,6 +199,12 @@ const journeys: Journey[] = [
         method: "GET",
         path: (ctx) => `/api/sessions/${ctx.sessionId}`,
         skipIf: (ctx) => !ctx.sessionId,
+        assert: (body, ctx) => {
+          const session = (body as { session?: { id?: string } }).session;
+          return session?.id === ctx.sessionId
+            ? null
+            : "the session read back did not carry the id that was created";
+        },
       },
       {
         name: "list the session's chats",
