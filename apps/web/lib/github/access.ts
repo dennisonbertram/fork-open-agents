@@ -5,6 +5,8 @@ import { getUserOctokit } from "./client";
 
 export type RepoAccessDeniedReason =
   | "no_user_token"
+  | "user_token_rejected"
+  | "rate_limited"
   | "user_no_access"
   | "user_no_write"
   | "no_installation"
@@ -62,6 +64,38 @@ function getGitHubHttpStatus(error: unknown): number | null {
   return null;
 }
 
+function getGitHubHeader(error: unknown, name: string): string | null {
+  if (
+    error &&
+    typeof error === "object" &&
+    "response" in error &&
+    error.response &&
+    typeof error.response === "object" &&
+    "headers" in error.response &&
+    error.response.headers &&
+    typeof error.response.headers === "object"
+  ) {
+    const value = (error.response.headers as Record<string, unknown>)[name];
+    if (typeof value === "string") return value;
+    if (typeof value === "number") return String(value);
+  }
+  return null;
+}
+
+/**
+ * GitHub answers 403 for both throttling and permission problems. Mirror the
+ * split used by GitHubRateLimitedError / GitHubTokenRejectedError (see
+ * `users.ts`) so a throttled caller is never told to reconnect GitHub.
+ */
+export function isGitHubRateLimitError(error: unknown, status: number | null) {
+  if (status === 429) return true;
+  if (status !== 403) return false;
+  if (getGitHubHeader(error, "x-ratelimit-remaining") === "0") return true;
+  if (getGitHubHeader(error, "retry-after") !== null) return true;
+  const message = error instanceof Error ? error.message : "";
+  return /rate limit|abuse detection/i.test(message);
+}
+
 /**
  * Verify that the user can access a repo AND the GitHub App installation
  * covers it. Returns the installationId on success.
@@ -115,6 +149,14 @@ export async function verifyRepoAccess(params: {
       }
     } catch (error: unknown) {
       const status = getGitHubHttpStatus(error);
+      if (isGitHubRateLimitError(error, status)) {
+        return { ok: false, reason: "rate_limited" };
+      }
+      // A rejected stored token (401 "Bad credentials") is a user-fixable
+      // credential problem, not a server fault — see issue #1056.
+      if (status === 401) {
+        return { ok: false, reason: "user_token_rejected" };
+      }
       if (status === 404 || status === 403) {
         return { ok: false, reason: "user_no_access" };
       }
@@ -149,6 +191,9 @@ export async function verifyRepoAccess(params: {
   } catch (error: unknown) {
     const status = getGitHubHttpStatus(error);
     const message = error instanceof Error ? error.message : "";
+    if (isGitHubRateLimitError(error, status)) {
+      return { ok: false, reason: "rate_limited" };
+    }
     if (
       status === 404 ||
       status === 403 ||
@@ -178,6 +223,10 @@ export function getRepoAccessErrorMessage(
   switch (reason) {
     case "no_user_token":
       return "Connect GitHub to access repositories";
+    case "user_token_rejected":
+      return "Your GitHub connection expired or was revoked. Reconnect GitHub in Settings > Connections.";
+    case "rate_limited":
+      return "GitHub is rate limiting this account. Wait a few minutes and try again.";
     case "user_no_access":
       return "You don't have access to this repository";
     case "user_no_write":
@@ -186,5 +235,24 @@ export function getRepoAccessErrorMessage(
       return "GitHub App not installed for this organization. Install it from Settings > Connections.";
     case "app_no_access":
       return "GitHub App doesn't have access to this repository. Ask an org admin to update the app's repository permissions.";
+  }
+}
+
+/**
+ * HTTP status a route should answer with for a denial reason. Credential
+ * problems are 401 so a UI can prompt "Reconnect GitHub"; throttling is 429;
+ * everything else is a permission problem (403).
+ */
+export function getRepoAccessErrorStatus(
+  reason: RepoAccessDeniedReason,
+): 401 | 403 | 429 {
+  switch (reason) {
+    case "no_user_token":
+    case "user_token_rejected":
+      return 401;
+    case "rate_limited":
+      return 429;
+    default:
+      return 403;
   }
 }
