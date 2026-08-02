@@ -158,12 +158,27 @@ export const coreJourneys: Journey[] = [
         },
       },
       {
+        // Writes a name no earlier step set, so a route that answers 200 while
+        // ignoring the update fails on the follow-up reads below.
         name: "per-id PATCH renames without resending baseUrl",
         method: "PATCH",
         path: (ctx) => `/api/inference-profiles/${ctx.profileId}`,
-        body: { name: "Contract Probe Renamed" },
+        body: { name: "Contract Probe Per-Id Renamed" },
         skipIf: (ctx) => !ctx.profileId,
         expect: [200],
+      },
+      {
+        name: "per-id read reflects the per-id rename",
+        method: "GET",
+        path: (ctx) => `/api/inference-profiles/${ctx.profileId}`,
+        skipIf: (ctx) => !ctx.profileId,
+        expect: [200],
+        assert: (body) => {
+          const profile = (body as { profile?: { name?: string } }).profile;
+          return profile?.name === "Contract Probe Per-Id Renamed"
+            ? null
+            : `per-id PATCH did not persist (name is "${profile?.name}")`;
+        },
       },
       {
         name: "list reflects the rename",
@@ -175,7 +190,7 @@ export const coreJourneys: Journey[] = [
             [];
           const mine = profiles.find((p) => p.id === ctx.profileId);
           if (!mine) return "the created profile is missing from the list";
-          return mine.name === "Contract Probe Renamed"
+          return mine.name === "Contract Probe Per-Id Renamed"
             ? null
             : `rename did not persist (name is "${mine.name}")`;
         },
