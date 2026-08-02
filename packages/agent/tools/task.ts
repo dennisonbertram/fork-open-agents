@@ -679,11 +679,16 @@ IMPORTANT:
       delegatedWorkerLifecycle: launchingLifecycle,
       delegatedWorkerLifecycleEvents: [...delegatedWorkerLifecycleEvents],
     };
+    let modelCallPending = false;
     try {
       const runningLifecycle = appendLifecycleEvent(
         "running",
         "worker_running",
       );
+      // Only the model call itself may be reported as a model failure; once the
+      // stream is open a failure can just as easily come from a tool or from
+      // response assembly, and must keep its original error.
+      modelCallPending = true;
       const result = await subagent.stream({
         prompt:
           "Complete this task and provide a summary of what you accomplished.",
@@ -696,6 +701,7 @@ IMPORTANT:
         },
         abortSignal,
       });
+      modelCallPending = false;
 
       for await (const part of result.fullStream) {
         if (part.type === "tool-call") {
@@ -816,7 +822,16 @@ IMPORTANT:
         completionPacket,
         completionPacketValidation,
       };
-      throw error;
+      if (abortSignal?.aborted || !modelCallPending) {
+        throw error;
+      }
+      // The model call failed after the workspace checks already passed, so
+      // surface the model/provider failure instead of leaving the parent agent
+      // to guess at a workspace cause.
+      throw new Error(
+        `subagent_model_failed: the delegated worker model "${subagentModelId}" failed before returning output: ${error instanceof Error ? error.message : String(error)}. Check that the model is reachable and configured; the shared workspace was not the cause.`,
+        { cause: error },
+      );
     } finally {
       releaseSharedWriterLease(
         abortSignal?.aborted ? "worker_cancelled" : "worker_terminal",
