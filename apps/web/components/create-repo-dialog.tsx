@@ -26,6 +26,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import type { Session } from "@/lib/db/schema";
 import { buildGitHubReconnectUrl } from "@/lib/github/urls";
+import { readApiError } from "@/lib/api/read-api-error";
 
 interface CreateRepoDialogProps {
   open: boolean;
@@ -170,7 +171,9 @@ export function CreateRepoDialog({
       const data = await res.json();
 
       if (!res.ok) {
-        throw new Error(data.error || "Failed to create repository");
+        throw new Error(
+          readApiError(data, "Failed to create repository").message,
+        );
       }
 
       const createResult = {

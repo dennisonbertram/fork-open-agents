@@ -9,6 +9,7 @@ import type {
 } from "@open-agents/agent";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { readApiError } from "@/lib/api/read-api-error";
 import { ToolLayout } from "../tool-layout";
 
 type ManagedRuntimeProfileBuilderRendererProps =
@@ -130,12 +131,14 @@ export function ManagedRuntimeProfileBuilderRenderer({
             signal: abortController.signal,
           },
         );
-        const body = (await response.json()) as {
+        const body = (await response.json().catch(() => null)) as {
           draft?: ProfileDraftSnapshot;
           error?: string;
-        };
-        if (!response.ok || !body.draft) {
-          throw new Error(body.error ?? "Failed to save profile draft");
+        } | null;
+        if (!response.ok || !body?.draft) {
+          throw new Error(
+            readApiError(body, "Failed to save profile draft").message,
+          );
         }
         setPersistedDraft(body.draft);
       } catch (error) {
@@ -170,15 +173,16 @@ export function ManagedRuntimeProfileBuilderRenderer({
               body: JSON.stringify({ output: decision, forceApproved }),
             },
           );
-          const body = (await response.json()) as {
+          const body = (await response.json().catch(() => null)) as {
             draft?: ProfileDraftSnapshot;
             savedProfileId?: string;
             appliedToSessionId?: string;
             error?: string;
-          };
-          if (!response.ok || !body.draft) {
+          } | null;
+          if (!response.ok || !body?.draft) {
             throw new Error(
-              body.error ?? "Failed to update profile draft decision",
+              readApiError(body, "Failed to update profile draft decision")
+                .message,
             );
           }
           setPersistedDraft(body.draft);
@@ -626,7 +630,7 @@ export function resolveDraftTestOutcome(params: {
   if (!body.draft) {
     return {
       ok: false,
-      message: body.error ?? "Failed to test profile draft",
+      message: readApiError(body, "Failed to test profile draft").message,
     };
   }
 

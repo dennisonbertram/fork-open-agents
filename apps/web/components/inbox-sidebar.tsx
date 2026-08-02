@@ -63,6 +63,7 @@ import { useSession } from "@/hooks/use-session";
 import type { SessionWithUnread } from "@/hooks/use-sessions";
 import type { Session as AuthSession } from "@/lib/session/types";
 import { formatRelativeTime } from "@/lib/format-relative-time";
+import { readApiError } from "@/lib/api/read-api-error";
 import { getUsageLeaderboardDomain } from "@/lib/usage/leaderboard-domain";
 
 type InboxSidebarProps = {
@@ -696,7 +697,9 @@ export function InboxSidebar({
         const data = (await res.json()) as ArchivedSessionsResponse;
 
         if (!res.ok) {
-          throw new Error(data.error ?? "Failed to load archived sessions");
+          throw new Error(
+            readApiError(data, "Failed to load archived sessions").message,
+          );
         }
 
         setArchivedSessions((current) => {
