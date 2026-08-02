@@ -44,6 +44,7 @@ import type {
   InferenceProfileTestResult,
   SafeInferenceProfile,
 } from "@/lib/inference/types";
+import { readApiError } from "@/lib/api/read-api-error";
 import { INFERENCE_PROFILE_PROVIDER_LABELS } from "@/lib/inference/types";
 import { estimateModelUsageCost } from "@/lib/models";
 import type { ModelOption } from "@/lib/model-options";
@@ -776,9 +777,8 @@ export function InferenceProfilesSection() {
         | { error?: string };
 
       if (!response.ok || !("profile" in responseData)) {
-        return "error" in responseData
-          ? (responseData.error ?? "Failed to save inference profile")
-          : "Failed to save inference profile";
+        return readApiError(responseData, "Failed to save inference profile")
+          .message;
       }
 
       await mutate(
@@ -814,8 +814,12 @@ export function InferenceProfilesSection() {
         method: "DELETE",
       });
       if (!response.ok) {
-        const responseData = (await response.json()) as { error?: string };
-        setError(responseData.error ?? "Failed to delete inference profile");
+        setError(
+          readApiError(
+            await response.json().catch(() => null),
+            "Failed to delete inference profile",
+          ).message,
+        );
         return;
       }
       await mutate(
@@ -851,9 +855,8 @@ export function InferenceProfilesSection() {
 
       if (!response.ok || !("result" in responseData)) {
         setError(
-          "error" in responseData
-            ? (responseData.error ?? "Failed to test inference profile")
-            : "Failed to test inference profile",
+          readApiError(responseData, "Failed to test inference profile")
+            .message,
         );
         return;
       }
@@ -897,9 +900,8 @@ export function InferenceProfilesSection() {
 
       if (!response.ok || !("profile" in responseData)) {
         setError(
-          "error" in responseData
-            ? (responseData.error ?? "Failed to update inference profile")
-            : "Failed to update inference profile",
+          readApiError(responseData, "Failed to update inference profile")
+            .message,
         );
         return;
       }
