@@ -55,6 +55,7 @@ import {
   sendFinish,
 } from "./chat-post-finish";
 import { dedupeMessageReasoning } from "@/lib/chat/dedupe-message-reasoning";
+import { stripModelMessageReasoning } from "@/lib/chat/strip-model-message-reasoning";
 import { sanitizeInterruptedToolCalls } from "@/lib/chat/sanitize-interrupted-tool-calls";
 import { getAllVariants } from "@/lib/model-variants";
 import { APP_DEFAULT_MODEL_ID } from "@/lib/models";
@@ -1732,7 +1733,7 @@ export async function runAgentWorkflow(options: Options) {
   }
 
   try {
-    const [runtime, modelRuntime, modelMessages] = await Promise.all([
+    const [runtime, modelRuntime, convertedMessages] = await Promise.all([
       resolveChatSandboxRuntime({
         userId: options.userId,
         sessionId: options.sessionId,
@@ -1756,6 +1757,14 @@ export async function runAgentWorkflow(options: Options) {
     inferenceProfileId = modelRuntime.inferenceProfileId;
     inferenceProfileName = modelRuntime.inferenceProfileName;
     inferenceProvider = modelRuntime.inferenceProvider;
+    // Strict OpenAI-compatible endpoints reject the `reasoning_content` field
+    // the provider derives from prior assistant reasoning, which wedges every
+    // later turn in the chat. Anthropic keeps its reasoning: thinking blocks
+    // must survive alongside tool use there.
+    const modelMessages =
+      inferenceProvider === "openai-compatible"
+        ? stripModelMessageReasoning(convertedMessages)
+        : convertedMessages;
     runtimeMode = runtime.runtimeMode;
     // sandboxState is null for sandbox-free sessions; keep as undefined so
     // subsequent guards that check `sandboxState` (persist, refresh, etc.) skip
