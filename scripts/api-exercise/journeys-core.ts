@@ -11,7 +11,7 @@ import {
   runJourney,
 } from "./journey-runner";
 
-const journeys: Journey[] = [
+export const coreJourneys: Journey[] = [
   {
     id: "J-AUTH-01",
     title: "Session identity and unauthenticated boundary",
@@ -399,7 +399,9 @@ if (import.meta.main) {
   const only = process.argv
     .find((arg) => arg.startsWith("--only="))
     ?.split("=")[1];
-  const selected = only ? journeys.filter((j) => j.id === only) : journeys;
+  const selected = only
+    ? coreJourneys.filter((j) => j.id === only)
+    : coreJourneys;
   const sections: string[] = [];
   let failed = 0;
 
