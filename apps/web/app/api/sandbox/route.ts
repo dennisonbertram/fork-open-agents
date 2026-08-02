@@ -120,6 +120,18 @@ function workspaceNotClonedResponse(sessionId: string): Response {
   );
 }
 
+function workspaceProbeFailedResponse(sessionId: string): Response {
+  console.warn("[sandbox] workspace-probe-failed", { sessionId });
+  return Response.json(
+    {
+      error:
+        "Sandbox is running but the workspace git probe did not complete, so its repository state is unknown.",
+      reason: "workspace_probe_failed",
+    },
+    { status: 503 },
+  );
+}
+
 function getErrorKind(error: unknown): string {
   if (error instanceof Error) {
     return error.name || "Error";
@@ -218,7 +230,10 @@ export async function POST(req: Request) {
     if (repoUrl) {
       const existing = await connectSandbox(activeSandboxState);
       const workspace = await readWorkspaceRepoState(existing);
-      if (!workspace.cloned) {
+      if (workspace.status === "unknown") {
+        return workspaceProbeFailedResponse(sessionId);
+      }
+      if (workspace.status === "not_cloned") {
         return workspaceNotClonedResponse(sessionId);
       }
       currentBranch = workspace.branch;
@@ -329,7 +344,10 @@ export async function POST(req: Request) {
   let currentBranch: string | undefined;
   if (repoUrl) {
     const workspace = await readWorkspaceRepoState(sandbox);
-    if (!workspace.cloned) {
+    if (workspace.status === "unknown") {
+      return workspaceProbeFailedResponse(sessionId);
+    }
+    if (workspace.status === "not_cloned") {
       return workspaceNotClonedResponse(sessionId);
     }
     currentBranch = workspace.branch;

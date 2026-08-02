@@ -258,7 +258,11 @@ mock.module("@/lib/skills/session-user-skills", () => ({
   installSessionUserSkills: async () => undefined,
 }));
 
-const sandboxWorkspace: { origin: string | null; branch: string } = {
+const sandboxWorkspace: {
+  origin: string | null;
+  branch: string;
+  originProbeTimesOut?: boolean;
+} = {
   origin: "https://github.com/acme/private-repo\n",
   branch: "main\n",
 };
@@ -288,6 +292,16 @@ mock.module("@open-agents/sandbox", () => ({
         }
 
         if (command === "git remote get-url origin") {
+          if (sandboxWorkspace.originProbeTimesOut) {
+            return {
+              success: false,
+              exitCode: null,
+              stdout: "",
+              stderr: `Command timed out after ${timeoutMs}ms`,
+              truncated: false,
+            };
+          }
+
           return {
             success: sandboxWorkspace.origin !== null,
             exitCode: sandboxWorkspace.origin === null ? 1 : 0,
@@ -349,6 +363,7 @@ describe("/api/sandbox lifecycle kicks", () => {
     };
     sandboxWorkspace.origin = "https://github.com/acme/private-repo\n";
     sandboxWorkspace.branch = "main\n";
+    sandboxWorkspace.originProbeTimesOut = false;
     currentDotenvContent = 'API_KEY="secret"\n';
     currentDotenvError = null;
     sessionRecord = {
@@ -499,6 +514,30 @@ describe("/api/sandbox lifecycle kicks", () => {
 
     expect(response.status).toBe(409);
     expect(payload.reason).toBe("workspace_not_cloned");
+  });
+
+  test("does not claim a missing clone when the git probe never ran", async () => {
+    const { POST } = await routeModulePromise;
+
+    sandboxWorkspace.originProbeTimesOut = true;
+
+    const response = await POST(
+      postSandbox({
+        sessionId: "session-1",
+        repoUrl: "https://github.com/acme/private-repo",
+        branch: "main",
+      }),
+    );
+
+    const payload = (await response.json()) as {
+      error: string;
+      reason?: string;
+      currentBranch?: string;
+    };
+
+    expect(response.status).toBe(503);
+    expect(payload.reason).toBe("workspace_probe_failed");
+    expect(payload.currentBranch).toBeUndefined();
   });
 
   test("reports the sandbox branch, not the requested branch, after creation", async () => {

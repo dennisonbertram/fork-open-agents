@@ -1,14 +1,19 @@
 import { describe, expect, test } from "bun:test";
 import { readWorkspaceRepoState } from "./workspace-repo";
 
-function makeSandbox(responses: Record<string, { ok: boolean; out: string }>) {
+function makeSandbox(
+  responses: Record<
+    string,
+    { ok: boolean; out: string; exitCode?: number | null }
+  >,
+) {
   return {
     workingDirectory: "/vercel/sandbox",
     exec: async (command: string) => {
       const hit = responses[command] ?? { ok: false, out: "" };
       return {
         success: hit.ok,
-        exitCode: hit.ok ? 0 : 1,
+        exitCode: hit.exitCode === undefined ? (hit.ok ? 0 : 1) : hit.exitCode,
         stdout: hit.out,
         stderr: "",
         truncated: false,
@@ -20,7 +25,7 @@ function makeSandbox(responses: Record<string, { ok: boolean; out: string }>) {
 describe("readWorkspaceRepoState", () => {
   test("reports not cloned when there is no origin remote", async () => {
     const state = await readWorkspaceRepoState(makeSandbox({}));
-    expect(state).toEqual({ cloned: false });
+    expect(state).toEqual({ status: "not_cloned" });
   });
 
   test("reports the branch actually checked out", async () => {
@@ -33,7 +38,7 @@ describe("readWorkspaceRepoState", () => {
         "git rev-parse --abbrev-ref HEAD": { ok: true, out: "master\n" },
       }),
     );
-    expect(state).toEqual({ cloned: true, branch: "master" });
+    expect(state).toEqual({ status: "cloned", branch: "master" });
   });
 
   test("omits the branch when HEAD cannot be read", async () => {
@@ -45,6 +50,19 @@ describe("readWorkspaceRepoState", () => {
         },
       }),
     );
-    expect(state).toEqual({ cloned: true });
+    expect(state).toEqual({ status: "cloned" });
+  });
+
+  test("reports unknown when the origin probe could not run", async () => {
+    const state = await readWorkspaceRepoState(
+      makeSandbox({
+        "git remote get-url origin": {
+          ok: false,
+          out: "",
+          exitCode: null,
+        },
+      }),
+    );
+    expect(state).toEqual({ status: "unknown" });
   });
 });
