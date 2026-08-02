@@ -62,28 +62,41 @@ Tracked as a design decision, not a mass rewrite — see the linked issue.
 
 ## Finding 2 — the same condition gets different status classes
 
+All of these were re-verified after the fixes below landed.
+
 | Condition | Route | Status |
 | --------- | ----- | ------ |
-| No usable GitHub token | `GET /api/github/user` | **500** |
-| No usable GitHub token | `GET /api/github/orgs` | **500** |
+| No usable GitHub token | `GET /api/github/user` | **500** → 401 (fixed, #1061) |
+| No usable GitHub token | `GET /api/github/orgs` | **500** → 401 (fixed, #1061) |
 | No usable GitHub token | `GET /api/github/connection-status` | 200 |
 | No usable GitHub token | `GET /api/github/installations` | 200 |
 | Bad GitHub credentials | `POST /api/sandbox` | **500** (uncaught `HttpError: Bad credentials`) |
-| Duplicate profile name | `POST /api/inference-profiles` | **400** (should be 409) |
+| Duplicate profile name | `POST /api/inference-profiles` | **400** → 409 (fixed, #1059) |
 | Session has no sandbox yet | `GET /api/sessions/[id]/diff` | **400** |
 
 500 is the one class a client cannot act on. Three of these are ordinary
 client/auth states, and one is a normal lifecycle state.
 
-## Finding 3 — silent acceptance of invalid input
+## Finding 3 — silent acceptance of unknown field names
 
 ```
-PATCH /api/settings/preferences {"diffMode":"not-a-real-mode"}  -> 200
 PATCH /api/settings/preferences {"totallyUnknownKey":"whatever"} -> 200
+PATCH /api/settings/preferences {"diffMode":"not-a-real-mode"}   -> 200
 ```
 
-A follow-up `GET` shows `diffMode` unset: the invalid value was dropped, not
-applied, and not reported. A client shipping a typo sees success and no effect.
+Neither key exists — the real field is `defaultDiffMode`, not `diffMode`. Both
+were dropped and both reported success, so a client shipping a misspelled field
+name saw a 200 and no effect.
+
+**Correction to the first write-up of this finding.** It also claimed invalid
+*values* on valid fields were accepted. That was never tested and is false:
+`{"defaultDiffMode":"not-a-real-mode"}` already returned
+`400 {"error":"Invalid diff mode"}` and `{"defaultSandboxType":"not-a-backend"}`
+already returned `400 {"error":"Invalid sandbox type"}`. Per-field value
+validation was correct all along; only unknown field *names* were swallowed.
+
+Fixed in #1060 — unknown keys now return
+`400 {"error":"Unknown preference field(s): ...","fields":[...]}`, verified live.
 
 ## Finding 4 — sandbox provisioning reports success it did not achieve
 
