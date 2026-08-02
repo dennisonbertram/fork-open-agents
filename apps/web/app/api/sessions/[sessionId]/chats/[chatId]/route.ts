@@ -105,7 +105,10 @@ export async function PATCH(req: Request, context: RouteContext) {
   try {
     body = (await req.json()) as UpdateChatRequest;
   } catch {
-    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+    return Response.json(
+      { error: "Invalid JSON body", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   const nextTitle = body.title?.trim();
@@ -129,13 +132,13 @@ export async function PATCH(req: Request, context: RouteContext) {
     nextComposioSelection === undefined
   ) {
     return Response.json(
-      { error: "At least one field is required" },
+      { error: "At least one field is required", errorKind: "invalid_request" },
       { status: 400 },
     );
   }
   if (nextComposioSelection && !nextComposioSelection.success) {
     return Response.json(
-      { error: "Invalid composioSelection" },
+      { error: "Invalid composioSelection", errorKind: "invalid_request" },
       { status: 400 },
     );
   }
@@ -154,6 +157,7 @@ export async function PATCH(req: Request, context: RouteContext) {
             error:
               policy.reason ??
               "Selected Composio profile is blocked by repository policy",
+            errorKind: "invalid_request",
           },
           { status: 400 },
         );
@@ -167,7 +171,7 @@ export async function PATCH(req: Request, context: RouteContext) {
         nextInferenceProfileId.length === 0)
     ) {
       return Response.json(
-        { error: "Invalid inferenceProfileId" },
+        { error: "Invalid inferenceProfileId", errorKind: "invalid_request" },
         { status: 400 },
       );
     }
@@ -179,7 +183,7 @@ export async function PATCH(req: Request, context: RouteContext) {
       );
       if (!profile || !profile.enabled) {
         return Response.json(
-          { error: "Inference profile not found" },
+          { error: "Inference profile not found", errorKind: "not_found" },
           { status: 404 },
         );
       }
@@ -197,6 +201,7 @@ export async function PATCH(req: Request, context: RouteContext) {
           {
             error:
               "Selected model isn't available on this inference profile. Pick one of the profile's models.",
+            errorKind: "invalid_request",
           },
           { status: 400 },
         );
@@ -225,7 +230,10 @@ export async function PATCH(req: Request, context: RouteContext) {
 
   const updatedChat = await updateChat(chatId, updatePayload);
   if (!updatedChat) {
-    return Response.json({ error: "Chat not found" }, { status: 404 });
+    return Response.json(
+      { error: "Chat not found", errorKind: "not_found" },
+      { status: 404 },
+    );
   }
 
   return Response.json({
@@ -253,7 +261,10 @@ export async function DELETE(_req: Request, context: RouteContext) {
   const chats = await getChatsBySessionId(sessionId);
   if (chats.length <= 1) {
     return Response.json(
-      { error: "Cannot delete the only chat in a session" },
+      {
+        error: "Cannot delete the only chat in a session",
+        errorKind: "invalid_request",
+      },
       { status: 400 },
     );
   }

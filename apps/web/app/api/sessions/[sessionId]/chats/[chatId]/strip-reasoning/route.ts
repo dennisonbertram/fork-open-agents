@@ -40,7 +40,10 @@ export async function POST(_req: Request, context: RouteContext) {
       const status = await getRun(activeStreamId).status;
       if (status === "running" || status === "pending") {
         return Response.json(
-          { error: "Cannot edit this chat while a response is streaming" },
+          {
+            error: "Cannot edit this chat while a response is streaming",
+            errorKind: "conflict",
+          },
           { status: 409 },
         );
       }

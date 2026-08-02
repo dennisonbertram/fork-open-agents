@@ -70,7 +70,10 @@ export async function POST(_req: Request, context: RouteContext) {
   });
 
   if (!createdShare) {
-    return Response.json({ error: "Failed to create share" }, { status: 500 });
+    return Response.json(
+      { error: "Failed to create share", errorKind: "internal_error" },
+      { status: 500 },
+    );
   }
 
   return Response.json({ shareId: createdShare.id });

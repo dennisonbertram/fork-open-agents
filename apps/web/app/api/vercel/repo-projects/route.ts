@@ -9,7 +9,10 @@ import { getUserVercelToken } from "@/lib/vercel/token";
 export async function GET(req: Request) {
   const session = await getServerSession();
   if (!session?.user) {
-    return Response.json({ error: "Not authenticated" }, { status: 401 });
+    return Response.json(
+      { error: "Not authenticated", errorKind: "unauthorized" },
+      { status: 401 },
+    );
   }
 
   const { searchParams } = new URL(req.url);
@@ -18,7 +21,7 @@ export async function GET(req: Request) {
 
   if (!repoOwner || !repoName) {
     return Response.json(
-      { error: "Missing repoOwner or repoName" },
+      { error: "Missing repoOwner or repoName", errorKind: "invalid_request" },
       { status: 400 },
     );
   }
@@ -26,7 +29,10 @@ export async function GET(req: Request) {
   const token = await getUserVercelToken(session.user.id);
   if (!token) {
     return Response.json(
-      { error: "Connect Vercel to load matching projects" },
+      {
+        error: "Connect Vercel to load matching projects",
+        errorKind: "forbidden",
+      },
       { status: 403 },
     );
   }
@@ -59,14 +65,17 @@ export async function GET(req: Request) {
         `Vercel token is invalid for user ${session.user.id}; reconnect required to load repo projects.`,
       );
       return Response.json(
-        { error: "Reconnect Vercel to load matching projects" },
+        {
+          error: "Reconnect Vercel to load matching projects",
+          errorKind: "forbidden",
+        },
         { status: 403 },
       );
     }
 
     console.error("Failed to load Vercel repo projects:", error);
     return Response.json(
-      { error: "Failed to load Vercel projects" },
+      { error: "Failed to load Vercel projects", errorKind: "internal_error" },
       { status: 500 },
     );
   }

@@ -213,7 +213,10 @@ export async function POST(req: Request, context: RouteContext) {
 
   if (!sessionRecord.repoOwner || !sessionRecord.repoName) {
     return Response.json(
-      { error: "Session is not linked to a GitHub repository" },
+      {
+        error: "Session is not linked to a GitHub repository",
+        errorKind: "invalid_request",
+      },
       { status: 400 },
     );
   }
@@ -222,17 +225,26 @@ export async function POST(req: Request, context: RouteContext) {
   try {
     body = (await req.json()) as FixChecksRequest;
   } catch {
-    return Response.json({ error: "Invalid request body" }, { status: 400 });
+    return Response.json(
+      { error: "Invalid request body", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   const { checkRuns } = body;
   if (!Array.isArray(checkRuns) || checkRuns.length === 0) {
-    return Response.json({ error: "No check runs provided" }, { status: 400 });
+    return Response.json(
+      { error: "No check runs provided", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   if (checkRuns.length > MAX_CHECK_RUNS) {
     return Response.json(
-      { error: `Too many check runs (max ${MAX_CHECK_RUNS})` },
+      {
+        error: `Too many check runs (max ${MAX_CHECK_RUNS})`,
+        errorKind: "invalid_request",
+      },
       { status: 400 },
     );
   }

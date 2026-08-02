@@ -24,7 +24,7 @@ export type ErrorResponse = {
  * body is reported as `<dynamic>` rather than silently skipped.
  */
 const RESPONSE_JSON =
-  /Response\.json\(\s*(\{[\s\S]*?\})\s*,\s*\{[^}]*status:\s*(\d{3}|[A-Za-z_][\w.]*)/g;
+  /(?:Next)?Response\.json\(\s*(\{[\s\S]*?\})\s*,\s*\{[^}]*status:\s*(\d{3}|[A-Za-z_][\w.]*)/g;
 
 function extractTopLevelKeys(literal: string): string[] {
   const keys: string[] = [];

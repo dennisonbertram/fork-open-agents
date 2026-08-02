@@ -12,12 +12,18 @@ interface TranscribeRequestBody {
 export async function POST(req: Request) {
   const session = await getServerSession();
   if (!session?.user) {
-    return Response.json({ error: "Not authenticated" }, { status: 401 });
+    return Response.json(
+      { error: "Not authenticated", errorKind: "unauthorized" },
+      { status: 401 },
+    );
   }
 
   const botVerification = await checkBotProtection();
   if (botVerification.isBot) {
-    return Response.json({ error: "Access denied" }, { status: 403 });
+    return Response.json(
+      { error: "Access denied", errorKind: "forbidden" },
+      { status: 403 },
+    );
   }
 
   const limited = await checkRateLimit({
@@ -33,14 +39,17 @@ export async function POST(req: Request) {
   try {
     body = (await req.json()) as TranscribeRequestBody;
   } catch {
-    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+    return Response.json(
+      { error: "Invalid JSON body", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   const { audio } = body;
 
   if (!audio) {
     return Response.json(
-      { error: "Missing required field: audio" },
+      { error: "Missing required field: audio", errorKind: "invalid_request" },
       { status: 400 },
     );
   }
@@ -49,7 +58,10 @@ export async function POST(req: Request) {
   const maxBase64Length = 10 * 1024 * 1024;
   if (audio.length > maxBase64Length) {
     return Response.json(
-      { error: "Audio file too large. Maximum size is approximately 7.5MB." },
+      {
+        error: "Audio file too large. Maximum size is approximately 7.5MB.",
+        errorKind: "invalid_request",
+      },
       { status: 413 },
     );
   }
@@ -76,6 +88,9 @@ export async function POST(req: Request) {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error("Transcription failed:", message);
-    return Response.json({ error: "Transcription failed" }, { status: 500 });
+    return Response.json(
+      { error: "Transcription failed", errorKind: "internal_error" },
+      { status: 500 },
+    );
   }
 }

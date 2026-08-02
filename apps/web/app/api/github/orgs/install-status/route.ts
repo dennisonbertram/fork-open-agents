@@ -49,12 +49,15 @@ export interface ConnectionStatusResponse {
 export async function GET() {
   const session = await getServerSession();
   if (!session?.user?.id) {
-    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+    return NextResponse.json(
+      { error: "Not authenticated", errorKind: "unauthorized" },
+      { status: 401 },
+    );
   }
 
   if (!isGitHubAppConfigured()) {
     return NextResponse.json(
-      { error: "GitHub App not configured" },
+      { error: "GitHub App not configured", errorKind: "internal_error" },
       { status: 500 },
     );
   }
@@ -66,7 +69,7 @@ export async function GET() {
     const linked = await hasGitHubAccount(session.user.id);
     if (!linked) {
       return NextResponse.json(
-        { error: "GitHub not connected" },
+        { error: "GitHub not connected", errorKind: "unauthorized" },
         { status: 401 },
       );
     }
@@ -170,7 +173,10 @@ export async function GET() {
         tokenPresent: !!token,
       });
       return NextResponse.json(
-        { error: "Failed to fetch GitHub data" },
+        {
+          error: "Failed to fetch GitHub data",
+          errorKind: "upstream_unavailable",
+        },
         { status: 502 },
       );
     }
@@ -268,7 +274,10 @@ export async function GET() {
   } catch (error) {
     console.error("Failed to fetch org install status:", error);
     return NextResponse.json(
-      { error: "Failed to fetch organization data" },
+      {
+        error: "Failed to fetch organization data",
+        errorKind: "internal_error",
+      },
       { status: 500 },
     );
   }

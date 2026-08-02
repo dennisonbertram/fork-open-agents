@@ -12,7 +12,7 @@ export async function GET() {
 
   if (!session?.user?.id) {
     return NextResponse.json(
-      { error: "GitHub not connected" },
+      { error: "GitHub not connected", errorKind: "unauthorized" },
       { status: 401 },
     );
   }
@@ -21,7 +21,7 @@ export async function GET() {
 
   if (!token) {
     return NextResponse.json(
-      { error: "GitHub not connected" },
+      { error: "GitHub not connected", errorKind: "unauthorized" },
       { status: 401 },
     );
   }
@@ -31,7 +31,7 @@ export async function GET() {
 
     if (!user) {
       return NextResponse.json(
-        { error: "Failed to fetch user" },
+        { error: "Failed to fetch user", errorKind: "internal_error" },
         { status: 500 },
       );
     }
@@ -40,7 +40,7 @@ export async function GET() {
   } catch (error) {
     if (error instanceof GitHubRateLimitedError) {
       return NextResponse.json(
-        { error: "GitHub rate limit exceeded" },
+        { error: "GitHub rate limit exceeded", errorKind: "rate_limited" },
         {
           status: 429,
           headers: error.retryAfterSeconds
@@ -52,14 +52,14 @@ export async function GET() {
 
     if (error instanceof GitHubTokenRejectedError) {
       return NextResponse.json(
-        { error: "GitHub not connected" },
+        { error: "GitHub not connected", errorKind: "unauthorized" },
         { status: 401 },
       );
     }
 
     console.error("Error fetching GitHub user:", error);
     return NextResponse.json(
-      { error: "Failed to fetch user" },
+      { error: "Failed to fetch user", errorKind: "internal_error" },
       { status: 500 },
     );
   }
