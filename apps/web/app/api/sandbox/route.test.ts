@@ -136,14 +136,32 @@ mock.module("@/lib/github/urls", () => ({
   },
 }));
 
+type RepoAccessMock =
+  | {
+      ok: true;
+      installationId: number;
+      repositoryId: number;
+      defaultBranch: string;
+    }
+  | { ok: false; reason: string };
+
+let repoAccessResult: RepoAccessMock = {
+  ok: true,
+  installationId: 999,
+  repositoryId: 123,
+  defaultBranch: "main",
+};
+
 mock.module("@/lib/github/access", () => ({
-  verifyRepoAccess: async () => ({
-    ok: true,
-    installationId: 999,
-    repositoryId: 123,
-    defaultBranch: "main",
-  }),
-  getRepoAccessErrorMessage: () => "Access denied",
+  verifyRepoAccess: async () => repoAccessResult,
+  getRepoAccessErrorMessage: (reason: string) => `Access denied: ${reason}`,
+  getRepoAccessErrorStatus: (reason: string) => {
+    if (reason === "user_token_rejected" || reason === "no_user_token") {
+      return 401;
+    }
+    if (reason === "rate_limited") return 429;
+    return 403;
+  },
 }));
 
 mock.module("@/lib/github/app", () => ({
@@ -622,5 +640,63 @@ describe("/api/sandbox lifecycle kicks", () => {
     expect(payload.error).toBe("Invalid sandbox type");
     expect(connectConfigs).toHaveLength(0);
     expect(kickCalls).toHaveLength(0);
+  });
+});
+
+// Regression for issue #1056: a rejected stored GitHub credential surfaced as
+// an uncaught Octokit HttpError → 500. It must be a typed 4xx instead.
+describe("/api/sandbox repo access denials", () => {
+  function repoRequest() {
+    return new Request("http://localhost/api/sandbox", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sessionId: "session-1",
+        repoUrl: "https://github.com/vercel-labs/open-agents",
+        branch: "main",
+      }),
+    });
+  }
+
+  test("rejected GitHub credential answers 401, not 500", async () => {
+    const { POST } = await routeModulePromise;
+    repoAccessResult = { ok: false, reason: "user_token_rejected" };
+
+    const response = await POST(repoRequest());
+    const payload = (await response.json()) as {
+      error: string;
+      reason: string;
+    };
+
+    expect(response.status).toBe(401);
+    expect(payload.reason).toBe("user_token_rejected");
+    expect(connectConfigs).toHaveLength(0);
+  });
+
+  test("rate-limited GitHub answers 429, not a reconnect prompt", async () => {
+    const { POST } = await routeModulePromise;
+    repoAccessResult = { ok: false, reason: "rate_limited" };
+
+    const response = await POST(repoRequest());
+    const payload = (await response.json()) as { reason: string };
+
+    expect(response.status).toBe(429);
+    expect(payload.reason).toBe("rate_limited");
+  });
+
+  test("permission denial keeps its 403", async () => {
+    const { POST } = await routeModulePromise;
+    repoAccessResult = { ok: false, reason: "app_no_access" };
+
+    const response = await POST(repoRequest());
+
+    expect(response.status).toBe(403);
+
+    repoAccessResult = {
+      ok: true,
+      installationId: 999,
+      repositoryId: 123,
+      defaultBranch: "main",
+    };
   });
 });

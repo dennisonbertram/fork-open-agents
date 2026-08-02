@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { Loader2, Pencil, Plus, Server, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import useSWR from "swr";
+import { readApiError } from "@/lib/api/read-api-error";
 import type { McpServerSummary } from "@/lib/mcp/store";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -207,7 +208,6 @@ function ServerEditor({
 
       if (!res.ok) {
         const data = (await res.json().catch(() => null)) as {
-          error?: string;
           details?: { fieldErrors?: Record<string, string[]> };
         } | null;
 
@@ -216,7 +216,7 @@ function ServerEditor({
           return;
         }
 
-        throw new Error(data?.error ?? "Failed to save server");
+        throw new Error(readApiError(data, "Failed to save server").message);
       }
 
       toast.success(isNew ? "Server registered" : "Server updated");
@@ -378,10 +378,8 @@ function DeleteServerButton({ server, onDeleted }: DeleteServerButtonProps) {
         method: "DELETE",
       });
       if (!res.ok) {
-        const body = (await res.json().catch(() => null)) as {
-          error?: string;
-        } | null;
-        throw new Error(body?.error ?? "Failed to delete server");
+        const body = await res.json().catch(() => null);
+        throw new Error(readApiError(body, "Failed to delete server").message);
       }
       toast.success("Server removed");
       onDeleted();
