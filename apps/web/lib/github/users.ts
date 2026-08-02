@@ -107,54 +107,68 @@ interface GitHubOrg {
 }
 
 /**
+ * Error thrown when the GitHub API rejects the stored user token (401/403).
+ * Lets callers answer with a typed 4xx ("reconnect GitHub") instead of a 500.
+ */
+export class GitHubTokenRejectedError extends Error {
+  readonly status: number;
+
+  constructor(status: number) {
+    super(`GitHub rejected the user token (status ${status})`);
+    this.name = "GitHubTokenRejectedError";
+    this.status = status;
+  }
+}
+
+function throwIfTokenRejected(response: Response): void {
+  if (response.status === 401 || response.status === 403) {
+    throw new GitHubTokenRejectedError(response.status);
+  }
+}
+
+/**
  * Fetch the authenticated GitHub user's profile.
  */
 export async function fetchGitHubUser(token: string) {
-  try {
-    const response = await fetch("https://api.github.com/user", {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: "application/vnd.github.v3+json",
-      },
-    });
+  const response = await fetch("https://api.github.com/user", {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: "application/vnd.github.v3+json",
+    },
+  });
 
-    if (!response.ok) return null;
+  throwIfTokenRejected(response);
+  if (!response.ok) return null;
 
-    const user = (await response.json()) as GitHubUser;
-    return {
-      login: user.login,
-      name: user.name,
-      avatar_url: user.avatar_url,
-    };
-  } catch {
-    return null;
-  }
+  const user = (await response.json()) as GitHubUser;
+  return {
+    login: user.login,
+    name: user.name,
+    avatar_url: user.avatar_url,
+  };
 }
 
 /**
  * Fetch the authenticated GitHub user's organizations.
  */
 export async function fetchGitHubOrgs(token: string) {
-  try {
-    const response = await fetch(
-      "https://api.github.com/user/orgs?per_page=100",
-      {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          Accept: "application/vnd.github.v3+json",
-        },
+  const response = await fetch(
+    "https://api.github.com/user/orgs?per_page=100",
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/vnd.github.v3+json",
       },
-    );
+    },
+  );
 
-    if (!response.ok) return null;
+  throwIfTokenRejected(response);
+  if (!response.ok) return null;
 
-    const orgs = (await response.json()) as GitHubOrg[];
-    return orgs.map((org) => ({
-      login: org.login,
-      name: org.login,
-      avatar_url: org.avatar_url,
-    }));
-  } catch {
-    return null;
-  }
+  const orgs = (await response.json()) as GitHubOrg[];
+  return orgs.map((org) => ({
+    login: org.login,
+    name: org.login,
+    avatar_url: org.avatar_url,
+  }));
 }
