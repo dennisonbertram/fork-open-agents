@@ -36,7 +36,10 @@
     "ops:authenticated-canary": "bun run --cwd apps/web ops:authenticated-canary",
     "ops:env-isolation": "bun run --cwd apps/web ops:env-isolation",
     "ops:status": "bun run --cwd apps/web ops:status",
-    "hooks:install": "git config core.hooksPath .githooks && echo 'git hooks installed (core.hooksPath=.githooks)'"
+    "hooks:install": "git config core.hooksPath .githooks && echo 'git hooks installed (core.hooksPath=.githooks)'",
+    "api:exercise": "bun run scripts/api-exercise/run-all.ts",
+    "api:census": "bun run scripts/api-exercise/error-shape-census.ts",
+    "api:sweep": "bun run scripts/api-exercise/auth-sweep.ts"
   },
   "devDependencies": {
     "oxfmt": "^0.43.0",
