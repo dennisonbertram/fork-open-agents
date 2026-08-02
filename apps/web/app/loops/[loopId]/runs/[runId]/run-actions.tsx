@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { readApiError } from "@/lib/api/read-api-error";
 import {
   Dialog,
   DialogClose,
@@ -53,14 +54,17 @@ async function postControl(runId: string, action: string): Promise<void> {
     method: "POST",
   });
   if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as {
-      message?: string;
-      errorKind?: string;
-    };
-    const message = getRunControlToastMessage(action, body);
+    const parsed = readApiError(
+      await res.json().catch(() => ({})),
+      `Failed to ${action} run`,
+    );
+    const message = getRunControlToastMessage(action, {
+      message: parsed.message,
+      errorKind: parsed.kind,
+    });
     throw Object.assign(new Error(message), {
       status: res.status,
-      errorKind: body.errorKind,
+      errorKind: parsed.kind,
     });
   }
 }
