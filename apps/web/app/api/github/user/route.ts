@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "@/lib/session/get-server-session";
 import { getUserGitHubToken } from "@/lib/github/token";
-import { fetchGitHubUser, GitHubTokenRejectedError } from "@/lib/github/users";
+import {
+  fetchGitHubUser,
+  GitHubRateLimitedError,
+  GitHubTokenRejectedError,
+} from "@/lib/github/users";
 
 export async function GET() {
   const session = await getServerSession();
@@ -34,6 +38,18 @@ export async function GET() {
 
     return NextResponse.json(user);
   } catch (error) {
+    if (error instanceof GitHubRateLimitedError) {
+      return NextResponse.json(
+        { error: "GitHub rate limit exceeded" },
+        {
+          status: 429,
+          headers: error.retryAfterSeconds
+            ? { "retry-after": `${error.retryAfterSeconds}` }
+            : undefined,
+        },
+      );
+    }
+
     if (error instanceof GitHubTokenRejectedError) {
       return NextResponse.json(
         { error: "GitHub not connected" },

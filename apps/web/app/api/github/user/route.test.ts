@@ -44,6 +44,66 @@ describe("GET /api/github/user", () => {
     expect(body).toEqual({ error: "GitHub not connected" });
   });
 
+  test("returns 429 when a valid token is rate limited with 403", async () => {
+    globalThis.fetch = mock(
+      async () =>
+        new Response(
+          JSON.stringify({
+            message: "API rate limit exceeded for user ID 1.",
+          }),
+          {
+            status: 403,
+            headers: {
+              "content-type": "application/json",
+              "x-ratelimit-remaining": "0",
+            },
+          },
+        ),
+    ) as unknown as typeof fetch;
+
+    const { body, status } = await callRoute();
+
+    expect(status).toBe(429);
+    expect(body).toEqual({ error: "GitHub rate limit exceeded" });
+  });
+
+  test("returns 429 for a secondary rate limit 403 with Retry-After", async () => {
+    globalThis.fetch = mock(
+      async () =>
+        new Response(
+          JSON.stringify({
+            message: "You have exceeded a secondary rate limit.",
+          }),
+          {
+            status: 403,
+            headers: {
+              "content-type": "application/json",
+              "retry-after": "60",
+            },
+          },
+        ),
+    ) as unknown as typeof fetch;
+
+    const { status } = await callRoute();
+
+    expect(status).toBe(429);
+  });
+
+  test("returns 401 for a 403 that is a real permission problem", async () => {
+    globalThis.fetch = mock(
+      async () =>
+        new Response(
+          JSON.stringify({ message: "Resource not accessible by integration" }),
+          { status: 403, headers: { "content-type": "application/json" } },
+        ),
+    ) as unknown as typeof fetch;
+
+    const { body, status } = await callRoute();
+
+    expect(status).toBe(401);
+    expect(body).toEqual({ error: "GitHub not connected" });
+  });
+
   test("returns 500 when GitHub fails for a non-auth reason", async () => {
     globalThis.fetch = mock(
       async () => new Response("boom", { status: 503 }),

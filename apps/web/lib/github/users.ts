@@ -2,7 +2,11 @@ import "server-only";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import { accounts } from "@/lib/db/schema";
+import { GitHubRateLimitedError } from "./rate-limit-error";
 import { getUserGitHubToken } from "./token";
+import { GitHubTokenRejectedError } from "./user-errors";
+
+export { GitHubRateLimitedError, GitHubTokenRejectedError };
 
 export interface GitHubUserProfile {
   username: string;
@@ -106,21 +110,24 @@ interface GitHubOrg {
   avatar_url: string;
 }
 
-/**
- * Error thrown when the GitHub API rejects the stored user token (401/403).
- * Lets callers answer with a typed 4xx ("reconnect GitHub") instead of a 500.
- */
-export class GitHubTokenRejectedError extends Error {
-  readonly status: number;
-
-  constructor(status: number) {
-    super(`GitHub rejected the user token (status ${status})`);
-    this.name = "GitHubTokenRejectedError";
-    this.status = status;
-  }
+function isRateLimited(response: Response, body: string): boolean {
+  if (response.status === 429) return true;
+  if (response.headers.get("x-ratelimit-remaining") === "0") return true;
+  if (response.headers.get("retry-after") !== null) return true;
+  return /rate limit|abuse detection/i.test(body);
 }
 
-function throwIfTokenRejected(response: Response): void {
+async function throwIfRejectedOrRateLimited(response: Response): Promise<void> {
+  if (response.ok) return;
+
+  const body = await response.clone().text();
+  if (isRateLimited(response, body)) {
+    const retryAfter = Number(response.headers.get("retry-after"));
+    throw new GitHubRateLimitedError(
+      Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : null,
+    );
+  }
+
   if (response.status === 401 || response.status === 403) {
     throw new GitHubTokenRejectedError(response.status);
   }
@@ -137,7 +144,7 @@ export async function fetchGitHubUser(token: string) {
     },
   });
 
-  throwIfTokenRejected(response);
+  await throwIfRejectedOrRateLimited(response);
   if (!response.ok) return null;
 
   const user = (await response.json()) as GitHubUser;
@@ -162,7 +169,7 @@ export async function fetchGitHubOrgs(token: string) {
     },
   );
 
-  throwIfTokenRejected(response);
+  await throwIfRejectedOrRateLimited(response);
   if (!response.ok) return null;
 
   const orgs = (await response.json()) as GitHubOrg[];
