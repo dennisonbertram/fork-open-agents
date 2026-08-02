@@ -71,8 +71,10 @@ describe("per-id inference profile route", () => {
     const { GET } = await routeModulePromise;
     const response = await GET(request("GET"), context("missing"));
     expect(response.status).toBe(404);
+    // jsonError emits the #1054 envelope, so errorKind rides along.
     expect(await response.json()).toEqual({
       error: "Inference profile not found",
+      errorKind: "not_found",
     });
   });
 
