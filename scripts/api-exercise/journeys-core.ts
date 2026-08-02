@@ -120,7 +120,7 @@ const journeys: Journey[] = [
         // Collection-level PATCH/DELETE with the id in the body, unlike every
         // other resource in this API, which uses /resource/[id]. Recorded as
         // observed, not as it ought to be.
-        name: "rename-only PATCH is rejected without baseUrl (see issue #1062)",
+        name: "rename-only PATCH succeeds without resending baseUrl (issue #1062)",
         method: "PATCH",
         path: "/api/inference-profiles",
         body: (ctx) => ({
@@ -128,7 +128,7 @@ const journeys: Journey[] = [
           name: "Contract Probe Renamed",
         }),
         skipIf: (ctx) => !ctx.profileId,
-        expect: [400],
+        expect: [200],
       },
       {
         name: "the same rename succeeds when baseUrl is resent",

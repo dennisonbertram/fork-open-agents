@@ -23,24 +23,41 @@ export const INFERENCE_PROFILE_PROVIDER_LABELS = {
 } satisfies Record<InferenceProfileProvider, string>;
 
 const profileNameSchema = z.string().trim().min(1).max(80);
-const baseUrlInputSchema = z
+const rawBaseUrlSchema = z
   .union([z.string().trim().max(2048), z.null()])
-  .optional()
+  .optional();
+
+function isValidBaseUrl(value: string | null | undefined): boolean {
+  if (value === null || value === undefined) {
+    return true;
+  }
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" || url.protocol === "http:";
+  } catch {
+    return false;
+  }
+}
+
+const baseUrlMessage = { message: "Base URL must be a valid HTTP URL" };
+
+const baseUrlInputSchema = rawBaseUrlSchema
   .transform((value) => (value && value.length > 0 ? value : null))
-  .refine(
-    (value) => {
-      if (value === null) {
-        return true;
-      }
-      try {
-        const url = new URL(value);
-        return url.protocol === "https:" || url.protocol === "http:";
-      } catch {
-        return false;
-      }
-    },
-    { message: "Base URL must be a valid HTTP URL" },
-  );
+  .refine(isValidBaseUrl, baseUrlMessage);
+
+/**
+ * Patch variant: an omitted baseUrl must stay `undefined` so the update path
+ * leaves the persisted base URL alone. Only an explicit empty string or null
+ * clears it (issue #1062).
+ */
+const baseUrlPatchSchema = rawBaseUrlSchema
+  .transform((value): string | null | undefined => {
+    if (value === undefined) {
+      return undefined;
+    }
+    return value && value.length > 0 ? value : null;
+  })
+  .refine(isValidBaseUrl, baseUrlMessage);
 
 export const createInferenceProfileInputSchema = z.object({
   name: profileNameSchema,
@@ -55,7 +72,7 @@ export const updateInferenceProfileInputSchema = z
     profileId: z.string().trim().min(1),
     name: profileNameSchema.optional(),
     provider: z.enum(INFERENCE_PROFILE_PROVIDERS).optional(),
-    baseUrl: baseUrlInputSchema,
+    baseUrl: baseUrlPatchSchema,
     apiKey: z.string().trim().min(1).max(4096).optional(),
     enabled: z.boolean().optional(),
   })
