@@ -1,5 +1,9 @@
 import Redis, { type RedisOptions } from "ioredis";
-import { getRedisConnectionOptions, getRedisUrl } from "./redis";
+import {
+  getRedisConnectionOptions,
+  getRedisUrl,
+  warnRedisDisabled,
+} from "./redis";
 
 type RateLimitOptions = {
   key: string;
@@ -52,6 +56,7 @@ function getSharedRedisClient(): Redis | null {
 
   const redisUrl = getRedisUrl();
   if (!redisUrl) {
+    warnRedisDisabled("rate limiting");
     sharedRedisClient = null;
     return sharedRedisClient;
   }
