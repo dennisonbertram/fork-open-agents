@@ -105,3 +105,29 @@ attributed to the wrong subsystem, sending the user to fix the wrong thing.
 
 Every one was a classification bug, and no client could have caught any of them,
 because there was nothing stable to classify on. That is what `errorKind` is for.
+
+## Deprecated (still working): collection-level PATCH/DELETE on inference profiles
+
+Issue #1055. Inference profiles were the only resource that mutated through the
+collection URL with the id in the request body, and they had no per-id read
+route — `GET /api/inference-profiles/{id}` returned the Next.js HTML 404 page
+rather than JSON.
+
+The per-id routes now exist and are the supported shape:
+
+| Method | Path | Status |
+| ------ | ---- | ------ |
+| `GET` | `/api/inference-profiles/{profileId}` | new, use this |
+| `PATCH` | `/api/inference-profiles/{profileId}` | new, use this — `profileId` in the body is ignored |
+| `DELETE` | `/api/inference-profiles/{profileId}` | new, use this — no body needed |
+| `PATCH` | `/api/inference-profiles` (id in body) | deprecated, still works |
+| `DELETE` | `/api/inference-profiles` (id in body) | deprecated, still works |
+
+Not a breaking change: nothing was removed, and both shapes run the same
+implementation (`apps/web/app/api/inference-profiles/_lib/profile-handlers.ts`),
+so they cannot diverge. The partial-update behavior fixed in #1069 — a
+rename-only patch must not clear `baseUrl` — holds identically on both.
+
+New callers should use the per-id routes. The settings UI
+(`apps/web/app/settings/inference-profiles-section.tsx`) already does. No removal
+date is set for the collection-level shape.

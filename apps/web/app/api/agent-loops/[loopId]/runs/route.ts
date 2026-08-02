@@ -22,6 +22,8 @@ export async function POST(req: Request, ctx: RouteContext): Promise<Response> {
     return Response.json(
       {
         errorKind: "feature_disabled",
+        error:
+          "Agent loops are not enabled. Set AGENT_LOOPS_ENABLED=true to enable.",
         message:
           "Agent loops are not enabled. Set AGENT_LOOPS_ENABLED=true to enable.",
       },
@@ -46,6 +48,7 @@ export async function POST(req: Request, ctx: RouteContext): Promise<Response> {
       {
         success: false,
         errorKind: "dispatch_failed",
+        error: result.errorMessage,
         message: result.errorMessage,
         runId: result.runId,
       },
@@ -59,6 +62,8 @@ export async function POST(req: Request, ctx: RouteContext): Promise<Response> {
         return Response.json(
           {
             errorKind: "feature_disabled",
+            error:
+              "Agent loops are not enabled. Set AGENT_LOOPS_ENABLED=true to enable.",
             message:
               "Agent loops are not enabled. Set AGENT_LOOPS_ENABLED=true to enable.",
           },
@@ -69,6 +74,8 @@ export async function POST(req: Request, ctx: RouteContext): Promise<Response> {
         return Response.json(
           {
             errorKind: "repo_not_allowed",
+            error:
+              "This repository is not in the AGENT_LOOPS_ALLOWED_REPOS allowlist.",
             message:
               "This repository is not in the AGENT_LOOPS_ALLOWED_REPOS allowlist.",
           },
@@ -79,6 +86,8 @@ export async function POST(req: Request, ctx: RouteContext): Promise<Response> {
         return Response.json(
           {
             errorKind: "repo_allowlist_unconfigured",
+            error:
+              "Agent loop repository access is not configured. Set AGENT_LOOPS_ALLOWED_REPOS before starting unattended runs.",
             message:
               "Agent loop repository access is not configured. Set AGENT_LOOPS_ALLOWED_REPOS before starting unattended runs.",
           },
@@ -89,6 +98,8 @@ export async function POST(req: Request, ctx: RouteContext): Promise<Response> {
         return Response.json(
           {
             errorKind: "repo_allowlist_invalid",
+            error:
+              "Agent loop repository access is misconfigured. Correct AGENT_LOOPS_ALLOWED_REPOS before starting unattended runs.",
             message:
               "Agent loop repository access is misconfigured. Correct AGENT_LOOPS_ALLOWED_REPOS before starting unattended runs.",
           },
@@ -105,6 +116,8 @@ export async function POST(req: Request, ctx: RouteContext): Promise<Response> {
         return Response.json(
           {
             errorKind: "active_run",
+            error:
+              "This loop already has an active or paused run. Wait for it to complete, resume, or cancel it before starting a new run.",
             message:
               "This loop already has an active or paused run. Wait for it to complete, resume, or cancel it before starting a new run.",
             ...(result.activeRunId !== undefined
@@ -118,6 +131,8 @@ export async function POST(req: Request, ctx: RouteContext): Promise<Response> {
         return Response.json(
           {
             errorKind: "loop_inactive",
+            error:
+              "Loop must be in 'active' status to start a run. Update the loop status to 'active' first.",
             message:
               "Loop must be in 'active' status to start a run. Update the loop status to 'active' first.",
           },
@@ -128,6 +143,7 @@ export async function POST(req: Request, ctx: RouteContext): Promise<Response> {
         return Response.json(
           {
             errorKind: "loop_invalid",
+            error: "Loop definition is invalid and cannot be executed.",
             message: "Loop definition is invalid and cannot be executed.",
           },
           { status: 400 },
@@ -163,6 +179,8 @@ export async function GET(req: Request, ctx: RouteContext): Promise<Response> {
     return Response.json(
       {
         errorKind: "feature_disabled",
+        error:
+          "Agent loops are not enabled. Set AGENT_LOOPS_ENABLED=true to enable.",
         message:
           "Agent loops are not enabled. Set AGENT_LOOPS_ENABLED=true to enable.",
       },

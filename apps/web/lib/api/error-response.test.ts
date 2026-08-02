@@ -3,6 +3,7 @@ import {
   type ApiErrorBody,
   type ApiErrorKind,
   apiError,
+  apiErrorKindForStatus,
   isApiErrorBody,
 } from "./error-response";
 
@@ -119,5 +120,18 @@ describe("isApiErrorBody rejects values that only look valid", () => {
         retryAfterSeconds: 30,
       }),
     ).toBe(true);
+  });
+});
+
+describe("apiErrorKindForStatus", () => {
+  test("maps upstream gateway statuses to upstream_unavailable", () => {
+    expect(apiErrorKindForStatus(502)).toBe("upstream_unavailable");
+    expect(apiErrorKindForStatus(503)).toBe("upstream_unavailable");
+    expect(apiErrorKindForStatus(504)).toBe("upstream_unavailable");
+  });
+
+  test("falls back to internal_error for unmapped statuses", () => {
+    expect(apiErrorKindForStatus(500)).toBe("internal_error");
+    expect(apiErrorKindForStatus(418)).toBe("internal_error");
   });
 });

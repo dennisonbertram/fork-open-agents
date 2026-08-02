@@ -1,4 +1,8 @@
 import {
+  type ApiErrorKind,
+  apiErrorKindForStatus,
+} from "@/lib/api/error-response";
+import {
   directAnthropicModel,
   directOpenAIModel,
   toAnthropicDirectModelId,
@@ -35,8 +39,11 @@ const FIREWORKS_ANTHROPIC_TEST_MODEL: InferenceProfileModel = {
   contextWindow: 1_048_576,
 };
 
-function jsonError(error: string, status: number) {
-  return Response.json({ error }, { status });
+function jsonError(error: string, status: number, kind?: ApiErrorKind) {
+  return Response.json(
+    { error, errorKind: kind ?? apiErrorKindForStatus(status) },
+    { status },
+  );
 }
 
 function isFireworksBaseUrl(baseUrl: string | null): boolean {

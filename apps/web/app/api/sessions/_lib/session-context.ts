@@ -1,4 +1,5 @@
 import { sandboxNotInitializedResponse } from "@/app/api/sessions/_lib/sandbox-lifecycle-response";
+import { apiErrorKindForStatus } from "@/lib/api/error-response";
 import * as sessionsDb from "@/lib/db/sessions";
 import { getServerSession } from "@/lib/session/get-server-session";
 
@@ -60,7 +61,10 @@ interface RequireOwnedSessionWithSandboxGuardParams extends RequireOwnedSessionP
 }
 
 function toErrorResponse(message: string, status: number): Response {
-  return Response.json({ error: message }, { status });
+  return Response.json(
+    { error: message, errorKind: apiErrorKindForStatus(status) },
+    { status },
+  );
 }
 
 export async function requireAuthenticatedUser(): Promise<AuthenticatedUserResult> {

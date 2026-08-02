@@ -29,6 +29,8 @@ export async function POST(req: Request, ctx: RouteContext): Promise<Response> {
     return Response.json(
       {
         errorKind: "feature_disabled",
+        error:
+          "Agent loops are not enabled. Set AGENT_LOOPS_ENABLED=true to enable.",
         message:
           "Agent loops are not enabled. Set AGENT_LOOPS_ENABLED=true to enable.",
       },
@@ -56,6 +58,7 @@ export async function POST(req: Request, ctx: RouteContext): Promise<Response> {
     return Response.json(
       {
         errorKind: "trigger_invalid",
+        error: "Invalid JSON body",
         message: "Invalid JSON body",
       },
       { status: 400 },
@@ -67,11 +70,15 @@ export async function POST(req: Request, ctx: RouteContext): Promise<Response> {
     return Response.json(
       {
         errorKind: "trigger_invalid",
+        error: `Invalid trigger: ${parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`,
         message: `Invalid trigger: ${parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`,
         errors: parsed.error.issues.map((i) => ({
           path: i.path.join("."),
           message: i.message,
         })),
+        fields: Object.fromEntries(
+          parsed.error.issues.map((i) => [i.path.join("."), i.message]),
+        ),
       },
       { status: 400 },
     );
@@ -113,6 +120,8 @@ export async function GET(_req: Request, ctx: RouteContext): Promise<Response> {
     return Response.json(
       {
         errorKind: "feature_disabled",
+        error:
+          "Agent loops are not enabled. Set AGENT_LOOPS_ENABLED=true to enable.",
         message:
           "Agent loops are not enabled. Set AGENT_LOOPS_ENABLED=true to enable.",
       },

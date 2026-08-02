@@ -117,9 +117,8 @@ export const coreJourneys: Journey[] = [
         },
       },
       {
-        // Collection-level PATCH/DELETE with the id in the body, unlike every
-        // other resource in this API, which uses /resource/[id]. Recorded as
-        // observed, not as it ought to be.
+        // Collection-level PATCH/DELETE with the id in the body are deprecated
+        // (issue #1055) but still supported, so both shapes stay covered.
         name: "rename-only PATCH succeeds without resending baseUrl (issue #1062)",
         method: "PATCH",
         path: "/api/inference-profiles",
@@ -142,11 +141,44 @@ export const coreJourneys: Journey[] = [
         skipIf: (ctx) => !ctx.profileId,
       },
       {
-        name: "per-id read route does not exist",
+        name: "per-id read route returns the profile",
         method: "GET",
         path: (ctx) => `/api/inference-profiles/${ctx.profileId}`,
         skipIf: (ctx) => !ctx.profileId,
-        expect: [404],
+        expect: [200],
+        assert: (body, ctx) => {
+          const profile = (body as { profile?: { id?: string; name?: string } })
+            .profile;
+          if (profile?.id !== ctx.profileId) {
+            return "per-id GET did not return the created profile";
+          }
+          return profile.name === "Contract Probe Renamed"
+            ? null
+            : `per-id GET name is "${profile.name}"`;
+        },
+      },
+      {
+        // Writes a name no earlier step set, so a route that answers 200 while
+        // ignoring the update fails on the follow-up reads below.
+        name: "per-id PATCH renames without resending baseUrl",
+        method: "PATCH",
+        path: (ctx) => `/api/inference-profiles/${ctx.profileId}`,
+        body: { name: "Contract Probe Per-Id Renamed" },
+        skipIf: (ctx) => !ctx.profileId,
+        expect: [200],
+      },
+      {
+        name: "per-id read reflects the per-id rename",
+        method: "GET",
+        path: (ctx) => `/api/inference-profiles/${ctx.profileId}`,
+        skipIf: (ctx) => !ctx.profileId,
+        expect: [200],
+        assert: (body) => {
+          const profile = (body as { profile?: { name?: string } }).profile;
+          return profile?.name === "Contract Probe Per-Id Renamed"
+            ? null
+            : `per-id PATCH did not persist (name is "${profile?.name}")`;
+        },
       },
       {
         name: "list reflects the rename",
@@ -158,17 +190,24 @@ export const coreJourneys: Journey[] = [
             [];
           const mine = profiles.find((p) => p.id === ctx.profileId);
           if (!mine) return "the created profile is missing from the list";
-          return mine.name === "Contract Probe Renamed"
+          return mine.name === "Contract Probe Per-Id Renamed"
             ? null
             : `rename did not persist (name is "${mine.name}")`;
         },
       },
       {
-        name: "delete the profile via collection-level DELETE",
+        name: "delete the profile via collection-level DELETE (deprecated shape)",
         method: "DELETE",
         path: "/api/inference-profiles",
         body: (ctx) => ({ profileId: ctx.profileId }),
         skipIf: (ctx) => !ctx.profileId,
+      },
+      {
+        name: "per-id DELETE reports the profile is gone as JSON 404",
+        method: "DELETE",
+        path: (ctx) => `/api/inference-profiles/${ctx.profileId}`,
+        skipIf: (ctx) => !ctx.profileId,
+        expect: [404],
       },
     ],
   },

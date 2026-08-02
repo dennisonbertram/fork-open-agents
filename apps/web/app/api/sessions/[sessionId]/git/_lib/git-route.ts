@@ -1,4 +1,8 @@
 import {
+  type ApiErrorKind,
+  apiErrorKindForStatus,
+} from "@/lib/api/error-response";
+import {
   requireAuthenticatedUser,
   requireOwnedSession,
 } from "@/app/api/sessions/_lib/session-context";
@@ -30,8 +34,15 @@ export async function requireGitSession(
   return { ok: true, userId: auth.userId };
 }
 
-export function jsonError(error: string, status: number): Response {
-  return Response.json({ error }, { status });
+export function jsonError(
+  error: string,
+  status: number,
+  kind?: ApiErrorKind,
+): Response {
+  return Response.json(
+    { error, errorKind: kind ?? apiErrorKindForStatus(status) },
+    { status },
+  );
 }
 
 /** Parse a JSON body, returning null on malformed input. */
