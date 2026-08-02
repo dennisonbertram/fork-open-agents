@@ -258,6 +258,15 @@ mock.module("@/lib/skills/session-user-skills", () => ({
   installSessionUserSkills: async () => undefined,
 }));
 
+const sandboxWorkspace: {
+  origin: string | null;
+  branch: string;
+  originProbeTimesOut?: boolean;
+} = {
+  origin: "https://github.com/acme/private-repo\n",
+  branch: "main\n",
+};
+
 mock.module("@open-agents/sandbox", () => ({
   connectSandbox: async (config: ConnectConfig) => {
     connectConfigs.push(config);
@@ -277,6 +286,36 @@ mock.module("@open-agents/sandbox", () => ({
             success: true,
             exitCode: 0,
             stdout: "/root",
+            stderr: "",
+            truncated: false,
+          };
+        }
+
+        if (command === "git remote get-url origin") {
+          if (sandboxWorkspace.originProbeTimesOut) {
+            return {
+              success: false,
+              exitCode: null,
+              stdout: "",
+              stderr: `Command timed out after ${timeoutMs}ms`,
+              truncated: false,
+            };
+          }
+
+          return {
+            success: sandboxWorkspace.origin !== null,
+            exitCode: sandboxWorkspace.origin === null ? 1 : 0,
+            stdout: sandboxWorkspace.origin ?? "",
+            stderr: "",
+            truncated: false,
+          };
+        }
+
+        if (command === "git rev-parse --abbrev-ref HEAD") {
+          return {
+            success: true,
+            exitCode: 0,
+            stdout: sandboxWorkspace.branch,
             stderr: "",
             truncated: false,
           };
@@ -322,6 +361,9 @@ describe("/api/sandbox lifecycle kicks", () => {
       expiresAt: 1_700_000_000,
       externalId: "user_ext_1",
     };
+    sandboxWorkspace.origin = "https://github.com/acme/private-repo\n";
+    sandboxWorkspace.branch = "main\n";
+    sandboxWorkspace.originProbeTimesOut = false;
     currentDotenvContent = 'API_KEY="secret"\n';
     currentDotenvError = null;
     sessionRecord = {
@@ -378,7 +420,15 @@ describe("/api/sandbox lifecycle kicks", () => {
     expect(dotenvSyncCalls).toHaveLength(0);
   });
 
-  test("returns immediately when prewarm already persisted an active sandbox", async () => {
+  function postSandbox(body: Record<string, unknown>) {
+    return new Request("http://localhost/api/sandbox", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sandboxType: "vercel", ...body }),
+    });
+  }
+
+  test("reuses an already-active sandbox but reports the branch it actually has checked out", async () => {
     const { POST } = await routeModulePromise;
     const expiresAt = Date.now() + 120_000;
 
@@ -387,17 +437,13 @@ describe("/api/sandbox lifecycle kicks", () => {
       sandboxName: "session_session-1",
       expiresAt,
     };
+    sandboxWorkspace.branch = "mr/ad358c87\n";
 
     const response = await POST(
-      new Request("http://localhost/api/sandbox", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sessionId: "session-1",
-          repoUrl: "https://github.com/acme/private-repo",
-          branch: "main",
-          sandboxType: "vercel",
-        }),
+      postSandbox({
+        sessionId: "session-1",
+        repoUrl: "https://github.com/acme/private-repo",
+        branch: "develop",
       }),
     );
 
@@ -408,16 +454,110 @@ describe("/api/sandbox lifecycle kicks", () => {
       timing: { readyMs: number };
     };
 
-    expect(response.ok).toBe(true);
+    expect(response.status).toBe(200);
     expect(payload.mode).toBe("vercel");
-    expect(payload.currentBranch).toBe("main");
+    expect(payload.currentBranch).toBe("mr/ad358c87");
     expect(payload.timeout).toBeGreaterThan(0);
     expect(payload.timeout).toBeLessThanOrEqual(120_000);
-    expect(payload.timing.readyMs).toBe(0);
-    expect(connectConfigs).toHaveLength(0);
     expect(updateCalls).toHaveLength(0);
     expect(kickCalls).toHaveLength(0);
     expect(globalSkillInstallCalls).toHaveLength(0);
+  });
+
+  test("fails with a typed error when the already-active sandbox never cloned the repo", async () => {
+    const { POST } = await routeModulePromise;
+
+    sessionRecord.sandboxState = {
+      type: "vercel",
+      sandboxName: "session_session-1",
+      expiresAt: Date.now() + 120_000,
+    };
+    sandboxWorkspace.origin = null;
+    sandboxWorkspace.branch = "master\n";
+
+    const response = await POST(
+      postSandbox({
+        sessionId: "session-1",
+        repoUrl: "https://github.com/acme/private-repo",
+        branch: "develop",
+      }),
+    );
+
+    const payload = (await response.json()) as {
+      error: string;
+      reason?: string;
+      currentBranch?: string;
+    };
+
+    expect(response.status).toBe(409);
+    expect(payload.reason).toBe("workspace_not_cloned");
+    expect(payload.currentBranch).toBeUndefined();
+  });
+
+  test("fails with a typed error when a freshly created sandbox has no clone", async () => {
+    const { POST } = await routeModulePromise;
+
+    sandboxWorkspace.origin = null;
+
+    const response = await POST(
+      postSandbox({
+        sessionId: "session-1",
+        repoUrl: "https://github.com/acme/private-repo",
+        branch: "main",
+      }),
+    );
+
+    const payload = (await response.json()) as {
+      error: string;
+      reason?: string;
+    };
+
+    expect(response.status).toBe(409);
+    expect(payload.reason).toBe("workspace_not_cloned");
+  });
+
+  test("does not claim a missing clone when the git probe never ran", async () => {
+    const { POST } = await routeModulePromise;
+
+    sandboxWorkspace.originProbeTimesOut = true;
+
+    const response = await POST(
+      postSandbox({
+        sessionId: "session-1",
+        repoUrl: "https://github.com/acme/private-repo",
+        branch: "main",
+      }),
+    );
+
+    const payload = (await response.json()) as {
+      error: string;
+      reason?: string;
+      currentBranch?: string;
+    };
+
+    expect(response.status).toBe(503);
+    expect(payload.reason).toBe("workspace_probe_failed");
+    expect(payload.currentBranch).toBeUndefined();
+  });
+
+  test("reports the sandbox branch, not the requested branch, after creation", async () => {
+    const { POST } = await routeModulePromise;
+
+    sandboxWorkspace.branch = "mr/ad358c87\n";
+
+    const response = await POST(
+      postSandbox({
+        sessionId: "session-1",
+        repoUrl: "https://github.com/acme/private-repo",
+        branch: "develop",
+        isNewBranch: true,
+      }),
+    );
+
+    const payload = (await response.json()) as { currentBranch?: string };
+
+    expect(response.status).toBe(200);
+    expect(payload.currentBranch).toBe("mr/ad358c87");
   });
 
   test("repo sandboxes use a setup-only installation token instead of embedding it", async () => {

@@ -39,6 +39,7 @@ import {
   hasResumableSandboxState,
   isSandboxActive,
 } from "@/lib/sandbox/utils";
+import { readWorkspaceRepoState } from "@/lib/sandbox/workspace-repo";
 import { getServerSession } from "@/lib/session/get-server-session";
 import { checkRateLimit, rateLimitKey } from "@/lib/rate-limit";
 // import { buildDevelopmentDotenvFromVercelProject } from "@/lib/vercel/projects";
@@ -100,6 +101,35 @@ async function installSessionGlobalSkills(params: {
       sandboxName: params.sandboxName,
     },
   });
+}
+
+/**
+ * A repo-backed sandbox that has no clone is a failed provisioning, not a
+ * ready workspace. Surface it as a typed 409 instead of a 200 carrying a
+ * branch that is not checked out (issue #1053).
+ */
+function workspaceNotClonedResponse(sessionId: string): Response {
+  console.warn("[sandbox] workspace-not-cloned", { sessionId });
+  return Response.json(
+    {
+      error:
+        "Sandbox is running but the repository was not cloned into the workspace.",
+      reason: "workspace_not_cloned",
+    },
+    { status: 409 },
+  );
+}
+
+function workspaceProbeFailedResponse(sessionId: string): Response {
+  console.warn("[sandbox] workspace-probe-failed", { sessionId });
+  return Response.json(
+    {
+      error:
+        "Sandbox is running but the workspace git probe did not complete, so its repository state is unknown.",
+      reason: "workspace_probe_failed",
+    },
+    { status: 503 },
+  );
 }
 
 function getErrorKind(error: unknown): string {
@@ -190,18 +220,32 @@ export async function POST(req: Request) {
 
   const activeSandboxState = sessionRecord.sandboxState;
   if (isSandboxActive(activeSandboxState)) {
-    const now = Date.now();
+    const reuseStart = Date.now();
     const expiresAt =
       typeof activeSandboxState.expiresAt === "number"
         ? activeSandboxState.expiresAt
-        : now;
+        : reuseStart;
 
+    let currentBranch: string | undefined;
+    if (repoUrl) {
+      const existing = await connectSandbox(activeSandboxState);
+      const workspace = await readWorkspaceRepoState(existing);
+      if (workspace.status === "unknown") {
+        return workspaceProbeFailedResponse(sessionId);
+      }
+      if (workspace.status === "not_cloned") {
+        return workspaceNotClonedResponse(sessionId);
+      }
+      currentBranch = workspace.branch;
+    }
+
+    const now = Date.now();
     return Response.json({
       createdAt: now,
       timeout: Math.max(0, expiresAt - now),
-      currentBranch: repoUrl ? branch : undefined,
+      currentBranch,
       mode: activeSandboxState.type,
-      timing: { readyMs: 0 },
+      timing: { readyMs: now - reuseStart },
     });
   }
 
@@ -295,6 +339,20 @@ export async function POST(req: Request) {
     }
   }
 
+  // A named sandbox that already existed is reconnected, not recreated, so the
+  // requested source may never have been cloned. Confirm before reporting ready.
+  let currentBranch: string | undefined;
+  if (repoUrl) {
+    const workspace = await readWorkspaceRepoState(sandbox);
+    if (workspace.status === "unknown") {
+      return workspaceProbeFailedResponse(sessionId);
+    }
+    if (workspace.status === "not_cloned") {
+      return workspaceNotClonedResponse(sessionId);
+    }
+    currentBranch = workspace.branch;
+  }
+
   if (sessionId && sandbox.getState) {
     const nextState = sandbox.getState() as SandboxState;
     await updateSession(sessionId, {
@@ -362,7 +420,7 @@ export async function POST(req: Request) {
   return Response.json({
     createdAt: Date.now(),
     timeout: DEFAULT_SANDBOX_TIMEOUT_MS,
-    currentBranch: repoUrl ? branch : undefined,
+    currentBranch,
     mode: "vercel",
     timing: { readyMs },
   });
