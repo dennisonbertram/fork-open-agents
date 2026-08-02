@@ -149,6 +149,7 @@ import {
 } from "@/lib/chat-streaming-state";
 import { collectPendingApprovals } from "@/app/lib/pending-tool-approvals";
 import { isValidImageType } from "@/lib/image-utils";
+import { readApiError } from "@/lib/api/read-api-error";
 import { isLargeText } from "@/lib/text-attachment-utils";
 import {
   type AvailableModelCost,
@@ -2057,11 +2058,10 @@ export function SessionChatContent({
         );
 
         if (!response.ok) {
-          const body = (await response.json().catch(() => null)) as {
-            error?: string;
-          } | null;
+          const body = await response.json().catch(() => null);
           throw new Error(
-            body?.error ?? "Failed to persist synthetic assistant message",
+            readApiError(body, "Failed to persist synthetic assistant message")
+              .message,
           );
         }
 
@@ -2781,12 +2781,13 @@ export function SessionChatContent({
           { method: "DELETE" },
         );
         const payload = (await response.json().catch(() => ({}))) as {
-          error?: string;
           success?: boolean;
         };
 
         if (!response.ok || !payload.success) {
-          throw new Error(payload.error ?? "Failed to delete message");
+          throw new Error(
+            readApiError(payload, "Failed to delete message").message,
+          );
         }
 
         setMessages(messages.slice(0, targetMessageIndex));
@@ -2880,12 +2881,13 @@ export function SessionChatContent({
           { method: "DELETE" },
         );
         const payload = (await response.json().catch(() => ({}))) as {
-          error?: string;
           success?: boolean;
         };
 
         if (!response.ok || !payload.success) {
-          throw new Error(payload.error ?? "Failed to resend message");
+          throw new Error(
+            readApiError(payload, "Failed to resend message").message,
+          );
         }
 
         setMessages(messages.slice(0, targetMessageIndex));
@@ -3047,13 +3049,12 @@ export function SessionChatContent({
       });
 
       const payload = (await response.json().catch(() => ({}))) as {
-        error?: string;
         success?: boolean;
         alreadyRunning?: boolean;
       };
 
       if (!response.ok) {
-        const errorMsg = payload.error ?? "Unknown error";
+        const errorMsg = readApiError(payload, "Unknown error").message;
 
         // If a sandbox is already running (for example after a lifecycle
         // restore), reconnect instead of surfacing a blocking error.
