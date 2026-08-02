@@ -25,7 +25,10 @@ export async function GET(req: Request): Promise<Response> {
 
   if (!agentId) {
     return Response.json(
-      { error: "Missing required query param: agentId" },
+      {
+        error: "Missing required query param: agentId",
+        errorKind: "invalid_request",
+      },
       { status: 400 },
     );
   }
@@ -55,13 +58,20 @@ export async function POST(req: Request): Promise<Response> {
   try {
     body = await req.json();
   } catch {
-    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+    return Response.json(
+      { error: "Invalid JSON body", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   const parsed = postBodySchema.safeParse(body);
   if (!parsed.success) {
     return Response.json(
-      { error: "Invalid request body", details: parsed.error.flatten() },
+      {
+        error: "Invalid request body",
+        details: parsed.error.flatten(),
+        errorKind: "invalid_request",
+      },
       { status: 400 },
     );
   }
@@ -77,7 +87,10 @@ export async function POST(req: Request): Promise<Response> {
 
   if (!ok) {
     return Response.json(
-      { error: "Tool entry not found or not owned by you" },
+      {
+        error: "Tool entry not found or not owned by you",
+        errorKind: "not_found",
+      },
       { status: 404 },
     );
   }

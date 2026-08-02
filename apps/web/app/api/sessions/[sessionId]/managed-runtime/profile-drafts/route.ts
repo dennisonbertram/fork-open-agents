@@ -78,13 +78,19 @@ export async function POST(
   try {
     rawBody = await req.json();
   } catch {
-    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+    return Response.json(
+      { error: "Invalid JSON body", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   const parsedBody = createDraftRequestSchema.safeParse(rawBody);
   if (!parsedBody.success) {
     return Response.json(
-      { error: "Invalid managed runtime profile draft" },
+      {
+        error: "Invalid managed runtime profile draft",
+        errorKind: "invalid_request",
+      },
       { status: 400 },
     );
   }

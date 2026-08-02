@@ -21,7 +21,10 @@ export async function GET(request: NextRequest) {
   const session = await getServerSession();
 
   if (!session?.user?.id) {
-    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+    return NextResponse.json(
+      { error: "Not authenticated", errorKind: "unauthorized" },
+      { status: 401 },
+    );
   }
 
   const { searchParams } = new URL(request.url);
@@ -38,7 +41,7 @@ export async function GET(request: NextRequest) {
 
   if (!installationId) {
     return NextResponse.json(
-      { error: "installation_id is required" },
+      { error: "installation_id is required", errorKind: "invalid_request" },
       { status: 400 },
     );
   }
@@ -49,7 +52,7 @@ export async function GET(request: NextRequest) {
   );
   if (!installation) {
     return NextResponse.json(
-      { error: "Installation not found" },
+      { error: "Installation not found", errorKind: "forbidden" },
       { status: 403 },
     );
   }
@@ -57,7 +60,7 @@ export async function GET(request: NextRequest) {
   const userToken = await getUserGitHubToken(session.user.id);
   if (!userToken) {
     return NextResponse.json(
-      { error: "GitHub not connected" },
+      { error: "GitHub not connected", errorKind: "unauthorized" },
       { status: 401 },
     );
   }
@@ -75,7 +78,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error("Failed to fetch installation repositories:", error);
     return NextResponse.json(
-      { error: "Failed to fetch repositories" },
+      { error: "Failed to fetch repositories", errorKind: "internal_error" },
       { status: 500 },
     );
   }

@@ -21,7 +21,10 @@ describe("/api/vercel/projects/[idOrName]/env", () => {
 
     expect(response.status).toBe(404);
     expect(response.headers.get("Cache-Control")).toBe("no-store");
-    expect(await response.json()).toEqual({ error: "Not found" });
+    expect(await response.json()).toEqual({
+      error: "Not found",
+      errorKind: "not_found",
+    });
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });

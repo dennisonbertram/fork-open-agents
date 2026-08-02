@@ -50,20 +50,29 @@ export async function PATCH(
     profileId,
   });
   if (!existing) {
-    return Response.json({ error: "Profile not found" }, { status: 404 });
+    return Response.json(
+      { error: "Profile not found", errorKind: "not_found" },
+      { status: 404 },
+    );
   }
 
   let rawBody: unknown;
   try {
     rawBody = await req.json();
   } catch {
-    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+    return Response.json(
+      { error: "Invalid JSON body", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   const parsed = updateProfileSchema.safeParse(rawBody);
   if (!parsed.success) {
     return Response.json(
-      { error: "Invalid managed runtime profile" },
+      {
+        error: "Invalid managed runtime profile",
+        errorKind: "invalid_request",
+      },
       { status: 400 },
     );
   }
@@ -74,7 +83,10 @@ export async function PATCH(
     profile: parsed.data,
   });
   if (!updated) {
-    return Response.json({ error: "Profile not found" }, { status: 404 });
+    return Response.json(
+      { error: "Profile not found", errorKind: "not_found" },
+      { status: 404 },
+    );
   }
 
   return Response.json({
@@ -98,7 +110,10 @@ export async function DELETE(
     profileId,
   });
   if (!deleted) {
-    return Response.json({ error: "Profile not found" }, { status: 404 });
+    return Response.json(
+      { error: "Profile not found", errorKind: "not_found" },
+      { status: 404 },
+    );
   }
 
   return Response.json({

@@ -29,13 +29,17 @@ async function handleSweep(req: Request) {
     return Response.json(
       {
         error: "CRON_SECRET or BACKGROUND_AGENTS_CRON_SECRET is not configured",
+        errorKind: "internal_error",
       },
       { status: 500 },
     );
   }
 
   if (!isAuthorized(req, secret)) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
+    return Response.json(
+      { error: "Unauthorized", errorKind: "unauthorized" },
+      { status: 401 },
+    );
   }
 
   const result = await sweepStalledLoopRuns();

@@ -16,6 +16,8 @@ const EXPECTED_STATUS: Record<ApiErrorKind, number> = {
   rate_limited: 429,
   upstream_unavailable: 503,
   internal_error: 500,
+  gone: 410,
+  not_implemented: 501,
 };
 
 describe("apiError", () => {

@@ -25,7 +25,10 @@ export async function POST(req: Request, context: RouteContext) {
   const secret = getBackgroundAgentsWebhookSecret();
   if (!secret) {
     return Response.json(
-      { error: "BACKGROUND_AGENTS_WEBHOOK_SECRET is not configured" },
+      {
+        error: "BACKGROUND_AGENTS_WEBHOOK_SECRET is not configured",
+        errorKind: "internal_error",
+      },
       { status: 500 },
     );
   }
@@ -40,7 +43,7 @@ export async function POST(req: Request, context: RouteContext) {
     })
   ) {
     return Response.json(
-      { error: "Invalid webhook signature" },
+      { error: "Invalid webhook signature", errorKind: "unauthorized" },
       { status: 401 },
     );
   }
@@ -49,12 +52,18 @@ export async function POST(req: Request, context: RouteContext) {
   try {
     body = JSON.parse(payloadText);
   } catch {
-    return Response.json({ error: "Invalid JSON payload" }, { status: 400 });
+    return Response.json(
+      { error: "Invalid JSON payload", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   const parsed = webhookErrorSchema.safeParse(body);
   if (!parsed.success) {
-    return Response.json({ error: "Invalid webhook payload" }, { status: 400 });
+    return Response.json(
+      { error: "Invalid webhook payload", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   const { publicId } = await context.params;

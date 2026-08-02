@@ -7,7 +7,10 @@ export async function GET() {
   const session = await getServerSession();
 
   if (!session?.user?.id) {
-    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+    return NextResponse.json(
+      { error: "Not authenticated", errorKind: "unauthorized" },
+      { status: 401 },
+    );
   }
 
   try {
@@ -28,7 +31,7 @@ export async function GET() {
   } catch (error) {
     console.error("Failed to fetch GitHub installations:", error);
     return NextResponse.json(
-      { error: "Failed to fetch installations" },
+      { error: "Failed to fetch installations", errorKind: "internal_error" },
       { status: 500 },
     );
   }

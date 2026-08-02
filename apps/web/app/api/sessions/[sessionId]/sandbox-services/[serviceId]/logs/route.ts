@@ -41,20 +41,29 @@ export async function GET(req: Request, context: RouteContext) {
   }
   if (sessionContext.sessionRecord.runtimeMode !== "managed_runtime") {
     return Response.json(
-      { error: "Managed runtime is not enabled for this session" },
+      {
+        error: "Managed runtime is not enabled for this session",
+        errorKind: "conflict",
+      },
       { status: 409 },
     );
   }
   if (!sessionContext.sessionRecord.sandboxState) {
     return Response.json(
-      { error: "Resume the sandbox before reading service logs" },
+      {
+        error: "Resume the sandbox before reading service logs",
+        errorKind: "conflict",
+      },
       { status: 409 },
     );
   }
 
   const service = await getSandboxService({ sessionId, serviceId });
   if (!service) {
-    return Response.json({ error: "Service not found" }, { status: 404 });
+    return Response.json(
+      { error: "Service not found", errorKind: "not_found" },
+      { status: 404 },
+    );
   }
 
   const sandbox = await connectSandbox(
