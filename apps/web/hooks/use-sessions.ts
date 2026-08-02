@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect } from "react";
 import useSWR, { useSWRConfig } from "swr";
+import { readApiError } from "@/lib/api/read-api-error";
 import type { Chat, Session } from "@/lib/db/schema";
 import type { VercelProjectSelection } from "@/lib/vercel/types";
 import { fetcher } from "@/lib/swr";
@@ -150,7 +151,7 @@ export function useSessions(options?: {
         chat?: Chat;
       } & CreateSessionErrorResponseBody;
 
-      if (!res.ok || !responseData.session || !responseData.chat) {
+      if (!res.ok || !responseData?.session || !responseData.chat) {
         // Ownership decision (#784): this hook does NOT toast — every
         // call site owns surfacing this rejection exactly once (inline in
         // the New Session dialog, toast elsewhere) via the shared
@@ -235,13 +236,14 @@ export function useSessions(options?: {
           body: JSON.stringify({ title }),
         });
 
-        const responseData = (await res.json()) as {
+        const responseData = (await res.json().catch(() => null)) as {
           session?: Session;
-          error?: string;
-        };
+        } | null;
 
-        if (!res.ok || !responseData.session) {
-          throw new Error(responseData.error ?? "Failed to rename session");
+        if (!res.ok || !responseData?.session) {
+          throw new Error(
+            readApiError(responseData, "Failed to rename session").message,
+          );
         }
 
         const updatedSession = responseData.session;
@@ -329,16 +331,17 @@ export function useSessions(options?: {
           body: JSON.stringify({ status: "archived" }),
         });
 
-        const responseData = (await res.json()) as {
+        const responseData = (await res.json().catch(() => null)) as {
           session?: Session;
-          error?: string;
-        };
+        } | null;
 
         if (!res.ok) {
-          throw new Error(responseData.error ?? "Failed to archive session");
+          throw new Error(
+            readApiError(responseData, "Failed to archive session").message,
+          );
         }
 
-        if (responseData.session) {
+        if (responseData?.session) {
           const updatedSession = responseData.session;
 
           await mutate(
@@ -364,7 +367,7 @@ export function useSessions(options?: {
           );
         }
 
-        return responseData.session;
+        return responseData?.session;
       } catch (error) {
         if (previousData) {
           await mutate(previousData, { revalidate: false });
@@ -415,13 +418,14 @@ export function useSessions(options?: {
           body: JSON.stringify({ status: "running" }),
         });
 
-        const responseData = (await res.json()) as {
+        const responseData = (await res.json().catch(() => null)) as {
           session?: Session;
-          error?: string;
-        };
+        } | null;
 
-        if (!res.ok || !responseData.session) {
-          throw new Error(responseData.error ?? "Failed to unarchive session");
+        if (!res.ok || !responseData?.session) {
+          throw new Error(
+            readApiError(responseData, "Failed to unarchive session").message,
+          );
         }
 
         const updatedSession = responseData.session;
@@ -448,7 +452,7 @@ export function useSessions(options?: {
           await mutate();
         }
 
-        return responseData.session;
+        return responseData?.session;
       } catch (error) {
         if (previousData) {
           await mutate(previousData, { revalidate: false });

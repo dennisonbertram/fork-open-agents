@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useRef } from "react";
+import { readApiError } from "@/lib/api/read-api-error";
 
 type RecordingState = "idle" | "recording" | "processing";
 
@@ -120,17 +121,19 @@ export function useAudioRecording() {
             }),
           });
 
-          const data = (await response.json()) as TranscribeResponse;
+          const data = (await response
+            .json()
+            .catch(() => null)) as TranscribeResponse | null;
 
           if (!response.ok) {
-            setError(data.error ?? "Transcription failed");
+            setError(readApiError(data, "Transcription failed").message);
             setState("idle");
             resolve(null);
             return;
           }
 
           setState("idle");
-          resolve(data.text ?? null);
+          resolve(data?.text ?? null);
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           setError(`Transcription failed: ${message}`);

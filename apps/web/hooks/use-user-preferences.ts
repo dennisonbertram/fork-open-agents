@@ -6,6 +6,7 @@ import type { SandboxType } from "@/components/sandbox-selector-compact";
 import type { ModelVariant } from "@/lib/model-variants";
 import type { GlobalSkillRef } from "@/lib/skills/global-skill-refs";
 import type { ModelSystemPrompts } from "@/lib/model-system-prompts";
+import { readApiError } from "@/lib/api/read-api-error";
 
 export type DiffMode = "unified" | "split";
 
@@ -49,8 +50,11 @@ export function useUserPreferences() {
     });
 
     if (!res.ok) {
-      const errorData = (await res.json()) as { error?: string };
-      throw new Error(errorData.error ?? "Failed to update preferences");
+      const parsed = readApiError(
+        await res.json().catch(() => null),
+        "Failed to update preferences",
+      );
+      throw new Error(parsed.message);
     }
 
     const responseData = (await res.json()) as PreferencesResponse;
