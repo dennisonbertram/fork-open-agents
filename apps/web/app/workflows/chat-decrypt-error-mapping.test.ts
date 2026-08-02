@@ -360,6 +360,87 @@ describe("decrypt error → actionable user message mapping (BT-009)", () => {
     // Must contain the actionable guidance about re-entering the key
     expect(delta.toLowerCase()).toContain("settings");
   });
+
+  // Reproduces the exact production failure: the workflow engine retried the
+  // step three times and rethrew as FatalError, which drops the original
+  // InferenceProfileResolutionError name. The remaining signal is the message
+  // wording from lib/db/inference-profiles.ts ("can't be decrypted in this
+  // environment"), which the classifier used to miss because it only matched
+  // "could not be decrypted". Users saw "Workspace setup failed" instead.
+  test("retry-wrapped FatalError carrying the decrypt message still surfaces actionable guidance", async () => {
+    inferenceProfileError = Object.assign(
+      new Error(
+        'Step "step//./app/workflows/chat//runAgentStep" failed after 3 retries: ' +
+          'The saved API key for inference profile "Basteen" can\'t be decrypted in this environment. ' +
+          "Re-enter the API key in Settings -> Models, save the profile, and try again.",
+      ),
+      { name: "FatalError" },
+    );
+
+    try {
+      await runAgentWorkflow(makeOptions());
+    } catch {
+      // expected — the workflow throws after writing the error chunk
+    }
+
+    const errorChunk = writtenChunks.find(
+      (chunk) =>
+        chunk.type === "text-delta" &&
+        "id" in chunk &&
+        chunk.id === "setup-error",
+    );
+
+    expect(errorChunk).toBeDefined();
+    const delta = (errorChunk as { delta?: string }).delta ?? "";
+
+    expect(delta).not.toBe("Workspace setup failed. Try again in a moment.");
+    expect(delta.toLowerCase()).toContain("settings");
+    // Must not leak the workflow engine's internal step path back to the user.
+    expect(delta).not.toContain("runAgentStep");
+  });
+});
+
+describe("provider rejection → actionable user message mapping", () => {
+  // A provider that refuses the request outright is not a workspace problem.
+  // The message is built where the provider's response and the chat's
+  // reasoning history are both in scope, then rethrown across a step boundary
+  // as FatalError — which drops the error class, so the mapping has to
+  // recognise it by its text and pass it through untouched.
+  test("retry-wrapped provider rejection reaches the user with both recoveries", async () => {
+    inferenceProfileError = Object.assign(
+      new Error(
+        'Step "step//./app/workflows/chat//runAgentStep" failed: ' +
+          "The model provider rejected this request (HTTP 400), so this turn stopped.\n\n" +
+          'Provider said: {"message":"unsupported field: reasoning_content"}\n\n' +
+          "This chat contains earlier model thinking, which some providers refuse to accept back. " +
+          "You can remove the earlier thinking from this chat and send again, or switch back to the model that last worked here.",
+      ),
+      { name: "FatalError" },
+    );
+
+    try {
+      await runAgentWorkflow(makeOptions());
+    } catch {
+      // expected — the workflow throws after writing the error chunk
+    }
+
+    const errorChunk = writtenChunks.find(
+      (chunk) =>
+        chunk.type === "text-delta" &&
+        "id" in chunk &&
+        chunk.id === "setup-error",
+    );
+
+    expect(errorChunk).toBeDefined();
+    const delta = (errorChunk as { delta?: string }).delta ?? "";
+
+    expect(delta).not.toBe("Workspace setup failed. Try again in a moment.");
+    expect(delta).toContain("unsupported field: reasoning_content");
+    expect(delta).toContain("remove the earlier thinking");
+    expect(delta).toContain("switch back to the model that last worked");
+    // The workflow engine's internal step path is operator noise.
+    expect(delta).not.toContain("runAgentStep");
+  });
 });
 
 describe("provider auth / credit error → actionable user message mapping", () => {

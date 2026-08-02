@@ -55,6 +55,15 @@ import {
   sendFinish,
 } from "./chat-post-finish";
 import { dedupeMessageReasoning } from "@/lib/chat/dedupe-message-reasoning";
+import {
+  buildProviderRejectionMessage,
+  describeProviderError,
+  getProviderErrorDetails,
+  isNonRetryableProviderError,
+  isProviderRejectionMessage,
+  PROVIDER_REJECTION_PREFIX,
+} from "@/lib/chat/provider-error";
+import { modelMessagesContainReasoning } from "@/lib/chat/strip-model-message-reasoning";
 import { sanitizeInterruptedToolCalls } from "@/lib/chat/sanitize-interrupted-tool-calls";
 import { getAllVariants } from "@/lib/model-variants";
 import { APP_DEFAULT_MODEL_ID } from "@/lib/models";
@@ -824,11 +833,27 @@ function getSetupErrorMessage(error: unknown): string {
     return message;
   }
 
+  // Already final, user-facing copy built at the point of failure, where the
+  // provider's own response and the chat's reasoning history were both in
+  // scope. Matched on the message because the workflow engine rethrows across
+  // a step boundary and the error class does not survive that.
+  if (isProviderRejectionMessage(message)) {
+    return message.slice(message.indexOf(PROVIDER_REJECTION_PREFIX));
+  }
+
   // Defense-in-depth: catch raw crypto auth-tag failure that escaped wrapping,
   // or InferenceSecretDecryptionError that propagated without being wrapped.
+  //
+  // Match on "be decrypted" rather than one exact phrasing: the three sites
+  // that report this write it three different ways ("could not be decrypted",
+  // "can't be decrypted in this environment", "can no longer be decrypted in
+  // this environment"). The name check above is also not enough on its own —
+  // the workflow engine rewraps a step failure as FatalError ("... failed
+  // after 3 retries: <original message>"), which drops the original name and
+  // used to land the user on the generic "Workspace setup failed" instead.
   if (
     name === "InferenceSecretDecryptionError" ||
-    message.includes("could not be decrypted") ||
+    message.includes("be decrypted") ||
     message.includes("Unsupported state or unable to authenticate data")
   ) {
     return "The saved API key for this model can't be decrypted in this environment — re-enter it in Settings → Models.";
@@ -1724,7 +1749,7 @@ export async function runAgentWorkflow(options: Options) {
   }
 
   try {
-    const [runtime, modelRuntime, modelMessages] = await Promise.all([
+    const [runtime, modelRuntime, convertedMessages] = await Promise.all([
       resolveChatSandboxRuntime({
         userId: options.userId,
         sessionId: options.sessionId,
@@ -1748,6 +1773,7 @@ export async function runAgentWorkflow(options: Options) {
     inferenceProfileId = modelRuntime.inferenceProfileId;
     inferenceProfileName = modelRuntime.inferenceProfileName;
     inferenceProvider = modelRuntime.inferenceProvider;
+    const modelMessages = convertedMessages;
     runtimeMode = runtime.runtimeMode;
     // sandboxState is null for sandbox-free sessions; keep as undefined so
     // subsequent guards that check `sandboxState` (persist, refresh, etc.) skip
@@ -3141,7 +3167,7 @@ const runAgentStep = async (
     const errorWithStepTiming =
       lastStreamError && baseError.message.includes("No output generated")
         ? new Error(
-            `${baseError.message}\n\nProvider error: ${getErrorMessage(lastStreamError)}`,
+            `${baseError.message}\n\nProvider error: ${describeProviderError(lastStreamError)}`,
           )
         : baseError;
     await emitSessionEvent({
@@ -3172,6 +3198,38 @@ const runAgentStep = async (
         errorWithStepTiming.name,
       ),
     });
+
+    // The provider refused the request itself, so the two identical retries
+    // that would follow cannot succeed — they only delay the message and bury
+    // the cause under "failed after 3 retries". Stop here and hand the user
+    // the provider's own reason plus the ways out.
+    if (isNonRetryableProviderError(lastStreamError)) {
+      const { statusCode, responseBody } =
+        getProviderErrorDetails(lastStreamError);
+      // Imported here rather than at module scope: `workflow` re-exports
+      // FatalError through a star-export chain that the test runner's
+      // resolver does not follow, and this step already loads its
+      // dependencies dynamically.
+      const { FatalError } = await import("workflow");
+      const rejection = new FatalError(
+        buildProviderRejectionMessage({
+          hasReasoningHistory: modelMessagesContainReasoning(messages),
+          responseBody,
+          statusCode,
+        }),
+      );
+      Object.assign(rejection, {
+        stepTiming: buildStepTiming(
+          stepNumber,
+          stepStartedAt,
+          stepFinishedAt,
+          "error",
+          "ProviderRequestRejected",
+        ),
+      });
+      throw rejection;
+    }
+
     throw errorWithStepTiming;
   } finally {
     stopMonitor.stop();

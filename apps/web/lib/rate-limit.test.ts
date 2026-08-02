@@ -88,21 +88,42 @@ afterEach(() => {
 
 describe("checkRateLimit", () => {
   test("does not enforce limits locally when Redis is not configured", async () => {
-    delete process.env.REDIS_URL;
-    delete process.env.KV_URL;
-    process.env[nodeEnvKey] = "test";
-    const { checkRateLimit } = await loadRateLimitModule();
+    const originalConsoleError = console.error;
+    const consoleError = mock((..._args: unknown[]) => undefined);
+    console.error = consoleError as unknown as typeof console.error;
+    try {
+      delete process.env.REDIS_URL;
+      delete process.env.KV_URL;
+      process.env[nodeEnvKey] = "test";
+      const { checkRateLimit } = await loadRateLimitModule();
 
-    const key = `test:${crypto.randomUUID()}`;
-    expect(
-      await checkRateLimit({ key, limit: 2, windowMs: 60_000 }),
-    ).toBeNull();
-    expect(
-      await checkRateLimit({ key, limit: 2, windowMs: 60_000 }),
-    ).toBeNull();
+      const key = `test:${crypto.randomUUID()}`;
+      expect(
+        await checkRateLimit({ key, limit: 2, windowMs: 60_000 }),
+      ).toBeNull();
+      expect(
+        await checkRateLimit({ key, limit: 2, windowMs: 60_000 }),
+      ).toBeNull();
 
-    const response = await checkRateLimit({ key, limit: 2, windowMs: 60_000 });
-    expect(response).toBeNull();
+      const response = await checkRateLimit({
+        key,
+        limit: 2,
+        windowMs: 60_000,
+      });
+      expect(response).toBeNull();
+
+      // Missing REDIS_URL must be visible in logs; in production the same
+      // branch turns every rate-limited route into a 503.
+      expect(
+        consoleError.mock.calls.some((call) =>
+          String(call[0]).includes(
+            "rate limiting is disabled because REDIS_URL/KV_URL is not configured",
+          ),
+        ),
+      ).toBe(true);
+    } finally {
+      console.error = originalConsoleError;
+    }
   });
 
   test("fails closed in production when Redis is not configured", async () => {

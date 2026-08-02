@@ -57,6 +57,7 @@ import {
 import { createPortal } from "react-dom";
 import useSWR from "swr";
 import type { ChatRefreshResponse } from "@/app/api/sessions/[sessionId]/chats/[chatId]/route";
+import { ProviderRejectionActions } from "./provider-rejection-actions";
 import type { ManagedRuntimeProfilesResponse } from "@/app/api/sessions/[sessionId]/managed-runtime/profiles/route";
 import type { MergePullRequestResult } from "@/lib/github/actions/pr";
 import {
@@ -1457,6 +1458,13 @@ const MessageRow = memo(function MessageRow({
                 >
                   {p.text}
                 </AssistantMarkdown>
+                {!isMessageStreaming && (
+                  <ProviderRejectionActions
+                    chatId={chatId}
+                    sessionId={sessionId}
+                    text={p.text}
+                  />
+                )}
                 {(canCopyAssistantMessage ||
                   (!isMessageStreaming &&
                     isFinalAssistantTextPart &&
