@@ -34,6 +34,24 @@ const STATUS_BY_KIND: Record<ApiErrorKind, number> = {
   internal_error: 500,
 };
 
+const KIND_BY_STATUS = new Map<number, ApiErrorKind>([
+  ...Object.entries(STATUS_BY_KIND).map(
+    ([kind, status]) => [status, kind as ApiErrorKind] as const,
+  ),
+  // Gateway/timeout statuses are upstream failures too, not our own bug.
+  [502, "upstream_unavailable"],
+  [504, "upstream_unavailable"],
+]);
+
+/**
+ * Best-effort status -> kind mapping for helpers that only take (message,
+ * status). Anything unmapped is an internal error from the client's point of
+ * view.
+ */
+export function apiErrorKindForStatus(status: number): ApiErrorKind {
+  return KIND_BY_STATUS.get(status) ?? "internal_error";
+}
+
 export type ApiErrorOptions = {
   status?: number;
   fields?: Record<string, string>;

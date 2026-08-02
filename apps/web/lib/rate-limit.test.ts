@@ -140,6 +140,9 @@ describe("checkRateLimit", () => {
 
     expect(response?.status).toBe(503);
     expect(response?.headers.get("Retry-After")).toBe("30");
+    expect(await response?.json()).toMatchObject({
+      errorKind: "upstream_unavailable",
+    });
   });
 
   test("allows Redis commands to queue during initial connection", async () => {
@@ -203,6 +206,7 @@ describe("checkRateLimit", () => {
 
     expect(response?.status).toBe(429);
     expect(response?.headers.get("Retry-After")).toBe("13");
+    expect(await response?.json()).toMatchObject({ errorKind: "rate_limited" });
   });
 
   test("fails closed when the Redis check times out", async () => {
