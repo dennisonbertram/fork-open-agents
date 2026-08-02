@@ -360,6 +360,44 @@ describe("decrypt error → actionable user message mapping (BT-009)", () => {
     // Must contain the actionable guidance about re-entering the key
     expect(delta.toLowerCase()).toContain("settings");
   });
+
+  // Reproduces the exact production failure: the workflow engine retried the
+  // step three times and rethrew as FatalError, which drops the original
+  // InferenceProfileResolutionError name. The remaining signal is the message
+  // wording from lib/db/inference-profiles.ts ("can't be decrypted in this
+  // environment"), which the classifier used to miss because it only matched
+  // "could not be decrypted". Users saw "Workspace setup failed" instead.
+  test("retry-wrapped FatalError carrying the decrypt message still surfaces actionable guidance", async () => {
+    inferenceProfileError = Object.assign(
+      new Error(
+        'Step "step//./app/workflows/chat//runAgentStep" failed after 3 retries: ' +
+          'The saved API key for inference profile "Basteen" can\'t be decrypted in this environment. ' +
+          "Re-enter the API key in Settings -> Models, save the profile, and try again.",
+      ),
+      { name: "FatalError" },
+    );
+
+    try {
+      await runAgentWorkflow(makeOptions());
+    } catch {
+      // expected — the workflow throws after writing the error chunk
+    }
+
+    const errorChunk = writtenChunks.find(
+      (chunk) =>
+        chunk.type === "text-delta" &&
+        "id" in chunk &&
+        chunk.id === "setup-error",
+    );
+
+    expect(errorChunk).toBeDefined();
+    const delta = (errorChunk as { delta?: string }).delta ?? "";
+
+    expect(delta).not.toBe("Workspace setup failed. Try again in a moment.");
+    expect(delta.toLowerCase()).toContain("settings");
+    // Must not leak the workflow engine's internal step path back to the user.
+    expect(delta).not.toContain("runAgentStep");
+  });
 });
 
 describe("provider auth / credit error → actionable user message mapping", () => {

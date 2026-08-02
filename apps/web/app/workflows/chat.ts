@@ -826,9 +826,17 @@ function getSetupErrorMessage(error: unknown): string {
 
   // Defense-in-depth: catch raw crypto auth-tag failure that escaped wrapping,
   // or InferenceSecretDecryptionError that propagated without being wrapped.
+  //
+  // Match on "be decrypted" rather than one exact phrasing: the three sites
+  // that report this write it three different ways ("could not be decrypted",
+  // "can't be decrypted in this environment", "can no longer be decrypted in
+  // this environment"). The name check above is also not enough on its own —
+  // the workflow engine rewraps a step failure as FatalError ("... failed
+  // after 3 retries: <original message>"), which drops the original name and
+  // used to land the user on the generic "Workspace setup failed" instead.
   if (
     name === "InferenceSecretDecryptionError" ||
-    message.includes("could not be decrypted") ||
+    message.includes("be decrypted") ||
     message.includes("Unsupported state or unable to authenticate data")
   ) {
     return "The saved API key for this model can't be decrypted in this environment — re-enter it in Settings → Models.";
