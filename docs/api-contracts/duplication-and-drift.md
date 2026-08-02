@@ -14,11 +14,11 @@ plus the live and static analysis in [README.md](README.md).
 | ---- | ----- | ---- |
 | `commandSchema` + `updateProfileSchema` | `app/api/settings/runtime-profiles/*` and `app/api/sessions/[sessionId]/managed-runtime/profiles/*` | The zod schemas are duplicated verbatim across the account-scoped and session-scoped copies of the same resource. They will drift. |
 | Cron/sweep handlers | `GET` and `POST` on `/api/background-agents/cron`; `GET` and `POST` on `/api/agent-loops/sweep` | Each pair shares one handler with identical semantics — two methods documented as one behavior. |
-| PR content generation | `POST /api/sessions/[sessionId]/git/pr/generate` and `POST /api/generate-pr` | Both call `generatePullRequestContentFromSandbox`. Their "Sandbox not initialized" contracts were 409 vs 400; both now return `409 {"errorKind":"sandbox_not_initialized"}` (issue #1057). |
+| PR content generation | `POST /api/sessions/[sessionId]/git/pr/generate` and `POST /api/generate-pr` | Both call `generatePullRequestContentFromSandbox`. Their "Sandbox not initialized" contracts were 409 vs 400; both now return `409` (issue #1057), but the bodies still differ: `/api/generate-pr` uses `sandboxNotInitializedResponse()` and returns `{"error":"Sandbox not initialized","errorKind":"sandbox_not_initialized"}`, while the session route surfaces the thrown error through `mapGitActionError`, which emits only `{"error":"Sandbox not initialized"}` — no `errorKind`. |
 
 That last row is the clearest evidence that duplication here is not harmless:
-two routes wrapping one function already return different status codes for the
-same failure.
+two routes wrapping one function drifted apart on status code, and even after
+the status codes were reconciled their error bodies still disagree.
 
 ## 2. One goal, many routes
 
@@ -75,4 +75,4 @@ change cost:
 
 1. **One error envelope** (#1054) — every client touches this.
 2. **`/api/sandbox/status` vs `/api/sandbox/reconnect`** — pick one as canonical; the payloads are already identical.
-3. **The `generate-pr` / `git/pr/generate` status-code disagreement** — two routes, one function, contradictory contracts. Cheap to reconcile and currently actively misleading.
+3. **The `generate-pr` / `git/pr/generate` error-body disagreement** — two routes, one function. The status codes now agree (both 409), but only `/api/generate-pr` carries `errorKind`; `mapGitActionError` never adds it. Cheap to reconcile and currently actively misleading.
