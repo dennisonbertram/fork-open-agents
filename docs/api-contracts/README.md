@@ -131,6 +131,14 @@ The per-id segment already exists for `/test`, so the resource is half-converted
 `GET /api/inference-profiles/[id]` returning an HTML page rather than a JSON
 error is its own client hazard.
 
+## The agent run path
+
+[agent-run-journey.md](agent-run-journey.md) records a real four-turn
+conversation driven over HTTP in a live sandbox: 6 bash calls in turn 1, a
+branch and commit in turn 2, and subagent delegation in turns 3-4. It also
+documents the two expired-credential traps that block this locally and the two
+misattributed error messages the run exposed.
+
 ## Journey results
 
 See [core-journeys.md](core-journeys.md) for the step-by-step observed contract
