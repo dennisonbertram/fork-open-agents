@@ -135,6 +135,53 @@ const STEP_OUTPUT_MAX_BYTES = 64 * 1024;
  */
 const AGENT_STEP_TIMEOUT_MS = 10 * 60 * 1000;
 
+/** Error name used when sandbox startup consumes the whole agent-step budget. */
+const SANDBOX_CONNECT_TIMEOUT_ERROR = "SandboxConnectTimeoutError";
+const AGENT_STEP_PREPARATION_TIMEOUT_ERROR = "AgentStepPreparationTimeoutError";
+
+function sandboxConnectTimeoutError(timeoutMs: number): Error {
+  const error = new Error(`Sandbox connection timed out after ${timeoutMs}ms`);
+  error.name = SANDBOX_CONNECT_TIMEOUT_ERROR;
+  return error;
+}
+
+function isSandboxConnectTimeoutError(error: unknown): error is Error {
+  return error instanceof Error && error.name === SANDBOX_CONNECT_TIMEOUT_ERROR;
+}
+
+function agentStepPreparationTimeoutError(timeoutMs: number): Error {
+  const error = new Error(
+    `Repository access timed out after ${timeoutMs}ms before sandbox startup`,
+  );
+  error.name = AGENT_STEP_PREPARATION_TIMEOUT_ERROR;
+  return error;
+}
+
+function withAgentStepPreparationTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+): Promise<T> {
+  if (timeoutMs <= 0) {
+    return Promise.reject(agentStepPreparationTimeoutError(timeoutMs));
+  }
+
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(agentStepPreparationTimeoutError(timeoutMs));
+    }, timeoutMs);
+
+    void promise
+      .then((value) => {
+        clearTimeout(timer);
+        resolve(value);
+      })
+      .catch((error: unknown) => {
+        clearTimeout(timer);
+        reject(error);
+      });
+  });
+}
+
 /** Timeout for checkCommand execution (2 minutes). */
 const CHECK_COMMAND_TIMEOUT_MS = 120_000;
 
@@ -198,6 +245,45 @@ function buildSandboxName(stepRunId: string): string {
 
 function nowMs(): number {
   return Date.now();
+}
+
+/**
+ * Bound sandbox startup independently of the provider's sandbox timeout.
+ *
+ * connectSandbox currently has no AbortSignal contract. If a late connection
+ * eventually succeeds after this budget expires, stop it immediately so a
+ * timed-out step does not leak a live sandbox.
+ */
+async function connectSandboxWithTimeout(
+  config: Parameters<typeof connectSandbox>[0],
+  timeoutMs: number,
+): Promise<Sandbox> {
+  let timedOut = false;
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
+  const connection = connectSandbox(config).then(async (connectedSandbox) => {
+    if (timedOut) {
+      await connectedSandbox.stop().catch(() => undefined);
+      throw sandboxConnectTimeoutError(timeoutMs);
+    }
+    return connectedSandbox;
+  });
+
+  try {
+    return await Promise.race([
+      connection,
+      new Promise<never>((_resolve, reject) => {
+        timeoutId = setTimeout(() => {
+          timedOut = true;
+          reject(sandboxConnectTimeoutError(timeoutMs));
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeoutId !== undefined) {
+      clearTimeout(timeoutId);
+    }
+  }
 }
 
 type AgentLoopLiveGateErrorKind =
@@ -463,7 +549,7 @@ async function recordAgentStepFailure(params: {
       : {}),
   });
   if (updated === null) {
-    return { outcome: "failure", errorKind: "step_ownership_lost" };
+    return { outcome: "replay", errorKind: "step_ownership_lost" };
   }
 
   await recordAgentLoopEvent({
@@ -558,7 +644,7 @@ export async function executeAgentStep(
   const allowedBuiltinToolNames = normalizedInput
     ? intersectBuiltinToolNames(
         normalizedInput.requestedPolicy.builtinToolNames,
-        liveSource?.stepPolicy?.builtinToolNames ?? [],
+        liveSource?.stepPolicy?.builtinToolNames ?? null,
       )
     : (node.builtinToolNames ?? null);
   const toolkitSlugs = normalizedInput
@@ -587,6 +673,10 @@ export async function executeAgentStep(
     normalizedInput?.prompt.watchdogHint ?? watchdogHint;
   const effectiveStepTimeoutMs =
     normalizedInput?.budgets.timeoutMs ?? stepTimeoutMs;
+  // The budget covers the whole step, including repository access, token
+  // minting, and sandbox startup. Keep one deadline so a hung sandbox connect
+  // cannot bypass the normal step timeout.
+  const stepDeadlineAt = Date.now() + effectiveStepTimeoutMs;
   const outputPath = normalizedInput?.output.path ?? STEP_OUTPUT_PATH;
   const outputMaxBytes =
     normalizedInput?.output.maxBytes ?? STEP_OUTPUT_MAX_BYTES;
@@ -627,12 +717,40 @@ export async function executeAgentStep(
 
   // ── 1. Verify repo access (write required for agent_step commit/push) ────────
 
-  const accessResult = await verifyRepoAccess({
-    userId: executionUserId,
-    owner: repoOwner,
-    repo: repoName,
-    requiredUserPermission: "write",
-  });
+  const remainingPreparationTimeoutMs = stepDeadlineAt - Date.now();
+  if (remainingPreparationTimeoutMs <= 0) {
+    return recordAgentStepFailure({
+      ...failureCtx,
+      errorKind: "sandbox_unavailable",
+      errorMessage: `Repository access timed out after ${effectiveStepTimeoutMs}ms before sandbox startup`,
+    });
+  }
+
+  let accessResult: Awaited<ReturnType<typeof verifyRepoAccess>>;
+  try {
+    accessResult = await withAgentStepPreparationTimeout(
+      verifyRepoAccess({
+        userId: executionUserId,
+        owner: repoOwner,
+        repo: repoName,
+        requiredUserPermission: "write",
+      }),
+      remainingPreparationTimeoutMs,
+    );
+  } catch (error) {
+    if (
+      !(error instanceof Error) ||
+      error.name !== AGENT_STEP_PREPARATION_TIMEOUT_ERROR
+    ) {
+      throw error;
+    }
+
+    return recordAgentStepFailure({
+      ...failureCtx,
+      errorKind: "sandbox_unavailable",
+      errorMessage: error.message,
+    });
+  }
 
   if (!accessResult.ok) {
     const errorKind =
@@ -694,33 +812,44 @@ export async function executeAgentStep(
 
   let sandbox: Sandbox | undefined;
   try {
-    sandbox = await connectSandbox({
-      state: {
-        type: "vercel",
-        sandboxName,
-        source: {
-          repo: `https://github.com/${repoOwner}/${repoName}.git`,
-          branch: workingBranch,
+    const sandboxConnectTimeoutMs = stepDeadlineAt - Date.now();
+    if (sandboxConnectTimeoutMs <= 0) {
+      throw sandboxConnectTimeoutError(effectiveStepTimeoutMs);
+    }
+
+    sandbox = await connectSandboxWithTimeout(
+      {
+        state: {
+          type: "vercel",
+          sandboxName,
+          source: {
+            repo: `https://github.com/${repoOwner}/${repoName}.git`,
+            branch: workingBranch,
+          },
+        },
+        options: {
+          githubToken: cloneToken,
+          timeout: DEFAULT_SANDBOX_TIMEOUT_MS,
+          vcpus: DEFAULT_SANDBOX_VCPUS,
+          ports: DEFAULT_SANDBOX_PORTS,
+          baseSnapshotId: DEFAULT_SANDBOX_BASE_SNAPSHOT_ID,
+          persistent: normalizedInput?.workspace.persistent ?? false,
+          resume: normalizedInput?.workspace.resume ?? false,
+          createIfMissing: true,
         },
       },
-      options: {
-        githubToken: cloneToken,
-        timeout: DEFAULT_SANDBOX_TIMEOUT_MS,
-        vcpus: DEFAULT_SANDBOX_VCPUS,
-        ports: DEFAULT_SANDBOX_PORTS,
-        baseSnapshotId: DEFAULT_SANDBOX_BASE_SNAPSHOT_ID,
-        persistent: normalizedInput?.workspace.persistent ?? false,
-        resume: normalizedInput?.workspace.resume ?? false,
-        createIfMissing: true,
-      },
-    });
+      sandboxConnectTimeoutMs,
+    );
   } catch (err) {
     // Revoke token if sandbox connect fails
     await revokeInstallationToken(cloneToken).catch(() => undefined);
+    const errorMessage = isSandboxConnectTimeoutError(err)
+      ? err.message
+      : `Failed to connect sandbox: ${err instanceof Error ? err.message : String(err)}`;
     return recordAgentStepFailure({
       ...failureCtx,
       errorKind: "sandbox_unavailable",
-      errorMessage: `Failed to connect sandbox: ${err instanceof Error ? err.message : String(err)}`,
+      errorMessage,
     });
   } finally {
     // Revoke the clone token — the sandbox no longer needs it for clone
@@ -812,6 +941,7 @@ export async function executeAgentStep(
         slugs: toolkitSlugs,
         repoOwner,
         repoName,
+        runKind: "agent_loop",
       });
       if (composioResult.status === "ready") {
         composioTools = guardToolSet(composioResult.tools, async () => {
@@ -898,7 +1028,7 @@ export async function executeAgentStep(
     // pass each call only the remaining budget — otherwise a step configured
     // at e.g. 30 minutes could run up to maxAgentTurns x 30 minutes if
     // every iteration reset the timeout to the full stepTimeoutMs.
-    const deadlineAt = Date.now() + effectiveStepTimeoutMs;
+    const deadlineAt = stepDeadlineAt;
 
     try {
       let loopStep = 0;
@@ -1329,7 +1459,7 @@ export async function executeAgentStep(
         : {}),
     });
     if (completed === null) {
-      return { outcome: "failure", errorKind: "step_ownership_lost" };
+      return { outcome: "replay", errorKind: "step_ownership_lost" };
     }
 
     await recordAgentLoopEvent({

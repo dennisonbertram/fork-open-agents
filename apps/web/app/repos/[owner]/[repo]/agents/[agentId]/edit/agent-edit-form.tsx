@@ -159,6 +159,7 @@ export function AgentEditForm({
         readinessReady={readinessReady}
         persistedEnabled={persistedEnabled}
         testRunId={testRunId}
+        testAlert={runError}
         onSave={handleSave}
         onRunTest={handleRunTest}
       />
@@ -166,14 +167,6 @@ export function AgentEditForm({
         <p className="text-sm text-destructive" role="alert">
           {saveError}
         </p>
-      )}
-      {runError && (
-        <div
-          className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive"
-          role="alert"
-        >
-          {runError}
-        </div>
       )}
     </div>
   );

@@ -18,6 +18,7 @@
 import "server-only";
 
 import type { AgentStepNode } from "./types";
+import { isFlatOutputSchema } from "./output-schema-shape";
 
 export type BuildLoopStepPromptParams = {
   node: AgentStepNode;
@@ -27,6 +28,55 @@ export type BuildLoopStepPromptParams = {
   /** When set, appends a watchdog hint section from the previous failed attempt. */
   watchdogHint?: string;
 };
+
+function outputSchemaFields(
+  outputSchema: Record<string, unknown> | undefined,
+): Array<{ name: string; type: string; required: boolean }> {
+  if (!outputSchema) return [];
+
+  if (isFlatOutputSchema(outputSchema)) {
+    return Object.entries(outputSchema)
+      .filter(([name]) => !name.startsWith("$"))
+      .map(([name, type]) => ({
+        name,
+        type: String(type),
+        required: true,
+      }));
+  }
+
+  const properties = outputSchema.properties;
+  if (
+    !properties ||
+    typeof properties !== "object" ||
+    Array.isArray(properties)
+  ) {
+    return [];
+  }
+
+  const required = new Set(
+    Array.isArray(outputSchema.required)
+      ? outputSchema.required.filter(
+          (field): field is string => typeof field === "string",
+        )
+      : [],
+  );
+
+  return Object.entries(properties as Record<string, unknown>).flatMap(
+    ([name, property]) => {
+      if (
+        !property ||
+        typeof property !== "object" ||
+        Array.isArray(property)
+      ) {
+        return [];
+      }
+      const type = (property as Record<string, unknown>).type;
+      return typeof type === "string"
+        ? [{ name, type, required: required.has(name) }]
+        : [];
+    },
+  );
+}
 
 /**
  * Builds the prompt for an agent_step node.
@@ -77,6 +127,28 @@ Write this file before finishing. If the file is missing or contains invalid
 JSON, the step will be marked as failed.
 `;
 
+  const declaredFields = outputSchemaFields(node.outputSchema);
+  const declaredFieldsSection =
+    declaredFields.length > 0
+      ? `
+## Declared Output Fields (TYPE-SENSITIVE)
+
+The executor validates these fields after reading the file. Every declared
+field must use the exact JSON type shown below${declaredFields.some((field) => field.required) ? " and required fields must be present" : ""}:
+${declaredFields
+  .map(
+    (field) =>
+      `- \`${JSON.stringify(field.name)}\` (${field.type}${field.required ? ", required" : ", optional"})`,
+  )
+  .join("\n")}
+
+Do not put a JSON object or array in a field declared as \`string\`. For example,
+if a GitHub command returns an object with a PR number and URL, extract the
+scalar number and URL before writing the output file. Do not rely on the
+executor to coerce or repair incorrectly typed output.
+`
+      : "";
+
   // #765: PR creation is prohibited by default (dedicated steps handle it),
   // UNLESS this node was granted permissions.github.pullRequests === "write" —
   // the minted installation token already carries that scope in that case
@@ -118,6 +190,7 @@ ${
     watchdogHintSection,
     instructionsSection,
     outputContract,
+    declaredFieldsSection,
     prohibitions,
   ];
 

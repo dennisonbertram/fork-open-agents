@@ -1,8 +1,10 @@
 "use client";
 
 import { Plus, X } from "lucide-react";
+import { useMemo } from "react";
+import { GitHubRepositoryCombobox } from "@/components/github-repository-combobox";
+import { ModelCombobox } from "@/components/model-combobox";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -12,7 +14,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { useModelOptions } from "@/hooks/use-model-options";
 import { cn } from "@/lib/utils";
+import { withMissingModelOption } from "@/lib/model-options";
 import type {
   GithubActions,
   WriteScope,
@@ -95,7 +99,7 @@ function isActionEnabled(actions: GithubActions, key: keyof GithubActions) {
  *
  * Renders the seven action toggles, a CI-green sub-toggle nested under
  * "Merge pull requests", a write-scope selector (this repo / all repos /
- * specific repos), and a free-text model id field. Controlled component:
+ * specific repos), and a searchable model selector. Controlled component:
  * all state lives in the parent via value/onChange.
  */
 export function GithubActionsPanel({
@@ -104,6 +108,18 @@ export function GithubActionsPanel({
   disabled = false,
 }: GithubActionsPanelProps) {
   const { githubActions, writeScope, requireCiGreenForMerge, modelId } = value;
+  const { modelOptions, loading: modelOptionsLoading } = useModelOptions();
+  const modelItems = useMemo(
+    () =>
+      withMissingModelOption(modelOptions, modelId).map((option) => ({
+        id: option.id,
+        label: option.label,
+        description: option.description,
+        isVariant: option.isVariant,
+        provider: option.provider,
+      })),
+    [modelId, modelOptions],
+  );
 
   function setAction(key: keyof GithubActions, enabled: boolean) {
     onChange({
@@ -134,17 +150,6 @@ export function GithubActionsPanel({
       mode: "specific_repos",
       repos: [...repos, { owner: "", name: "" }],
     });
-  }
-
-  function updateSpecificRepo(
-    index: number,
-    field: "owner" | "name",
-    fieldValue: string,
-  ) {
-    const repos = [...(writeScope.repos ?? [])];
-    const current = repos[index] ?? { owner: "", name: "" };
-    repos[index] = { ...current, [field]: fieldValue };
-    setWriteScope({ mode: "specific_repos", repos });
   }
 
   function removeSpecificRepo(index: number) {
@@ -255,24 +260,18 @@ export function GithubActionsPanel({
                 key={index}
                 className="flex items-center gap-2"
               >
-                <Input
-                  aria-label={`Repo ${index + 1} owner`}
-                  value={repo.owner}
+                <GitHubRepositoryCombobox
+                  value={repo}
+                  allowFreeform
                   disabled={disabled}
-                  placeholder="owner"
-                  onChange={(e) =>
-                    updateSpecificRepo(index, "owner", e.target.value)
-                  }
-                />
-                <span className="text-muted-foreground">/</span>
-                <Input
-                  aria-label={`Repo ${index + 1} name`}
-                  value={repo.name}
-                  disabled={disabled}
-                  placeholder="repo"
-                  onChange={(e) =>
-                    updateSpecificRepo(index, "name", e.target.value)
-                  }
+                  placeholder={`Select repository ${index + 1}`}
+                  onChange={(next) => {
+                    const repos = (writeScope.repos ?? []).map(
+                      (current, repoIndex) =>
+                        repoIndex === index ? next : current,
+                    );
+                    setWriteScope({ mode: "specific_repos", repos });
+                  }}
                 />
                 <Button
                   type="button"
@@ -304,25 +303,28 @@ export function GithubActionsPanel({
       </div>
 
       <div className="space-y-2 border-t border-border/60 pt-4">
-        <Label htmlFor="agent-model-id">Model</Label>
-        <Input
-          id="agent-model-id"
+        <Label>Model</Label>
+        <ModelCombobox
           value={modelId ?? ""}
+          items={modelItems}
+          placeholder={
+            modelOptionsLoading ? "Loading models..." : "Use default model"
+          }
+          searchPlaceholder="Search models..."
+          emptyText="No matching models found."
+          emptyOption="Use default model"
           disabled={disabled}
-          placeholder="e.g. anthropic/claude-sonnet-4-5 (blank = default model)"
-          onChange={(e) =>
+          onChange={(nextModelId) =>
             onChange({
               ...value,
-              modelId: e.target.value.trim().length > 0 ? e.target.value : null,
+              modelId: nextModelId || null,
             })
           }
         />
         <p className="text-xs text-muted-foreground">
-          A gateway model id in{" "}
-          <code className="font-mono">provider/model</code> form, or a selection
-          copied from your model picker (accepts{" "}
-          <code className="font-mono">user-profile:</code>-prefixed values).
-          Leave blank to use the default model.
+          Search the configured catalog and your connected inference profiles.
+          Leave the default option selected to use the account&apos;s default
+          model.
         </p>
       </div>
     </div>

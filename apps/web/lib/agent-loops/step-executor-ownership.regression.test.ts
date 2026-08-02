@@ -91,6 +91,7 @@ function makeStep(overrides: Partial<AgentLoopStepRun> = {}): AgentLoopStepRun {
     stepOutput: null,
     sandboxName: null,
     workflowRunId: null,
+    executionClaimGeneration: null,
     errorKind: null,
     errorMessage: null,
     startedAt: null,
@@ -126,7 +127,9 @@ const updateStepMock = mock(async (input: Record<string, unknown>) => {
   updateCalls.push(input);
   if (input.expectedStatuses && !claimWins) return null;
   if (input.executionClaimGeneration) {
-    if (durableRunningClaimHeld) return null;
+    if (durableRunningClaimHeld || currentStep.executionClaimGeneration) {
+      return null;
+    }
     durableRunningClaimHeld = true;
   }
   return { ...currentStep, ...input } as AgentLoopStepRun;
@@ -270,7 +273,7 @@ describe("agent-loop step ownership regressions", () => {
     expect(executeAgentStepMock).not.toHaveBeenCalled();
   });
 
-  test("queued claim uses expectedStatuses and losing it returns step_ownership_lost", async () => {
+  test("queued claim uses expectedStatuses and losing it replays safely", async () => {
     claimWins = false;
     const { executeAgentLoopStep } = await executorPromise;
 
@@ -280,7 +283,7 @@ describe("agent-loop step ownership regressions", () => {
     });
 
     expect(result).toEqual({
-      outcome: "failure",
+      outcome: "replay",
       errorKind: "step_ownership_lost",
     });
     expect(updateCalls[0]).toMatchObject({
@@ -293,10 +296,11 @@ describe("agent-loop step ownership regressions", () => {
     expect(buildNormalizedMock).not.toHaveBeenCalled();
   });
 
-  test("running step owned by another workflow returns step_ownership_lost", async () => {
+  test("running step owned by another workflow replays safely", async () => {
     currentStep = makeStep({
       status: "running",
       workflowRunId: "workflow-owner",
+      executionClaimGeneration: "existing-claim",
     });
     const { executeAgentLoopStep } = await executorPromise;
 
@@ -306,10 +310,15 @@ describe("agent-loop step ownership regressions", () => {
     });
 
     expect(result).toEqual({
-      outcome: "failure",
+      outcome: "replay",
       errorKind: "step_ownership_lost",
     });
-    expect(updateCalls).toEqual([]);
+    expect(updateCalls).toContainEqual(
+      expect.objectContaining({
+        expectedStatuses: ["running"],
+        expectedExecutionClaimGeneration: null,
+      }),
+    );
     expect(eventCalls).toEqual([]);
     expect(buildNormalizedMock).not.toHaveBeenCalled();
   });
@@ -359,7 +368,6 @@ describe("agent-loop step ownership regressions", () => {
       expect.objectContaining({
         stepRunId: currentStep.id,
         expectedStatuses: ["running"],
-        expectedWorkflowRunId: "workflow-owner",
         executionClaimGeneration: expect.any(String),
       }),
     );
@@ -368,6 +376,37 @@ describe("agent-loop step ownership regressions", () => {
         executionClaimGeneration: expect.any(String),
       }),
     );
+  });
+
+  test("stale workflow correlation without a claim can be adopted safely", async () => {
+    currentStep = makeStep({
+      status: "running",
+      workflowRunId: "workflow-stale",
+    });
+    executionGate = Promise.resolve();
+    const { executeAgentLoopStep } = await executorPromise;
+
+    const result = await executeAgentLoopStep({
+      stepRunId: currentStep.id,
+      workflowRunId: "workflow-current",
+    });
+
+    expect(result).toEqual({ outcome: "success" });
+    expect(updateCalls).toContainEqual(
+      expect.objectContaining({
+        expectedStatuses: ["running"],
+        expectedExecutionClaimGeneration: null,
+        executionClaimGeneration: expect.any(String),
+      }),
+    );
+    expect(updateCalls).toContainEqual(
+      expect.objectContaining({
+        expectedStatuses: ["running"],
+        expectedExecutionClaimGeneration: expect.any(String),
+        workflowRunId: "workflow-current",
+      }),
+    );
+    expect(executeAgentStepMock).toHaveBeenCalledTimes(1);
   });
 
   test("separate-worker replay after the local guard clears owns no second side-effect path", async () => {

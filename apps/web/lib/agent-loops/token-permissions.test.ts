@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import {
   effectiveStepPermissions,
+  intersectBuiltinToolNames,
   permissionsToInstallationToken,
 } from "./token-permissions";
 
@@ -64,5 +65,18 @@ describe("effectiveStepPermissions", () => {
 
   it("returns undefined when neither is set", () => {
     expect(effectiveStepPermissions(undefined, undefined)).toBeUndefined();
+  });
+});
+
+describe("intersectBuiltinToolNames", () => {
+  it("preserves the runtime default when both policies are null", () => {
+    expect(intersectBuiltinToolNames(null, null)).toBeNull();
+  });
+
+  it("keeps an explicit request when the live policy uses runtime defaults", () => {
+    expect(intersectBuiltinToolNames(["bash", "write"], null)).toEqual([
+      "bash",
+      "write",
+    ]);
   });
 });

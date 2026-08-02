@@ -45,13 +45,20 @@ const TIME_FORMATTER = new Intl.DateTimeFormat("en-US", {
   timeZone: "UTC",
 });
 
+const TIME_FORMATTER_WITH_SECONDS = new Intl.DateTimeFormat("en-US", {
+  hour: "numeric",
+  minute: "2-digit",
+  second: "2-digit",
+  timeZone: "UTC",
+});
+
 // Some ICU builds emit a narrow no-break space (U+202F) before AM/PM instead
 // of a regular space; normalize so output is stable across runtimes.
 const NARROW_NO_BREAK_SPACE = "\u202F";
 
 export function formatRunTimestamp(
   value: Date | string | null | undefined,
-  options?: { fallback?: string },
+  options?: { fallback?: string; includeSeconds?: boolean },
 ): string {
   const fallback = options?.fallback ?? "-";
   if (value === null || value === undefined) {
@@ -64,9 +71,11 @@ export function formatRunTimestamp(
   }
 
   const datePart = DATE_FORMATTER.format(date);
-  const timePart = TIME_FORMATTER.format(date).replaceAll(
-    NARROW_NO_BREAK_SPACE,
-    " ",
-  );
+  const timeFormatter = options?.includeSeconds
+    ? TIME_FORMATTER_WITH_SECONDS
+    : TIME_FORMATTER;
+  const timePart = timeFormatter
+    .format(date)
+    .replaceAll(NARROW_NO_BREAK_SPACE, " ");
   return `${datePart}, ${timePart} UTC`;
 }

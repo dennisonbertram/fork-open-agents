@@ -11,6 +11,8 @@
 
 import { describe, expect, mock, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
+import { readFileSync } from "fs";
+import { join } from "path";
 
 // Mock sonner
 mock.module("sonner", () => ({
@@ -94,5 +96,15 @@ describe("RunActions", () => {
     );
 
     expect(html).toBe("");
+  });
+
+  test("surfaces durable inline feedback for controls instead of relying only on a toast", () => {
+    const source = readFileSync(
+      join(import.meta.dir, "run-actions.tsx"),
+      "utf8",
+    );
+    expect(source).toContain('role="status"');
+    expect(source).toContain('role="alert"');
+    expect(source).toContain("await onActionComplete?.()");
   });
 });

@@ -75,6 +75,8 @@ type AgentSpecEditorProps = {
   createdAgentId?: string | null;
   /** The run ID to show inline console for, or null if no test has been run yet. */
   testRunId?: string | null;
+  /** Latest manual-test failure or skip feedback, rendered beside the action bar. */
+  testAlert?: string | null;
   /** Canonical surface may enable a disabled definition only after readiness. */
   readinessReady?: boolean;
   /** Last successfully saved definition status, independent of unsaved toggles. */
@@ -128,6 +130,7 @@ export function AgentSpecEditor({
   persistedEnabled = initialEnabled,
   onSave,
   onRunTest,
+  testAlert = null,
 }: AgentSpecEditorProps) {
   const [name, setName] = useState(initialName);
   const [triggerKind, setTriggerKind] =
@@ -364,10 +367,11 @@ export function AgentSpecEditor({
               <Button
                 variant="outline"
                 disabled={runTestDisabled}
+                aria-busy={running}
                 onClick={handleRunTest}
               >
                 <Play className="h-4 w-4" />
-                Run a test
+                {running ? "Starting test…" : "Run a test"}
               </Button>
             </span>
           </div>
@@ -408,6 +412,20 @@ export function AgentSpecEditor({
             </div>
           </div>
         </div>
+        {running ? (
+          <p className="text-xs text-muted-foreground" role="status">
+            Starting the manual test and waiting for the first run event…
+          </p>
+        ) : null}
+        {testAlert ? (
+          <div
+            className="rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive"
+            data-testid="manual-test-feedback"
+            role="alert"
+          >
+            {testAlert}
+          </div>
+        ) : null}
         <p className="text-xs text-muted-foreground">{lifecycleCopy()}</p>
         {surface === "automation" ? (
           <p className="text-pretty text-xs text-amber-700 dark:text-amber-300">

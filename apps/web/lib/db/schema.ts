@@ -1729,6 +1729,40 @@ export const agentLoopRuns = pgTable(
   ],
 );
 
+export const agentLoopToolSessions = pgTable(
+  "agent_loop_tool_sessions",
+  {
+    id: text("id").primaryKey(),
+    loopRunId: text("loop_run_id")
+      .notNull()
+      .references(() => agentLoopRuns.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    provider: text("provider", {
+      enum: ["composio"],
+    }).notNull(),
+    profileId: text("profile_id"),
+    agentRole: text("agent_role", {
+      enum: ["main", "explorer", "executor", "design"],
+    }).notNull(),
+    phase: text("phase", {
+      enum: ["investigate", "mutate", "notify", "always"],
+    }).notNull(),
+    providerSessionId: text("provider_session_id"),
+    configHash: text("config_hash"),
+    status: text("status", {
+      enum: ["planned", "ready", "failed", "skipped"],
+    }).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    lastUsedAt: timestamp("last_used_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("agent_loop_tool_sessions_run_idx").on(table.loopRunId),
+    index("agent_loop_tool_sessions_user_idx").on(table.userId),
+  ],
+);
+
 // ── Agent Loop Step Runs ──────────────────────────────────────────────────────
 
 export const agentLoopStepRuns = pgTable(
@@ -1755,6 +1789,8 @@ export const agentLoopStepRuns = pgTable(
     sandboxName: text("sandbox_name"),
     /** Durable workflow correlation */
     workflowRunId: text("workflow_run_id"),
+    /** Durable side-effect ownership generation for agent_step delivery */
+    executionClaimGeneration: text("execution_claim_generation"),
     errorKind: text("error_kind"),
     errorMessage: text("error_message"),
     startedAt: timestamp("started_at"),
@@ -3206,7 +3242,15 @@ export type AgentLoop = typeof agentLoops.$inferSelect;
 export type NewAgentLoop = typeof agentLoops.$inferInsert;
 export type AgentLoopRun = typeof agentLoopRuns.$inferSelect;
 export type NewAgentLoopRun = typeof agentLoopRuns.$inferInsert;
-export type AgentLoopStepRun = typeof agentLoopStepRuns.$inferSelect;
+// Keep the claim column optional at the application boundary so older
+// persisted/API-shaped step rows remain readable while the migration rolls
+// out. Store writes and CAS predicates still use the dedicated column.
+export type AgentLoopStepRun = Omit<
+  typeof agentLoopStepRuns.$inferSelect,
+  "executionClaimGeneration"
+> & {
+  executionClaimGeneration?: string | null;
+};
 export type NewAgentLoopStepRun = typeof agentLoopStepRuns.$inferInsert;
 export type AgentLoopEvent = typeof agentLoopEvents.$inferSelect;
 export type NewAgentLoopEvent = typeof agentLoopEvents.$inferInsert;

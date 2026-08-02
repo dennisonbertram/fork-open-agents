@@ -28,18 +28,12 @@ import { PausedDiagnosisBanner } from "./paused-diagnosis-banner";
 import { WatchdogRow } from "./watchdog-row";
 import { ComposioWarningsSection } from "./composio-warnings-section";
 import { deriveLoopComposioWarnings } from "./composio-warnings";
+import { formatRunTimestamp } from "@/lib/date/format-run-timestamp";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function formatDate(value: Date | string | null): string {
-  if (!value) return "-";
-  return new Intl.DateTimeFormat(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    second: "2-digit",
-  }).format(new Date(value));
+  return formatRunTimestamp(value, { includeSeconds: true });
 }
 
 function formatDurationMs(ms: number | null): string {
@@ -327,10 +321,12 @@ export function RunDetail({
   initialData: GetAgentLoopRunDetailResponse;
   variant?: "legacy" | "canonical";
 }) {
-  const { data, error, liveness } = useLoopRunPolling(
-    initialData.run.id,
-    initialData,
-  );
+  const {
+    data,
+    error,
+    liveness,
+    refresh: refreshRun,
+  } = useLoopRunPolling(initialData.run.id, initialData);
   const detail = data ?? initialData;
   const { run, loop, steps, events, watchdogRuns } = detail;
 
@@ -413,9 +409,12 @@ export function RunDetail({
         loopId={loop?.sourceActive && !loop.sourceDeleted ? loop.id : null}
         sourceAvailable={loop !== null}
         status={run.status}
-        onActionComplete={() => {
-          void globalMutate(`/api/agent-loop-runs/${run.id}`);
-          if (loop) void globalMutate(loopRunsListSwrKey(loop.id));
+        onActionComplete={async () => {
+          try {
+            await refreshRun();
+          } finally {
+            if (loop) void globalMutate(loopRunsListSwrKey(loop.id));
+          }
         }}
       />
 

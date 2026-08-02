@@ -62,6 +62,7 @@ mock.module("../../agent-spec-editor", () => ({
   AgentSpecEditor: (props: {
     onSave: (payload: ReturnType<typeof buildAgentPayload>) => Promise<void>;
     onRunTest: () => Promise<void>;
+    testAlert?: string | null;
     initialName?: string;
     initialInstructions?: string;
     surface?: string;
@@ -80,7 +81,9 @@ mock.module("../../agent-spec-editor", () => ({
         data-surface={props.surface ?? "legacy"}
         data-readiness-ready={String(props.readinessReady ?? true)}
         data-persisted-enabled={String(props.persistedEnabled ?? false)}
-      />
+      >
+        {props.testAlert ? <div role="alert">{props.testAlert}</div> : null}
+      </div>
     );
   },
 }));

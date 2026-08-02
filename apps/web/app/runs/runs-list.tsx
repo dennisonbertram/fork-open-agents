@@ -2,8 +2,10 @@
 
 import { AlertTriangle, ExternalLink } from "lucide-react";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { GitHubRepositoryCombobox } from "@/components/github-repository-combobox";
 import { Button } from "@/components/ui/button";
+import { formatRunTimestamp } from "@/lib/date/format-run-timestamp";
 import { cn } from "@/lib/utils";
 import type { RunsListResponse } from "@/lib/runs/list";
 import type { NormalizedAutomationRun } from "@/lib/runs/types";
@@ -31,12 +33,7 @@ function hrefWith(
 }
 
 function formatTimestamp(value: string): string {
-  return new Intl.DateTimeFormat(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(new Date(value));
+  return formatRunTimestamp(value);
 }
 
 function titleCase(value: string): string {
@@ -212,6 +209,15 @@ export function RunsList({ searchParams }: { searchParams: string }) {
   );
   const currentView = new URLSearchParams(searchParams).get("view") ?? "all";
   const currentParams = new URLSearchParams(searchParams);
+  const [repoOwner, setRepoOwner] = useState(
+    currentParams.get("repoOwner") ?? "",
+  );
+  const [repoName, setRepoName] = useState(currentParams.get("repoName") ?? "");
+  useEffect(() => {
+    const params = new URLSearchParams(searchParams);
+    setRepoOwner(params.get("repoOwner") ?? "");
+    setRepoName(params.get("repoName") ?? "");
+  }, [searchParams]);
   const isFiltered = [...currentParams.entries()].some(
     ([key, value]) => value && !(key === "view" && value === "all"),
   );
@@ -265,21 +271,19 @@ export function RunsList({ searchParams }: { searchParams: string }) {
             ) : null;
           },
         )}
-        <label className="space-y-1 text-xs font-medium">
-          Repository owner
-          <input
-            name="repoOwner"
-            defaultValue={currentParams.get("repoOwner") ?? ""}
-            className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm font-normal"
+        <label className="space-y-1 text-xs font-medium sm:col-span-2">
+          Repository
+          <GitHubRepositoryCombobox
+            value={{ owner: repoOwner, name: repoName }}
+            allowFreeform
+            onChange={(next) => {
+              setRepoOwner(next.owner);
+              setRepoName(next.name);
+            }}
+            placeholder="Search connected repositories"
           />
-        </label>
-        <label className="space-y-1 text-xs font-medium">
-          Repository name
-          <input
-            name="repoName"
-            defaultValue={currentParams.get("repoName") ?? ""}
-            className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm font-normal"
-          />
+          <input type="hidden" name="repoOwner" value={repoOwner} />
+          <input type="hidden" name="repoName" value={repoName} />
         </label>
         <label className="space-y-1 text-xs font-medium">
           Trigger source

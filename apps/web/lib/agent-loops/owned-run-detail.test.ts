@@ -38,6 +38,7 @@ mock.module("drizzle-orm", () => ({
   desc: passthrough,
   eq,
   inArray: passthrough,
+  isNull: passthrough,
   isNotNull: passthrough,
   like: passthrough,
   sql,

@@ -76,6 +76,42 @@ function nowMs(): number {
   return Date.now();
 }
 
+const DEFAULT_AGENT_STEP_TIMEOUT_MS = 10 * 60 * 1000;
+const STEP_PREPARATION_TIMEOUT_ERROR = "AgentStepPreparationTimeoutError";
+
+function stepPreparationTimeoutError(timeoutMs: number): Error {
+  const error = new Error(
+    `Repository access timed out after ${timeoutMs}ms before sandbox startup`,
+  );
+  error.name = STEP_PREPARATION_TIMEOUT_ERROR;
+  return error;
+}
+
+function withStepPreparationTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+): Promise<T> {
+  if (timeoutMs <= 0) {
+    return Promise.reject(stepPreparationTimeoutError(timeoutMs));
+  }
+
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(stepPreparationTimeoutError(timeoutMs));
+    }, timeoutMs);
+
+    void promise
+      .then((value) => {
+        clearTimeout(timer);
+        resolve(value);
+      })
+      .catch((error: unknown) => {
+        clearTimeout(timer);
+        reject(error);
+      });
+  });
+}
+
 /**
  * Builds a failure result and updates the step run + emits the step.failed event.
  * All failure paths must call this — never return failure without recording.
@@ -111,7 +147,9 @@ async function recordStepFailure(params: {
       : {}),
   });
   if (updated === null) {
-    return { outcome: "failure", errorKind: "step_ownership_lost" };
+    // A competing delivery owns the durable step now. Replaying is critical:
+    // chain.ts must not route this duplicate as a real step failure.
+    return { outcome: "replay", errorKind: "step_ownership_lost" };
   }
 
   await recordAgentLoopEvent({
@@ -169,7 +207,7 @@ export async function executeAgentLoopStep(
 ): Promise<StepExecutionResult> {
   const deliveryKey = `${params.stepRunId}:${params.workflowRunId}`;
   if (activeStepDeliveries.has(deliveryKey)) {
-    return { outcome: "failure", errorKind: "step_ownership_lost" };
+    return { outcome: "replay", errorKind: "step_ownership_lost" };
   }
   activeStepDeliveries.add(deliveryKey);
   try {
@@ -185,6 +223,8 @@ async function executeAgentLoopStepDelivery(
   const { stepRunId, workflowRunId, stepTimeoutMs, maxAgentTurnsPerStep } =
     params;
   const startedAt = nowMs();
+  const stepDeadlineAt =
+    startedAt + (stepTimeoutMs ?? DEFAULT_AGENT_STEP_TIMEOUT_MS);
 
   // ── 1. Load step run + loop run + loop ─────────────────────────────────────
 
@@ -310,13 +350,14 @@ async function executeAgentLoopStepDelivery(
       expectedStatuses: ["queued"],
     });
     if (!claimed) {
-      return { outcome: "failure", errorKind: "step_ownership_lost" };
+      return { outcome: "replay", errorKind: "step_ownership_lost" };
     }
   } else if (
+    node.kind !== "agent_step" &&
     stepRun.status === "running" &&
     stepRun.workflowRunId !== workflowRunId
   ) {
-    return { outcome: "failure", errorKind: "step_ownership_lost" };
+    return { outcome: "replay", errorKind: "step_ownership_lost" };
   }
 
   // A workflow correlation identifies the durable delivery, while this
@@ -329,12 +370,26 @@ async function executeAgentLoopStepDelivery(
     const claimedExecution = await updateAgentLoopStepRun({
       stepRunId,
       expectedStatuses: ["running"],
-      expectedWorkflowRunId: workflowRunId,
       expectedExecutionClaimGeneration: null,
       executionClaimGeneration,
     });
     if (!claimedExecution) {
-      return { outcome: "failure", errorKind: "step_ownership_lost" };
+      return { outcome: "replay", errorKind: "step_ownership_lost" };
+    }
+
+    // Claim the side-effect generation first, then repair a stale workflow
+    // correlation in a separate CAS. Keeping these updates separate avoids
+    // coupling the JSONB claim expression to the correlation-column update.
+    if (stepRun.workflowRunId !== workflowRunId) {
+      const correlatedExecution = await updateAgentLoopStepRun({
+        stepRunId,
+        expectedStatuses: ["running"],
+        expectedExecutionClaimGeneration: executionClaimGeneration,
+        workflowRunId,
+      });
+      if (!correlatedExecution) {
+        return { outcome: "replay", errorKind: "step_ownership_lost" };
+      }
     }
   }
 
@@ -455,12 +510,31 @@ async function executeAgentLoopStepDelivery(
       }
     }
 
-    const checkoutAccess = await verifyRepoAccess({
-      userId: loopRun.userId,
-      owner: repository.owner,
-      repo: repository.name,
-      requiredUserPermission: "write",
-    });
+    let checkoutAccess: Awaited<ReturnType<typeof verifyRepoAccess>>;
+    try {
+      checkoutAccess = await withStepPreparationTimeout(
+        verifyRepoAccess({
+          userId: loopRun.userId,
+          owner: repository.owner,
+          repo: repository.name,
+          requiredUserPermission: "write",
+        }),
+        Math.max(0, stepDeadlineAt - nowMs()),
+      );
+    } catch (error) {
+      if (
+        !(error instanceof Error) ||
+        error.name !== STEP_PREPARATION_TIMEOUT_ERROR
+      ) {
+        throw error;
+      }
+
+      return recordStepFailure({
+        ...failureCtx,
+        errorKind: "sandbox_unavailable",
+        errorMessage: error.message,
+      });
+    }
     if (!checkoutAccess.ok) {
       return recordStepFailure({
         ...failureCtx,
@@ -510,6 +584,28 @@ async function executeAgentLoopStepDelivery(
       workflowRunId,
     });
 
+    const remainingStepTimeoutMs = stepDeadlineAt - nowMs();
+    if (remainingStepTimeoutMs <= 0) {
+      return recordStepFailure({
+        ...failureCtx,
+        errorKind: "sandbox_unavailable",
+        errorMessage: `Agent step timed out after ${stepTimeoutMs ?? DEFAULT_AGENT_STEP_TIMEOUT_MS}ms before sandbox startup`,
+      });
+    }
+
+    const executionNormalizedInput = normalizedInput
+      ? {
+          ...normalizedInput,
+          budgets: {
+            ...normalizedInput.budgets,
+            timeoutMs: Math.min(
+              normalizedInput.budgets.timeoutMs,
+              remainingStepTimeoutMs,
+            ),
+          },
+        }
+      : undefined;
+
     return executeAgentStep({
       stepRunId,
       workflowRunId,
@@ -518,9 +614,9 @@ async function executeAgentLoopStepDelivery(
       loopRun,
       loop: loop as AgentLoopExecutionPolicy,
       startedAt,
-      normalizedInput,
+      normalizedInput: executionNormalizedInput,
       liveSource,
-      stepTimeoutMs,
+      stepTimeoutMs: remainingStepTimeoutMs,
       maxAgentTurnsPerStep,
       executionClaimGeneration,
     });
