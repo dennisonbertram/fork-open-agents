@@ -16,6 +16,7 @@ bun run --cwd apps/web db:migrate:apply
 PORT=3111 bun run web
 API_BASE_URL=http://localhost:3111 bun run scripts/api-exercise/auth-sweep.ts
 API_BASE_URL=http://localhost:3111 bun run scripts/api-exercise/journeys-core.ts
+API_BASE_URL=http://localhost:3111 bun run scripts/api-exercise/journeys-extended.ts
 bun run scripts/api-exercise/error-shape-census.ts
 ```
 
@@ -146,5 +147,11 @@ misattributed error messages the run exposed.
 ## Journey results
 
 See [core-journeys.md](core-journeys.md) for the step-by-step observed contract
-of each journey, and `docs/ux-paths/catalog.md` for the full 134-story catalog
-(149 of 164 route paths covered; the 15 uncovered are named there).
+of each core journey and [extended-journeys.md](extended-journeys.md) for the
+routes that `journeys-core.ts` does not touch. Together the two suites cover
+**all 164 route paths** — the 15 gaps named in `docs/ux-paths/catalog.md` were
+closed by the extended suite.
+
+Note on what "pass" means: an expectation records what the API *actually*
+answers today, including statuses the comments mark as wrong. A green run means
+the contract is unchanged, not that every contract is good.
