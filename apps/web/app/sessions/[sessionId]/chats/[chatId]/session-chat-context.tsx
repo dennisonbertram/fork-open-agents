@@ -32,6 +32,7 @@ import {
   useSessionGitStatus,
 } from "@/hooks/use-session-git-status";
 import { useSessionSkills } from "@/hooks/use-session-skills";
+import { readApiError } from "@/lib/api/read-api-error";
 import type { Chat, Session } from "@/lib/db/schema";
 import type { ChatComposioSelection } from "@/lib/composio/types";
 import {
@@ -799,14 +800,18 @@ export function SessionChatProvider({
         body: JSON.stringify({ runtimeMode }),
       });
 
-      const data = (await res.json()) as { session?: Session; error?: string };
+      const data = (await res.json().catch(() => null)) as {
+        session?: Session;
+      } | null;
 
       if (!res.ok) {
         setSessionRecord(previousSession);
-        throw new Error(data.error ?? "Failed to update runtime mode");
+        throw new Error(
+          readApiError(data, "Failed to update runtime mode").message,
+        );
       }
 
-      setSessionRecord(data.session ?? optimisticSession);
+      setSessionRecord(data?.session ?? optimisticSession);
     },
     [sessionRecord],
   );
@@ -827,16 +832,19 @@ export function SessionChatProvider({
         body: JSON.stringify({ managedRuntimeProfileId: profileId }),
       });
 
-      const data = (await res.json()) as { session?: Session; error?: string };
+      const data = (await res.json().catch(() => null)) as {
+        session?: Session;
+      } | null;
 
       if (!res.ok) {
         setSessionRecord(previousSession);
         throw new Error(
-          data.error ?? "Failed to update managed runtime profile",
+          readApiError(data, "Failed to update managed runtime profile")
+            .message,
         );
       }
 
-      setSessionRecord(data.session ?? optimisticSession);
+      setSessionRecord(data?.session ?? optimisticSession);
     },
     [sessionRecord],
   );
@@ -976,7 +984,9 @@ export function SessionChatProvider({
       body: JSON.stringify({ status: "archived" }),
     });
 
-    const data = (await res.json()) as { session?: Session; error?: string };
+    const data = (await res.json().catch(() => null)) as {
+      session?: Session;
+    } | null;
 
     if (!res.ok) {
       setSessionRecord(previousSession);
@@ -995,10 +1005,10 @@ export function SessionChatProvider({
             : current,
         { revalidate: false },
       );
-      throw new Error(data.error ?? "Failed to archive session");
+      throw new Error(readApiError(data, "Failed to archive session").message);
     }
 
-    const nextSession = data.session ?? optimisticSession;
+    const nextSession = data?.session ?? optimisticSession;
     setSessionRecord(nextSession);
     await mutate<SessionsResponse>(
       "/api/sessions",
@@ -1027,13 +1037,17 @@ export function SessionChatProvider({
       body: JSON.stringify({ status: "running" }),
     });
 
-    const data = (await res.json()) as { session?: Session; error?: string };
+    const data = (await res.json().catch(() => null)) as {
+      session?: Session;
+    } | null;
 
     if (!res.ok) {
-      throw new Error(data.error ?? "Failed to unarchive session");
+      throw new Error(
+        readApiError(data, "Failed to unarchive session").message,
+      );
     }
 
-    const nextSession: Session = data.session ?? {
+    const nextSession: Session = data?.session ?? {
       ...sessionRecord,
       status: "running",
       lifecycleState: null,
@@ -1064,13 +1078,17 @@ export function SessionChatProvider({
         body: JSON.stringify({ title }),
       });
 
-      const data = (await res.json()) as { session?: Session; error?: string };
+      const data = (await res.json().catch(() => null)) as {
+        session?: Session;
+      } | null;
 
       if (!res.ok) {
-        throw new Error(data.error ?? "Failed to update session title");
+        throw new Error(
+          readApiError(data, "Failed to update session title").message,
+        );
       }
 
-      const nextSession = data.session ?? { ...sessionRecord, title };
+      const nextSession = data?.session ?? { ...sessionRecord, title };
       setSessionRecord(nextSession);
       await mutate<SessionsResponse>(
         "/api/sessions",
@@ -1103,9 +1121,13 @@ export function SessionChatProvider({
         },
       );
 
-      const data = (await res.json()) as { chat?: Chat; error?: string };
-      if (!res.ok || !data.chat) {
-        throw new Error(data.error ?? "Failed to update chat model");
+      const data = (await res.json().catch(() => null)) as {
+        chat?: Chat;
+      } | null;
+      if (!res.ok || !data?.chat) {
+        throw new Error(
+          readApiError(data, "Failed to update chat model").message,
+        );
       }
 
       setChatInfo(data.chat);
@@ -1131,13 +1153,17 @@ export function SessionChatProvider({
         },
       );
 
-      const data = (await res.json()) as { chat?: Chat; error?: string };
-      if (!res.ok || !data.chat) {
+      const data = (await res.json().catch(() => null)) as {
+        chat?: Chat;
+      } | null;
+      if (!res.ok || !data?.chat) {
         setChatInfo((prev) => ({
           ...prev,
           composioSelection: previousSelection,
         }));
-        throw new Error(data.error ?? "Failed to update chat tools");
+        throw new Error(
+          readApiError(data, "Failed to update chat tools").message,
+        );
       }
 
       setChatInfo(data.chat);

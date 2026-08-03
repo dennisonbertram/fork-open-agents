@@ -16,6 +16,7 @@ import type {
   ComposioAgentDefaults,
   ComposioAgentKey,
 } from "@/lib/composio/types";
+import { readApiError } from "@/lib/api/read-api-error";
 import { COMPOSIO_AGENT_KEYS } from "@/lib/composio/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -286,10 +287,12 @@ function ProfileEditor({
         body: JSON.stringify(requestBody),
       });
       if (!response.ok) {
-        const body = (await response.json().catch(() => null)) as {
-          error?: string;
-        } | null;
-        throw new Error(body?.error ?? "Failed to save profile");
+        throw new Error(
+          readApiError(
+            await response.json().catch(() => null),
+            "Failed to save profile",
+          ).message,
+        );
       }
       toast.success(isNew ? "Profile created" : "Profile saved");
       onSaved();
@@ -318,10 +321,12 @@ function ProfileEditor({
         body: JSON.stringify({ profileId: profile.id }),
       });
       if (!response.ok) {
-        const body = (await response.json().catch(() => null)) as {
-          error?: string;
-        } | null;
-        throw new Error(body?.error ?? "Failed to delete profile");
+        throw new Error(
+          readApiError(
+            await response.json().catch(() => null),
+            "Failed to delete profile",
+          ).message,
+        );
       }
       toast.success("Profile deleted");
       onDeleted();
@@ -627,10 +632,12 @@ function DeleteProfileButton({ profile, onDeleted }: DeleteProfileButtonProps) {
         body: JSON.stringify({ profileId: profile.id }),
       });
       if (!response.ok) {
-        const body = (await response.json().catch(() => null)) as {
-          error?: string;
-        } | null;
-        throw new Error(body?.error ?? "Failed to delete profile");
+        throw new Error(
+          readApiError(
+            await response.json().catch(() => null),
+            "Failed to delete profile",
+          ).message,
+        );
       }
       toast.success("Profile deleted");
       onDeleted();
@@ -753,10 +760,12 @@ export function ComposioSection() {
         body: JSON.stringify({ defaults: nextDefaults }),
       });
       if (!response.ok) {
-        const body = (await response.json().catch(() => null)) as {
-          error?: string;
-        } | null;
-        throw new Error(body?.error ?? "Failed to update defaults");
+        throw new Error(
+          readApiError(
+            await response.json().catch(() => null),
+            "Failed to update defaults",
+          ).message,
+        );
       }
       await mutate();
       toast.success("Chat role default updated");
@@ -786,10 +795,11 @@ export function ComposioSection() {
       });
       const body = (await response.json().catch(() => null)) as {
         redirectUrl?: string;
-        error?: string;
       } | null;
       if (!response.ok || !body?.redirectUrl) {
-        throw new Error(body?.error ?? "Failed to create connection link");
+        throw new Error(
+          readApiError(body, "Failed to create connection link").message,
+        );
       }
       setConnectionUrl(body.redirectUrl);
     } catch (connectError) {

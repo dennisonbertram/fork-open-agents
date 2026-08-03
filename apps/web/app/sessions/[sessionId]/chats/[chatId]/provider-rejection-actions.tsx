@@ -4,6 +4,7 @@ import { Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { isProviderRejectionMessage } from "@/lib/chat/provider-error";
+import { readApiError } from "@/lib/api/read-api-error";
 
 type ProviderRejectionActionsProps = {
   chatId: string;
@@ -45,12 +46,11 @@ export function ProviderRejectionActions({
         { method: "POST" },
       );
       if (!response.ok) {
-        const body = (await response.json().catch(() => null)) as {
-          error?: string;
-        } | null;
+        const body = await response.json().catch(() => null);
         setState({
           kind: "error",
-          message: body?.error ?? "Could not remove the earlier thinking.",
+          message: readApiError(body, "Could not remove the earlier thinking.")
+            .message,
         });
         return;
       }

@@ -29,6 +29,7 @@ import {
   derivePopupOutcome,
 } from "./composio-connect-state";
 import type { ComposioConnectedAccountsResponse } from "@/app/api/composio/connected-accounts/route";
+import { readApiError } from "@/lib/api/read-api-error";
 
 export type ConnectState =
   | { status: "idle" }
@@ -166,14 +167,13 @@ export function useComposioConnect(params?: {
         });
         const body = (await res.json().catch(() => null)) as {
           redirectUrl?: string;
-          error?: string;
         } | null;
 
         if (!res.ok || !body?.redirectUrl) {
           setConnectState({
             status: "failed_to_start",
             slug,
-            message: body?.error ?? "Failed to start connection",
+            message: readApiError(body, "Failed to start connection").message,
           });
           return;
         }
