@@ -44,7 +44,10 @@ export async function GET(
     draftId,
   });
   if (!draft) {
-    return Response.json({ error: "Profile draft not found" }, { status: 404 });
+    return Response.json(
+      { error: "Profile draft not found", errorKind: "not_found" },
+      { status: 404 },
+    );
   }
 
   return Response.json({ draft: toManagedRuntimeProfileDraftSnapshot(draft) });
@@ -72,13 +75,19 @@ export async function PATCH(
   try {
     rawBody = await req.json();
   } catch {
-    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+    return Response.json(
+      { error: "Invalid JSON body", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   const parsedBody = updateDraftRequestSchema.safeParse(rawBody);
   if (!parsedBody.success) {
     return Response.json(
-      { error: "Invalid managed runtime profile draft update" },
+      {
+        error: "Invalid managed runtime profile draft update",
+        errorKind: "invalid_request",
+      },
       { status: 400 },
     );
   }
@@ -91,7 +100,10 @@ export async function PATCH(
     forceApproved: parsedBody.data.forceApproved,
   });
   if (!draft) {
-    return Response.json({ error: "Profile draft not found" }, { status: 404 });
+    return Response.json(
+      { error: "Profile draft not found", errorKind: "not_found" },
+      { status: 404 },
+    );
   }
 
   if (parsedBody.data.output.decision !== "approved") {

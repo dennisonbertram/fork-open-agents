@@ -19,7 +19,10 @@ export async function PATCH(req: Request, context: RouteContext) {
   try {
     body = await req.json();
   } catch {
-    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+    return Response.json(
+      { error: "Invalid JSON body", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   const parsed = updateBackgroundAgentSchema.safeParse(body);
@@ -28,6 +31,7 @@ export async function PATCH(req: Request, context: RouteContext) {
       {
         error: "Invalid background agent update",
         details: parsed.error.flatten(),
+        errorKind: "invalid_request",
       },
       { status: 400 },
     );
@@ -41,7 +45,7 @@ export async function PATCH(req: Request, context: RouteContext) {
   );
   if (!agent) {
     return Response.json(
-      { error: "Background agent not found" },
+      { error: "Background agent not found", errorKind: "not_found" },
       { status: 404 },
     );
   }
@@ -59,7 +63,7 @@ export async function DELETE(_req: Request, context: RouteContext) {
   const deleted = await deleteBackgroundAgent(authResult.userId, agentId);
   if (!deleted) {
     return Response.json(
-      { error: "Background agent not found" },
+      { error: "Background agent not found", errorKind: "not_found" },
       { status: 404 },
     );
   }

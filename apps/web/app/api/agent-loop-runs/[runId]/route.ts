@@ -39,13 +39,19 @@ export async function GET(_req: Request, ctx: RouteContext): Promise<Response> {
   const row = await getAgentLoopRunWithLoop(runId);
 
   if (!row) {
-    return Response.json({ error: "Loop run not found" }, { status: 404 });
+    return Response.json(
+      { error: "Loop run not found", errorKind: "not_found" },
+      { status: 404 },
+    );
   }
 
   // Ownership check: run.userId must match the authenticated user.
   // Returns 404 (not 403) — no existence leak.
   if (row.run.userId !== authResult.userId) {
-    return Response.json({ error: "Loop run not found" }, { status: 404 });
+    return Response.json(
+      { error: "Loop run not found", errorKind: "not_found" },
+      { status: 404 },
+    );
   }
 
   // Fetch steps, events, and watchdog runs concurrently (after ownership check)

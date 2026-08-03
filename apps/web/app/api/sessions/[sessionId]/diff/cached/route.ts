@@ -34,7 +34,7 @@ export async function GET(_req: Request, context: RouteContext) {
 
   if (!sessionRecord.cachedDiff) {
     return Response.json(
-      { error: "No cached diff available" },
+      { error: "No cached diff available", errorKind: "not_found" },
       { status: 404 },
     );
   }

@@ -76,7 +76,10 @@ export async function POST(req: Request, context: RouteContext) {
     draftId,
   });
   if (!draft) {
-    return Response.json({ error: "Profile draft not found" }, { status: 404 });
+    return Response.json(
+      { error: "Profile draft not found", errorKind: "not_found" },
+      { status: 404 },
+    );
   }
 
   const sandboxState = sessionContext.sessionRecord.sandboxState;
@@ -85,6 +88,7 @@ export async function POST(req: Request, context: RouteContext) {
       {
         error:
           "Resume the sandbox before testing managed runtime profile drafts.",
+        errorKind: "conflict",
       },
       { status: 409 },
     );
@@ -123,7 +127,7 @@ export async function POST(req: Request, context: RouteContext) {
 
     if (!updatedDraft) {
       return Response.json(
-        { error: "Profile draft not found" },
+        { error: "Profile draft not found", errorKind: "not_found" },
         { status: 404 },
       );
     }
@@ -153,7 +157,10 @@ export async function POST(req: Request, context: RouteContext) {
         ...buildHibernatedLifecycleUpdate(),
       });
       return Response.json(
-        { error: "Sandbox is unavailable. Please resume sandbox." },
+        {
+          error: "Sandbox is unavailable. Please resume sandbox.",
+          errorKind: "conflict",
+        },
         { status: 409 },
       );
     }
@@ -205,7 +212,7 @@ async function parseTestMode(req: Request): Promise<
       return {
         ok: false,
         response: Response.json(
-          { error: "Invalid JSON body" },
+          { error: "Invalid JSON body", errorKind: "invalid_request" },
           { status: 400 },
         ),
       };
@@ -217,7 +224,10 @@ async function parseTestMode(req: Request): Promise<
     return {
       ok: false,
       response: Response.json(
-        { error: "Invalid managed runtime profile test mode" },
+        {
+          error: "Invalid managed runtime profile test mode",
+          errorKind: "invalid_request",
+        },
         { status: 400 },
       ),
     };

@@ -14,7 +14,13 @@ export type ApiErrorKind =
   | "conflict"
   | "rate_limited"
   | "upstream_unavailable"
-  | "internal_error";
+  | "internal_error"
+  // 410: the route existed and was deliberately withdrawn. Distinct from
+  // not_found, which means "no such thing" — a client should stop retrying and
+  // follow the replacement named in the message.
+  | "gone"
+  // 501: the route exists but the capability is switched off in this build.
+  | "not_implemented";
 
 export type ApiErrorBody = {
   error: string;
@@ -32,6 +38,8 @@ const STATUS_BY_KIND: Record<ApiErrorKind, number> = {
   rate_limited: 429,
   upstream_unavailable: 503,
   internal_error: 500,
+  gone: 410,
+  not_implemented: 501,
 };
 
 const KIND_BY_STATUS = new Map<number, ApiErrorKind>([

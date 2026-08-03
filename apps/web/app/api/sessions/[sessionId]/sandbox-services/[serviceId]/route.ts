@@ -30,13 +30,19 @@ export async function DELETE(_req: Request, context: RouteContext) {
   }
   if (sessionContext.sessionRecord.runtimeMode !== "managed_runtime") {
     return Response.json(
-      { error: "Managed runtime is not enabled for this session" },
+      {
+        error: "Managed runtime is not enabled for this session",
+        errorKind: "conflict",
+      },
       { status: 409 },
     );
   }
   if (!sessionContext.sessionRecord.sandboxState) {
     return Response.json(
-      { error: "Resume the sandbox before stopping managed runtime" },
+      {
+        error: "Resume the sandbox before stopping managed runtime",
+        errorKind: "conflict",
+      },
       { status: 409 },
     );
   }
@@ -49,7 +55,10 @@ export async function DELETE(_req: Request, context: RouteContext) {
   );
   const service = await stopManagedService({ sessionId, serviceId, sandbox });
   if (!service) {
-    return Response.json({ error: "Service not found" }, { status: 404 });
+    return Response.json(
+      { error: "Service not found", errorKind: "not_found" },
+      { status: 404 },
+    );
   }
 
   return Response.json({ service });

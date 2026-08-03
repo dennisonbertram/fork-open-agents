@@ -40,7 +40,10 @@ describe("/api/github/create-repo", () => {
     const response = await POST(createRequest({ sessionId: "session-1" }));
 
     expect(response.status).toBe(401);
-    expect(await response.json()).toEqual({ error: "Not authenticated" });
+    expect(await response.json()).toEqual({
+      error: "Not authenticated",
+      errorKind: "unauthorized",
+    });
   });
 
   test("returns 400 for invalid JSON", async () => {
@@ -55,7 +58,10 @@ describe("/api/github/create-repo", () => {
     );
 
     expect(response.status).toBe(400);
-    expect(await response.json()).toEqual({ error: "Invalid JSON body" });
+    expect(await response.json()).toEqual({
+      error: "Invalid JSON body",
+      errorKind: "invalid_request",
+    });
   });
 
   test("returns disabled response for authenticated users", async () => {
@@ -72,6 +78,7 @@ describe("/api/github/create-repo", () => {
     expect(await response.json()).toEqual({
       error:
         "Creating repositories from Open Agents is temporarily disabled. Create the repository on GitHub first, then connect it to a session.",
+      errorKind: "not_implemented",
     });
   });
 });

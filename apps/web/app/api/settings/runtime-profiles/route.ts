@@ -156,13 +156,19 @@ export async function POST(req: Request): Promise<Response> {
   try {
     rawBody = await req.json();
   } catch {
-    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+    return Response.json(
+      { error: "Invalid JSON body", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   const parsed = createOrUpdateProfileSchema.safeParse(rawBody);
   if (!parsed.success) {
     return Response.json(
-      { error: "Invalid managed runtime profile" },
+      {
+        error: "Invalid managed runtime profile",
+        errorKind: "invalid_request",
+      },
       { status: 400 },
     );
   }

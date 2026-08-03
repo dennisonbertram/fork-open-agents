@@ -56,7 +56,7 @@ export async function POST(request: Request, context: RouteContext) {
       error,
     );
     return Response.json(
-      { error: "Failed to cancel workflow run" },
+      { error: "Failed to cancel workflow run", errorKind: "internal_error" },
       { status: 500 },
     );
   }
