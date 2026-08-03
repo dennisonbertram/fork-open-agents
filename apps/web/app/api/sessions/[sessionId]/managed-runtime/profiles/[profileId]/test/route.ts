@@ -73,13 +73,19 @@ export async function POST(req: Request, context: RouteContext) {
     profileId,
   });
   if (!profileRecord) {
-    return Response.json({ error: "Profile not found" }, { status: 404 });
+    return Response.json(
+      { error: "Profile not found", errorKind: "not_found" },
+      { status: 404 },
+    );
   }
 
   const sandboxState = sessionContext.sessionRecord.sandboxState;
   if (!sandboxState) {
     return Response.json(
-      { error: "Resume the sandbox before testing managed runtime profiles." },
+      {
+        error: "Resume the sandbox before testing managed runtime profiles.",
+        errorKind: "conflict",
+      },
       { status: 409 },
     );
   }
@@ -115,7 +121,10 @@ export async function POST(req: Request, context: RouteContext) {
     });
 
     if (!updatedProfile) {
-      return Response.json({ error: "Profile not found" }, { status: 404 });
+      return Response.json(
+        { error: "Profile not found", errorKind: "not_found" },
+        { status: 404 },
+      );
     }
 
     return Response.json({
@@ -147,7 +156,10 @@ export async function POST(req: Request, context: RouteContext) {
         ...buildHibernatedLifecycleUpdate(),
       });
       return Response.json(
-        { error: "Sandbox is unavailable. Please resume sandbox." },
+        {
+          error: "Sandbox is unavailable. Please resume sandbox.",
+          errorKind: "conflict",
+        },
         { status: 409 },
       );
     }
@@ -202,7 +214,7 @@ async function parseTestMode(req: Request): Promise<
       return {
         ok: false,
         response: Response.json(
-          { error: "Invalid JSON body" },
+          { error: "Invalid JSON body", errorKind: "invalid_request" },
           { status: 400 },
         ),
       };
@@ -214,7 +226,10 @@ async function parseTestMode(req: Request): Promise<
     return {
       ok: false,
       response: Response.json(
-        { error: "Invalid managed runtime profile test mode" },
+        {
+          error: "Invalid managed runtime profile test mode",
+          errorKind: "invalid_request",
+        },
         { status: 400 },
       ),
     };

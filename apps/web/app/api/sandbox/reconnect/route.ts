@@ -128,7 +128,10 @@ export async function GET(req: Request): Promise<Response> {
   const sessionId = url.searchParams.get("sessionId");
 
   if (!sessionId) {
-    return Response.json({ error: "Missing sessionId" }, { status: 400 });
+    return Response.json(
+      { error: "Missing sessionId", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   const sessionContext = await requireOwnedSession({

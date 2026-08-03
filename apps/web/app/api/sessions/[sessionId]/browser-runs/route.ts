@@ -68,13 +68,19 @@ export async function POST(req: Request, context: RouteContext) {
   }
   if (sessionContext.sessionRecord.runtimeMode !== "managed_runtime") {
     return Response.json(
-      { error: "Managed runtime is not enabled for this session" },
+      {
+        error: "Managed runtime is not enabled for this session",
+        errorKind: "conflict",
+      },
       { status: 409 },
     );
   }
   if (!sessionContext.sessionRecord.sandboxState) {
     return Response.json(
-      { error: "Resume the sandbox before running browser checks" },
+      {
+        error: "Resume the sandbox before running browser checks",
+        errorKind: "conflict",
+      },
       { status: 409 },
     );
   }
@@ -83,7 +89,10 @@ export async function POST(req: Request, context: RouteContext) {
   try {
     body = (await req.json()) as BrowserRunRequest;
   } catch {
-    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+    return Response.json(
+      { error: "Invalid JSON body", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   const serviceId = getString(body.serviceId);
@@ -91,12 +100,18 @@ export async function POST(req: Request, context: RouteContext) {
     ? await getSandboxService({ sessionId, serviceId })
     : null;
   if (serviceId && !service) {
-    return Response.json({ error: "Service not found" }, { status: 404 });
+    return Response.json(
+      { error: "Service not found", errorKind: "not_found" },
+      { status: 404 },
+    );
   }
 
   const targetUrl = getString(body.targetUrl) ?? service?.url;
   if (!targetUrl) {
-    return Response.json({ error: "Missing target URL" }, { status: 400 });
+    return Response.json(
+      { error: "Missing target URL", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   const sandbox = await connectSandbox(

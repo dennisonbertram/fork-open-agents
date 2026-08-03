@@ -108,7 +108,7 @@ export async function POST(req: Request, ctx: RouteContext): Promise<Response> {
 
       case "ownership_fail":
         return Response.json(
-          { error: "Agent loop not found" },
+          { error: "Agent loop not found", errorKind: "not_found" },
           { status: 404 },
         );
 
@@ -153,7 +153,10 @@ export async function POST(req: Request, ctx: RouteContext): Promise<Response> {
         // TypeScript exhaustive check — if this compiles, all reasons are handled.
         const _exhaustive: never = result;
         return Response.json(
-          { error: `Unexpected skip reason: ${String(_exhaustive)}` },
+          {
+            error: `Unexpected skip reason: ${String(_exhaustive)}`,
+            errorKind: "internal_error",
+          },
           { status: 500 },
         );
       }

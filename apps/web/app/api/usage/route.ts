@@ -12,7 +12,10 @@ import { getSessionFromReq } from "@/lib/session/server";
 export async function GET(req: NextRequest) {
   const session = await getSessionFromReq(req);
   if (!session?.user?.id) {
-    return Response.json({ error: "Not authenticated" }, { status: 401 });
+    return Response.json(
+      { error: "Not authenticated", errorKind: "unauthorized" },
+      { status: 401 },
+    );
   }
 
   const rangeResult = parseUsageQueryRange(req);
@@ -33,7 +36,7 @@ export async function GET(req: NextRequest) {
   } catch (error) {
     console.error("Failed to get usage history:", error);
     return Response.json(
-      { error: "Failed to get usage history" },
+      { error: "Failed to get usage history", errorKind: "internal_error" },
       { status: 500 },
     );
   }

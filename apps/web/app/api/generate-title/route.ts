@@ -43,12 +43,18 @@ const generateTitleRequestSchema = z.object({
 export async function POST(req: Request) {
   const session = await getServerSession();
   if (!session?.user) {
-    return Response.json({ error: "Not authenticated" }, { status: 401 });
+    return Response.json(
+      { error: "Not authenticated", errorKind: "unauthorized" },
+      { status: 401 },
+    );
   }
 
   const botVerification = await checkBotProtection();
   if (botVerification.isBot) {
-    return Response.json({ error: "Access denied" }, { status: 403 });
+    return Response.json(
+      { error: "Access denied", errorKind: "forbidden" },
+      { status: 403 },
+    );
   }
 
   const limited = await checkRateLimit({
@@ -64,14 +70,20 @@ export async function POST(req: Request) {
   try {
     body = await req.json();
   } catch {
-    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+    return Response.json(
+      { error: "Invalid JSON body", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   const parsedBody = generateTitleRequestSchema.safeParse(body);
 
   if (!parsedBody.success) {
     return Response.json(
-      { error: "Missing required field: message" },
+      {
+        error: "Missing required field: message",
+        errorKind: "invalid_request",
+      },
       { status: 400 },
     );
   }
@@ -82,7 +94,7 @@ export async function POST(req: Request) {
 
   if (!title) {
     return Response.json(
-      { error: "Failed to generate title" },
+      { error: "Failed to generate title", errorKind: "internal_error" },
       { status: 500 },
     );
   }

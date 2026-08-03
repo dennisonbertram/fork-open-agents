@@ -30,7 +30,10 @@ async function connectManagedRuntimeSession(sessionId: string, userId: string) {
     return {
       ok: false as const,
       response: Response.json(
-        { error: "Managed runtime is not enabled for this session" },
+        {
+          error: "Managed runtime is not enabled for this session",
+          errorKind: "conflict",
+        },
         { status: 409 },
       ),
     };
@@ -40,7 +43,10 @@ async function connectManagedRuntimeSession(sessionId: string, userId: string) {
     return {
       ok: false as const,
       response: Response.json(
-        { error: "Resume the sandbox before using managed runtime" },
+        {
+          error: "Resume the sandbox before using managed runtime",
+          errorKind: "conflict",
+        },
         { status: 409 },
       ),
     };
@@ -111,6 +117,7 @@ export async function POST(_req: Request, context: RouteContext) {
         {
           error: service.failureMessage ?? "Failed to start managed service",
           service,
+          errorKind: "internal_error",
         },
         { status: 500 },
       );
@@ -124,6 +131,7 @@ export async function POST(_req: Request, context: RouteContext) {
           error instanceof Error
             ? error.message
             : "Failed to start managed service",
+        errorKind: "internal_error",
       },
       { status: 500 },
     );

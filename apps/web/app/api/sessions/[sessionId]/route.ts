@@ -29,18 +29,27 @@ export async function GET(
 ) {
   const session = await getServerSession();
   if (!session?.user) {
-    return Response.json({ error: "Not authenticated" }, { status: 401 });
+    return Response.json(
+      { error: "Not authenticated", errorKind: "unauthorized" },
+      { status: 401 },
+    );
   }
 
   const { sessionId } = await params;
   const existingSession = await getSessionById(sessionId);
 
   if (!existingSession) {
-    return Response.json({ error: "Session not found" }, { status: 404 });
+    return Response.json(
+      { error: "Session not found", errorKind: "not_found" },
+      { status: 404 },
+    );
   }
 
   if (existingSession.userId !== session.user.id) {
-    return Response.json({ error: "Forbidden" }, { status: 403 });
+    return Response.json(
+      { error: "Forbidden", errorKind: "forbidden" },
+      { status: 403 },
+    );
   }
 
   return Response.json({ session: existingSession });
@@ -52,25 +61,37 @@ export async function PATCH(
 ) {
   const session = await getServerSession();
   if (!session?.user) {
-    return Response.json({ error: "Not authenticated" }, { status: 401 });
+    return Response.json(
+      { error: "Not authenticated", errorKind: "unauthorized" },
+      { status: 401 },
+    );
   }
 
   const { sessionId } = await params;
   const existingSession = await getSessionById(sessionId);
 
   if (!existingSession) {
-    return Response.json({ error: "Session not found" }, { status: 404 });
+    return Response.json(
+      { error: "Session not found", errorKind: "not_found" },
+      { status: 404 },
+    );
   }
 
   if (existingSession.userId !== session.user.id) {
-    return Response.json({ error: "Forbidden" }, { status: 403 });
+    return Response.json(
+      { error: "Forbidden", errorKind: "forbidden" },
+      { status: 403 },
+    );
   }
 
   let body: UpdateSessionRequest;
   try {
     body = (await req.json()) as UpdateSessionRequest;
   } catch {
-    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+    return Response.json(
+      { error: "Invalid JSON body", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   if (
@@ -78,7 +99,10 @@ export async function PATCH(
     body.runtimeMode !== "classic" &&
     body.runtimeMode !== "managed_runtime"
   ) {
-    return Response.json({ error: "Invalid runtime mode" }, { status: 400 });
+    return Response.json(
+      { error: "Invalid runtime mode", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   if (body.managedRuntimeProfileId !== undefined) {
@@ -94,7 +118,10 @@ export async function PATCH(
       !savedProfile
     ) {
       return Response.json(
-        { error: "Invalid managed runtime profile" },
+        {
+          error: "Invalid managed runtime profile",
+          errorKind: "invalid_request",
+        },
         { status: 400 },
       );
     }
@@ -106,7 +133,7 @@ export async function PATCH(
   ) {
     if (typeof body.inferenceProfileId !== "string") {
       return Response.json(
-        { error: "Invalid inference profile" },
+        { error: "Invalid inference profile", errorKind: "invalid_request" },
         { status: 400 },
       );
     }
@@ -116,7 +143,7 @@ export async function PATCH(
     );
     if (!profile || !profile.enabled) {
       return Response.json(
-        { error: "Invalid inference profile" },
+        { error: "Invalid inference profile", errorKind: "invalid_request" },
         { status: 400 },
       );
     }
@@ -137,6 +164,7 @@ export async function PATCH(
       {
         error:
           "Sandbox is still being paused for this archived session. Please try unarchiving again in a few seconds.",
+        errorKind: "conflict",
       },
       { status: 409 },
     );
@@ -169,7 +197,10 @@ export async function PATCH(
     : await updateSession(sessionId, updatePayload);
 
   if (!updatedSession) {
-    return Response.json({ error: "Session not found" }, { status: 404 });
+    return Response.json(
+      { error: "Session not found", errorKind: "not_found" },
+      { status: 404 },
+    );
   }
 
   return Response.json({ session: updatedSession });
@@ -181,18 +212,27 @@ export async function DELETE(
 ) {
   const session = await getServerSession();
   if (!session?.user) {
-    return Response.json({ error: "Not authenticated" }, { status: 401 });
+    return Response.json(
+      { error: "Not authenticated", errorKind: "unauthorized" },
+      { status: 401 },
+    );
   }
 
   const { sessionId } = await params;
   const existingSession = await getSessionById(sessionId);
 
   if (!existingSession) {
-    return Response.json({ error: "Session not found" }, { status: 404 });
+    return Response.json(
+      { error: "Session not found", errorKind: "not_found" },
+      { status: 404 },
+    );
   }
 
   if (existingSession.userId !== session.user.id) {
-    return Response.json({ error: "Forbidden" }, { status: 403 });
+    return Response.json(
+      { error: "Forbidden", errorKind: "forbidden" },
+      { status: 403 },
+    );
   }
 
   await deleteSession(sessionId);

@@ -51,7 +51,10 @@ async function connectCodeEditorSandbox(sessionId: string, userId: string) {
     return {
       ok: false as const,
       response: Response.json(
-        { error: "Resume the sandbox before opening the editor" },
+        {
+          error: "Resume the sandbox before opening the editor",
+          errorKind: "conflict",
+        },
         { status: 409 },
       ),
     };
@@ -246,7 +249,10 @@ export async function GET(_req: Request, context: RouteContext) {
   } catch (error) {
     console.error("Failed to check code editor status:", error);
     return Response.json(
-      { error: "Failed to check code editor status" },
+      {
+        error: "Failed to check code editor status",
+        errorKind: "internal_error",
+      },
       { status: 500 },
     );
   }
@@ -272,14 +278,20 @@ export async function POST(_req: Request, context: RouteContext) {
     const { sandbox } = sandboxResult;
     if (!sandbox.execDetached) {
       return Response.json(
-        { error: "Sandbox does not support background commands" },
+        {
+          error: "Sandbox does not support background commands",
+          errorKind: "internal_error",
+        },
         { status: 500 },
       );
     }
 
     if (!sandbox.domain) {
       return Response.json(
-        { error: "Sandbox does not expose preview URLs" },
+        {
+          error: "Sandbox does not expose preview URLs",
+          errorKind: "internal_error",
+        },
         { status: 500 },
       );
     }
@@ -290,7 +302,7 @@ export async function POST(_req: Request, context: RouteContext) {
     const hasLaunchLock = await acquireCodeServerLaunchLock(sandbox);
     if (!hasLaunchLock) {
       return Response.json(
-        { error: "Code editor is already launching" },
+        { error: "Code editor is already launching", errorKind: "conflict" },
         { status: 409 },
       );
     }
@@ -306,7 +318,10 @@ export async function POST(_req: Request, context: RouteContext) {
 
       if (await isPortInUse(sandbox, port)) {
         return Response.json(
-          { error: `Port ${port} is already in use by another process` },
+          {
+            error: `Port ${port} is already in use by another process`,
+            errorKind: "conflict",
+          },
           { status: 409 },
         );
       }
@@ -341,7 +356,10 @@ export async function POST(_req: Request, context: RouteContext) {
     const detail = error instanceof Error ? error.message : String(error);
     console.error("Failed to launch code editor:", error);
     return Response.json(
-      { error: `Failed to launch code editor: ${detail}` },
+      {
+        error: `Failed to launch code editor: ${detail}`,
+        errorKind: "internal_error",
+      },
       { status: 500 },
     );
   }
@@ -370,7 +388,7 @@ export async function DELETE(_req: Request, context: RouteContext) {
   } catch (error) {
     console.error("Failed to stop code editor:", error);
     return Response.json(
-      { error: "Failed to stop code editor" },
+      { error: "Failed to stop code editor", errorKind: "internal_error" },
       { status: 500 },
     );
   }

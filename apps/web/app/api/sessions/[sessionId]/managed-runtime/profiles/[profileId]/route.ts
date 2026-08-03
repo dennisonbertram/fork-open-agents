@@ -75,7 +75,10 @@ export async function GET(_req: Request, context: RouteContext) {
     profileId,
   });
   if (!profile) {
-    return Response.json({ error: "Profile not found" }, { status: 404 });
+    return Response.json(
+      { error: "Profile not found", errorKind: "not_found" },
+      { status: 404 },
+    );
   }
 
   return Response.json(
@@ -106,13 +109,19 @@ export async function PATCH(req: Request, context: RouteContext) {
   try {
     rawBody = await req.json();
   } catch {
-    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+    return Response.json(
+      { error: "Invalid JSON body", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   const parsed = updateProfileSchema.safeParse(rawBody);
   if (!parsed.success) {
     return Response.json(
-      { error: "Invalid managed runtime profile" },
+      {
+        error: "Invalid managed runtime profile",
+        errorKind: "invalid_request",
+      },
       { status: 400 },
     );
   }
@@ -124,7 +133,10 @@ export async function PATCH(req: Request, context: RouteContext) {
     profile: parsed.data,
   });
   if (!profile) {
-    return Response.json({ error: "Profile not found" }, { status: 404 });
+    return Response.json(
+      { error: "Profile not found", errorKind: "not_found" },
+      { status: 404 },
+    );
   }
 
   return Response.json(
@@ -158,7 +170,10 @@ export async function DELETE(_req: Request, context: RouteContext) {
     fallbackProfileId: DEFAULT_MANAGED_RUNTIME_PROFILE_ID,
   });
   if (!profile) {
-    return Response.json({ error: "Profile not found" }, { status: 404 });
+    return Response.json(
+      { error: "Profile not found", errorKind: "not_found" },
+      { status: 404 },
+    );
   }
 
   return Response.json({
