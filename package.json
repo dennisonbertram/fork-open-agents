@@ -39,7 +39,10 @@
     "hooks:install": "git config core.hooksPath .githooks && echo 'git hooks installed (core.hooksPath=.githooks)'",
     "api:exercise": "bun run scripts/api-exercise/run-all.ts",
     "api:census": "bun run scripts/api-exercise/error-shape-census.ts",
-    "api:sweep": "bun run scripts/api-exercise/auth-sweep.ts"
+    "api:sweep": "bun run scripts/api-exercise/auth-sweep.ts",
+    "ui:inventory": "bun run scripts/ui-exercise/page-inventory.ts",
+    "ui:sweep": "bun run scripts/ui-exercise/render-sweep.ts",
+    "ui:census": "bun run scripts/ui-exercise/fetch-state-census.ts"
   },
   "devDependencies": {
     "oxfmt": "^0.43.0",
