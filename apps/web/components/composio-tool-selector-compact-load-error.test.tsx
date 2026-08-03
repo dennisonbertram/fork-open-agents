@@ -68,7 +68,7 @@ describe("ComposioToolSelectorCompact — failed settings load (#1089)", () => {
       error: new Error("Failed to load Composio settings"),
     };
 
-    expect(await render()).toContain("Couldn't load Composio settings");
+    expect(await render()).toContain("load Composio settings");
   });
 
   test("BT-1089-012: a successful fetch with zero profiles keeps the genuine empty state", async () => {
@@ -83,6 +83,6 @@ describe("ComposioToolSelectorCompact — failed settings load (#1089)", () => {
 
     const html = await render();
     expect(html).toContain("No Composio profiles configured");
-    expect(html).not.toContain("Couldn't load Composio settings");
+    expect(html).not.toContain("load Composio settings");
   });
 });

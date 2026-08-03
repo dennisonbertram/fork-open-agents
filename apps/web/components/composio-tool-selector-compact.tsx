@@ -53,7 +53,12 @@ export function ComposioToolSelectorCompact({
           repoName,
         }).toString()}`
       : "/api/settings/composio";
-  const { data, isLoading } = useSWR(settingsUrl, fetchComposioSettings);
+  const { data, isLoading, error, mutate } = useSWR(
+    settingsUrl,
+    fetchComposioSettings,
+  );
+  // A failed fetch must not be reported as "no profiles configured" (#1089).
+  const loadFailed = Boolean(error) && !data;
   const selectedProfile =
     data?.profiles.find((profile) => profile.id === selection.mainProfileId) ??
     null;
@@ -66,11 +71,13 @@ export function ComposioToolSelectorCompact({
   const directSlugs = selection.directToolkitSlugs ?? [];
   const hasDirectSlugs = directSlugs.length > 0;
 
-  const disabledReason = isUnavailable
-    ? data?.status.message
-    : hasProfiles || hasDirectSlugs
-      ? null
-      : "No Composio profiles configured";
+  const disabledReason = loadFailed
+    ? "Couldn't load Composio settings"
+    : isUnavailable
+      ? data?.status.message
+      : hasProfiles || hasDirectSlugs
+        ? null
+        : "No Composio profiles configured";
 
   const activeToolkits = hasDirectSlugs
     ? directSlugs
@@ -169,6 +176,25 @@ export function ComposioToolSelectorCompact({
             repoName={repoName}
           />
         </div>
+
+        {/* Failed load — distinct from the genuine empty state (#1089) */}
+        {loadFailed ? (
+          <div className="mb-3 rounded-md border border-border/60 bg-muted/20 p-2">
+            <p className="mb-1.5 text-xs text-destructive">
+              Composio settings failed to load. Saved profiles cannot be shown
+              right now.
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                mutate();
+              }}
+              className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+            >
+              Retry
+            </button>
+          </div>
+        ) : null}
 
         {/* Saved profiles — alternative to direct picker */}
         {hasProfiles ? (
