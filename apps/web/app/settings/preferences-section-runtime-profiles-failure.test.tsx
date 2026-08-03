@@ -68,7 +68,7 @@ describe("PreferencesSection runtime-profiles load failure (#1092)", () => {
     runtimeProfilesSwrState = {};
   });
 
-  test("failed fetch renders a load failure, not \"No options available\"", async () => {
+  test('failed fetch renders a load failure, not "No options available"', async () => {
     runtimeProfilesSwrState = { error: new Error("boom") };
 
     const { PreferencesSection } = await sectionModulePromise;
