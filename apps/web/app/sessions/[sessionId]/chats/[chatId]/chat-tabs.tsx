@@ -37,8 +37,15 @@ export function ChatTabs({ activeChatId }: ChatTabsProps) {
   const router = useRouter();
   const params = useParams<{ sessionId?: string }>();
   const sessionId = params.sessionId ?? "";
-  const { chats, createChat, switchChat, deleteChat, renameChat } =
-    useSessionLayout();
+  const {
+    chats,
+    chatsError,
+    retryChats,
+    createChat,
+    switchChat,
+    deleteChat,
+    renameChat,
+  } = useSessionLayout();
   const {
     activeView,
     setActiveView,
@@ -433,6 +440,21 @@ export function ChatTabs({ activeChatId }: ChatTabsProps) {
             <TooltipContent side="bottom">New chat</TooltipContent>
           </Tooltip>
         </div>
+
+        {/* Outside the scrolling strip so a failed refresh stays visible even
+            when enough chats have loaded to overflow the tab bar. */}
+        {chatsError ? (
+          <div className="ml-1 flex shrink-0 items-center gap-2 px-2 py-1.5 text-xs text-destructive">
+            <span>Couldn&apos;t load chats</span>
+            <button
+              type="button"
+              onClick={retryChats}
+              className="font-medium underline-offset-4 hover:underline"
+            >
+              Retry
+            </button>
+          </div>
+        ) : null}
       </div>
 
       <Dialog
