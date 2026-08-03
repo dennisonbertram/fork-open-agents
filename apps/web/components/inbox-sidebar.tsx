@@ -694,9 +694,11 @@ export function InboxSidebar({
           offset: String(offset),
         });
         const res = await fetch(`/api/sessions?${query.toString()}`);
-        const data = (await res.json()) as ArchivedSessionsResponse;
+        const data = (await res
+          .json()
+          .catch(() => null)) as ArchivedSessionsResponse | null;
 
-        if (!res.ok) {
+        if (!(res.ok && data)) {
           throw new Error(
             readApiError(data, "Failed to load archived sessions").message,
           );

@@ -168,7 +168,7 @@ export function CreateRepoDialog({
         }),
       });
 
-      const data = await res.json();
+      const data = await res.json().catch(() => null);
 
       if (!res.ok) {
         throw new Error(

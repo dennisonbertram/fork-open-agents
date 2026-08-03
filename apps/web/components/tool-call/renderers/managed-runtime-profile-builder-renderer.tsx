@@ -227,7 +227,9 @@ export function ManagedRuntimeProfileBuilderRenderer({
             body: JSON.stringify({ mode }),
           },
         );
-        const body = (await response.json()) as DraftTestResponseBody;
+        const body = (await response
+          .json()
+          .catch(() => null)) as DraftTestResponseBody | null;
         const outcome = resolveDraftTestOutcome({
           responseOk: response.ok,
           body,
@@ -624,10 +626,10 @@ type DraftTestOutcome =
  */
 export function resolveDraftTestOutcome(params: {
   responseOk: boolean;
-  body: DraftTestResponseBody;
+  body: DraftTestResponseBody | null;
 }): DraftTestOutcome {
   const { body } = params;
-  if (!body.draft) {
+  if (!body?.draft) {
     return {
       ok: false,
       message: readApiError(body, "Failed to test profile draft").message,
