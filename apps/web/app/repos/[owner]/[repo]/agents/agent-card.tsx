@@ -13,6 +13,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import useSWR from "swr";
 import { Button } from "@/components/ui/button";
+import { readApiError } from "@/lib/api/read-api-error";
 import type { BackgroundAgentWithTriggers } from "@/lib/background-agents/store";
 import type { RunSummary } from "@/lib/background-agents/run-summary";
 import { cn } from "@/lib/utils";
@@ -207,15 +208,14 @@ export function AgentCard({ agent, latestRun, owner, repo }: AgentCardProps) {
       const response = await fetch(`/api/background-agents/${agent.id}/test`, {
         method: "POST",
       });
-      const body = (await response.json()) as {
+      const body = (await response.json().catch(() => null)) as {
         runIds?: string[];
         enabled?: boolean;
-        error?: string;
-      };
+      } | null;
       if (!response.ok) {
-        throw new Error(body.error ?? "Failed to dispatch run");
+        throw new Error(readApiError(body, "Failed to dispatch run").message);
       }
-      const runId = body.runIds?.[0];
+      const runId = body?.runIds?.[0];
       if (!runId) {
         throw new Error("No run was created");
       }
@@ -237,9 +237,11 @@ export function AgentCard({ agent, latestRun, owner, repo }: AgentCardProps) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: newStatus }),
       });
-      const body = (await response.json()) as { error?: string };
       if (!response.ok) {
-        throw new Error(body.error ?? "Failed to update agent status");
+        const body = await response.json().catch(() => null);
+        throw new Error(
+          readApiError(body, "Failed to update agent status").message,
+        );
       }
       // Reload page to reflect new status
       router.refresh();
