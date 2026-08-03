@@ -19,6 +19,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { readApiError } from "@/lib/api/read-api-error";
 
 type ManagedRuntimeProfileManagerProps = {
   sessionId: string;
@@ -196,13 +197,12 @@ export function ManagedRuntimeProfileManager({
         `/api/sessions/${sessionId}/managed-runtime/profiles/${profile.id}`,
         { method: "DELETE" },
       );
-      const body = (await response.json()) as {
+      const body = (await response.json().catch(() => null)) as {
         deletedProfileId?: string;
         fallbackProfileId?: string;
-        error?: string;
-      };
-      if (!response.ok || !body.fallbackProfileId) {
-        throw new Error(body.error ?? "Failed to delete profile");
+      } | null;
+      if (!response.ok || !body?.fallbackProfileId) {
+        throw new Error(readApiError(body, "Failed to delete profile").message);
       }
       await onProfileDeleted(body.fallbackProfileId);
       setOpen(false);
@@ -916,13 +916,7 @@ function parseCsv(value: string): string[] {
 }
 
 function getErrorMessage(value: unknown, fallback: string): string {
-  if (value && typeof value === "object" && "error" in value) {
-    const error = (value as { error?: unknown }).error;
-    if (typeof error === "string") {
-      return error;
-    }
-  }
-  return fallback;
+  return readApiError(value, fallback).message;
 }
 
 type ProfileTestResponseBody =
