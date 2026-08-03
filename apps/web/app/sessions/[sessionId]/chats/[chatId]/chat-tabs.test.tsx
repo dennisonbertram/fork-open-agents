@@ -38,7 +38,10 @@ function renderTabs(value: Record<string, unknown>) {
     chats: [],
     chatsLoading: false,
     chatsError: null,
-    createChat: () => ({ chat: { id: "chat-1" }, persisted: Promise.resolve() }),
+    createChat: () => ({
+      chat: { id: "chat-1" },
+      persisted: Promise.resolve(),
+    }),
     switchChat: () => undefined,
     deleteChat: async () => undefined,
     renameChat: async () => undefined,
