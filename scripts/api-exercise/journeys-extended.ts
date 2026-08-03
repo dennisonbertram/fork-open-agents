@@ -531,11 +531,18 @@ export const extendedJourneys: Journey[] = [
         // but the route collapses every provider failure into a 500 with the
         // opaque message "Transcription failed". A malformed-audio 400 (or at
         // least a distinguishable errorKind) would be the right contract.
-        name: "undecodable audio is reported as a 500 (should be a 4xx)",
+        // 429 is accepted alongside 500 because /api/transcribe is rate
+        // limited (10/min). Running this suite repeatedly — which is the point
+        // of a gate — legitimately trips that limit, and a rate-limited
+        // response is a correct outcome, not a contract change. Found by
+        // running the gate on a loop: it passed twice and failed on the third
+        // run, which is exactly the kind of hidden non-idempotency a
+        // single-shot test never surfaces.
+        name: "undecodable audio is reported as a 500 (should be a 4xx), or 429 once rate limited",
         method: "POST",
         path: "/api/transcribe",
         body: { audio: "AAAA" },
-        expect: [500],
+        expect: [500, 429],
         timeoutMs: 30_000,
       },
       {
