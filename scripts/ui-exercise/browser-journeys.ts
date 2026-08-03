@@ -45,7 +45,18 @@ export type JourneyOutcome = {
   passed: boolean;
 };
 
-async function browser(args: string[], timeoutMs = 90_000): Promise<string> {
+type BrowserResult = { output: string; exitCode: number };
+
+/**
+ * Bun.spawn does not throw when the child exits nonzero, so the exit status has
+ * to be read explicitly. The first version of this returned only the text and
+ * inferred success from a regex, which meant any failure whose wording did not
+ * happen to contain one of those tokens was recorded as a pass.
+ */
+async function browser(
+  args: string[],
+  timeoutMs = 90_000,
+): Promise<BrowserResult> {
   try {
     const proc = Bun.spawn(["agent-browser", ...args], {
       stdout: "pipe",
@@ -54,10 +65,14 @@ async function browser(args: string[], timeoutMs = 90_000): Promise<string> {
     const timer = setTimeout(() => proc.kill(), timeoutMs);
     const out = await new Response(proc.stdout).text();
     const err = await new Response(proc.stderr).text();
+    const exitCode = await proc.exited;
     clearTimeout(timer);
-    return `${out}${err}`;
+    return { output: `${out}${err}`, exitCode };
   } catch (error) {
-    return `AGENT_BROWSER_FAILED: ${error instanceof Error ? error.message : String(error)}`;
+    return {
+      output: `AGENT_BROWSER_FAILED: ${error instanceof Error ? error.message : String(error)}`,
+      exitCode: -1,
+    };
   }
 }
 
@@ -71,13 +86,15 @@ async function collectDiagnostics(): Promise<{
   overflow: { docWidth: number; viewportWidth: number } | null;
   interactiveCount: number;
 }> {
-  const consoleOut = await browser(["console"]);
-  const errorsOut = await browser(["errors"]);
-  const overflowRaw = await browser([
-    "eval",
-    "JSON.stringify({d:document.documentElement.scrollWidth,w:window.innerWidth})",
-  ]);
-  const snapshot = await browser(["snapshot", "-i"]);
+  const consoleOut = (await browser(["console"])).output;
+  const errorsOut = (await browser(["errors"])).output;
+  const overflowRaw = (
+    await browser([
+      "eval",
+      "JSON.stringify({d:document.documentElement.scrollWidth,w:window.innerWidth})",
+    ])
+  ).output;
+  const snapshot = (await browser(["snapshot", "-i"])).output;
 
   const consoleErrors = consoleOut
     .split("\n")
@@ -119,36 +136,28 @@ export async function runJourney(journey: Journey): Promise<JourneyOutcome> {
 
   for (const step of journey.steps) {
     if (step.goto) {
-      const out = await browser(["open", `${BASE_URL}${step.goto}`], 120_000);
-      const ok = !/AGENT_BROWSER_FAILED|error/i.test(out) || out.includes("✓");
+      const { output, exitCode } = await browser(
+        ["open", `${BASE_URL}${step.goto}`],
+        120_000,
+      );
       steps.push({
         step: `goto ${step.goto}`,
-        ok,
-        detail: out
-          .split("\n")
-          .filter(Boolean)
-          .slice(-2)
-          .join(" | ")
-          .slice(0, 160),
+        ok: exitCode === 0,
+        detail: `exit ${exitCode} :: ${output.split("\n").filter(Boolean).slice(-2).join(" | ").slice(0, 140)}`,
       });
     }
 
     if (step.click) {
-      const out = await browser(["click", step.click]);
+      const { output, exitCode } = await browser(["click", step.click]);
       steps.push({
         step: `click ${step.click}`,
-        ok: !/AGENT_BROWSER_FAILED|not found|No element/i.test(out),
-        detail: out
-          .split("\n")
-          .filter(Boolean)
-          .slice(-1)
-          .join("")
-          .slice(0, 160),
+        ok: exitCode === 0,
+        detail: `exit ${exitCode} :: ${output.split("\n").filter(Boolean).slice(-1).join("").slice(0, 140)}`,
       });
     }
 
     if (step.expectText) {
-      const out = await browser(["snapshot"]);
+      const out = (await browser(["snapshot"])).output;
       const found = out.includes(step.expectText);
       steps.push({
         step: `expect "${step.expectText}"`,
@@ -233,12 +242,29 @@ if (import.meta.main) {
   console.log(`Walking ${journeys.length} journeys headless at ${BASE_URL}\n`);
 
   await browser(["close"], 30_000);
-  const authOut = await browser(["open", `${BASE_URL}${AUTH_ROUTE}`], 120_000);
-  if (!authOut.includes("✓")) {
+  await browser(["open", `${BASE_URL}${AUTH_ROUTE}`], 120_000);
+
+  // A navigation marker is not proof of a cookie. When test auth is disabled or
+  // demo preparation fails, that route answers 404/500 without setting one and
+  // agent-browser still reports a successful navigation — so every journey
+  // would run anonymous and the suite would report false confidence. Ask the
+  // app who it thinks we are.
+  const identity = (
+    await browser(["open", `${BASE_URL}/api/auth/info`], 60_000)
+  ).output;
+  const identityBody = (await browser(["eval", "document.body.innerText"]))
+    .output;
+  // agent-browser returns eval results JSON-encoded, so the body arrives with
+  // escaped quotes (\"user\":). Strip them before matching rather than writing
+  // a regex that has to know about the transport.
+  const identityText = identityBody.replace(/\\"/g, '"');
+  if (!/"user"\s*:\s*\{/.test(identityText)) {
     console.log(
-      "Could not set the test-auth cookie — every journey would run anonymous.\n" +
+      `The test-auth cookie was not accepted at ${BASE_URL}: /api/auth/info reports no user.\n` +
+        "Every authenticated journey would silently run as anonymous.\n" +
         "Start the server with NODE_ENV=development or OPEN_AGENTS_ENABLE_TEST_AUTH=1.",
     );
+    console.log(identity.split("\n").slice(-2).join(" "));
     process.exit(1);
   }
 
