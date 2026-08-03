@@ -45,7 +45,7 @@ export function BranchPickerDialog({
 }: BranchPickerDialogProps) {
   const [selectedBranch, setSelectedBranch] = useState<string | null>(null);
 
-  const { data, isLoading } = useSWR<BranchesResponse>(
+  const { data, error, isLoading, mutate } = useSWR<BranchesResponse>(
     open && owner && repo
       ? `/api/github/branches?owner=${encodeURIComponent(owner)}&repo=${encodeURIComponent(repo)}`
       : null,
@@ -88,6 +88,19 @@ export function BranchPickerDialog({
           <div className="flex items-center justify-center gap-2 px-4 py-8 text-sm text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" />
             <span>Creating session on {selectedBranch}…</span>
+          </div>
+        ) : error ? (
+          <div className="flex flex-col items-center gap-2 border-t px-4 py-8 text-center text-sm text-muted-foreground">
+            <span>Couldn&apos;t load branches for this repository.</span>
+            <button
+              className="text-xs underline underline-offset-2 hover:text-foreground"
+              onClick={() => {
+                void mutate();
+              }}
+              type="button"
+            >
+              Retry
+            </button>
           </div>
         ) : (
           <Command className="border-t">

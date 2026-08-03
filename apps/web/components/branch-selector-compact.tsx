@@ -55,10 +55,8 @@ export function BranchSelectorCompact({
         }`
       : null;
 
-  const { data, isLoading, isValidating } = useSWR<BranchesResponse>(
-    branchesUrl,
-    fetcher,
-  );
+  const { data, error, isLoading, isValidating, mutate } =
+    useSWR<BranchesResponse>(branchesUrl, fetcher);
 
   const branches = data?.branches ?? [];
   const defaultBranch = data?.defaultBranch ?? "main";
@@ -100,7 +98,10 @@ export function BranchSelectorCompact({
   const getDisplayText = () => {
     if (isBranchLoading) return "Loading...";
     if (isNewBranch) return "New branch (auto)";
-    return value || defaultBranch || "main";
+    if (value) return value;
+    // Don't present the "main" fallback as a fetched branch when the load failed.
+    if (error) return "Branches unavailable";
+    return defaultBranch || "main";
   };
 
   return (
@@ -126,12 +127,28 @@ export function BranchSelectorCompact({
             onValueChange={setSearchQuery}
           />
           <CommandList>
+            {error && !isBranchLoading && (
+              <div className="flex flex-col items-start gap-1 px-3 py-3 text-sm text-muted-foreground">
+                <span>Couldn&apos;t load branches for this repository.</span>
+                <button
+                  className="text-xs underline underline-offset-2 hover:text-foreground"
+                  onClick={() => {
+                    void mutate();
+                  }}
+                  type="button"
+                >
+                  Retry
+                </button>
+              </div>
+            )}
             <CommandEmpty>
               {isBranchLoading
                 ? "Loading..."
-                : deferredSearchQuery
-                  ? "No matching branches found."
-                  : "No branches found."}
+                : error
+                  ? "Couldn't load branches for this repository."
+                  : deferredSearchQuery
+                    ? "No matching branches found."
+                    : "No branches found."}
             </CommandEmpty>
             <CommandGroup>
               {branches.map((branch) => (
