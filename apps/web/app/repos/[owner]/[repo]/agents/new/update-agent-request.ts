@@ -1,3 +1,4 @@
+import { readApiError } from "@/lib/api/read-api-error";
 import {
   firstFieldError,
   type FlattenedZodDetails,
@@ -27,16 +28,14 @@ export async function submitAgentUpdate(
   });
 
   if (!response.ok) {
-    const errorBody = (await response.json().catch(() => ({}))) as {
-      error?: string;
+    const errorBody = (await response.json().catch(() => null)) as {
       details?: FlattenedZodDetails;
-    };
+    } | null;
     return {
       ok: false,
       error:
-        firstFieldError(errorBody.details) ??
-        errorBody.error ??
-        "Failed to update background agent",
+        firstFieldError(errorBody?.details) ??
+        readApiError(errorBody, "Failed to update background agent").message,
     };
   }
 
