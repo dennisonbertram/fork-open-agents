@@ -2,10 +2,27 @@
 
 import useSWR from "swr";
 import type { SessionUserInfo } from "@/lib/session/types";
-import { fetcher } from "@/lib/swr";
+import { FetchError, fetcher } from "@/lib/swr";
+
+/**
+ * A 401 "Not authenticated" is the API saying "signed out", and
+ * `app/providers.tsx` already signs the user out globally on it. Every other
+ * failure (500, network blip, dependency down) means the auth check itself
+ * failed and must not be rendered as a sign-out (#1086).
+ */
+function isFailedAuthCheck(error: unknown): boolean {
+  if (!error) {
+    return false;
+  }
+  return !(
+    error instanceof FetchError &&
+    error.status === 401 &&
+    error.message === "Not authenticated"
+  );
+}
 
 export function useSession() {
-  const { data, isLoading } = useSWR<SessionUserInfo>(
+  const { data, isLoading, error, mutate } = useSWR<SessionUserInfo>(
     "/api/auth/info",
     fetcher,
     {
@@ -21,5 +38,13 @@ export function useSession() {
     hasGitHub: data?.hasGitHub ?? false,
     hasGitHubAccount: data?.hasGitHubAccount ?? false,
     hasGitHubInstallations: data?.hasGitHubInstallations ?? false,
+    /** Raw SWR error, including the 401 sign-out signal. */
+    error: (error as Error | undefined) ?? null,
+    /** True only when the auth check failed for a reason that is not a sign-out. */
+    isError: isFailedAuthCheck(error),
+    /** Re-run the auth check, for a user-facing retry affordance. */
+    retry: () => {
+      void mutate();
+    },
   };
 }
