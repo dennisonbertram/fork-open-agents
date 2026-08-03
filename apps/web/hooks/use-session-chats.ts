@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import useSWR, { useSWRConfig } from "swr";
+import { readApiError } from "@/lib/api/read-api-error";
 import { defaultChatComposioSelection } from "@/lib/composio/types";
 import type { Chat } from "@/lib/db/schema";
 import { fetcherNoStore } from "@/lib/swr";
@@ -528,12 +529,11 @@ export function useSessionChats(
         body: JSON.stringify({ id: optimisticChat.id }),
       });
 
-      const responseData = (await res.json()) as {
+      const responseData = (await res.json().catch(() => null)) as {
         chat?: Chat;
-        error?: string;
-      };
+      } | null;
 
-      if (!res.ok || !responseData.chat) {
+      if (!res.ok || !responseData?.chat) {
         await mutate(
           (current) =>
             toChatsResponse(
@@ -544,7 +544,9 @@ export function useSessionChats(
             ),
           { revalidate: false },
         );
-        throw new Error(responseData.error ?? "Failed to create chat");
+        throw new Error(
+          readApiError(responseData, "Failed to create chat").message,
+        );
       }
 
       const createdChat = responseData.chat;
@@ -628,12 +630,11 @@ export function useSessionChats(
         },
       );
 
-      const responseData = (await res.json()) as {
+      const responseData = (await res.json().catch(() => null)) as {
         chat?: Chat;
-        error?: string;
-      };
+      } | null;
 
-      if (!res.ok || !responseData.chat) {
+      if (!res.ok || !responseData?.chat) {
         await mutate(
           (current) =>
             toChatsResponse(
@@ -644,7 +645,9 @@ export function useSessionChats(
             ),
           { revalidate: false },
         );
-        throw new Error(responseData.error ?? "Failed to fork chat");
+        throw new Error(
+          readApiError(responseData, "Failed to fork chat").message,
+        );
       }
 
       const createdChat = responseData.chat;
@@ -686,9 +689,13 @@ export function useSessionChats(
       body: JSON.stringify({ title }),
     });
 
-    const responseData = (await res.json()) as { chat?: Chat; error?: string };
-    if (!res.ok || !responseData.chat) {
-      throw new Error(responseData.error ?? "Failed to rename chat");
+    const responseData = (await res.json().catch(() => null)) as {
+      chat?: Chat;
+    } | null;
+    if (!res.ok || !responseData?.chat) {
+      throw new Error(
+        readApiError(responseData, "Failed to rename chat").message,
+      );
     }
 
     const updatedChat = responseData.chat;
@@ -715,13 +722,14 @@ export function useSessionChats(
       method: "DELETE",
     });
 
-    const responseData = (await res.json()) as {
+    const responseData = (await res.json().catch(() => null)) as {
       success?: boolean;
-      error?: string;
-    };
+    } | null;
 
-    if (!res.ok || !responseData.success) {
-      throw new Error(responseData.error ?? "Failed to delete chat");
+    if (!res.ok || !responseData?.success) {
+      throw new Error(
+        readApiError(responseData, "Failed to delete chat").message,
+      );
     }
 
     await mutate(
@@ -743,13 +751,14 @@ export function useSessionChats(
       method: "POST",
     });
 
-    const responseData = (await res.json()) as {
+    const responseData = (await res.json().catch(() => null)) as {
       success?: boolean;
-      error?: string;
-    };
+    } | null;
 
-    if (!res.ok || !responseData.success) {
-      throw new Error(responseData.error ?? "Failed to mark chat as read");
+    if (!res.ok || !responseData?.success) {
+      throw new Error(
+        readApiError(responseData, "Failed to mark chat as read").message,
+      );
     }
 
     await mutate(
