@@ -28,6 +28,7 @@ import { useGitHubConnectionStatus } from "@/hooks/use-github-connection-status"
 import { useInstallationRepos } from "@/hooks/use-installation-repos";
 import { useSession } from "@/hooks/use-session";
 import { buildGitHubReconnectUrl } from "@/lib/github/urls";
+import { readApiError } from "@/lib/api/read-api-error";
 import { cn } from "@/lib/utils";
 import {
   FRIENDLY_REPOS_ERROR_COPY,
@@ -123,13 +124,9 @@ export function RepoSelector({
         const response = await fetch("/api/github/installations");
         if (!response.ok) {
           const data = await response.json().catch(() => null);
-          const parsed = z
-            .object({ error: z.string().optional() })
-            .safeParse(data);
-          setError(parsed.success ? (parsed.data.error ?? "") : "");
-          if (!parsed.success || !parsed.data.error) {
-            setError("Connect GitHub to access repositories");
-          }
+          setError(
+            readApiError(data, "Connect GitHub to access repositories").message,
+          );
           return;
         }
 
