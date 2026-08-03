@@ -40,8 +40,9 @@ export type SweepResult = {
   url: string;
   anonStatus: number | string;
   authStatus: number | string;
-  /** Next's dev-time server-error markers found in the HTML body. */
   authLooksLikeError: boolean;
+  /** Anonymous probes get classified too — a page can fail only when logged out. */
+  anonLooksLikeError: boolean;
   hasDynamicParams: boolean;
   hasErrorBoundary: boolean;
   note?: string;
@@ -92,7 +93,36 @@ async function load(
   }
 }
 
+/**
+ * The whole authenticated half of this sweep rides on one cookie, and
+ * `isTestAuthEnabled()` only honours it when NODE_ENV is development or
+ * OPEN_AGENTS_ENABLE_TEST_AUTH=1. Point UI_BASE_URL at a production-mode server
+ * and every "authenticated" probe is silently anonymous — the sweep still
+ * reports 64 clean pages, and every one of them is a redirect to sign-in.
+ *
+ * A harness that cannot tell you it measured nothing is worse than no harness,
+ * so this refuses to run rather than reporting false confidence.
+ */
+async function assertTestAuthAccepted(): Promise<void> {
+  const response = await fetch(`${BASE_URL}/api/auth/info`, {
+    headers: { cookie: TEST_AUTH_COOKIE },
+  });
+  const body = (await response.json().catch(() => null)) as {
+    user?: { id?: string };
+  } | null;
+
+  if (!body?.user?.id) {
+    throw new Error(
+      `The test-auth cookie was not accepted at ${BASE_URL}: /api/auth/info returned no user.\n` +
+        "Every authenticated probe would silently run as anonymous and the sweep would report\n" +
+        "false confidence. Start the server with NODE_ENV=development, or set\n" +
+        "OPEN_AGENTS_ENABLE_TEST_AUTH=1, then re-run.",
+    );
+  }
+}
+
 export async function runRenderSweep(): Promise<SweepResult[]> {
+  await assertTestAuthAccepted();
   const results: SweepResult[] = [];
 
   for (const page of buildPageInventory()) {
@@ -107,6 +137,7 @@ export async function runRenderSweep(): Promise<SweepResult[]> {
       anonStatus: anon.status,
       authStatus: auth.status,
       authLooksLikeError: looksLikeErrorPage(auth.html, auth.status),
+      anonLooksLikeError: looksLikeErrorPage(anon.html, anon.status),
       hasDynamicParams: page.params.length > 0,
       hasErrorBoundary: page.hasErrorInChain,
     });
@@ -127,6 +158,16 @@ if (import.meta.main) {
     console.log(
       `  ${r.authStatus}  ${r.url}${r.hasErrorBoundary ? "" : "   [no error boundary]"}`,
     );
+  }
+
+  const anonBroken = results.filter(
+    (r) => r.anonLooksLikeError && !r.authLooksLikeError,
+  );
+  console.log(
+    `\nRendered an error page ONLY when anonymous: ${anonBroken.length}`,
+  );
+  for (const r of anonBroken) {
+    console.log(`  ${r.anonStatus}  ${r.url}`);
   }
 
   console.log(`\nTimed out or failed to connect: ${timeouts.length}`);
