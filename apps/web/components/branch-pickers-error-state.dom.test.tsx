@@ -129,6 +129,38 @@ describe("branch pickers distinguish a failed fetch from an empty repo (#1090)",
     expect(mutateCalls.length).toBeGreaterThan(0);
   });
 
+  test("BT-BP-005 picker dialog keeps cached branches when a revalidation fails", async () => {
+    swrState = {
+      data: { branches: ["main", "feature/x"], defaultBranch: "main" },
+      error: new Error("Failed to fetch"),
+    };
+    mutateCalls.length = 0;
+
+    const { baseElement } = renderDialog();
+    const text = baseElement.textContent ?? "";
+
+    expect(text).toContain("feature/x");
+    expect(text).toContain("Couldn't refresh branches");
+
+    const retry = within(baseElement).getByRole("button", { name: /retry/i });
+    await userClick(retry);
+    expect(mutateCalls.length).toBeGreaterThan(0);
+  });
+
+  test("BT-BP-006 compact selector keeps cached branches and label when a revalidation fails", async () => {
+    swrState = {
+      data: { branches: ["main", "feature/x"], defaultBranch: "main" },
+      error: new Error("Failed to fetch"),
+    };
+
+    const { baseElement } = await renderCompact();
+    const text = baseElement.textContent ?? "";
+
+    expect(text).toContain("feature/x");
+    expect(text).not.toContain("Branches unavailable");
+    expect(text).toContain("Couldn't refresh branches");
+  });
+
   test("BT-BP-004 picker dialog keeps the genuine empty state", () => {
     swrState = {
       data: { branches: [], defaultBranch: "main" },

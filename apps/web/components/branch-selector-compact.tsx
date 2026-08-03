@@ -100,7 +100,7 @@ export function BranchSelectorCompact({
     if (isNewBranch) return "New branch (auto)";
     if (value) return value;
     // Don't present the "main" fallback as a fetched branch when the load failed.
-    if (error) return "Branches unavailable";
+    if (error && !data) return "Branches unavailable";
     return defaultBranch || "main";
   };
 
@@ -129,7 +129,11 @@ export function BranchSelectorCompact({
           <CommandList>
             {error && !isBranchLoading && (
               <div className="flex flex-col items-start gap-1 px-3 py-3 text-sm text-muted-foreground">
-                <span>Couldn&apos;t load branches for this repository.</span>
+                <span>
+                  {data
+                    ? "Couldn't refresh branches. Showing last loaded."
+                    : "Couldn't load branches for this repository."}
+                </span>
                 <button
                   className="text-xs underline underline-offset-2 hover:text-foreground"
                   onClick={() => {
@@ -144,7 +148,7 @@ export function BranchSelectorCompact({
             <CommandEmpty>
               {isBranchLoading
                 ? "Loading..."
-                : error
+                : error && !data
                   ? "Couldn't load branches for this repository."
                   : deferredSearchQuery
                     ? "No matching branches found."
