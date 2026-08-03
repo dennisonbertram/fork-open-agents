@@ -25,13 +25,20 @@ export async function POST(req: Request) {
   try {
     body = await req.json();
   } catch {
-    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+    return Response.json(
+      { error: "Invalid JSON body", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   const parsed = createBackgroundAgentSchema.safeParse(body);
   if (!parsed.success) {
     return Response.json(
-      { error: "Invalid background agent", details: parsed.error.flatten() },
+      {
+        error: "Invalid background agent",
+        details: parsed.error.flatten(),
+        errorKind: "invalid_request",
+      },
       { status: 400 },
     );
   }

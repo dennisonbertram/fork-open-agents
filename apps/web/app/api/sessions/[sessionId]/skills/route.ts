@@ -94,13 +94,16 @@ export async function GET(req: Request, context: RouteContext) {
         ...buildHibernatedLifecycleUpdate(),
       });
       return Response.json(
-        { error: "Sandbox is unavailable. Please resume sandbox." },
+        {
+          error: "Sandbox is unavailable. Please resume sandbox.",
+          errorKind: "conflict",
+        },
         { status: 409 },
       );
     }
     console.error("Failed to discover skills:", error);
     return Response.json(
-      { error: "Failed to connect to sandbox" },
+      { error: "Failed to connect to sandbox", errorKind: "internal_error" },
       { status: 500 },
     );
   }

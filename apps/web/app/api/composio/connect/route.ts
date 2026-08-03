@@ -33,13 +33,19 @@ export async function POST(req: Request) {
   try {
     body = await req.json();
   } catch {
-    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+    return Response.json(
+      { error: "Invalid JSON body", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   const parsed = connectRequestSchema.safeParse(body);
   if (!parsed.success) {
     return Response.json(
-      { error: "Invalid Composio connect payload" },
+      {
+        error: "Invalid Composio connect payload",
+        errorKind: "invalid_request",
+      },
       { status: 400 },
     );
   }
@@ -76,7 +82,10 @@ export async function POST(req: Request) {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return Response.json(
-      { error: message || "Failed to create Composio connection link" },
+      {
+        error: message || "Failed to create Composio connection link",
+        errorKind: "invalid_request",
+      },
       { status: 400 },
     );
   }

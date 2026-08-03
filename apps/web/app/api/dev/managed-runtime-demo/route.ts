@@ -3,7 +3,10 @@ import { isTestAuthEnabled, setTestAuthCookie } from "@/lib/session/test-auth";
 
 export async function GET(request: Request) {
   if (!isTestAuthEnabled()) {
-    return Response.json({ error: "Not found" }, { status: 404 });
+    return Response.json(
+      { error: "Not found", errorKind: "not_found" },
+      { status: 404 },
+    );
   }
 
   try {
@@ -21,6 +24,7 @@ export async function GET(request: Request) {
           error instanceof Error
             ? error.message
             : "Failed to prepare managed runtime demo",
+        errorKind: "internal_error",
       },
       { status: 500 },
     );

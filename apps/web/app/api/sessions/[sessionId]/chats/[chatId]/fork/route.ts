@@ -38,29 +38,44 @@ export async function POST(req: Request, context: RouteContext) {
   try {
     body = (await req.json()) as ForkChatRequest;
   } catch {
-    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+    return Response.json(
+      { error: "Invalid JSON body", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   if (!isRecord(body)) {
-    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+    return Response.json(
+      { error: "Invalid JSON body", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   const messageId =
     typeof body.messageId === "string" ? body.messageId.trim() : "";
   if (!messageId) {
-    return Response.json({ error: "A messageId is required" }, { status: 400 });
+    return Response.json(
+      { error: "A messageId is required", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   const requestedChatId =
     typeof body.id === "string" ? body.id.trim() : body.id;
   if (requestedChatId !== undefined) {
     if (typeof requestedChatId !== "string" || requestedChatId.length === 0) {
-      return Response.json({ error: "Invalid chat id" }, { status: 400 });
+      return Response.json(
+        { error: "Invalid chat id", errorKind: "invalid_request" },
+        { status: 400 },
+      );
     }
 
     const existingChat = await getChatById(requestedChatId);
     if (existingChat) {
-      return Response.json({ error: "Chat ID conflict" }, { status: 409 });
+      return Response.json(
+        { error: "Chat ID conflict", errorKind: "conflict" },
+        { status: 409 },
+      );
     }
   }
 
@@ -79,12 +94,18 @@ export async function POST(req: Request, context: RouteContext) {
   });
 
   if (result.status === "message_not_found") {
-    return Response.json({ error: "Message not found" }, { status: 404 });
+    return Response.json(
+      { error: "Message not found", errorKind: "not_found" },
+      { status: 404 },
+    );
   }
 
   if (result.status === "not_assistant_message") {
     return Response.json(
-      { error: "Only assistant messages can be forked" },
+      {
+        error: "Only assistant messages can be forked",
+        errorKind: "invalid_request",
+      },
       { status: 400 },
     );
   }

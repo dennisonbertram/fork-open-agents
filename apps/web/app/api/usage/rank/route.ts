@@ -16,7 +16,10 @@ export interface LeaderboardRankResponse {
 export async function GET(req: NextRequest) {
   const session = await getSessionFromReq(req);
   if (!session?.user?.id) {
-    return Response.json({ error: "Not authenticated" }, { status: 401 });
+    return Response.json(
+      { error: "Not authenticated", errorKind: "unauthorized" },
+      { status: 401 },
+    );
   }
 
   try {
@@ -46,7 +49,7 @@ export async function GET(req: NextRequest) {
   } catch (error) {
     console.error("Failed to get leaderboard rank:", error);
     return Response.json(
-      { error: "Failed to get leaderboard rank" },
+      { error: "Failed to get leaderboard rank", errorKind: "internal_error" },
       { status: 500 },
     );
   }

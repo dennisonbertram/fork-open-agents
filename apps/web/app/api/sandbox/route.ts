@@ -115,6 +115,7 @@ function workspaceNotClonedResponse(sessionId: string): Response {
       error:
         "Sandbox is running but the repository was not cloned into the workspace.",
       reason: "workspace_not_cloned",
+      errorKind: "conflict",
     },
     { status: 409 },
   );
@@ -127,6 +128,7 @@ function workspaceProbeFailedResponse(sessionId: string): Response {
       error:
         "Sandbox is running but the workspace git probe did not complete, so its repository state is unknown.",
       reason: "workspace_probe_failed",
+      errorKind: "upstream_unavailable",
     },
     { status: 503 },
   );
@@ -164,28 +166,43 @@ export async function POST(req: Request) {
   try {
     body = (await req.json()) as CreateSandboxRequest;
   } catch {
-    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+    return Response.json(
+      { error: "Invalid JSON body", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   if (body.sandboxType && body.sandboxType !== "vercel") {
-    return Response.json({ error: "Invalid sandbox type" }, { status: 400 });
+    return Response.json(
+      { error: "Invalid sandbox type", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   const { repoUrl, branch = "main", isNewBranch = false, sessionId } = body;
 
   if (!sessionId) {
-    return Response.json({ error: "Missing sessionId" }, { status: 400 });
+    return Response.json(
+      { error: "Missing sessionId", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   // Get session for auth
   const session = await getServerSession();
   if (!session?.user) {
-    return Response.json({ error: "Not authenticated" }, { status: 401 });
+    return Response.json(
+      { error: "Not authenticated", errorKind: "unauthorized" },
+      { status: 401 },
+    );
   }
 
   const botVerification = await checkBotProtection();
   if (botVerification.isBot) {
-    return Response.json({ error: "Access denied" }, { status: 403 });
+    return Response.json(
+      { error: "Access denied", errorKind: "forbidden" },
+      { status: 403 },
+    );
   }
 
   const limited = await checkRateLimit({
@@ -213,7 +230,7 @@ export async function POST(req: Request) {
   const parsedRequestRepo = repoUrl ? parseGitHubHttpsUrl(repoUrl) : null;
   if (repoUrl && !parsedRequestRepo) {
     return Response.json(
-      { error: "Invalid GitHub repository URL" },
+      { error: "Invalid GitHub repository URL", errorKind: "invalid_request" },
       { status: 400 },
     );
   }
@@ -434,7 +451,10 @@ export async function DELETE(req: Request) {
 
   const botVerification = await checkBotProtection();
   if (botVerification.isBot) {
-    return Response.json({ error: "Access denied" }, { status: 403 });
+    return Response.json(
+      { error: "Access denied", errorKind: "forbidden" },
+      { status: 403 },
+    );
   }
 
   const limited = await checkRateLimit({
@@ -450,7 +470,10 @@ export async function DELETE(req: Request) {
   try {
     body = await req.json();
   } catch {
-    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+    return Response.json(
+      { error: "Invalid JSON body", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   if (
@@ -459,7 +482,10 @@ export async function DELETE(req: Request) {
     !("sessionId" in body) ||
     typeof (body as Record<string, unknown>).sessionId !== "string"
   ) {
-    return Response.json({ error: "Missing sessionId" }, { status: 400 });
+    return Response.json(
+      { error: "Missing sessionId", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   const { sessionId } = body as { sessionId: string };

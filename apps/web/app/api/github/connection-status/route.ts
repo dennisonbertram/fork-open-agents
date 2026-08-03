@@ -18,7 +18,10 @@ export async function GET() {
   const session = await getServerSession();
 
   if (!session?.user?.id) {
-    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+    return NextResponse.json(
+      { error: "Not authenticated", errorKind: "unauthorized" },
+      { status: 401 },
+    );
   }
 
   const [linked, installations] = await Promise.all([

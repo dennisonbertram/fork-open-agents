@@ -779,7 +779,10 @@ async function connectDevServerSandboxForSession(
     return {
       ok: false as const,
       response: Response.json(
-        { error: "Resume the sandbox before running a dev server" },
+        {
+          error: "Resume the sandbox before running a dev server",
+          errorKind: "conflict",
+        },
         { status: 409 },
       ),
     };
@@ -815,7 +818,10 @@ export async function POST(_req: Request, context: RouteContext) {
     const { sandbox } = sandboxResult;
     if (!sandbox.execDetached) {
       return Response.json(
-        { error: "Sandbox does not support background commands" },
+        {
+          error: "Sandbox does not support background commands",
+          errorKind: "internal_error",
+        },
         { status: 500 },
       );
     }
@@ -837,7 +843,10 @@ export async function POST(_req: Request, context: RouteContext) {
     const target = await resolveDevServerTarget(sandbox);
     if (!target) {
       return Response.json(
-        { error: "No supported dev script found in package.json files" },
+        {
+          error: "No supported dev script found in package.json files",
+          errorKind: "not_found",
+        },
         { status: 404 },
       );
     }
@@ -895,6 +904,7 @@ export async function POST(_req: Request, context: RouteContext) {
           error instanceof Error
             ? error.message
             : "Failed to launch dev server",
+        errorKind: "internal_error",
       },
       { status: 500 },
     );
@@ -932,7 +942,7 @@ export async function GET(req: Request, context: RouteContext) {
     const target = await readPersistedDevServerTarget(sandbox);
     if (!target) {
       return Response.json(
-        { error: "No dev server log is available" },
+        { error: "No dev server log is available", errorKind: "not_found" },
         { status: 404 },
       );
     }
@@ -959,6 +969,7 @@ export async function GET(req: Request, context: RouteContext) {
           error instanceof Error
             ? error.message
             : "Failed to read dev server logs",
+        errorKind: "internal_error",
       },
       { status: 500 },
     );
@@ -1004,7 +1015,10 @@ export async function DELETE(_req: Request, context: RouteContext) {
     const target = await resolveDevServerTarget(sandbox);
     if (!target) {
       return Response.json(
-        { error: "No supported dev script found in package.json files" },
+        {
+          error: "No supported dev script found in package.json files",
+          errorKind: "not_found",
+        },
         { status: 404 },
       );
     }
@@ -1026,7 +1040,7 @@ export async function DELETE(_req: Request, context: RouteContext) {
   } catch (error) {
     console.error("Failed to stop dev server:", error);
     return Response.json(
-      { error: "Failed to stop dev server" },
+      { error: "Failed to stop dev server", errorKind: "internal_error" },
       { status: 500 },
     );
   }

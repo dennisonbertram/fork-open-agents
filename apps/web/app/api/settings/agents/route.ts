@@ -91,13 +91,20 @@ export async function PATCH(req: Request) {
   try {
     body = await req.json();
   } catch {
-    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+    return Response.json(
+      { error: "Invalid JSON body", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   const parsed = agentPatchSchema.safeParse(body);
   if (!parsed.success) {
     return Response.json(
-      { error: "Invalid request body", details: parsed.error.flatten() },
+      {
+        error: "Invalid request body",
+        details: parsed.error.flatten(),
+        errorKind: "invalid_request",
+      },
       { status: 400 },
     );
   }
@@ -136,13 +143,20 @@ export async function DELETE(req: Request) {
   try {
     body = await req.json();
   } catch {
-    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+    return Response.json(
+      { error: "Invalid JSON body", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   const parsed = agentDeleteSchema.safeParse(body);
   if (!parsed.success) {
     return Response.json(
-      { error: "Invalid request body", details: parsed.error.flatten() },
+      {
+        error: "Invalid request body",
+        details: parsed.error.flatten(),
+        errorKind: "invalid_request",
+      },
       { status: 400 },
     );
   }

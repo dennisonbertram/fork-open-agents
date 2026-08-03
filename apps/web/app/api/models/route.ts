@@ -17,7 +17,10 @@ export async function GET(_req: Request) {
   } catch (error) {
     console.error("Failed to fetch available models:", error);
     return Response.json(
-      { error: "Failed to fetch available models" },
+      {
+        error: "Failed to fetch available models",
+        errorKind: "internal_error",
+      },
       { status: 500 },
     );
   }
