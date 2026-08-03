@@ -3,6 +3,7 @@
 import { AlertTriangle, Loader2, ShieldAlert } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
+import { AuthCtaError } from "@/components/auth/auth-cta-error";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -155,10 +156,21 @@ function AdminPageContent() {
 }
 
 export function AdminContent() {
-  const { isAdmin, loading } = useSession();
+  const { isAdmin, loading, isError, retry } = useSession();
 
   if (loading) {
     return null;
+  }
+
+  // #1086: a failed auth check is not "you are not an admin". Showing the
+  // access gate here would tell a real admin they lost their access.
+  if (isError) {
+    return (
+      <AuthCtaError
+        message="We couldn't verify your admin access."
+        onRetry={retry}
+      />
+    );
   }
 
   if (!isAdmin) {
