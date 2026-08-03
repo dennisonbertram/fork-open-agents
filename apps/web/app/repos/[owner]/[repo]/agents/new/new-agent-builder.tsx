@@ -67,6 +67,7 @@ export function NewAgentBuilder({
 
   const {
     data: readinessData,
+    error: readinessError,
     isLoading: readinessLoading,
     mutate: mutateReadiness,
   } = useSWR<AgentReadinessResponse>(
@@ -176,6 +177,23 @@ export function NewAgentBuilder({
       onRefresh={() => void mutateReadiness()}
       refreshing={readinessLoading}
     />
+  ) : readinessError ? (
+    // A failed readiness fetch must not masquerade as an in-flight check
+    // (#1093) — otherwise the builder says "Checking…" forever.
+    <div className="flex flex-col items-start gap-2 rounded-lg border border-border bg-muted/20 p-4 text-sm text-muted-foreground">
+      <p>
+        Couldn&apos;t check background agent prerequisites. This is a load
+        failure, not a missing prerequisite.
+      </p>
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        onClick={() => void mutateReadiness()}
+      >
+        Retry
+      </Button>
+    </div>
   ) : (
     <div className="rounded-lg border border-border bg-muted/20 p-4 text-sm text-muted-foreground">
       Checking background agent prerequisites.

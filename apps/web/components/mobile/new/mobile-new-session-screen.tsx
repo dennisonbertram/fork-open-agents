@@ -55,7 +55,13 @@ interface RepoCandidate {
 async function fetchInstallations(): Promise<Installation[]> {
   const json = await fetcher<unknown>("/api/github/installations");
   const parsed = installationsSchema.safeParse(json);
-  return parsed.success ? parsed.data : [];
+  // Never swallow a malformed payload into an empty list — an empty list is a
+  // factual claim ("you have no installations") the UI is not allowed to make
+  // when the load actually failed. Mirrors fetchInstallationRepos.
+  if (!parsed.success) {
+    throw new Error("Invalid installations response");
+  }
+  return parsed.data;
 }
 
 // ---------------------------------------------------------------------------
@@ -120,7 +126,11 @@ export function MobileNewSessionScreen() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Installations list
-  const { data: installations } = useSWR<Installation[]>(
+  const {
+    data: installations,
+    error: installationsError,
+    mutate: mutateInstallations,
+  } = useSWR<Installation[]>(
     hasGitHub ? "/api/github/installations" : null,
     fetchInstallations,
     { revalidateOnFocus: false },
@@ -134,10 +144,22 @@ export function MobileNewSessionScreen() {
   }, [installations, selectedInstallation]);
 
   // Repos for selected installation
-  const { repos, isLoading: reposLoading } = useInstallationRepos({
+  const {
+    repos,
+    isLoading: reposLoading,
+    error: reposError,
+    refresh: refreshRepos,
+  } = useInstallationRepos({
     installationId: selectedInstallation?.installationId ?? null,
     limit: 50,
   });
+
+  // A failed load must never be reported as "you have none" (#1093).
+  const repoListFailed = Boolean(installationsError || reposError);
+  const retryRepoList = useCallback(() => {
+    void mutateInstallations();
+    void refreshRepos().catch(() => undefined);
+  }, [mutateInstallations, refreshRepos]);
 
   // Repo defaults (auto-fill branch from repo settings)
   const { defaults: repoDefaults } = useRepoDefaults({
@@ -376,6 +398,21 @@ export function MobileNewSessionScreen() {
               <p className="text-sm text-muted-foreground">
                 Connect GitHub in Settings to use repositories.
               </p>
+            ) : repoListFailed ? (
+              <div className="flex flex-col items-start gap-2">
+                <p className="text-sm text-muted-foreground">
+                  Couldn&apos;t load your repositories. This is a load failure,
+                  not an empty account.
+                </p>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={retryRepoList}
+                >
+                  Retry
+                </Button>
+              </div>
             ) : reposLoading ? (
               <p className="text-sm text-muted-foreground">
                 Loading repositories…
