@@ -4,6 +4,7 @@ import { History } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
+import { AuthCtaError } from "@/components/auth/auth-cta-error";
 import { SignedOutHero } from "@/components/auth/signed-out-hero";
 import { HomeSkeleton } from "@/components/home-skeleton";
 import type { SandboxType } from "@/components/sandbox-selector-compact";
@@ -22,7 +23,12 @@ interface HomePageProps {
 
 export function HomePage({ hasSessionCookie, lastRepo }: HomePageProps) {
   const router = useRouter();
-  const { loading: sessionLoading, isAuthenticated } = useSession();
+  const {
+    loading: sessionLoading,
+    isAuthenticated,
+    isError: sessionCheckFailed,
+    retry: retrySessionCheck,
+  } = useSession();
   const { sessions, loading, createSession } = useSessions({
     enabled: isAuthenticated,
   });
@@ -80,6 +86,19 @@ export function HomePage({ hasSessionCookie, lastRepo }: HomePageProps) {
 
   if (sessionLoading && hasSessionCookie) {
     return <HomeSkeleton lastRepo={lastRepo} />;
+  }
+
+  // #1086: an auth-check failure is not a sign-out. Showing the signed-out
+  // hero here would evict a signed-in user on a transient /api/auth/info blip.
+  if (sessionCheckFailed) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-background p-8 text-foreground">
+        <AuthCtaError
+          message="We couldn't verify your session."
+          onRetry={retrySessionCheck}
+        />
+      </div>
+    );
   }
 
   if (!isAuthenticated) {
