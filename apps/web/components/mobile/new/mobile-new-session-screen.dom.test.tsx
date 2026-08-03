@@ -152,4 +152,20 @@ describe("MobileNewSessionScreen — installations load failure (#1093)", () => 
     });
     expect(q.queryByRole("button", { name: /retry/i })).toBeNull();
   });
+
+  test("a failed refresh over a cached repo list keeps the list and signals staleness", async () => {
+    reposResult = {
+      repos: [{ name: "widgets", full_name: "acme/widgets", private: false }],
+      isLoading: false,
+      error: "refresh failed",
+    };
+    const q = await renderRepoMode();
+
+    await waitFor(() => {
+      expect(q.getByRole("button", { name: /widgets/i })).toBeTruthy();
+    });
+    // Cached repos stay usable, and the failure is still reachable.
+    expect(q.queryByText(/Couldn't load your repositories\./i)).toBeNull();
+    expect(q.getByText(/couldn't be refreshed/i)).toBeTruthy();
+  });
 });

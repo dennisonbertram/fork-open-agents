@@ -9,6 +9,7 @@
 import { registerDomTestHooks, render, userClick, within } from "@/tests/dom";
 
 import { beforeEach, describe, expect, mock, test } from "bun:test";
+import { getBlankTemplate } from "../agent-templates";
 
 registerDomTestHooks();
 
@@ -29,11 +30,17 @@ mock.module("sonner", () => ({
 }));
 
 mock.module("../template-picker", () => ({
-  TemplatePicker: () => <div>template picker</div>,
+  TemplatePicker: ({ onSelect }: { onSelect: (template: unknown) => void }) => (
+    <button onClick={() => onSelect(getBlankTemplate())} type="button">
+      Start blank
+    </button>
+  ),
 }));
 
 mock.module("../agent-spec-editor", () => ({
-  AgentSpecEditor: () => <div>spec editor</div>,
+  AgentSpecEditor: ({ readinessReady }: { readinessReady?: boolean }) => (
+    <span data-testid="readiness-ready">{String(readinessReady ?? true)}</span>
+  ),
 }));
 
 const builderPromise = import("./new-agent-builder");
@@ -106,5 +113,28 @@ describe("NewAgentBuilder — readiness load failure (#1093)", () => {
     expect(
       q.getByRole("link", { name: /open background agent settings/i }),
     ).toBeTruthy();
+  });
+
+  test("a failed revalidation over a cached ready verdict keeps the panel, signals staleness, and downgrades readiness", async () => {
+    readinessState = {
+      data: readyPayload,
+      error: new Error("Failed to refresh"),
+    };
+    const { NewAgentBuilder } = await builderPromise;
+    const { container } = render(
+      <NewAgentBuilder owner="acme" repo="widgets" />,
+    );
+    const q = within(container);
+
+    // Cached content stays on screen — a transient blip must not tear it down.
+    expect(
+      q.getByRole("link", { name: /open background agent settings/i }),
+    ).toBeTruthy();
+    // …but the failure must be reachable, not hidden behind stale content.
+    expect(q.getByText(/couldn't be refreshed/i)).toBeTruthy();
+
+    // A stale "ready" is an assertion about safety: do not let it enable anything.
+    await userClick(q.getByRole("button", { name: /start blank/i }));
+    expect(q.getByTestId("readiness-ready").textContent).toBe("false");
   });
 });

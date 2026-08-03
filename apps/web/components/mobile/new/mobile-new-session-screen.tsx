@@ -154,8 +154,13 @@ export function MobileNewSessionScreen() {
     limit: 50,
   });
 
-  // A failed load must never be reported as "you have none" (#1093).
-  const repoListFailed = Boolean(installationsError || reposError);
+  // A failed load must never be reported as "you have none" (#1093). SWR keeps
+  // `data` across a failed revalidation, so treat it as a failure state only
+  // when there is no usable cached list; otherwise keep the list and say it is
+  // stale.
+  const repoListErrored = Boolean(installationsError || reposError);
+  const repoListFailed = repoListErrored && repos.length === 0;
+  const repoListStale = repoListErrored && repos.length > 0;
   const retryRepoList = useCallback(() => {
     void mutateInstallations();
     void refreshRepos().catch(() => undefined);
@@ -426,6 +431,15 @@ export function MobileNewSessionScreen() {
                 <span className="text-sm font-medium text-foreground">
                   Repository
                 </span>
+                {repoListStale ? (
+                  <button
+                    type="button"
+                    onClick={retryRepoList}
+                    className="self-start text-xs text-destructive underline"
+                  >
+                    This list couldn&apos;t be refreshed — tap to retry.
+                  </button>
+                ) : null}
                 <div className="max-h-48 overflow-y-auto rounded-lg border border-border">
                   {repos.map((repo) => {
                     const isSelected =
