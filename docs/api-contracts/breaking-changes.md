@@ -131,3 +131,45 @@ rename-only patch must not clear `baseUrl` — holds identically on both.
 New callers should use the per-id routes. The settings UI
 (`apps/web/app/settings/inference-profiles-section.tsx`) already does. No removal
 date is set for the collection-level shape.
+
+## Frontend adoption: final state
+
+Every frontend read of an **API error response body** now goes through
+`readApiError` (`apps/web/lib/api/read-api-error.ts`). 38 files use it, across
+settings, sessions, repos, tool-call components and the data hooks.
+
+### What is deliberately not migrated
+
+19 `.error ??` / `.error ||` reads remain in the frontend tree. **None of them
+reads an HTTP error body**, so routing them through the reader would be wrong:
+
+| Where | Count | What `.error` actually is |
+| ----- | ----- | ------------------------- |
+| `components/tool-call/renderers/*` | 10 | `output.error` on a streamed tool result — agent output, never an HTTP response |
+| `app/workflows/chat.ts` | 2 | server-side workflow code, not a client |
+| `app/settings/admin/admin-content.tsx` | 2 | `result.error` from a server action return value |
+| `app/sessions/.../session-chat-content.tsx` | 2 | `part.data.error` on a streamed message part |
+| `app/settings/accounts-section.tsx` | 1 | server action return value |
+| `app/repos/.../secrets`, `.../actions` | 2 | SWR's `error` object from the hook, not a body |
+
+The distinction that matters: `readApiError` parses a **response body**. A
+server-action return value, an SWR error object, and a streamed tool result are
+different things that happen to use the same field name. Migrating them would
+add indirection and lose type safety.
+
+### Guarding the parse
+
+The migration initially left `await res.json()` unguarded on several error
+paths. That is worse than it looks: when a server returns a non-JSON error — an
+HTML gateway page, an empty body — `res.json()` **rejects before the reader
+runs**, so the user sees a raw `SyntaxError` instead of the intended message.
+
+The pattern is:
+
+```ts
+const parsed = readApiError(await res.json().catch(() => null), "Fallback text");
+```
+
+The `.catch` belongs on the **error path only**. One fix put it on the success
+path, which meant an unreadable 2xx resolved to `null` and looked like success —
+caught in review, and worth watching for.
