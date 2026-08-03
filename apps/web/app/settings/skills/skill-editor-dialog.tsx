@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { readApiError } from "@/lib/api/read-api-error";
 import { skillNameSchema, slugifySkillName } from "@/lib/skills/skill-types";
 
 export type SkillEditorSubmit = {
@@ -116,9 +117,13 @@ export function SkillEditorDialog({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prompt }),
       });
-      const data = (await response.json()) as GenerateSkillResponse;
-      if (!response.ok || !data.skill) {
-        toast.error(data.error ?? "Couldn't generate a draft. Try again.");
+      const data = (await response
+        .json()
+        .catch(() => null)) as GenerateSkillResponse | null;
+      if (!response.ok || !data?.skill) {
+        toast.error(
+          readApiError(data, "Couldn't generate a draft. Try again.").message,
+        );
         return;
       }
       if (!name.trim()) {

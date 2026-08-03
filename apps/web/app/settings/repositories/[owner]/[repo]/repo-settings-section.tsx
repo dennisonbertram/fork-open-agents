@@ -16,6 +16,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { readApiError } from "@/lib/api/read-api-error";
 import { cn } from "@/lib/utils";
 import type {
   ResolvedRepoDefaults,
@@ -153,10 +154,12 @@ export function RepoSettingsSection({
       },
     );
     if (!res.ok) {
-      const body = (await res.json().catch(() => null)) as {
-        error?: string;
-      } | null;
-      throw new Error(body?.error ?? "Failed to save settings");
+      throw new Error(
+        readApiError(
+          await res.json().catch(() => null),
+          "Failed to save settings",
+        ).message,
+      );
     }
   };
 
@@ -166,10 +169,12 @@ export function RepoSettingsSection({
       { method: "DELETE" },
     );
     if (!res.ok) {
-      const body = (await res.json().catch(() => null)) as {
-        error?: string;
-      } | null;
-      throw new Error(body?.error ?? "Failed to reset settings");
+      throw new Error(
+        readApiError(
+          await res.json().catch(() => null),
+          "Failed to reset settings",
+        ).message,
+      );
     }
   };
 
