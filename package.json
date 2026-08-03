@@ -42,7 +42,8 @@
     "api:sweep": "bun run scripts/api-exercise/auth-sweep.ts",
     "ui:inventory": "bun run scripts/ui-exercise/page-inventory.ts",
     "ui:sweep": "bun run scripts/ui-exercise/render-sweep.ts",
-    "ui:census": "bun run scripts/ui-exercise/fetch-state-census.ts"
+    "ui:census": "bun run scripts/ui-exercise/fetch-state-census.ts",
+    "ui:journeys": "bun run scripts/ui-exercise/browser-journeys.ts"
   },
   "devDependencies": {
     "oxfmt": "^0.43.0",
