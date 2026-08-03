@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import type { DevServerLaunchResponse } from "@/app/api/sessions/[sessionId]/dev-server/route";
+import { readApiError } from "@/lib/api/read-api-error";
 
 type RuntimeDevServerLaunchResponse = Omit<
   DevServerLaunchResponse,
@@ -44,11 +45,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function getErrorMessage(body: unknown, fallback: string): string {
-  if (!isRecord(body) || typeof body.error !== "string") {
-    return fallback;
-  }
-
-  return body.error;
+  return readApiError(body, fallback).message;
 }
 
 function parseLaunchResponse(

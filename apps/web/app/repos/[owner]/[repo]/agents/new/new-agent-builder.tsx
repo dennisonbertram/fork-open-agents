@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import useSWR from "swr";
 import { Button } from "@/components/ui/button";
 import { ReadinessVerdict } from "@/components/ui/readiness-verdict";
+import { readApiError } from "@/lib/api/read-api-error";
 import { canonicalBackgroundAutomationDetailUrl } from "@/lib/automations/definition-routes";
 import {
   buildAgentPayload,
@@ -127,16 +128,18 @@ export function NewAgentBuilder({
         `/api/background-agents/${createdAgentId}/test`,
         { method: "POST" },
       );
-      const body = (await response.json()) as ManualTestResponse;
+      const body = (await response
+        .json()
+        .catch(() => null)) as ManualTestResponse | null;
       if (!response.ok) {
-        setTestAlert(body.error ?? "Failed to start test");
+        setTestAlert(readApiError(body, "Failed to start test").message);
         return;
       }
-      if (body.skipReason) {
+      if (body?.skipReason) {
         setTestAlert(manualTestSkipMessages[body.skipReason]);
         return;
       }
-      const runId = body.runIds[0];
+      const runId = body?.runIds[0];
       if (!runId) {
         setTestAlert("No background run was created for this test");
         return;

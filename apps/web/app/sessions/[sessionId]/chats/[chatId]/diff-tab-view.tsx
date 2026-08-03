@@ -30,6 +30,7 @@ import {
 } from "@/hooks/use-user-preferences";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { defaultDiffOptions, splitDiffOptions } from "@/lib/diffs-config";
+import { readApiError } from "@/lib/api/read-api-error";
 import { cn } from "@/lib/utils";
 import { DownloadDiffDialog } from "./download-diff-dialog";
 import { useSessionChatWorkspaceContext } from "./session-chat-context";
@@ -320,14 +321,8 @@ export function DiffTabView() {
         `/api/sessions/${encodeURIComponent(sessionId)}/diff/patch`,
       );
       if (!response.ok) {
-        const data = (await response.json().catch(() => null)) as {
-          error?: unknown;
-        } | null;
-        const message =
-          typeof data?.error === "string"
-            ? data.error
-            : "Failed to download diff";
-        throw new Error(message);
+        const data = await response.json().catch(() => null);
+        throw new Error(readApiError(data, "Failed to download diff").message);
       }
 
       const blob = await response.blob();
