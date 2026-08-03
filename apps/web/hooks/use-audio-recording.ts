@@ -121,19 +121,20 @@ export function useAudioRecording() {
             }),
           });
 
-          const data = (await response
-            .json()
-            .catch(() => null)) as TranscribeResponse | null;
-
           if (!response.ok) {
-            setError(readApiError(data, "Transcription failed").message);
+            const errorBody = await response.json().catch(() => null);
+            setError(readApiError(errorBody, "Transcription failed").message);
             setState("idle");
             resolve(null);
             return;
           }
 
+          // An unreadable 2xx body is a real failure — let it throw into the
+          // catch below so the user sees an error instead of a silent null.
+          const data = (await response.json()) as TranscribeResponse;
+
           setState("idle");
-          resolve(data?.text ?? null);
+          resolve(data.text ?? null);
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           setError(`Transcription failed: ${message}`);

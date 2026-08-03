@@ -146,10 +146,12 @@ export function useSessions(options?: {
         body: JSON.stringify(input),
       });
 
-      const responseData = (await res.json()) as {
-        session?: Session;
-        chat?: Chat;
-      } & CreateSessionErrorResponseBody;
+      const responseData = (await res.json().catch(() => null)) as
+        | ({
+            session?: Session;
+            chat?: Chat;
+          } & CreateSessionErrorResponseBody)
+        | null;
 
       if (!res.ok || !responseData?.session || !responseData.chat) {
         // Ownership decision (#784): this hook does NOT toast — every
@@ -157,7 +159,7 @@ export function useSessions(options?: {
         // the New Session dialog, toast elsewhere) via the shared
         // create-session-error helper. See docs/agents/lessons-learned.md.
         throw new CreateSessionError(
-          mapCreateSessionErrorResponse(responseData, res.status),
+          mapCreateSessionErrorResponse(responseData ?? {}, res.status),
         );
       }
 
