@@ -100,3 +100,25 @@ describe("useSession", () => {
     expect(result.isError).toBe(false);
   });
 });
+
+describe("a failed revalidation on top of cached data", () => {
+  // Raised in review of #1087: SWR preserves `data` when a revalidation fails,
+  // so an authenticated user whose background refresh blips must not be shown
+  // the error branch — consumers unmount authenticated content on isError.
+  test("keeps the user authenticated and does not report an error state", async () => {
+    const { useSession } = await modulePromise;
+    swrState = {
+      data: SIGNED_IN,
+      error: new Error("network blip during revalidation"),
+      isLoading: false,
+    };
+
+    const result = useSession();
+
+    expect(result.isAuthenticated).toBe(true);
+    expect(result.isError).toBe(false);
+    // The raw error stays exposed, so a surface can show a subtle "couldn't
+    // refresh" hint without tearing the page down.
+    expect(result.error).toBeInstanceOf(Error);
+  });
+});
