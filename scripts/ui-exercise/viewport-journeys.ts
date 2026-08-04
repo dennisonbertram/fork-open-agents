@@ -226,7 +226,12 @@ if (import.meta.main) {
     );
   }
 
+  // Subtracting both counts double-counts any view that fails both checks, so
+  // the total is computed from the set of distinct failing views.
+  const failing = new Set(
+    [...overflowing, ...withErrors].map((f) => `${f.path}@${f.width}`),
+  );
   console.log(
-    `\n${findings.length - overflowing.length - withErrors.length}/${findings.length} path+viewport combinations clean of overflow and errors`,
+    `\n${findings.length - failing.size}/${findings.length} path+viewport combinations clean of overflow and errors`,
   );
 }

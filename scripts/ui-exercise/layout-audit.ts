@@ -10,6 +10,20 @@
  *
  * Deliberately paired with screenshots. This catches what geometry can prove;
  * the screenshots catch what it cannot.
+ *
+ * KNOWN NOISE — read these two sections as leads, not defects:
+ *
+ * - "Clipped": an app-shell that is `h-screen overflow-hidden` with an inner
+ *   scroll area reports its content as cut off by thousands of pixels. That is
+ *   the pattern working, not a defect. Only small cut values (tens of px) on a
+ *   non-scrolling parent are worth investigating.
+ * - "Tap targets": flags anything under 44x44, which includes deliberate compact
+ *   controls like a 28px sidebar toggle and 36px-tall buttons. Real, but a
+ *   design decision rather than a bug — judge per control.
+ *
+ * The sections that ARE trustworthy: horizontal overflow, overlapping siblings,
+ * heading hierarchy, and the gap-value census. Those have no known false
+ * positives after the corrections recorded below.
  */
 
 const BASE_URL = process.env.UI_BASE_URL ?? "http://localhost:3111";
@@ -47,8 +61,19 @@ async function browser(
   }
 }
 
+/**
+ * agent-browser returns eval results as a JSON string literal, so the payload
+ * arrives double-encoded. JSON.parse reverses that correctly; a regex that
+ * strips quotes corrupts any measured label that itself contains one.
+ */
 function unescapeEval(raw: string): string {
-  return raw.trim().replace(/^"|"$/g, "").replace(/\\"/g, '"');
+  const trimmed = raw.trim();
+  try {
+    const once = JSON.parse(trimmed);
+    return typeof once === "string" ? once : trimmed;
+  } catch {
+    return trimmed;
+  }
 }
 
 /**
@@ -73,11 +98,29 @@ const AUDIT_SCRIPT = String.raw`JSON.stringify((() => {
     return r.width > 0 && r.height > 0;
   };
 
+  // Scope to the app's own tree. The page also contains browser-extension DOM
+  // (a devtools panel with styles-module__* classes) and Next's script tags;
+  // measuring those reported 60/60 views "clipped" by an overlay that is not
+  // part of this application.
+  const roots = Array.from(document.body.children).filter((el) => {
+    const tag = el.tagName.toLowerCase();
+    if (tag === "script" || tag === "style" || tag === "template") return false;
+    if (tag === "next-route-announcer") return false;
+    // Extension panels use hashed CSS-module class names; the app uses Tailwind.
+    const cls = typeof el.className === "string" ? el.className : "";
+    if (/styles-module__/.test(cls)) return false;
+    return true;
+  });
+
   // Anything inside an <svg> is excluded: paths and circles overlap by design,
   // and counting them reported "overlaps" on every page in the app.
   const inSvg = (el) => el.closest("svg") !== null;
-  const all = Array.from(document.querySelectorAll("body *"))
+  const fromExtension = (el) =>
+    el.closest('[class*="styles-module__"]') !== null;
+  const all = roots
+    .flatMap((root) => [root, ...Array.from(root.querySelectorAll("*"))])
     .filter((el) => !inSvg(el))
+    .filter((el) => !fromExtension(el))
     .filter(visible);
 
   // --- overlap: siblings in normal flow sharing pixels -------------------
@@ -106,18 +149,30 @@ const AUDIT_SCRIPT = String.raw`JSON.stringify((() => {
   }
 
   // --- clipped: child escaping a parent that hides overflow --------------
+  // Every clipping boundary, not just the immediate parent, and all four edges
+  // — content is just as lost off the left or the bottom, and the ancestor that
+  // hides overflow is often a grandparent.
   const clipped = [];
   for (const el of all) {
-    const p = el.parentElement;
-    if (!p) continue;
-    const ps = getComputedStyle(p);
-    if (ps.overflow === "visible" && ps.overflowX === "visible") continue;
-    if (ps.overflowX === "auto" || ps.overflowX === "scroll") continue;
     const r = el.getBoundingClientRect();
-    const pr = p.getBoundingClientRect();
-    if (pr.width === 0) continue;
-    const cut = Math.round(r.right - pr.right);
-    if (cut > 4) clipped.push(label(el) + " cut off by " + cut + "px inside " + label(p));
+    let p = el.parentElement;
+    for (let d = 0; d < 4 && p && p !== document.body; d++) {
+      const ps = getComputedStyle(p);
+      const pr = p.getBoundingClientRect();
+      if (pr.width === 0 || pr.height === 0) { p = p.parentElement; continue; }
+      const clipsX = ps.overflowX === "hidden" || ps.overflowX === "clip";
+      const clipsY = ps.overflowY === "hidden" || ps.overflowY === "clip";
+      const edges = [];
+      if (clipsX && r.right - pr.right > 4) edges.push("right by " + Math.round(r.right - pr.right));
+      if (clipsX && pr.left - r.left > 4) edges.push("left by " + Math.round(pr.left - r.left));
+      if (clipsY && r.bottom - pr.bottom > 4) edges.push("bottom by " + Math.round(r.bottom - pr.bottom));
+      if (clipsY && pr.top - r.top > 4) edges.push("top by " + Math.round(pr.top - r.top));
+      if (edges.length) {
+        clipped.push(label(el) + " cut " + edges.join(", ") + "px inside " + label(p));
+        break;
+      }
+      p = p.parentElement;
+    }
   }
 
   // --- text truncated with no ellipsis ----------------------------------
@@ -144,6 +199,14 @@ const AUDIT_SCRIPT = String.raw`JSON.stringify((() => {
     let hit = { w: r.width, h: r.height };
     let p = el.parentElement;
     for (let d = 0; d < 2 && p; d++) {
+      const ptag = p.tagName.toLowerCase();
+      const prole = p.getAttribute("role");
+      // Only an ancestor that is itself the control counts. A decorative
+      // wrapper centring a small icon does not enlarge the tap target, and
+      // treating it as if it did under-reported real defects.
+      const isControl =
+        ptag === "button" || ptag === "a" || prole === "button" || prole === "link";
+      if (!isControl) break;
       const pr = p.getBoundingClientRect();
       if (pr.width <= r.width + 24 && pr.height <= r.height + 24) {
         hit = { w: Math.max(hit.w, pr.width), h: Math.max(hit.h, pr.height) };
@@ -217,7 +280,10 @@ export async function audit(
     ["set", "viewport", `${viewport.width}`, `${viewport.height}`],
     30_000,
   );
-  await browser(["open", `${BASE_URL}${path}`], 120_000);
+  const nav = await browser(["open", `${BASE_URL}${path}`], 120_000);
+  // A failed navigation leaves the previous page loaded, so measuring anyway
+  // would silently attribute one page's geometry to another.
+  if (nav.exitCode !== 0) return null;
   // The mobile tree only exists after hydration; measuring sooner reads the
   // desktop markup the server sent.
   await Bun.sleep(1800);
