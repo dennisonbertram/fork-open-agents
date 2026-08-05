@@ -117,7 +117,19 @@ async function releaseUnusableSandbox({
   sessionId: string | undefined;
 }): Promise<void> {
   try {
-    await sandbox.stop?.();
+    // Bounded: the probe may have returned "unknown" precisely because the
+    // provider control plane is unresponsive, and an unbounded stop() would
+    // then hang the request that is trying to report that failure. A sandbox
+    // left running is a cost problem; a hung request is a user-facing outage.
+    await Promise.race([
+      sandbox.stop?.() ?? Promise.resolve(),
+      new Promise((_resolve, reject) =>
+        setTimeout(
+          () => reject(new Error("sandbox stop timed out after 5000ms")),
+          5000,
+        ),
+      ),
+    ]);
   } catch (error) {
     console.error("[sandbox] failed to release an unusable sandbox", {
       sessionId,
