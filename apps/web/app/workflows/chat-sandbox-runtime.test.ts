@@ -9,6 +9,20 @@
  * BT-006 (#811): sandbox.exec THROWS during setup ⇒ failed observation appended + run finished "failed".
  * BT-007 (#811): startup notes read "will run setup, then verify" — never "installs".
  * BT-008 (#811): classic-mode provisioning is unchanged — still uses DEFAULT_SANDBOX_PORTS.
+ * BT-010: a deterministic setup command failure (errorKind setup_command_failed) throws a
+ *   FatalError — the workflow engine must never retry a command that ran and exited nonzero,
+ *   since a retry cannot change a deterministic outcome (production incident DCaiJUlpmOobs2Yp18O6R).
+ * BT-011: a transient setup exec failure (errorKind setup_exec_error) still throws a normal,
+ *   retryable error — the exec call itself failing (unreachable sandbox, timeout) may succeed
+ *   on retry, so it must not be escalated to FatalError.
+ * BT-012: a required setup command that exits nonzero for a generic/network-shaped reason
+ *   (registry blip, no known guard phrase) is NOT escalated to FatalError — only our own
+ *   deterministic guard phrases (see DETERMINISTIC_SETUP_FAILURE_PHRASES) are fatal; every
+ *   other nonzero exit stays retryable (review comment on #1114: exit code alone cannot
+ *   distinguish a deterministic precondition failure from a transient registry/network one).
+ * BT-013: DETERMINISTIC_SETUP_FAILURE_PHRASES cannot silently drift from the guard text the
+ *   default managed runtime profile (packages/sandbox/managed-runtime-profiles.ts) actually
+ *   emits — this fails if either list changes without the other.
  */
 
 import { beforeEach, describe, expect, mock, test } from "bun:test";
@@ -118,8 +132,23 @@ mock.module("@open-agents/sandbox/managed-runtime-profiles", () => ({
   getManagedRuntimeProfile: () => DEFAULT_BUILT_IN_PROFILE,
 }));
 
+// Minimal stand-in for @workflow/errors' FatalError: same name/`fatal` shape
+// the real workflow engine keys on (step-handler.js: `FatalError.is(err)`,
+// which checks `err.name === "FatalError"`) so tests can assert against it
+// without depending on the real "workflow" package's export chain. A plain
+// constructor function (not a class) that returns an explicit object sidesteps
+// the file's max-classes-per-file lint budget, already spent on the
+// WorkspaceStartupReporter mock below.
+function MockFatalError(message: string): Error & { fatal: boolean } {
+  const error = new Error(message) as Error & { fatal: boolean };
+  error.name = "FatalError";
+  error.fatal = true;
+  return error;
+}
+
 mock.module("workflow", () => ({
   getWritable: () => new WritableStream({ write() {} }),
+  FatalError: MockFatalError,
 }));
 
 mock.module("@/lib/db/sessions", () => ({
@@ -450,6 +479,8 @@ function makeManagedRuntimeSession(
 // ── Import the module under test (after all mocks are declared) ────────────────
 
 const { resolveChatSandboxRuntime } = await import("./chat-sandbox-runtime");
+const { DETERMINISTIC_SETUP_FAILURE_PHRASES } =
+  await import("./chat-sandbox-runtime-impl");
 
 // ── Tests ──────────────────────────────────────────────────────────────────────
 
@@ -1001,6 +1032,199 @@ describe("resolveChatSandboxRuntime", () => {
         options: { ports: number[] };
       };
       expect(callArgs.options.ports).toEqual([3000]);
+    });
+  });
+
+  describe("BT-010: deterministic setup command failure throws FatalError (never retryable)", () => {
+    test("a setup command that exits nonzero throws a FatalError, not a plain retryable error", async () => {
+      resolveProfileResult = {
+        ok: true,
+        profile: {
+          ...DEFAULT_BUILT_IN_PROFILE,
+          setupCommands: [
+            {
+              id: "install-agent-browser",
+              label: "Install agent-browser",
+              description: "Installs agent-browser globally.",
+              command: "bun install -g agent-browser",
+              required: true,
+            },
+          ],
+          verificationCommands: [],
+        },
+        source: "built_in",
+        requestedProfileId: "test-profile",
+        resolvedProfileId: "test-profile",
+      };
+      execImpl = () =>
+        Promise.resolve({
+          success: false,
+          exitCode: 1,
+          stdout: "",
+          stderr: "agent-browser native binary was not found after install",
+          truncated: false,
+        });
+      const session = makeManagedRuntimeSession({
+        id: "session-setup-command-failed",
+      });
+      testSessionById[session.id] = session;
+
+      let caught: unknown;
+      try {
+        await resolveChatSandboxRuntime({
+          userId: "user-1",
+          sessionId: session.id,
+          assistantId: "asst-bt10-1",
+        });
+      } catch (error) {
+        caught = error;
+      }
+
+      // Assert the exact shape the workflow engine's retry logic keys on
+      // (FatalError.is(err) checks err.name === "FatalError"), not just
+      // "some error was thrown" — a plain Error here would still retry.
+      expect(caught).toBeInstanceOf(Error);
+      expect((caught as Error).name).toBe("FatalError");
+      expect((caught as Error & { fatal?: boolean }).fatal).toBe(true);
+      expect((caught as Error).message).toContain("Install agent-browser");
+
+      expect(finishManagedRuntimeProfileRunSpy).toHaveBeenCalled();
+      const finishArgs = finishManagedRuntimeProfileRunSpy.mock.calls.at(
+        0,
+      )?.[0] as { status: string; errorKind?: string };
+      expect(finishArgs.status).toBe("failed");
+      expect(finishArgs.errorKind).toBe("setup_command_failed");
+    });
+  });
+
+  describe("BT-011: transient setup exec failure stays retryable", () => {
+    test("sandbox.exec throwing during setup still throws a plain (non-FatalError) error", async () => {
+      resolveProfileResult = {
+        ok: true,
+        profile: {
+          ...DEFAULT_BUILT_IN_PROFILE,
+          setupCommands: [
+            {
+              id: "install-thing",
+              label: "Install thing",
+              description: "Installs a thing.",
+              command: "install-thing",
+              required: true,
+            },
+          ],
+          verificationCommands: [],
+        },
+        source: "built_in",
+        requestedProfileId: "test-profile",
+        resolvedProfileId: "test-profile",
+      };
+      execImpl = () => {
+        throw new Error("sandbox exec transport failure");
+      };
+      const session = makeManagedRuntimeSession({
+        id: "session-setup-exec-error-retryable",
+      });
+      testSessionById[session.id] = session;
+
+      let caught: unknown;
+      try {
+        await resolveChatSandboxRuntime({
+          userId: "user-1",
+          sessionId: session.id,
+          assistantId: "asst-bt11-1",
+        });
+      } catch (error) {
+        caught = error;
+      }
+
+      // A transient exec failure must NOT be escalated to FatalError — the
+      // workflow engine's normal retry behavior must still apply, since a
+      // retry can plausibly succeed (unreachable sandbox, timeout, etc).
+      expect(caught).toBeInstanceOf(Error);
+      expect((caught as Error).name).toBe("WorkspaceSetupError");
+      expect((caught as Error & { fatal?: boolean }).fatal).not.toBe(true);
+
+      const finishArgs = finishManagedRuntimeProfileRunSpy.mock.calls.at(
+        0,
+      )?.[0] as { status: string; errorKind?: string };
+      expect(finishArgs.errorKind).toBe("setup_exec_error");
+    });
+  });
+
+  describe("BT-012: generic setup command failure stays retryable", () => {
+    test("a setup command that exits nonzero with no known guard phrase throws a plain (non-FatalError) error", async () => {
+      resolveProfileResult = {
+        ok: true,
+        profile: {
+          ...DEFAULT_BUILT_IN_PROFILE,
+          setupCommands: [
+            {
+              id: "install-agent-browser",
+              label: "Install agent-browser",
+              description: "Installs agent-browser globally.",
+              command: "bun install -g agent-browser",
+              required: true,
+            },
+          ],
+          verificationCommands: [],
+        },
+        source: "built_in",
+        requestedProfileId: "test-profile",
+        resolvedProfileId: "test-profile",
+      };
+      execImpl = () =>
+        Promise.resolve({
+          success: false,
+          exitCode: 1,
+          stdout: "",
+          // A registry blip — shaped like a real bun-install network failure,
+          // but not one of our own guard phrases. Nothing about this exit is
+          // deterministic; re-running the install could succeed.
+          stderr:
+            "error: FetchError: request to https://registry.npmjs.org/agent-browser failed, reason: connect ETIMEDOUT",
+          truncated: false,
+        });
+      const session = makeManagedRuntimeSession({
+        id: "session-setup-command-failed-generic",
+      });
+      testSessionById[session.id] = session;
+
+      let caught: unknown;
+      try {
+        await resolveChatSandboxRuntime({
+          userId: "user-1",
+          sessionId: session.id,
+          assistantId: "asst-bt12-1",
+        });
+      } catch (error) {
+        caught = error;
+      }
+
+      expect(caught).toBeInstanceOf(Error);
+      expect((caught as Error).name).toBe("WorkspaceSetupError");
+      expect((caught as Error & { fatal?: boolean }).fatal).not.toBe(true);
+
+      const finishArgs = finishManagedRuntimeProfileRunSpy.mock.calls.at(
+        0,
+      )?.[0] as { status: string; errorKind?: string };
+      expect(finishArgs.status).toBe("failed");
+      expect(finishArgs.errorKind).toBe("setup_command_failed");
+    });
+  });
+
+  describe("BT-013: deterministic guard phrases stay in sync with the profile's own guard text", () => {
+    test("every phrase the classifier treats as fatal still appears verbatim in managed-runtime-profiles.ts", async () => {
+      const { readFileSync } = await import("node:fs");
+      const profileSourcePath = new URL(
+        "../../../../packages/sandbox/managed-runtime-profiles.ts",
+        import.meta.url,
+      );
+      const profileSource = readFileSync(profileSourcePath, "utf8");
+
+      expect(DETERMINISTIC_SETUP_FAILURE_PHRASES.length).toBeGreaterThan(0);
+      for (const phrase of DETERMINISTIC_SETUP_FAILURE_PHRASES) {
+        expect(profileSource).toContain(phrase);
+      }
     });
   });
 
