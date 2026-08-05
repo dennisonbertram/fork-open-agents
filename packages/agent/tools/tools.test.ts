@@ -1896,10 +1896,15 @@ describe("tools execute behavior", () => {
     // consistently while passing 5/5 when the file was run alone. The bound is
     // now far above any plausible I/O time, so it only fires on a real
     // ordering regression rather than on machine load.
+    //
+    // 2s, not 5s: Bun's default per-test timeout is also 5000ms, so a 5s
+    // sentinel is a dead tie with the runner's own deadline — a real regression
+    // would surface as an opaque test timeout instead of this assertion. 2s is
+    // still 20x the measured worst case and safely inside the deadline.
     const pending = Symbol("pending");
     const firstOutput = await Promise.race([
       iterator.next(),
-      new Promise((resolve) => setTimeout(() => resolve(pending), 5000)),
+      new Promise((resolve) => setTimeout(() => resolve(pending), 2000)),
     ]);
 
     expect(firstOutput).not.toBe(pending);
