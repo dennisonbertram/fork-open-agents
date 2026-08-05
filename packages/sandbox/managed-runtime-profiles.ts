@@ -46,6 +46,12 @@ const INSTALL_BUN_COMMAND = [
 // 755) and took the default managed runtime profile down between
 // 2026-06-18 and 2026-08-05. Bump this one constant when intentionally
 // upgrading agent-browser.
+//
+// This is also the target the skip-reinstall check below compares against.
+// Do NOT pin this back to whatever the current base snapshot happens to
+// contain: the snapshot is rebuilt from these commands, not the other way
+// round, and 0.27.0 predates the domain-allowlist and network-containment
+// hardening shipped in 0.32.0.
 const AGENT_BROWSER_VERSION = "0.33.2";
 
 const INSTALL_AGENT_BROWSER_COMMAND = [
@@ -54,21 +60,39 @@ const INSTALL_AGENT_BROWSER_COMMAND = [
   'export PATH="$profile_bin_dir:$HOME/.bun/bin:$HOME/.bun/install/global/bin:/usr/local/bin:/usr/bin:/bin:$PATH"',
   'mkdir -p "$profile_bin_dir"',
   'if ! command -v bun >/dev/null 2>&1; then echo "Bun is required before installing agent-browser for this profile." >&2; exit 1; fi',
-  'rm -f "$profile_bin_dir/agent-browser" "$HOME/.bun/bin/agent-browser"',
-  'rm -rf "$HOME/.bun/install/global/node_modules/agent-browser"',
-  `bun install -g agent-browser@${AGENT_BROWSER_VERSION}`,
-  'agent_browser_bin_dir="$HOME/.bun/install/global/node_modules/agent-browser/bin"',
+  `agent_browser_pinned_version="${AGENT_BROWSER_VERSION}"`,
+  'agent_browser_pkg_dir="$HOME/.bun/install/global/node_modules/agent-browser"',
+  'agent_browser_bin_dir="$agent_browser_pkg_dir/bin"',
   "platform=\"$(uname -s | tr '[:upper:]' '[:lower:]')\"",
   'arch="$(uname -m)"',
   'case "$arch" in x86_64|amd64) agent_browser_arch="x64" ;; arm64|aarch64) agent_browser_arch="arm64" ;; *) echo "Unsupported agent-browser architecture: $arch" >&2; exit 1 ;; esac',
   'agent_browser_path="$agent_browser_bin_dir/agent-browser-$platform-$agent_browser_arch"',
-  // agent-browser >= 0.29.0 ships its native platform binary at mode 644 and
-  // relies on its own postinstall (scripts/postinstall.js) to chmod it to
-  // 755. Bun blocks that postinstall as an untrusted lifecycle script, so
-  // the binary is present but not executable after install. The only thing
-  // this profile actually needed from that postinstall was the chmod, and
-  // it already writes its own shim below, so do the chmod here and only
-  // fail when the binary itself is missing.
+  'agent_browser_installed_version=""',
+  'if [ -f "$agent_browser_pkg_dir/package.json" ]; then agent_browser_installed_version="$(grep -m1 \'"version"\' "$agent_browser_pkg_dir/package.json" | sed -E \'s/.*"version": *"([^"]+)".*/\\1/\')"; fi',
+  // The base sandbox snapshot already bakes a working, pinned agent-browser
+  // install. Unconditionally deleting and reinstalling it every session (a)
+  // throws away a perfectly good image and (b) puts the public npm registry
+  // on the critical path of every session — which is how an unrelated
+  // upstream agent-browser packaging change took production down. Only
+  // reinstall when the baked copy doesn't already match what this profile
+  // expects.
+  'if [ "$agent_browser_installed_version" = "$agent_browser_pinned_version" ] && [ -f "$agent_browser_path" ]; then',
+  "  : # image already has the pinned version and native binary, skip reinstall",
+  "else",
+  '  rm -f "$profile_bin_dir/agent-browser" "$HOME/.bun/bin/agent-browser"',
+  '  rm -rf "$agent_browser_pkg_dir"',
+  "  bun install -g agent-browser@$agent_browser_pinned_version",
+  "fi",
+  // Whichever branch ran above, converge on the same postcondition: the
+  // native binary must exist, be executable, and have a working shim.
+  //
+  // The chmod is required, not defensive. agent-browser >= 0.29.0 ships its
+  // native platform binary at mode 644 and relies on its own postinstall
+  // (scripts/postinstall.js) to chmod it to 755. Bun blocks that postinstall
+  // as an untrusted lifecycle script, so after a fresh install the binary is
+  // present but not executable. The chmod is the only thing this profile
+  // actually needed from that postinstall — it already writes its own shim
+  // below — so do it here and fail only when the binary itself is missing.
   'if [ ! -f "$agent_browser_path" ]; then echo "agent-browser native binary was not found after install: $agent_browser_path" >&2; exit 1; fi',
   'chmod +x "$agent_browser_path"',
   'rm -f "$profile_bin_dir/agent-browser"',
@@ -84,7 +108,7 @@ export const DEFAULT_MANAGED_RUNTIME_PROFILE_ID = "web-bun-agent-browser";
 export const MANAGED_RUNTIME_PROFILES = [
   {
     id: DEFAULT_MANAGED_RUNTIME_PROFILE_ID,
-    version: "2026-08-05.1",
+    version: "2026-08-05.2",
     displayName: "Web app with Bun and browser checks",
     description:
       "Baseline Open Agents managed runtime profile for JavaScript/TypeScript web repositories that need Bun scripts, exposed preview ports, and browser smoke checks.",
