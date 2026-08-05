@@ -298,6 +298,9 @@ export async function resolveComposioToolsForChat(params: {
   const directSlugs = isMainAgentKey
     ? (resolvedForMain?.directSlugs ?? null)
     : null;
+  const directSlugsSource = isMainAgentKey
+    ? (resolvedForMain?.source ?? null)
+    : null;
 
   // directSlugs === [] is the explicit "off" sentinel (#799, finding G1) —
   // an empty array is truthy in JS, so this must be a length check, not a
@@ -305,6 +308,15 @@ export async function resolveComposioToolsForChat(params: {
   // direct-list branch below instead of resolving to { status: "off" }.
   if (directSlugs && directSlugs.length > 0) {
     if ((params.runtimeMode ?? "classic") !== "classic") {
+      // An IMPLICIT default (repo-default, e.g. GitHub default-on for an
+      // unconfigured repo) must not hard-fail a managed-runtime chat — the
+      // user never chose Composio tools here (#1119). Drop the tools and
+      // continue instead of throwing. An EXPLICIT selection ("chat" or
+      // "agent" tier) still throws below: silently discarding tools a user
+      // deliberately picked is worse than a clear error.
+      if (directSlugsSource === "repo-default") {
+        return { status: "off" };
+      }
       throw new ComposioSetupError(
         "Composio tools are currently available only in classic runtime mode.",
       );
