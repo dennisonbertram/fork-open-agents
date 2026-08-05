@@ -13,12 +13,14 @@ export type ProviderErrorDetails = {
  */
 const NON_RETRYABLE_STATUS_CODES = new Set([400, 404, 405, 409, 413, 422]);
 
+const MAX_UNWRAP_DEPTH = 5;
+
 /**
- * Read the AI SDK's `APICallError` shape structurally rather than importing
- * `@ai-sdk/provider` here: the class travels through several provider packages
- * and the app does not otherwise depend on it directly.
+ * Reads `statusCode`/`responseBody` directly off a single error-shaped value,
+ * without following any wrapping. Returns nulls when the value carries
+ * neither field.
  */
-export function getProviderErrorDetails(error: unknown): ProviderErrorDetails {
+function readOwnProviderErrorDetails(error: unknown): ProviderErrorDetails {
   if (typeof error !== "object" || error === null) {
     return { responseBody: null, statusCode: null };
   }
@@ -35,6 +37,45 @@ export function getProviderErrorDetails(error: unknown): ProviderErrorDetails {
       : null;
 
   return { responseBody, statusCode };
+}
+
+/**
+ * Read the AI SDK's `APICallError` shape structurally rather than importing
+ * `@ai-sdk/provider` here: the class travels through several provider packages
+ * and the app does not otherwise depend on it directly.
+ *
+ * The real `APICallError` does not always arrive directly: the AI SDK itself
+ * wraps a non-retryable failure in other error types before it reaches this
+ * app's stream-error capture site — `NoOutputGeneratedError` (and any other
+ * `new Error(message, { cause })`) carries the original error on `.cause`,
+ * and `retryWithExponentialBackoffRespectingRetryHeaders` wraps a failure
+ * that followed at least one other attempt in a `RetryError` whose own
+ * `.message` is a generic "Failed after N attempts..." string but whose
+ * `.lastError` is the real, structured error. Walk both wrapping shapes
+ * (bounded, since either could in principle nest) before giving up.
+ */
+export function getProviderErrorDetails(error: unknown): ProviderErrorDetails {
+  let current = error;
+
+  for (let depth = 0; depth < MAX_UNWRAP_DEPTH; depth++) {
+    const details = readOwnProviderErrorDetails(current);
+    if (details.statusCode !== null) {
+      return details;
+    }
+
+    if (typeof current !== "object" || current === null) {
+      break;
+    }
+
+    const wrapper = current as { cause?: unknown; lastError?: unknown };
+    const next = wrapper.cause ?? wrapper.lastError;
+    if (next === undefined || next === current) {
+      break;
+    }
+    current = next;
+  }
+
+  return { responseBody: null, statusCode: null };
 }
 
 /**
