@@ -15,6 +15,8 @@ export async function POST(req: Request): Promise<Response> {
     return Response.json(
       {
         errorKind: "feature_disabled",
+        error:
+          "Agent loops are not enabled. Set AGENT_LOOPS_ENABLED=true to enable.",
         message:
           "Agent loops are not enabled. Set AGENT_LOOPS_ENABLED=true to enable.",
       },
@@ -26,7 +28,10 @@ export async function POST(req: Request): Promise<Response> {
   try {
     body = await req.json();
   } catch {
-    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+    return Response.json(
+      { error: "Invalid JSON body", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   const parsed = createAgentLoopBodySchema.safeParse(body);
@@ -34,6 +39,7 @@ export async function POST(req: Request): Promise<Response> {
     return Response.json(
       {
         errorKind: "invalid_request",
+        error: `Invalid request body: ${parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`,
         message: `Invalid request body: ${parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`,
       },
       { status: 400 },
@@ -55,6 +61,7 @@ export async function POST(req: Request): Promise<Response> {
     return Response.json(
       {
         errorKind: "loop_invalid",
+        error: "Loop definition is invalid.",
         message: "Loop definition is invalid.",
         errors: result.errors,
       },
@@ -75,6 +82,8 @@ export async function GET(req: Request): Promise<Response> {
     return Response.json(
       {
         errorKind: "feature_disabled",
+        error:
+          "Agent loops are not enabled. Set AGENT_LOOPS_ENABLED=true to enable.",
         message:
           "Agent loops are not enabled. Set AGENT_LOOPS_ENABLED=true to enable.",
       },

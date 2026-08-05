@@ -460,6 +460,7 @@ describe("/api/chat route", () => {
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toEqual({
       error: "Session is archived",
+      errorKind: "invalid_request",
     });
     expect(startCalls).toHaveLength(0);
     expect(createChatMessageIfNotExistsSpy).not.toHaveBeenCalled();
@@ -757,6 +758,7 @@ describe("/api/chat route", () => {
     expect(response.status).toBe(409);
     await expect(response.json()).resolves.toEqual({
       error: "Another workflow is already running for this chat",
+      errorKind: "conflict",
     });
   });
 

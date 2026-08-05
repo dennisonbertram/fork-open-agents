@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Link as LinkIcon, Plus, Trash2 } from "lucide-react";
+import { Link as LinkIcon, Plus, RotateCw, Trash2 } from "lucide-react";
 import Link from "next/link";
 import useSWR from "swr";
 import { type ThemePreference, useTheme } from "@/app/providers";
@@ -215,7 +215,12 @@ function usePreferencesSectionState() {
   // MR-4 (#812): source runtime profile options from the merged endpoint
   // (built-ins + the caller's own user_default profiles) instead of the
   // built-ins-only listManagedRuntimeProfiles() constant.
-  const { data: runtimeProfilesData } = useSWR<RuntimeProfilesResponse>(
+  const {
+    data: runtimeProfilesData,
+    error: runtimeProfilesError,
+    isLoading: runtimeProfilesLoading,
+    mutate: mutateRuntimeProfiles,
+  } = useSWR<RuntimeProfilesResponse>(
     "/api/settings/runtime-profiles",
     fetcher,
   );
@@ -402,6 +407,9 @@ function usePreferencesSectionState() {
     preferences,
     loading,
     runtimeProfiles,
+    runtimeProfilesError,
+    runtimeProfilesLoading,
+    mutateRuntimeProfiles,
     isSaving,
     globalSkillSource,
     setGlobalSkillSource,
@@ -436,6 +444,9 @@ export function PreferencesSection() {
     theme,
     preferences,
     runtimeProfiles,
+    runtimeProfilesError,
+    runtimeProfilesLoading,
+    mutateRuntimeProfiles,
     isSaving,
     copiedPublicProfile,
     publicProfilePath,
@@ -552,7 +563,27 @@ export function PreferencesSection() {
             <Label htmlFor="managed-runtime-profile">
               Default runtime profile
             </Label>
-            {managedRuntimePickerState ? (
+            {/* #1092: a failed fetch used to fall back to [], which rendered
+                "None / No options available" — always wrong, since built-in
+                profiles exist server-side. */}
+            {runtimeProfilesError ? (
+              <div className="space-y-2">
+                <p className="text-sm text-destructive">
+                  Failed to load runtime profiles.
+                </p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void mutateRuntimeProfiles()}
+                >
+                  <RotateCw className="size-4" />
+                  Retry
+                </Button>
+              </div>
+            ) : runtimeProfilesLoading ? (
+              <Skeleton className="h-9 w-full" />
+            ) : managedRuntimePickerState ? (
               <ReadOnlyValue
                 label={managedRuntimePickerState.label}
                 status={managedRuntimePickerState.status}

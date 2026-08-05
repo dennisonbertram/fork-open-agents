@@ -6,6 +6,7 @@ import type {
   CodeEditorLaunchResponse,
   CodeEditorStatusResponse,
 } from "@/app/api/sessions/[sessionId]/code-editor/route";
+import { readApiError } from "@/lib/api/read-api-error";
 
 export type CodeEditorState =
   | { status: "idle" }
@@ -29,11 +30,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function getErrorMessage(body: unknown, fallback: string): string {
-  if (!isRecord(body) || typeof body.error !== "string") {
-    return fallback;
-  }
-
-  return body.error;
+  return readApiError(body, fallback).message;
 }
 
 function parseLaunchResponse(body: unknown): CodeEditorLaunchResponse | null {

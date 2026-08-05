@@ -1,5 +1,10 @@
 import Redis, { type RedisOptions } from "ioredis";
-import { getRedisConnectionOptions, getRedisUrl } from "./redis";
+import { apiError } from "./api/error-response";
+import {
+  getRedisConnectionOptions,
+  getRedisUrl,
+  warnRedisDisabled,
+} from "./redis";
 
 type RateLimitOptions = {
   key: string;
@@ -52,6 +57,7 @@ function getSharedRedisClient(): Redis | null {
 
   const redisUrl = getRedisUrl();
   if (!redisUrl) {
+    warnRedisDisabled("rate limiting");
     sharedRedisClient = null;
     return sharedRedisClient;
   }
@@ -75,13 +81,7 @@ function resetRedisClient(): void {
 function rateLimitResponse(retryAfterMs: number): Response {
   const retryAfterSeconds = Math.max(1, Math.ceil(retryAfterMs / 1000));
 
-  return Response.json(
-    { error: "Too many requests", kind: "rate_limited" },
-    {
-      status: 429,
-      headers: { "Retry-After": String(retryAfterSeconds) },
-    },
-  );
+  return apiError("rate_limited", "Too many requests", { retryAfterSeconds });
 }
 
 async function checkRedisRateLimit(
@@ -127,10 +127,9 @@ function rateLimitUnavailableResponse(): Response | null {
     return null;
   }
 
-  return Response.json(
-    { error: "Rate limit unavailable", kind: "unknown" },
-    { status: 503, headers: { "Retry-After": "30" } },
-  );
+  return apiError("upstream_unavailable", "Rate limit unavailable", {
+    headers: { "Retry-After": "30" },
+  });
 }
 
 export async function checkRateLimit(

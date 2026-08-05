@@ -32,10 +32,30 @@ interface UpdatePreferencesRequest {
   modelSystemPrompts?: ModelSystemPrompts;
 }
 
+const UPDATABLE_PREFERENCE_KEYS = new Set<keyof UpdatePreferencesRequest>([
+  "defaultModelId",
+  "defaultSubagentModelId",
+  "defaultInferenceProfileId",
+  "defaultSandboxType",
+  "defaultManagedRuntimeProfileId",
+  "defaultDiffMode",
+  "autoCommitPush",
+  "autoCreatePr",
+  "alertsEnabled",
+  "alertSoundEnabled",
+  "publicUsageEnabled",
+  "globalSkillRefs",
+  "enabledModelIds",
+  "modelSystemPrompts",
+] satisfies Array<keyof UpdatePreferencesRequest>) as ReadonlySet<string>;
+
 export async function GET(_req: Request) {
   const session = await getServerSession();
   if (!session?.user) {
-    return Response.json({ error: "Not authenticated" }, { status: 401 });
+    return Response.json(
+      { error: "Not authenticated", errorKind: "unauthorized" },
+      { status: 401 },
+    );
   }
 
   const preferences = await getUserPreferences(session.user.id);
@@ -45,15 +65,48 @@ export async function GET(_req: Request) {
 export async function PATCH(req: Request) {
   const session = await getServerSession();
   if (!session?.user) {
-    return Response.json({ error: "Not authenticated" }, { status: 401 });
+    return Response.json(
+      { error: "Not authenticated", errorKind: "unauthorized" },
+      { status: 401 },
+    );
   }
 
-  let body: UpdatePreferencesRequest;
+  let rawBody: unknown;
   try {
-    body = (await req.json()) as UpdatePreferencesRequest;
+    rawBody = await req.json();
   } catch {
-    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+    return Response.json(
+      { error: "Invalid JSON body", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
+
+  if (
+    typeof rawBody !== "object" ||
+    rawBody === null ||
+    Array.isArray(rawBody)
+  ) {
+    return Response.json(
+      { error: "Invalid preferences body", errorKind: "invalid_request" },
+      { status: 400 },
+    );
+  }
+
+  const unknownFields = Object.keys(rawBody).filter(
+    (key) => !UPDATABLE_PREFERENCE_KEYS.has(key),
+  );
+  if (unknownFields.length > 0) {
+    return Response.json(
+      {
+        error: `Unknown preference field(s): ${unknownFields.join(", ")}`,
+        fields: unknownFields,
+        errorKind: "invalid_request",
+      },
+      { status: 400 },
+    );
+  }
+
+  const body = rawBody as UpdatePreferencesRequest;
 
   const updates: UpdatePreferencesRequest = {};
 
@@ -63,7 +116,10 @@ export async function PATCH(req: Request) {
       typeof body.defaultSandboxType !== "string" ||
       !validTypes.includes(body.defaultSandboxType)
     ) {
-      return Response.json({ error: "Invalid sandbox type" }, { status: 400 });
+      return Response.json(
+        { error: "Invalid sandbox type", errorKind: "invalid_request" },
+        { status: 400 },
+      );
     }
     updates.defaultSandboxType = body.defaultSandboxType;
   }
@@ -98,7 +154,10 @@ export async function PATCH(req: Request) {
       typeof body.defaultDiffMode !== "string" ||
       !validDiffModes.includes(body.defaultDiffMode)
     ) {
-      return Response.json({ error: "Invalid diff mode" }, { status: 400 });
+      return Response.json(
+        { error: "Invalid diff mode", errorKind: "invalid_request" },
+        { status: 400 },
+      );
     }
     updates.defaultDiffMode = body.defaultDiffMode;
   }
@@ -106,7 +165,7 @@ export async function PATCH(req: Request) {
   if (body.defaultModelId !== undefined) {
     if (typeof body.defaultModelId !== "string") {
       return Response.json(
-        { error: "Invalid defaultModelId" },
+        { error: "Invalid defaultModelId", errorKind: "invalid_request" },
         { status: 400 },
       );
     }
@@ -119,7 +178,10 @@ export async function PATCH(req: Request) {
       typeof body.defaultSubagentModelId !== "string"
     ) {
       return Response.json(
-        { error: "Invalid defaultSubagentModelId" },
+        {
+          error: "Invalid defaultSubagentModelId",
+          errorKind: "invalid_request",
+        },
         { status: 400 },
       );
     }
@@ -132,7 +194,10 @@ export async function PATCH(req: Request) {
       typeof body.defaultInferenceProfileId !== "string"
     ) {
       return Response.json(
-        { error: "Invalid defaultInferenceProfileId" },
+        {
+          error: "Invalid defaultInferenceProfileId",
+          errorKind: "invalid_request",
+        },
         { status: 400 },
       );
     }
@@ -144,7 +209,7 @@ export async function PATCH(req: Request) {
     typeof body.autoCommitPush !== "boolean"
   ) {
     return Response.json(
-      { error: "Invalid autoCommitPush value" },
+      { error: "Invalid autoCommitPush value", errorKind: "invalid_request" },
       { status: 400 },
     );
   }
@@ -157,7 +222,7 @@ export async function PATCH(req: Request) {
     typeof body.autoCreatePr !== "boolean"
   ) {
     return Response.json(
-      { error: "Invalid autoCreatePr value" },
+      { error: "Invalid autoCreatePr value", errorKind: "invalid_request" },
       { status: 400 },
     );
   }
@@ -170,7 +235,7 @@ export async function PATCH(req: Request) {
     typeof body.alertsEnabled !== "boolean"
   ) {
     return Response.json(
-      { error: "Invalid alertsEnabled value" },
+      { error: "Invalid alertsEnabled value", errorKind: "invalid_request" },
       { status: 400 },
     );
   }
@@ -183,7 +248,10 @@ export async function PATCH(req: Request) {
     typeof body.alertSoundEnabled !== "boolean"
   ) {
     return Response.json(
-      { error: "Invalid alertSoundEnabled value" },
+      {
+        error: "Invalid alertSoundEnabled value",
+        errorKind: "invalid_request",
+      },
       { status: 400 },
     );
   }
@@ -196,7 +264,10 @@ export async function PATCH(req: Request) {
     typeof body.publicUsageEnabled !== "boolean"
   ) {
     return Response.json(
-      { error: "Invalid publicUsageEnabled value" },
+      {
+        error: "Invalid publicUsageEnabled value",
+        errorKind: "invalid_request",
+      },
       { status: 400 },
     );
   }
@@ -210,7 +281,10 @@ export async function PATCH(req: Request) {
     );
     if (!parsedGlobalSkillRefs.success) {
       return Response.json(
-        { error: "Invalid globalSkillRefs value" },
+        {
+          error: "Invalid globalSkillRefs value",
+          errorKind: "invalid_request",
+        },
         { status: 400 },
       );
     }
@@ -223,7 +297,10 @@ export async function PATCH(req: Request) {
       !body.enabledModelIds.every((id) => typeof id === "string")
     ) {
       return Response.json(
-        { error: "Invalid enabledModelIds value" },
+        {
+          error: "Invalid enabledModelIds value",
+          errorKind: "invalid_request",
+        },
         { status: 400 },
       );
     }
@@ -236,7 +313,10 @@ export async function PATCH(req: Request) {
     );
     if (!parsedModelSystemPrompts.success) {
       return Response.json(
-        { error: "Invalid modelSystemPrompts value" },
+        {
+          error: "Invalid modelSystemPrompts value",
+          errorKind: "invalid_request",
+        },
         { status: 400 },
       );
     }
@@ -249,7 +329,7 @@ export async function PATCH(req: Request) {
   } catch (error) {
     console.error("Failed to update preferences:", error);
     return Response.json(
-      { error: "Failed to update preferences" },
+      { error: "Failed to update preferences", errorKind: "internal_error" },
       { status: 500 },
     );
   }

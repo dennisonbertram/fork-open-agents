@@ -3,6 +3,11 @@
 {
   "$schema": "./node_modules/oxfmt/configuration_schema.json",
   "ignorePatterns": [
+    // Local git worktrees. Already gitignored via .git/info/exclude, but the
+    // formatter does not read that file, so an unmerged branch checked out here
+    // fails `bun run check` for everyone on the repo.
+    ".worktrees/**",
+    ".claude/worktrees/**",
     ".agents/skills/**",
     "apps/web/components/ui/**",
     "**/*.md",

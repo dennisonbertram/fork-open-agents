@@ -67,7 +67,10 @@ describe("GET /api/github/connection-status", () => {
     const response = await GET();
 
     expect(response.status).toBe(401);
-    expect(await response.json()).toEqual({ error: "Not authenticated" });
+    expect(await response.json()).toEqual({
+      error: "Not authenticated",
+      errorKind: "unauthorized",
+    });
   });
 
   test("returns not_connected when no GitHub account is linked", async () => {

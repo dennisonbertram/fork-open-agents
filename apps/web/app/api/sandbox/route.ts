@@ -10,6 +10,7 @@ import { getGitHubUserProfile } from "@/lib/github/users";
 import { updateSession } from "@/lib/db/sessions";
 import { parseGitHubHttpsUrl } from "@/lib/github/urls";
 import {
+  getRepoAccessErrorStatus,
   verifyRepoAccess,
   getRepoAccessErrorMessage,
 } from "@/lib/github/access";
@@ -38,6 +39,7 @@ import {
   hasResumableSandboxState,
   isSandboxActive,
 } from "@/lib/sandbox/utils";
+import { readWorkspaceRepoState } from "@/lib/sandbox/workspace-repo";
 import { getServerSession } from "@/lib/session/get-server-session";
 import { checkRateLimit, rateLimitKey } from "@/lib/rate-limit";
 // import { buildDevelopmentDotenvFromVercelProject } from "@/lib/vercel/projects";
@@ -101,6 +103,72 @@ async function installSessionGlobalSkills(params: {
   });
 }
 
+/**
+ * Stops a sandbox that came up unusable so it is not left running and untracked.
+ *
+ * Best effort by design: the caller is already returning a failure, and failing
+ * to stop is strictly better than turning a typed 409 into an unhandled 500.
+ */
+async function releaseUnusableSandbox({
+  sandbox,
+  sessionId,
+}: {
+  sandbox: { stop?: () => Promise<unknown> };
+  sessionId: string | undefined;
+}): Promise<void> {
+  try {
+    // Bounded: the probe may have returned "unknown" precisely because the
+    // provider control plane is unresponsive, and an unbounded stop() would
+    // then hang the request that is trying to report that failure. A sandbox
+    // left running is a cost problem; a hung request is a user-facing outage.
+    await Promise.race([
+      sandbox.stop?.() ?? Promise.resolve(),
+      new Promise((_resolve, reject) =>
+        setTimeout(
+          () => reject(new Error("sandbox stop timed out after 5000ms")),
+          5000,
+        ),
+      ),
+    ]);
+  } catch (error) {
+    console.error("[sandbox] failed to release an unusable sandbox", {
+      sessionId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+/**
+ * A repo-backed sandbox that has no clone is a failed provisioning, not a
+ * ready workspace. Surface it as a typed 409 instead of a 200 carrying a
+ * branch that is not checked out (issue #1053).
+ */
+function workspaceNotClonedResponse(sessionId: string): Response {
+  console.warn("[sandbox] workspace-not-cloned", { sessionId });
+  return Response.json(
+    {
+      error:
+        "Sandbox is running but the repository was not cloned into the workspace.",
+      reason: "workspace_not_cloned",
+      errorKind: "conflict",
+    },
+    { status: 409 },
+  );
+}
+
+function workspaceProbeFailedResponse(sessionId: string): Response {
+  console.warn("[sandbox] workspace-probe-failed", { sessionId });
+  return Response.json(
+    {
+      error:
+        "Sandbox is running but the workspace git probe did not complete, so its repository state is unknown.",
+      reason: "workspace_probe_failed",
+      errorKind: "upstream_unavailable",
+    },
+    { status: 503 },
+  );
+}
+
 function getErrorKind(error: unknown): string {
   if (error instanceof Error) {
     return error.name || "Error";
@@ -133,28 +201,43 @@ export async function POST(req: Request) {
   try {
     body = (await req.json()) as CreateSandboxRequest;
   } catch {
-    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+    return Response.json(
+      { error: "Invalid JSON body", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   if (body.sandboxType && body.sandboxType !== "vercel") {
-    return Response.json({ error: "Invalid sandbox type" }, { status: 400 });
+    return Response.json(
+      { error: "Invalid sandbox type", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   const { repoUrl, branch = "main", isNewBranch = false, sessionId } = body;
 
   if (!sessionId) {
-    return Response.json({ error: "Missing sessionId" }, { status: 400 });
+    return Response.json(
+      { error: "Missing sessionId", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   // Get session for auth
   const session = await getServerSession();
   if (!session?.user) {
-    return Response.json({ error: "Not authenticated" }, { status: 401 });
+    return Response.json(
+      { error: "Not authenticated", errorKind: "unauthorized" },
+      { status: 401 },
+    );
   }
 
   const botVerification = await checkBotProtection();
   if (botVerification.isBot) {
-    return Response.json({ error: "Access denied" }, { status: 403 });
+    return Response.json(
+      { error: "Access denied", errorKind: "forbidden" },
+      { status: 403 },
+    );
   }
 
   const limited = await checkRateLimit({
@@ -182,25 +265,39 @@ export async function POST(req: Request) {
   const parsedRequestRepo = repoUrl ? parseGitHubHttpsUrl(repoUrl) : null;
   if (repoUrl && !parsedRequestRepo) {
     return Response.json(
-      { error: "Invalid GitHub repository URL" },
+      { error: "Invalid GitHub repository URL", errorKind: "invalid_request" },
       { status: 400 },
     );
   }
 
   const activeSandboxState = sessionRecord.sandboxState;
   if (isSandboxActive(activeSandboxState)) {
-    const now = Date.now();
+    const reuseStart = Date.now();
     const expiresAt =
       typeof activeSandboxState.expiresAt === "number"
         ? activeSandboxState.expiresAt
-        : now;
+        : reuseStart;
 
+    let currentBranch: string | undefined;
+    if (repoUrl) {
+      const existing = await connectSandbox(activeSandboxState);
+      const workspace = await readWorkspaceRepoState(existing);
+      if (workspace.status === "unknown") {
+        return workspaceProbeFailedResponse(sessionId);
+      }
+      if (workspace.status === "not_cloned") {
+        return workspaceNotClonedResponse(sessionId);
+      }
+      currentBranch = workspace.branch;
+    }
+
+    const now = Date.now();
     return Response.json({
       createdAt: now,
       timeout: Math.max(0, expiresAt - now),
-      currentBranch: repoUrl ? branch : undefined,
+      currentBranch,
       mode: activeSandboxState.type,
-      timing: { readyMs: 0 },
+      timing: { readyMs: now - reuseStart },
     });
   }
 
@@ -225,8 +322,11 @@ export async function POST(req: Request) {
 
     if (!access.ok) {
       return Response.json(
-        { error: getRepoAccessErrorMessage(access.reason) },
-        { status: 403 },
+        {
+          error: getRepoAccessErrorMessage(access.reason),
+          reason: access.reason,
+        },
+        { status: getRepoAccessErrorStatus(access.reason) },
       );
     }
 
@@ -289,6 +389,24 @@ export async function POST(req: Request) {
         },
       });
     }
+  }
+
+  // A named sandbox that already existed is reconnected, not recreated, so the
+  // requested source may never have been cloned. Confirm before reporting ready.
+  let currentBranch: string | undefined;
+  if (repoUrl) {
+    const workspace = await readWorkspaceRepoState(sandbox);
+    if (workspace.status !== "cloned") {
+      // Returning here would leave a running VM that the session does not know
+      // about: the record still holds the provisional state, so nothing will
+      // ever reconnect to this sandbox or stop it, and sandbox duration is
+      // billed. Release it before reporting the failure.
+      await releaseUnusableSandbox({ sandbox, sessionId });
+      return workspace.status === "unknown"
+        ? workspaceProbeFailedResponse(sessionId)
+        : workspaceNotClonedResponse(sessionId);
+    }
+    currentBranch = workspace.branch;
   }
 
   if (sessionId && sandbox.getState) {
@@ -358,7 +476,7 @@ export async function POST(req: Request) {
   return Response.json({
     createdAt: Date.now(),
     timeout: DEFAULT_SANDBOX_TIMEOUT_MS,
-    currentBranch: repoUrl ? branch : undefined,
+    currentBranch,
     mode: "vercel",
     timing: { readyMs },
   });
@@ -372,7 +490,10 @@ export async function DELETE(req: Request) {
 
   const botVerification = await checkBotProtection();
   if (botVerification.isBot) {
-    return Response.json({ error: "Access denied" }, { status: 403 });
+    return Response.json(
+      { error: "Access denied", errorKind: "forbidden" },
+      { status: 403 },
+    );
   }
 
   const limited = await checkRateLimit({
@@ -388,7 +509,10 @@ export async function DELETE(req: Request) {
   try {
     body = await req.json();
   } catch {
-    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+    return Response.json(
+      { error: "Invalid JSON body", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   if (
@@ -397,7 +521,10 @@ export async function DELETE(req: Request) {
     !("sessionId" in body) ||
     typeof (body as Record<string, unknown>).sessionId !== "string"
   ) {
-    return Response.json({ error: "Missing sessionId" }, { status: 400 });
+    return Response.json(
+      { error: "Missing sessionId", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   const { sessionId } = body as { sessionId: string };

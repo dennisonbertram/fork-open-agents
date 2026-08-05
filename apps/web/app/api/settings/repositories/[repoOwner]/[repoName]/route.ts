@@ -58,7 +58,10 @@ export async function GET(
 
   const parsedParams = await parseRouteParams(context);
   if (!parsedParams.success) {
-    return Response.json({ error: "Invalid repository" }, { status: 400 });
+    return Response.json(
+      { error: "Invalid repository", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   const { repoOwner, repoName } = parsedParams.data;
@@ -85,7 +88,10 @@ export async function PATCH(
 
   const parsedParams = await parseRouteParams(context);
   if (!parsedParams.success) {
-    return Response.json({ error: "Invalid repository" }, { status: 400 });
+    return Response.json(
+      { error: "Invalid repository", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   const { repoOwner, repoName } = parsedParams.data;
@@ -96,7 +102,10 @@ export async function PATCH(
   try {
     body = await req.json();
   } catch {
-    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+    return Response.json(
+      { error: "Invalid JSON body", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   // Validate schema
@@ -106,6 +115,7 @@ export async function PATCH(
       {
         error: "Invalid repository settings",
         details: parsedBody.error.issues,
+        errorKind: "invalid_request",
       },
       { status: 400 },
     );
@@ -120,7 +130,10 @@ export async function PATCH(
     !isManagedRuntimeProfileId(patch.managedRuntimeProfileId)
   ) {
     return Response.json(
-      { error: "Invalid managedRuntimeProfileId" },
+      {
+        error: "Invalid managedRuntimeProfileId",
+        errorKind: "invalid_request",
+      },
       { status: 400 },
     );
   }
@@ -134,6 +147,7 @@ export async function PATCH(
     return Response.json(
       {
         error: `Invalid vcpus — allowed values: ${[...ALLOWED_VCPU_VALUES].join(", ")}`,
+        errorKind: "invalid_request",
       },
       { status: 400 },
     );
@@ -170,6 +184,7 @@ export async function PATCH(
         {
           error:
             "autoCreatePr cannot be enabled while autoCommitPush is off (or inherited as off)",
+          errorKind: "invalid_request",
         },
         { status: 400 },
       );
@@ -206,7 +221,10 @@ export async function DELETE(
 
   const parsedParams = await parseRouteParams(context);
   if (!parsedParams.success) {
-    return Response.json({ error: "Invalid repository" }, { status: 400 });
+    return Response.json(
+      { error: "Invalid repository", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   const { repoOwner, repoName } = parsedParams.data;

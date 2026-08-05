@@ -28,7 +28,7 @@ export async function GET(_req: Request, context: RouteContext) {
   });
   if (!agent) {
     return Response.json(
-      { error: "Background agent not found" },
+      { error: "Background agent not found", errorKind: "not_found" },
       { status: 404 },
     );
   }
@@ -66,7 +66,10 @@ export async function GET(_req: Request, context: RouteContext) {
       }),
     );
     return Response.json(
-      { error: "Failed to compute tool preflight." },
+      {
+        error: "Failed to compute tool preflight.",
+        errorKind: "internal_error",
+      },
       { status: 500 },
     );
   }

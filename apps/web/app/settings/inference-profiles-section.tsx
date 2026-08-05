@@ -44,6 +44,7 @@ import type {
   InferenceProfileTestResult,
   SafeInferenceProfile,
 } from "@/lib/inference/types";
+import { readApiError } from "@/lib/api/read-api-error";
 import { INFERENCE_PROFILE_PROVIDER_LABELS } from "@/lib/inference/types";
 import { estimateModelUsageCost } from "@/lib/models";
 import type { ModelOption } from "@/lib/model-options";
@@ -755,26 +756,29 @@ export function InferenceProfilesSection() {
 
     try {
       const isEditing = editingProfile !== null;
-      const response = await fetch("/api/inference-profiles", {
-        method: isEditing ? "PATCH" : "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...(isEditing ? { profileId: editingProfile.id } : {}),
-          name: input.name,
-          provider: input.provider,
-          baseUrl: input.baseUrl || null,
-          ...(input.apiKey ? { apiKey: input.apiKey } : {}),
-          enabled: input.enabled,
-        }),
-      });
+      const response = await fetch(
+        isEditing
+          ? `/api/inference-profiles/${editingProfile.id}`
+          : "/api/inference-profiles",
+        {
+          method: isEditing ? "PATCH" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: input.name,
+            provider: input.provider,
+            baseUrl: input.baseUrl || null,
+            ...(input.apiKey ? { apiKey: input.apiKey } : {}),
+            enabled: input.enabled,
+          }),
+        },
+      );
       const responseData = (await response.json()) as
         | { profile: SafeInferenceProfile }
         | { error?: string };
 
       if (!response.ok || !("profile" in responseData)) {
-        return "error" in responseData
-          ? (responseData.error ?? "Failed to save inference profile")
-          : "Failed to save inference profile";
+        return readApiError(responseData, "Failed to save inference profile")
+          .message;
       }
 
       await mutate(
@@ -806,14 +810,16 @@ export function InferenceProfilesSection() {
     setIsSaving(true);
     setError(null);
     try {
-      const response = await fetch("/api/inference-profiles", {
+      const response = await fetch(`/api/inference-profiles/${profileId}`, {
         method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ profileId }),
       });
       if (!response.ok) {
-        const responseData = (await response.json()) as { error?: string };
-        setError(responseData.error ?? "Failed to delete inference profile");
+        setError(
+          readApiError(
+            await response.json().catch(() => null),
+            "Failed to delete inference profile",
+          ).message,
+        );
         return;
       }
       await mutate(
@@ -849,9 +855,8 @@ export function InferenceProfilesSection() {
 
       if (!response.ok || !("result" in responseData)) {
         setError(
-          "error" in responseData
-            ? (responseData.error ?? "Failed to test inference profile")
-            : "Failed to test inference profile",
+          readApiError(responseData, "Failed to test inference profile")
+            .message,
         );
         return;
       }
@@ -884,13 +889,10 @@ export function InferenceProfilesSection() {
     setError(null);
 
     try {
-      const response = await fetch("/api/inference-profiles", {
+      const response = await fetch(`/api/inference-profiles/${profile.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          profileId: profile.id,
-          enabled,
-        }),
+        body: JSON.stringify({ enabled }),
       });
       const responseData = (await response.json()) as
         | { profile: SafeInferenceProfile }
@@ -898,9 +900,8 @@ export function InferenceProfilesSection() {
 
       if (!response.ok || !("profile" in responseData)) {
         setError(
-          "error" in responseData
-            ? (responseData.error ?? "Failed to update inference profile")
-            : "Failed to update inference profile",
+          readApiError(responseData, "Failed to update inference profile")
+            .message,
         );
         return;
       }

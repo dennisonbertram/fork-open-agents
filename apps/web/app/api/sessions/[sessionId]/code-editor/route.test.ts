@@ -206,11 +206,15 @@ describe("/api/sessions/[sessionId]/code-editor", () => {
       }),
       createRouteContext(),
     );
-    const body = (await response.json()) as { error: string };
+    const body = (await response.json()) as {
+      error: string;
+      errorKind: string;
+    };
 
     expect(response.status).toBe(409);
     expect(body).toEqual({
       error: "Port 8000 is already in use by another process",
+      errorKind: "conflict",
     });
     expect(execDetachedMock).toHaveBeenCalledTimes(0);
   });

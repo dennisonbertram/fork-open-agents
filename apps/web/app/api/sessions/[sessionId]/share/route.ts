@@ -7,6 +7,7 @@ export async function POST() {
     {
       error:
         "Session-level sharing is deprecated. Use /api/sessions/:sessionId/chats/:chatId/share.",
+      errorKind: "gone",
     },
     { status: 410 },
   );
@@ -21,6 +22,7 @@ export async function DELETE() {
     {
       error:
         "Session-level sharing is deprecated. Use /api/sessions/:sessionId/chats/:chatId/share.",
+      errorKind: "gone",
     },
     { status: 410 },
   );

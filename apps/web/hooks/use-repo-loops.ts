@@ -12,6 +12,7 @@
  */
 
 import useSWR from "swr";
+import { readApiError } from "@/lib/api/read-api-error";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -25,45 +26,25 @@ type LoopsResponse = {
   loops: SidebarLoop[];
 };
 
-type FeatureDisabledResponse = {
-  errorKind: "feature_disabled";
-  message: string;
-};
-
 // ── Fetcher that handles 403 feature_disabled ─────────────────────────────────
 
 async function loopsFetcher(url: string): Promise<LoopsResponse> {
   const res = await fetch(url);
 
-  if (res.status === 403) {
-    let body: unknown;
-    try {
-      body = await res.json();
-    } catch {
-      // keep going
-    }
-    if (
-      body !== null &&
-      typeof body === "object" &&
-      "errorKind" in (body as object) &&
-      (body as FeatureDisabledResponse).errorKind === "feature_disabled"
-    ) {
+  if (!res.ok) {
+    const parsed = readApiError(
+      await res.json().catch(() => null),
+      res.statusText,
+    );
+
+    if (res.status === 403 && parsed.kind === "feature_disabled") {
       // Signal to the hook via a typed sentinel value
       throw Object.assign(new Error("feature_disabled"), {
         kind: "feature_disabled",
       });
     }
-  }
 
-  if (!res.ok) {
-    let message = res.statusText;
-    try {
-      const data = (await res.json()) as { error?: string };
-      message = data.error ?? res.statusText;
-    } catch {
-      // keep statusText
-    }
-    throw new Error(message);
+    throw new Error(parsed.message);
   }
 
   return res.json() as Promise<LoopsResponse>;

@@ -266,7 +266,7 @@ export async function GET(request: NextRequest) {
 
   if (!session?.user?.id) {
     return NextResponse.json(
-      { error: "GitHub not connected" },
+      { error: "GitHub not connected", errorKind: "unauthorized" },
       { status: 401 },
     );
   }
@@ -281,7 +281,10 @@ export async function GET(request: NextRequest) {
 
   if (!owner || !repo) {
     return NextResponse.json(
-      { error: "Owner and repo parameters are required" },
+      {
+        error: "Owner and repo parameters are required",
+        errorKind: "invalid_request",
+      },
       { status: 400 },
     );
   }
@@ -316,13 +319,13 @@ export async function GET(request: NextRequest) {
     }
 
     return NextResponse.json(
-      { error: "Failed to fetch branches" },
+      { error: "Failed to fetch branches", errorKind: "internal_error" },
       { status: 500 },
     );
   } catch (error) {
     console.error("Error fetching branches:", error);
     return NextResponse.json(
-      { error: "Failed to fetch branches" },
+      { error: "Failed to fetch branches", errorKind: "internal_error" },
       { status: 500 },
     );
   }

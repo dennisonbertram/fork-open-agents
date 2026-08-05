@@ -1,3 +1,4 @@
+import { sandboxNotInitializedResponse } from "@/app/api/sessions/_lib/sandbox-lifecycle-response";
 import { posix } from "node:path";
 import { connectSandbox } from "@open-agents/sandbox";
 import {
@@ -67,7 +68,10 @@ export async function GET(req: Request, context: RouteContext) {
   const requestedPath = new URL(req.url).searchParams.get("path");
   const filePath = normalizeRequestedFilePath(requestedPath);
   if (!filePath) {
-    return Response.json({ error: "Invalid file path" }, { status: 400 });
+    return Response.json(
+      { error: "Invalid file path", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   const sessionContext = await requireOwnedSessionWithSandboxGuard({
@@ -83,7 +87,7 @@ export async function GET(req: Request, context: RouteContext) {
   const { sessionRecord } = sessionContext;
   const sandboxState = sessionRecord.sandboxState;
   if (!sandboxState) {
-    return Response.json({ error: "Sandbox not initialized" }, { status: 400 });
+    return sandboxNotInitializedResponse();
   }
 
   try {
@@ -97,6 +101,7 @@ export async function GET(req: Request, context: RouteContext) {
           error: stats.isDirectory()
             ? "Directories cannot be previewed"
             : "Only regular files can be previewed",
+          errorKind: "invalid_request",
         },
         { status: 400 },
       );
@@ -104,7 +109,7 @@ export async function GET(req: Request, context: RouteContext) {
 
     if (stats.size > MAX_FILE_PREVIEW_BYTES) {
       return Response.json(
-        { error: "File is too large to preview" },
+        { error: "File is too large to preview", errorKind: "invalid_request" },
         { status: 413 },
       );
     }
@@ -112,7 +117,10 @@ export async function GET(req: Request, context: RouteContext) {
     const content = await sandbox.readFile(fullPath, "utf-8");
     if (content.includes("\0")) {
       return Response.json(
-        { error: "Binary files cannot be previewed" },
+        {
+          error: "Binary files cannot be previewed",
+          errorKind: "invalid_request",
+        },
         { status: 400 },
       );
     }
@@ -139,18 +147,24 @@ export async function GET(req: Request, context: RouteContext) {
         ...buildHibernatedLifecycleUpdate(),
       });
       return Response.json(
-        { error: "Sandbox is unavailable. Please resume sandbox." },
+        {
+          error: "Sandbox is unavailable. Please resume sandbox.",
+          errorKind: "conflict",
+        },
         { status: 409 },
       );
     }
 
     if (isMissingFileError(message)) {
-      return Response.json({ error: "File not found" }, { status: 404 });
+      return Response.json(
+        { error: "File not found", errorKind: "not_found" },
+        { status: 404 },
+      );
     }
 
     console.error("Failed to load workspace file:", error);
     return Response.json(
-      { error: "Failed to load workspace file" },
+      { error: "Failed to load workspace file", errorKind: "internal_error" },
       { status: 500 },
     );
   }

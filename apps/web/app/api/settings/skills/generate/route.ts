@@ -1,3 +1,7 @@
+import {
+  type ApiErrorKind,
+  apiErrorKindForStatus,
+} from "@/lib/api/error-response";
 import { gateway } from "@open-agents/agent";
 import { generateText, NoObjectGeneratedError, Output } from "ai";
 import { z } from "zod";
@@ -19,8 +23,11 @@ const generateSkillRequestSchema = z.object({
   prompt: z.string().trim().min(1).max(SKILL_GENERATION_REQUEST_MAX_LENGTH),
 });
 
-function jsonError(error: string, status: number) {
-  return Response.json({ error }, { status });
+function jsonError(error: string, status: number, kind?: ApiErrorKind) {
+  return Response.json(
+    { error, errorKind: kind ?? apiErrorKindForStatus(status) },
+    { status },
+  );
 }
 
 export async function POST(req: Request) {

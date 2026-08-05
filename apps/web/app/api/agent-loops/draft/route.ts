@@ -38,6 +38,8 @@ export async function POST(req: Request): Promise<Response> {
     return Response.json(
       {
         errorKind: "feature_disabled",
+        error:
+          "Agent loops are not enabled. Set AGENT_LOOPS_ENABLED=true to enable.",
         message:
           "Agent loops are not enabled. Set AGENT_LOOPS_ENABLED=true to enable.",
       },
@@ -49,7 +51,10 @@ export async function POST(req: Request): Promise<Response> {
   try {
     body = await req.json();
   } catch {
-    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+    return Response.json(
+      { error: "Invalid JSON body", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   const parsed = requestSchema.safeParse(body);
@@ -57,6 +62,7 @@ export async function POST(req: Request): Promise<Response> {
     return Response.json(
       {
         errorKind: "invalid_request",
+        error: "Provide a `description` of the loop (8–2000 characters).",
         message: "Provide a `description` of the loop (8–2000 characters).",
       },
       { status: 400 },
@@ -81,6 +87,8 @@ export async function POST(req: Request): Promise<Response> {
     return Response.json(
       {
         errorKind: "draft_failed",
+        error:
+          "Couldn't reach the model to draft your loop. Try again, or start from a template.",
         message:
           "Couldn't reach the model to draft your loop. Try again, or start from a template.",
       },
@@ -93,6 +101,8 @@ export async function POST(req: Request): Promise<Response> {
     return Response.json(
       {
         errorKind: "draft_unparseable",
+        error:
+          "The model didn't return a usable loop. Try rephrasing, or start from a template.",
         message:
           "The model didn't return a usable loop. Try rephrasing, or start from a template.",
       },
@@ -107,6 +117,8 @@ export async function POST(req: Request): Promise<Response> {
     return Response.json(
       {
         errorKind: "draft_unparseable",
+        error:
+          "The model didn't return valid JSON. Try rephrasing, or start from a template.",
         message:
           "The model didn't return valid JSON. Try rephrasing, or start from a template.",
       },
@@ -119,6 +131,8 @@ export async function POST(req: Request): Promise<Response> {
     return Response.json(
       {
         errorKind: "draft_invalid",
+        error:
+          "The drafted loop didn't fit the expected shape. Try rephrasing, or start from a template.",
         message:
           "The drafted loop didn't fit the expected shape. Try rephrasing, or start from a template.",
       },
@@ -132,6 +146,8 @@ export async function POST(req: Request): Promise<Response> {
     return Response.json(
       {
         errorKind: "draft_invalid",
+        error:
+          "The drafted loop wasn't a valid graph. Try rephrasing, or start from a template.",
         message:
           "The drafted loop wasn't a valid graph. Try rephrasing, or start from a template.",
         errors: validated.errors,

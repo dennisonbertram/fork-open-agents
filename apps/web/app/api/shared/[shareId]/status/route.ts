@@ -14,7 +14,10 @@ export async function GET(_req: Request, context: RouteContext) {
   const status = await getSharedChatStatus(shareId);
 
   if (!status) {
-    return Response.json({ error: "Not found" }, { status: 404 });
+    return Response.json(
+      { error: "Not found", errorKind: "not_found" },
+      { status: 404 },
+    );
   }
 
   return Response.json(status);

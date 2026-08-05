@@ -21,7 +21,10 @@ export async function GET() {
 
   const result = await fetchComposioToolkitCatalog();
   if (!result.ok) {
-    return Response.json({ error: result.message }, { status: 502 });
+    return Response.json(
+      { error: result.message, errorKind: "upstream_unavailable" },
+      { status: 502 },
+    );
   }
 
   return Response.json({
