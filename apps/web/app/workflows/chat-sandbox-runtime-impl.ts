@@ -619,19 +619,30 @@ async function ensureManagedRuntimeEnvironment(params: {
         },
       });
       if (isRequiredSetupCommand) {
-        throw new WorkspaceSetupError(
-          [
-            `Managed runtime profile setup failed while running ${setupCommand.label} for ${profile.displayName} (${profile.id}).`,
-            setupCommand.description,
-            compactSummary ? `Command output: ${compactSummary}` : "",
-          ]
-            .filter((part) => part.length > 0)
-            .join(" "),
-          {
-            errorKind: "setup_command_failed",
-            nextAction: nextActionFor("setup_command_failed"),
-          },
-        );
+        const setupFailureMessage = [
+          `Managed runtime profile setup failed while running ${setupCommand.label} for ${profile.displayName} (${profile.id}).`,
+          setupCommand.description,
+          compactSummary ? `Command output: ${compactSummary}` : "",
+        ]
+          .filter((part) => part.length > 0)
+          .join(" ");
+        // A required setup command that RAN and exited nonzero is a
+        // deterministic failure — the command will exit nonzero again on
+        // retry (production incident DCaiJUlpmOobs2Yp18O6R: the same
+        // install-agent-browser command failed 4x in ~12s before the
+        // workflow engine gave up "after 3 retries"). Throw FatalError so
+        // the engine does not retry a step that cannot possibly succeed.
+        // Imported here rather than at module scope: `workflow` re-exports
+        // FatalError through a star-export chain that the test runner's
+        // resolver does not follow.
+        const { FatalError } = await import("workflow");
+        const fatalError = new FatalError(setupFailureMessage) as Error & {
+          errorKind?: ManagedRuntimeErrorKind;
+          nextAction?: string;
+        };
+        fatalError.errorKind = "setup_command_failed";
+        fatalError.nextAction = nextActionFor("setup_command_failed");
+        throw fatalError;
       }
       return { notes, profileRunId };
     }
