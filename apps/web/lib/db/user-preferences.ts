@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { DEFAULT_MANAGED_RUNTIME_PROFILE_ID } from "@open-agents/sandbox/managed-runtime-profiles";
 import type { SandboxType } from "@/components/sandbox-selector-compact";
+import { parseModelOptionSelection } from "@/lib/inference/model-option-id";
 import { modelVariantsSchema, type ModelVariant } from "@/lib/model-variants";
 import { APP_DEFAULT_MODEL_ID } from "@/lib/models";
 import {
@@ -169,12 +170,41 @@ export async function getUserPreferences(
 }
 
 /**
+ * Split a composite model option id across the two stored columns (#1123).
+ *
+ * The model pickers emit "user-profile:<inferenceProfileId>:<modelId>" for
+ * models served by a user inference profile. Persisting that string whole into
+ * `defaultModelId` left `defaultInferenceProfileId` NULL, so every chat created
+ * from the preference handed an internal identifier to the AI Gateway. Split it
+ * here — the single write funnel for both columns — exactly the way the chat
+ * model-switch handler does. An explicitly supplied profile id still wins.
+ */
+function splitDefaultModelSelection(
+  updates: Partial<UserPreferencesData>,
+): Partial<UserPreferencesData> {
+  if (updates.defaultModelId === undefined) {
+    return updates;
+  }
+
+  const parsed = parseModelOptionSelection(updates.defaultModelId);
+  return {
+    ...updates,
+    defaultModelId: parsed.modelId,
+    defaultInferenceProfileId:
+      updates.defaultInferenceProfileId !== undefined
+        ? updates.defaultInferenceProfileId
+        : parsed.inferenceProfileId,
+  };
+}
+
+/**
  * Update user preferences, creating if they don't exist
  */
 export async function updateUserPreferences(
   userId: string,
-  updates: Partial<UserPreferencesData>,
+  rawUpdates: Partial<UserPreferencesData>,
 ): Promise<UserPreferencesData> {
+  const updates = splitDefaultModelSelection(rawUpdates);
   const [existing] = await db
     .select()
     .from(userPreferences)
