@@ -325,9 +325,15 @@ export async function resolveComposioToolsForChat(params: {
       // An IMPLICIT default (repo-default, e.g. GitHub default-on for an
       // unconfigured repo) must not hard-fail a managed-runtime chat — the
       // user never chose Composio tools here (#1119). Drop the tools and
-      // continue instead of throwing. An EXPLICIT selection ("chat" or
-      // "agent" tier) still throws below: silently discarding tools a user
-      // deliberately picked is worse than a clear error.
+      // continue instead of throwing.
+      //
+      // Every EXPLICIT selection still throws below — "chat", "agent", AND
+      // "repo-explicit" (a repo with a saved non-null selectedToolkitSlugs,
+      // i.e. toolkits deliberately enabled in workspace settings). Silently
+      // discarding tools a user picked is worse than a clear error. The line
+      // is explicit-vs-defaulted, NOT chat/agent-vs-repo: the repo tier
+      // carries both, which is why the source is repo-explicit/repo-default
+      // rather than a single "repo".
       if (directSlugsSource === "repo-default") {
         return { status: "off" };
       }
