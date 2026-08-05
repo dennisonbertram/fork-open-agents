@@ -825,6 +825,37 @@ function getSetupErrorMessage(error: unknown): string {
     return "This session is archived. Unarchive it to continue.";
   }
 
+  // Managed runtime profile setup failures (e.g. installing a toolchain like
+  // agent-browser) throw WorkspaceSetupError with an already-specific message
+  // naming the failing setup command — but the workflow engine's retry
+  // wrapper drops the error name on rethrow (the same class of bug as the
+  // InferenceSecretDecryptionError comment below), so this has to run before
+  // (not rely on) the name === "WorkspaceSetupError" check next: that check
+  // alone does not survive the rewrap, and even when the name does survive,
+  // the raw message lacks the fixed next-action copy (only the
+  // WorkspaceSetupError.nextAction property carries it, which the rewrap also
+  // drops). Match on the literal prefix built at the one throw site
+  // (chat-sandbox-runtime-impl.ts) instead: it is structurally unique to this
+  // failure and not generic English another subsystem could emit. This also
+  // replaces the generic "try again in a moment" fallback, which is actively
+  // wrong for this failure class — a missing execute bit never succeeds on a
+  // bare retry.
+  //
+  // The copy below is hardcoded rather than imported from
+  // NEXT_ACTION_BY_ERROR_KIND.setup_command_failed in
+  // "@/lib/managed-runtime/profile-run-status" because that module is
+  // guarded by `import "server-only"`, which throws when pulled into this
+  // error-mapping path's test/bundling context. Keep this string in sync with
+  // that mapping if it changes.
+  const managedRuntimeSetupFailurePrefix =
+    "Managed runtime profile setup failed while running";
+  if (message.includes(managedRuntimeSetupFailurePrefix)) {
+    const originalMessage = message.slice(
+      message.indexOf(managedRuntimeSetupFailurePrefix),
+    );
+    return `${originalMessage} Fix the failing setup command in the profile editor, then run setup again.`;
+  }
+
   if (name === "WorkspaceSetupError") {
     return message;
   }
