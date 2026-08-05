@@ -2,6 +2,31 @@
 
 Hard-won knowledge from building this codebase. When you make a mistake or discover a non-obvious behavior, add it here.
 
+## Index
+
+Standing topics:
+
+- [General / Tooling](#general--tooling)
+- [Auth / OAuth](#auth--oauth)
+- [Next.js](#nextjs)
+- [Sandbox Lifecycle](#sandbox-lifecycle)
+- [Sandbox UI State](#sandbox-ui-state)
+- [Chat / Streaming UI](#chat--streaming-ui)
+- [GitHub App / PR Flows](#github-app--pr-flows)
+- [Vercel Workflow DevKit](#vercel-workflow-devkit)
+- [Bun Test Isolation — mock.module First-Win Behavior](#bun-test-isolation--mockmodule-first-win-behavior)
+
+Dated epic and sweep sections:
+
+- [Agent Loops Epic #761 (2026-07-02)](#agent-loops-epic-761-2026-07-02)
+- [Managed Runtime profiles epic #807 (2026-07-02)](#managed-runtime-profiles-epic-807-2026-07-02)
+- [DOM test infra spike #858 (2026-07-03)](#dom-test-infra-spike-858-2026-07-03)
+- [Per-turn heartbeats and UTC timestamp parity (#863, 2026-07-03)](#per-turn-heartbeats-and-utc-timestamp-parity-863-2026-07-03)
+- [Stranded reviewed fixes (#859, 2026-07-03)](#stranded-reviewed-fixes-859-2026-07-03)
+- [No-progress (git-delta) turn budget, Task 1 (#914, 2026-07-05)](#no-progress-git-delta-turn-budget-task-1-914-2026-07-05)
+- [Deployed Feature Proof Standard (#868, 2026-07-03)](#deployed-feature-proof-standard-868-2026-07-03)
+- [API + frontend review sweep (#1049 to #1107, 2026-08-03)](#api--frontend-review-sweep-1049-to-1107-2026-08-03)
+
 ## General / Tooling
 
 - For Open Agents self-hosting, verify deployment requirements from current code and `apps/web/.env.example`; older Open Harness-era notes can mention stale `JWE_SECRET`, `ENCRYPTION_KEY`, or pre-Better Auth callback routes that no longer match the app.
@@ -214,3 +239,58 @@ When adding a new export to a shared store/module, grep for all `mock.module` fa
 - **Why PRs #676/#705 stranded**: both carried a broad agent-builder redesign with a small, correct user-facing fix buried inside, and nothing forced a same-session merge — they sat `OPEN`/`CONFLICTING` against `develop` for weeks while the underlying bug (commit `2d5498f4`, on `feat/native-github-tool-actions`) stayed live in production.
 - **What changed**: the fixes were reimplemented small and standalone (#859 → PR #871, #860 → PR #872), merged to `develop`, and shipped to `main` via release PR #875, verified with `git merge-base --is-ancestor <sha> origin/main`. #676 and #705 are now superseded and recommended for closure by the release coordinator.
 - **Read the standard before opening or closing user-facing work**: the rules that prevent recurrence — proof levels, the no-stranded-fixes rule, the user feedback contract, and the `git merge-base` Definition-of-Done check — are codified in `docs/process/deployed-feature-proof-standard.md`.
+
+## API + frontend review sweep (#1049 to #1107, 2026-08-03)
+
+A production incident (503 `Rate limit unavailable`) opened into a full API and
+frontend pass: 37 PRs across `#1049`–`#1107`, released to `main` as `b63780f2`.
+Every claim below is anchored to a PR, an issue, or a file line. Where a claim
+could not be verified from the repo it was dropped rather than softened.
+
+### Error classification — attributing a failure to the wrong subsystem
+
+Four separate bugs shared one shape: the failure was blamed on a component that
+was not broken, so the remediation shown to the user could not possibly work.
+
+- **A generic English phrase is never a safe subsystem marker.** `getSetupErrorMessage` in `apps/web/app/workflows/chat.ts` had `message.includes("Invalid API key")` inside the Composio fallback. The AI Gateway's own auth error *ends* with that sentence, so an invalid `AI_GATEWAY_API_KEY` told the user their `COMPOSIO_API_KEY` was invalid — while Composio was not configured at all (#1063, fixed in #1064). A matcher belongs in a subsystem's branch only if no other vendor could emit that string; the surviving Composio markers (`"COMPOSIO_API_KEY"`, `'"code":10401'`, `"HTTP_Unauthorized"`) are vendor-unique.
+- **A subsystem's name in an error message is not evidence that subsystem failed.** The AI Gateway branch written to *fix* the above first matched a bare `message.includes("AI Gateway")`. Review caught that `resolveInferenceProfileModelSelection` throws `"…switch back to Vercel AI Gateway."` — a missing-profile error that would then have been reported as a rejected gateway key. Error copy in this repo routinely names the subsystem you should switch **to**, so name-matching classifies remediation advice as a failure. Shipped form requires the name **and** an independent auth signal: `message.includes("AI_GATEWAY_API_KEY") || matchesAnyPhrase(message, PROVIDER_AUTH_PHRASES)`.
+- **Never map a GitHub non-2xx status to a user action from the status alone.** GitHub returns 403 for revoked tokens, permission problems, **and** both rate-limit kinds. `throwIfTokenRejected` treated any 401/403 as `GitHubTokenRejectedError`, so a rate-limited but perfectly valid token told the user to reconnect GitHub. `apps/web/lib/github/rate-limit-error.ts` now separates them on `429`, `x-ratelimit-remaining: 0`, `Retry-After`, or a body matching `/rate limit|abuse detection/i` (#1061).
+- **When a downstream call fails silently, the loudest message in the failure belongs to the healthy path.** An unreachable `defaultSubagentModelId` made every `task` call return `toolCallCount: 0` while `workspaceResolution` was `"accepted"`; the only prose available came from the shared-workspace drift check, so the user was told the workspace baseline failed. `packages/agent/tools/task.ts` now tracks `modelCallPending` and rethrows `subagent_model_failed` naming the model id (#1065). Before rendering a subsystem's error, assert the state field that proves *that* subsystem failed.
+
+### Client fetch states — a dropped error is a confident lie
+
+- **Treat `const { data, isLoading } = useSWR(...)` as a defect on sight in any component with empty-state copy.** Ten confirmed defects came from one census (`scripts/ui-exercise/fetch-state-census.ts`; 63 SWR-fetching files, 36 handled `error`, 27 graded by hand, 10 confirmed → #1088–#1093). Each rendered an authoritative falsehood from `data?.x ?? []`: "No branches found.", "No Composio profiles configured", "not connected" on a working Slack account, "None — No options available" for runtime profiles that always exist server-side. The intuition is that dropping `error` degrades to an honest empty list; it does the opposite — an error prompts a retry, a false empty tells the user the data does not exist.
+- **Decide explicitly whether stale cache or the error wins; there is no safe default.** SWR keeps `data` across a failed revalidation, so both are true at once. `apps/web/hooks/use-session.ts` uses `isError: isFailedAuthCheck(error) && !data` (#1087) because an unconditional error arm unmounted working authenticated UI on a focus-revalidation blip. `apps/web/app/settings/agents/agents-loader.tsx` does the reverse and fails unconditionally (#1097) because the roster would otherwise be rebuilt from hardcoded fallbacks and saving overwrites real settings. The deciding question is not "is there data" but **can the user act destructively on stale data** — read-only display keeps the cache, an editable form that saves what it displays must not.
+- **Grep for the failure state before writing new failure UI, then confirm the component is mounted.** `composio-toolkit-picker.tsx` already rendered "Can't check right now" and `composio-connection-state.ts` already implemented `"unavailable"`; both were dead because `accountsUnavailable` was fed only by the response-body flag. The whole fix was `accountsData?.unavailable === true || Boolean(accountsError)` (#1096). Separately, `chat-sidebar.tsx` already had a full error+Retry block — but `ChatSidebar` is imported nowhere; the live surface was `ChatTabs` (#1095).
+- **Every failure-state fix needs a paired test that the genuine empty state still renders its own copy.** The defect is that two states render identically, so a test asserting only the new error copy also passes a fix that collapses empty into error. #1096 shipped both halves (failed fetch → "can't check right now"; successful fetch with `accounts: []` → still "not connected"). This repo has no testing-library/DOM harness: use `mock.module("swr", …)` plus `renderToStaticMarkup`.
+
+### Measurement harnesses — a fresh tool is a hypothesis, not data
+
+Five analysis scripts written this session produced confident wrong numbers
+before anyone checked them. None threw; each printed a tidy, wrong table.
+
+- **Grade a hand-checked sample before quoting any number, and record each correction as a comment in the tool itself.** `scripts/api-exercise/*` and `scripts/ui-exercise/*` each carry their own correction note in the header for exactly this reason.
+- **A harness that needs auth must assert it and refuse to run.** Losing test auth degrades into 200s and 307s, not errors, so the happy path and the blind path look identical: the render sweep would have reported 64 clean pages that were all sign-in redirects. `render-sweep.ts` now probes `/api/auth/info` and throws. Note `isTestAuthEnabled()` only honours the cookie under `NODE_ENV=development` or `OPEN_AGENTS_ENABLE_TEST_AUTH=1`.
+- **A regex census over this app's routes must count `NextResponse.json` and the error helpers, and handle `export const { GET, POST } = …`.** Next.js documents `export async function GET` and `Response.json`, so a scanner written from the canonical form misses both of this codebase's dominant real shapes — 81 helper-produced error responses, and the Better Auth catch-all route, silently dropped.
+- **DOM presence is not evidence until non-app nodes are excluded.** `__next_error__` appears in the HTML of a *healthy* `notFound()` page (22 false positives; now matched on the literal "Application error: a server-side exception"), and a real Chrome profile injects extension DOM plus `<next-route-announcer>` into `document.body` — measuring those reported 60 of 60 views "clipped" by chrome that is not part of the app.
+- **The `agent-browser` console buffer persists across navigations.** Without `agent-browser console --clear` after each navigation, a warning from one page is reported against whichever page you are standing on next.
+
+### Production operations
+
+- **A 503 naming the rate limiter usually means the env var, not the logic.** `getSharedRedisClient()` fails closed in production. `vercel integration-resource inspect` reported the Upstash store connected to production/preview/development, yet the deployment actually serving the 503s listed 147 env keys with zero Redis or KV among them. Disconnect and reconnect with explicit `-e production -e preview`; the next deployment had 159 keys including `REDIS_URL`. **The connection record and the injected env vars are separate state, and the record is the one that lies** (#1049).
+- **A green public smoke is not evidence production is healthy.** Every rate-limited route calls `getServerSession()` before `checkRateLimit()`, so an anonymous probe 401s and never reaches the 503. Public smoke stayed green through the entire outage. `GET /api/health` was added to close this gap, but nothing in `ops:status` polls it yet.
+- **`blocked` in an `ops:status` deployment/logs section usually means the Vercel CLI target was not resolved**, not that production is unwell — read the printed `sourceGap` before escalating. `--scope` and `--project` are required together.
+- **Before blaming an AI Gateway key, decode `exp` on `VERCEL_OIDC_TOKEN` in `apps/web/.env.local`.** A 32-day-stale token made every model call fail as an auth error. Refresh with `scripts/refresh-vercel-token.sh`, which splices only that one line — a full `vercel env pull .env.local` silently repoints local development at the production database. Also note a stale `AI_GATEWAY_API_KEY` takes precedence over OIDC.
+
+### Test and CI infrastructure
+
+- **oxfmt and oxlint do not read `.gitignore` or `.git/info/exclude`.** A local git worktree at `.worktrees/create-repo-897` broke `bun run check` for its owner all session (8 files; every push needed `SKIP_HOOKS=1`). Adding `.worktrees/**` and `.claude/worktrees/**` to `ignorePatterns` in both `.oxfmtrc.jsonc` and `.oxlintrc.json` took the scan from 7,839 files to 2,328 (#1104). The worktree-based subagent workflow creates these directories routinely — add new ones to both config files.
+- **Keep a Bun wall-clock test sentinel well under 5000ms.** Bun's default per-test timeout is also 5000ms, so a 5s sentinel is a dead tie with the runner's own deadline and a real regression surfaces as an opaque timeout instead of the assertion (#1105).
+- **"Passes 5/5 alone, fails consistently in the full file" is load-sensitive before it is order-dependent.** This repo's documented hazard is `mock.module` contamination, so the pattern reads as shared state — here isolation was irrelevant and the variable was CPU contention shrinking a 250ms margin around real git I/O (measured first yield: 92–99ms idle). Check for wall-clock bounds first (#1105).
+- **`Closes #N` does not auto-close when the PR merges into `develop`.** The repo default branch is `main` and GitHub only auto-closes on merges to the default branch. 17 issues from this range had to be closed by hand.
+
+### Merges and self-verification
+
+- **A conflict-free merge can silently delete behavior.** Merging #1055 (which extracted `jsonError` into `_lib/profile-handlers.ts`) after #1074 (which added the error envelope to the inline `jsonError`) resolved cleanly and removed `errorKind` from every inference-profile error response — the extracted copy predated the envelope, and no type error fired because the field is optional. Typecheck-green plus no-conflict is not proof. After merging a branch that refactors code you also changed, re-run the assertions **on the merged result**.
+- **A probe harness must be safe by construction, not by a missing credential.** `scripts/api-exercise/journeys-extended.ts` points its POST/PUT/DELETE probes at `open-agents-contract-probe/repo-that-does-not-exist`. Pointing them at the real fork ran green and mutated nothing — but only because the local test identity had no GitHub token, a condition that flips the day credentials are added (#1071).
+- **Cleanup added on a failure path needs its own timeout.** The dependency that just failed is usually the one the cleanup call talks to: `releaseUnusableSandbox` awaited another provider RPC precisely when the provider control plane was unresponsive. Bounded at 5s with `Promise.race` — a leaked sandbox is a cost problem, a hung request is a user-facing outage (#1107).
