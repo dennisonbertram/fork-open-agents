@@ -12,6 +12,10 @@ import {
   recordInferenceProfileTestResult,
 } from "@/lib/db/inference-profiles";
 import type { InferenceProfileProvider } from "@/lib/inference/types";
+import {
+  parseModelOptionSelection,
+  USER_INFERENCE_OPTION_PREFIX,
+} from "./model-option-id";
 import { normalizeInferenceProfileBaseUrl } from "./model-routing";
 
 export class InferenceProfileResolutionError extends Error {
@@ -58,14 +62,33 @@ export async function resolveInferenceProfileModelSelection(params: {
   selection: AgentModelSelection;
   expectedRoute?: ExpectedInferenceProfileRoute;
 }): Promise<AgentModelSelection> {
-  const { expectedRoute, inferenceProfileId, selection, userId } = params;
+  const { expectedRoute, selection, userId } = params;
+
+  // #1123 — defence in depth. "user-profile:<profileId>:<modelId>" is an
+  // internal option id; a provider must never see it. Stored selections that
+  // lost their profile id still carry it inside the composite, so recover it
+  // here instead of falling through to the gateway, and refuse outright when
+  // the composite cannot be parsed.
+  const parsedSelection = parseModelOptionSelection(selection.id);
+  if (parsedSelection.modelId.startsWith(USER_INFERENCE_OPTION_PREFIX)) {
+    throw new InferenceProfileResolutionError(
+      "This saved model selection is malformed and cannot be routed to a provider. Pick the model again in Settings -> Models.",
+    );
+  }
+
+  const inferenceProfileId =
+    params.inferenceProfileId || parsedSelection.inferenceProfileId;
+  const resolvedSelection: AgentModelSelection =
+    parsedSelection.modelId === selection.id
+      ? selection
+      : { ...selection, id: parsedSelection.modelId as typeof selection.id };
 
   if (!inferenceProfileId) {
     return {
-      ...selection,
+      ...resolvedSelection,
       attribution: {
         inferenceRoute: "gateway",
-        provider: selection.id.split("/")[0],
+        provider: resolvedSelection.id.split("/")[0],
       },
     };
   }
@@ -87,9 +110,10 @@ export async function resolveInferenceProfileModelSelection(params: {
   // Anthropic-compatible endpoint verbatim. Only app-catalog ids carrying an
   // "anthropic/" prefix are mapped to Anthropic's direct model ids.
   const directModelId =
-    profile.provider === "anthropic" && selection.id.startsWith("anthropic/")
-      ? toAnthropicDirectModelId(selection.id)
-      : selection.id;
+    profile.provider === "anthropic" &&
+    resolvedSelection.id.startsWith("anthropic/")
+      ? toAnthropicDirectModelId(resolvedSelection.id)
+      : resolvedSelection.id;
   if (!directModelId) {
     throw new InferenceProfileResolutionError(
       profile.provider === "anthropic"
@@ -141,7 +165,7 @@ export async function resolveInferenceProfileModelSelection(params: {
   }
 
   return {
-    ...selection,
+    ...resolvedSelection,
     directInference,
     attribution: {
       inferenceRoute: "user",

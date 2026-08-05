@@ -117,11 +117,16 @@ export default async function RepoPage({ params }: RepoPageProps) {
       sandboxState: { type: preferences.defaultSandboxType },
       lifecycleState: "provisioning",
       lifecycleVersion: 0,
+      // #1123: the default model and its inference profile are stored split.
+      // Both halves must travel together or the chat routes to the gateway
+      // with a model only the user's profile serves.
+      inferenceProfileId: preferences.defaultInferenceProfileId,
     },
     initialChat: {
       id: nanoid(),
       title: "New chat",
       modelId: preferences.defaultModelId,
+      inferenceProfileId: preferences.defaultInferenceProfileId,
     },
   });
 
