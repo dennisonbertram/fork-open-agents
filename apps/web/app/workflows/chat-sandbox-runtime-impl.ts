@@ -61,6 +61,38 @@ import { WorkspaceStartupReporter } from "./workspace-startup-log";
 type SessionRecord = NonNullable<Awaited<ReturnType<typeof getSessionById>>>;
 type DiscoveredSkills = Awaited<ReturnType<typeof discoverSkills>>;
 
+// Deterministic setup-command guard phrases. These are OUR OWN strings —
+// the default managed runtime profile's setup commands
+// (packages/sandbox/managed-runtime-profiles.ts, INSTALL_BUN_COMMAND /
+// INSTALL_AGENT_BROWSER_COMMAND) echo one of these immediately before
+// `exit 1` when a precondition the profile itself knows is broken (missing
+// Bun, an unsupported CPU architecture, a binary that isn't executable after
+// install). None of those can be fixed by re-running the same command, so a
+// setup-command failure that contains one of these phrases is fatal.
+//
+// Everything else — `curl`, `bun install -g agent-browser`,
+// `agent-browser install --with-deps` exiting nonzero for a registry or
+// network reason — has no guard phrase and stays an ordinary retryable
+// failure. Exit code alone cannot tell the two apart (see #1114 review:
+// treating every nonzero setup-command exit as fatal killed legitimate
+// retries for transient network/registry failures).
+//
+// Kept in sync with the profile's actual guard text by BT-013 in
+// chat-sandbox-runtime.test.ts, which reads
+// packages/sandbox/managed-runtime-profiles.ts and fails if any phrase here
+// no longer appears verbatim in that file.
+export const DETERMINISTIC_SETUP_FAILURE_PHRASES = [
+  "Bun is required before installing agent-browser for this profile.",
+  "Unsupported agent-browser architecture:",
+  "agent-browser native binary was not found after install",
+] as const;
+
+function isDeterministicSetupFailure(commandOutput: string): boolean {
+  return DETERMINISTIC_SETUP_FAILURE_PHRASES.some((phrase) =>
+    commandOutput.includes(phrase),
+  );
+}
+
 export class WorkspaceSetupError extends Error {
   errorKind?: ManagedRuntimeErrorKind;
   nextAction?: string;
@@ -626,23 +658,32 @@ async function ensureManagedRuntimeEnvironment(params: {
         ]
           .filter((part) => part.length > 0)
           .join(" ");
-        // A required setup command that RAN and exited nonzero is a
-        // deterministic failure — the command will exit nonzero again on
-        // retry (production incident DCaiJUlpmOobs2Yp18O6R: the same
-        // install-agent-browser command failed 4x in ~12s before the
-        // workflow engine gave up "after 3 retries"). Throw FatalError so
-        // the engine does not retry a step that cannot possibly succeed.
-        // Imported here rather than at module scope: `workflow` re-exports
-        // FatalError through a star-export chain that the test runner's
-        // resolver does not follow.
-        const { FatalError } = await import("workflow");
-        const fatalError = new FatalError(setupFailureMessage) as Error & {
-          errorKind?: ManagedRuntimeErrorKind;
-          nextAction?: string;
-        };
-        fatalError.errorKind = "setup_command_failed";
-        fatalError.nextAction = nextActionFor("setup_command_failed");
-        throw fatalError;
+        // A required setup command that RAN and exited nonzero is fatal ONLY
+        // when the output contains one of our own deterministic guard
+        // phrases (production incident DCaiJUlpmOobs2Yp18O6R: a missing
+        // execute bit, one of these guard phrases, failed 4x in ~12s before
+        // the workflow engine gave up "after 3 retries" — no retry could
+        // have changed that outcome). Exit code alone cannot distinguish
+        // that from an ordinary transient registry/network failure in
+        // `curl`/`bun install`/`agent-browser install --with-deps`, which
+        // genuinely can succeed on retry — those must stay retryable.
+        if (isDeterministicSetupFailure(summary)) {
+          // Imported here rather than at module scope: `workflow`
+          // re-exports FatalError through a star-export chain that the
+          // test runner's resolver does not follow.
+          const { FatalError } = await import("workflow");
+          const fatalError = new FatalError(setupFailureMessage) as Error & {
+            errorKind?: ManagedRuntimeErrorKind;
+            nextAction?: string;
+          };
+          fatalError.errorKind = "setup_command_failed";
+          fatalError.nextAction = nextActionFor("setup_command_failed");
+          throw fatalError;
+        }
+        throw new WorkspaceSetupError(setupFailureMessage, {
+          errorKind: "setup_command_failed",
+          nextAction: nextActionFor("setup_command_failed"),
+        });
       }
       return { notes, profileRunId };
     }

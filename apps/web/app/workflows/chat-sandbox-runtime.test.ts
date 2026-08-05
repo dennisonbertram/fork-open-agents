@@ -15,6 +15,14 @@
  * BT-011: a transient setup exec failure (errorKind setup_exec_error) still throws a normal,
  *   retryable error — the exec call itself failing (unreachable sandbox, timeout) may succeed
  *   on retry, so it must not be escalated to FatalError.
+ * BT-012: a required setup command that exits nonzero for a generic/network-shaped reason
+ *   (registry blip, no known guard phrase) is NOT escalated to FatalError — only our own
+ *   deterministic guard phrases (see DETERMINISTIC_SETUP_FAILURE_PHRASES) are fatal; every
+ *   other nonzero exit stays retryable (review comment on #1114: exit code alone cannot
+ *   distinguish a deterministic precondition failure from a transient registry/network one).
+ * BT-013: DETERMINISTIC_SETUP_FAILURE_PHRASES cannot silently drift from the guard text the
+ *   default managed runtime profile (packages/sandbox/managed-runtime-profiles.ts) actually
+ *   emits — this fails if either list changes without the other.
  */
 
 import { beforeEach, describe, expect, mock, test } from "bun:test";
@@ -471,6 +479,8 @@ function makeManagedRuntimeSession(
 // ── Import the module under test (after all mocks are declared) ────────────────
 
 const { resolveChatSandboxRuntime } = await import("./chat-sandbox-runtime");
+const { DETERMINISTIC_SETUP_FAILURE_PHRASES } =
+  await import("./chat-sandbox-runtime-impl");
 
 // ── Tests ──────────────────────────────────────────────────────────────────────
 
@@ -1138,6 +1148,83 @@ describe("resolveChatSandboxRuntime", () => {
         0,
       )?.[0] as { status: string; errorKind?: string };
       expect(finishArgs.errorKind).toBe("setup_exec_error");
+    });
+  });
+
+  describe("BT-012: generic setup command failure stays retryable", () => {
+    test("a setup command that exits nonzero with no known guard phrase throws a plain (non-FatalError) error", async () => {
+      resolveProfileResult = {
+        ok: true,
+        profile: {
+          ...DEFAULT_BUILT_IN_PROFILE,
+          setupCommands: [
+            {
+              id: "install-agent-browser",
+              label: "Install agent-browser",
+              description: "Installs agent-browser globally.",
+              command: "bun install -g agent-browser",
+              required: true,
+            },
+          ],
+          verificationCommands: [],
+        },
+        source: "built_in",
+        requestedProfileId: "test-profile",
+        resolvedProfileId: "test-profile",
+      };
+      execImpl = () =>
+        Promise.resolve({
+          success: false,
+          exitCode: 1,
+          stdout: "",
+          // A registry blip — shaped like a real bun-install network failure,
+          // but not one of our own guard phrases. Nothing about this exit is
+          // deterministic; re-running the install could succeed.
+          stderr:
+            "error: FetchError: request to https://registry.npmjs.org/agent-browser failed, reason: connect ETIMEDOUT",
+          truncated: false,
+        });
+      const session = makeManagedRuntimeSession({
+        id: "session-setup-command-failed-generic",
+      });
+      testSessionById[session.id] = session;
+
+      let caught: unknown;
+      try {
+        await resolveChatSandboxRuntime({
+          userId: "user-1",
+          sessionId: session.id,
+          assistantId: "asst-bt12-1",
+        });
+      } catch (error) {
+        caught = error;
+      }
+
+      expect(caught).toBeInstanceOf(Error);
+      expect((caught as Error).name).toBe("WorkspaceSetupError");
+      expect((caught as Error & { fatal?: boolean }).fatal).not.toBe(true);
+
+      const finishArgs = finishManagedRuntimeProfileRunSpy.mock.calls.at(
+        0,
+      )?.[0] as { status: string; errorKind?: string };
+      expect(finishArgs.status).toBe("failed");
+      expect(finishArgs.errorKind).toBe("setup_command_failed");
+    });
+  });
+
+  describe("BT-013: deterministic guard phrases stay in sync with the profile's own guard text", () => {
+    test("every phrase the classifier treats as fatal still appears verbatim in managed-runtime-profiles.ts", async () => {
+      const { readFileSync } = await import("node:fs");
+      const profileSourcePath = new URL(
+        "../../../../packages/sandbox/managed-runtime-profiles.ts",
+        import.meta.url,
+      );
+      const profileSource = readFileSync(profileSourcePath, "utf8");
+
+      expect(DETERMINISTIC_SETUP_FAILURE_PHRASES.length).toBeGreaterThan(0);
+      for (const phrase of DETERMINISTIC_SETUP_FAILURE_PHRASES) {
+        expect(profileSource).toContain(phrase);
+      }
     });
   });
 
