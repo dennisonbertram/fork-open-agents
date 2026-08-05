@@ -46,18 +46,33 @@ export type ChatMainComposioInput = {
    * existing callers/behavior are unchanged when omitted.
    */
   repoSelectedSlugs?: string[] | null;
+  /**
+   * Whether repoSelectedSlugs came from a SAVED, non-null
+   * selectedToolkitSlugs in repo/workspace settings (an EXPLICIT choice at
+   * repo scope) rather than the IMPLICIT GitHub default-on applied when a
+   * repo has never been configured. Only meaningful when repoSelectedSlugs
+   * is non-empty. Defaults to false (implicit) so existing callers that omit
+   * it keep today's "repo-default" behavior (PR #1120 P2 review follow-up).
+   */
+  repoSelectedSlugsExplicit?: boolean;
 };
 
 /**
  * Which precedence tier produced the result. Callers use this to tell an
- * EXPLICIT user selection ("chat" or "agent") apart from an IMPLICIT
- * default ("repo-default", e.g. GitHub default-on for an unconfigured
- * repo) — the distinction #1119 needed: an implicit selection must not be
- * treated the same as a deliberate one when it collides with a hard
- * incompatibility (managed runtime mode). `null` means no tier matched
+ * EXPLICIT user selection ("chat", "agent", or "repo-explicit") apart from
+ * an IMPLICIT default ("repo-default", e.g. GitHub default-on for an
+ * unconfigured repo) — the distinction #1119 needed: an implicit selection
+ * must not be treated the same as a deliberate one when it collides with a
+ * hard incompatibility (managed runtime mode). The repo tier itself splits
+ * into both: a SAVED repo-level selection is explicit, an unconfigured
+ * repo's GitHub default-on is implicit. `null` means no tier matched
  * (today's off/no-selection outcome).
  */
-export type ChatMainComposioSource = "chat" | "agent" | "repo-default";
+export type ChatMainComposioSource =
+  | "chat"
+  | "agent"
+  | "repo-explicit"
+  | "repo-default";
 
 export type ChatMainComposioResult = {
   /** Final direct toolkit slugs to use (null = off). */
@@ -129,17 +144,23 @@ export function resolveComposioSlugsForChatMain(
   }
 
   // Repo/workspace-level selection — lowest precedence, only when nothing else
-  // is selected. This is the case that previously yielded no tools and forced
-  // the model onto unauthenticated web_fetch for GitHub. IMPLICIT: nobody
-  // chose this for the chat, so callers must not treat it like an explicit
-  // selection when it collides with a hard incompatibility (#1119).
+  // is selected. Two sub-cases, distinguished by repoSelectedSlugsExplicit:
+  //   - SAVED repo settings (selectedToolkitSlugs non-null) is an EXPLICIT
+  //     choice at repo scope — the user picked these toolkits in workspace
+  //     settings, just like a chat/agent-level selection (PR #1120 P2
+  //     review follow-up).
+  //   - The unconfigured-repo GitHub default-on is IMPLICIT: nobody chose
+  //     this for the chat, so callers must not treat it like an explicit
+  //     selection when it collides with a hard incompatibility (#1119).
   const repoSlugsNonEmpty =
     input.repoSelectedSlugs != null && input.repoSelectedSlugs.length > 0;
   if (repoSlugsNonEmpty) {
     return {
       directSlugs: input.repoSelectedSlugs ?? null,
       profileId: null,
-      source: "repo-default",
+      source: input.repoSelectedSlugsExplicit
+        ? "repo-explicit"
+        : "repo-default",
     };
   }
 

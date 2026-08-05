@@ -172,21 +172,28 @@ function toSetupError(error: unknown): ComposioSetupError {
 
 /**
  * Resolve the repo/workspace-level toolkit slugs for a session's repo, applying
- * GitHub default-on when the repo has never been configured. Returns null when
- * there is no repo, Composio is unconfigured, or the effective list is empty.
+ * GitHub default-on when the repo has never been configured. Returns null
+ * slugs when there is no repo, Composio is unconfigured, or the effective
+ * list is empty.
+ *
+ * `explicit` distinguishes a SAVED, non-null selectedToolkitSlugs (the user
+ * deliberately chose these toolkits in workspace settings) from the
+ * IMPLICIT GitHub default-on applied to an unconfigured repo — callers must
+ * not treat the two the same when they collide with a hard incompatibility
+ * like managed runtime mode (PR #1120 P2 review follow-up to #1119).
  */
 async function resolveRepoSelectedSlugs(params: {
   userId: string;
   sessionId: string;
-}): Promise<string[] | null> {
+}): Promise<{ slugs: string[] | null; explicit: boolean }> {
   const sessionRecord = await getSessionById(params.sessionId);
   const repoOwner = sessionRecord?.repoOwner;
   const repoName = sessionRecord?.repoName;
   if (!repoOwner || !repoName) {
-    return null;
+    return { slugs: null, explicit: false };
   }
   if (!getComposioConfig().configured) {
-    return null;
+    return { slugs: null, explicit: false };
   }
 
   const repoSettings = await getRepositoryComposioSettings({
@@ -196,8 +203,11 @@ async function resolveRepoSelectedSlugs(params: {
   });
   const stored =
     getRepositoryComposioSettingsValues(repoSettings)?.selectedToolkitSlugs;
-  // `undefined` (no row) and `null` both mean "never configured".
+  // `undefined` (no row) and `null` both mean "never configured" (implicit).
+  // A defined array — including an explicit empty array — means the user
+  // saved a choice for this repo (explicit).
   const selectedToolkitSlugs = stored ?? null;
+  const explicit = selectedToolkitSlugs !== null;
 
   // Only resolve connected accounts when needed for the GitHub default-on
   // decision (an unconfigured repo). An explicit selection wins without it.
@@ -214,7 +224,7 @@ async function resolveRepoSelectedSlugs(params: {
     selectedToolkitSlugs,
     githubConnected,
   });
-  return effective.length > 0 ? effective : null;
+  return { slugs: effective.length > 0 ? effective : null, explicit };
 }
 
 export async function resolveComposioToolsForChat(params: {
@@ -274,12 +284,15 @@ export async function resolveComposioToolsForChat(params: {
   // yields no Composio tools and forces the model onto unauthenticated
   // web_fetch for GitHub. GitHub is default-on for an unconfigured repo.
   let repoSelectedSlugs: string[] | null = null;
+  let repoSelectedSlugsExplicit = false;
   if (isMainAgentKey) {
     try {
-      repoSelectedSlugs = await resolveRepoSelectedSlugs({
+      const repoSelection = await resolveRepoSelectedSlugs({
         userId: params.userId,
         sessionId: chat.sessionId,
       });
+      repoSelectedSlugs = repoSelection.slugs;
+      repoSelectedSlugsExplicit = repoSelection.explicit;
     } catch {
       // Non-fatal: fall back to today's behavior (no repo contribution).
     }
@@ -292,6 +305,7 @@ export async function resolveComposioToolsForChat(params: {
         agentRowComposioSlugs,
         agentRowComposioProfileId,
         repoSelectedSlugs,
+        repoSelectedSlugsExplicit,
       })
     : null;
 
