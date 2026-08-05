@@ -1885,12 +1885,29 @@ describe("tools execute behavior", () => {
     }
 
     const iterator = result[Symbol.asyncIterator]();
+    // This asserts ORDER, not speed: the first status must be yielded before
+    // subagent.stream() resolves. The mocked stream never resolves on its own,
+    // so a regression to await-before-yield makes iterator.next() unsettleable
+    // and the sentinel wins.
+    //
+    // The sentinel was 250ms, which made this test load-flaky. The generator
+    // does real git I/O before its first yield - measured at 92-99ms on an idle
+    // machine, but enough over 250ms under parallel test load to fail
+    // consistently while passing 5/5 when the file was run alone. The bound is
+    // now far above any plausible I/O time, so it only fires on a real
+    // ordering regression rather than on machine load.
+    //
+    // 2s, not 5s: Bun's default per-test timeout is also 5000ms, so a 5s
+    // sentinel is a dead tie with the runner's own deadline — a real regression
+    // would surface as an opaque test timeout instead of this assertion. 2s is
+    // still 20x the measured worst case and safely inside the deadline.
+    const pending = Symbol("pending");
     const firstOutput = await Promise.race([
       iterator.next(),
-      new Promise((resolve) => setTimeout(() => resolve("timed-out"), 250)),
+      new Promise((resolve) => setTimeout(() => resolve(pending), 2000)),
     ]);
 
-    expect(firstOutput).not.toBe("timed-out");
+    expect(firstOutput).not.toBe(pending);
     expect(firstOutput).toMatchObject({
       done: false,
       value: {
