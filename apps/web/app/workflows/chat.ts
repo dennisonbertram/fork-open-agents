@@ -842,18 +842,44 @@ function getSetupErrorMessage(error: unknown): string {
   // bare retry.
   //
   // The copy below is hardcoded rather than imported from
-  // NEXT_ACTION_BY_ERROR_KIND.setup_command_failed in
-  // "@/lib/managed-runtime/profile-run-status" because that module is
-  // guarded by `import "server-only"`, which throws when pulled into this
-  // error-mapping path's test/bundling context. Keep this string in sync with
-  // that mapping if it changes.
+  // NEXT_ACTION_BY_ERROR_KIND in "@/lib/managed-runtime/profile-run-status"
+  // because that module is guarded by `import "server-only"` (verified: its
+  // default export unconditionally throws unless bundled under the
+  // "react-server" condition, which this test/bundling context does not
+  // set). Keep these strings in sync with that mapping if it changes.
+  //
+  // This same prefix is thrown from TWO sites in chat-sandbox-runtime-impl.ts
+  // with two different causes and two different real next actions
+  // (errorKind "setup_command_failed" vs "setup_exec_error" — see
+  // NEXT_ACTION_BY_ERROR_KIND there), and the rewrap that drops the error
+  // name above also drops the errorKind/nextAction properties on
+  // WorkspaceSetupError, so — same as the name check — they can't be read
+  // off the error object here. Distinguish the two causes structurally
+  // within the surviving message text instead:
+  //   - setup_command_failed (the command ran and exited non-zero) never
+  //     appends " Error: "; it only optionally appends
+  //     " Command output: <stdout/stderr>" (that command's own output can
+  //     itself start with the word "Error:", so check for the
+  //     "Command output:" marker first — it is unique to this throw site —
+  //     before falling through to the exec-error check below).
+  //   - setup_exec_error (sandbox.exec() itself threw, before the command
+  //     ever ran) always appends " Error: <raw exec failure>" and never
+  //     "Command output:".
+  // Telling a user to edit their profile when the sandbox control plane
+  // hiccuped sends them to fix something that isn't broken.
   const managedRuntimeSetupFailurePrefix =
     "Managed runtime profile setup failed while running";
   if (message.includes(managedRuntimeSetupFailurePrefix)) {
     const originalMessage = message.slice(
       message.indexOf(managedRuntimeSetupFailurePrefix),
     );
-    return `${originalMessage} Fix the failing setup command in the profile editor, then run setup again.`;
+    const isExecInfrastructureFailure =
+      !originalMessage.includes("Command output:") &&
+      / Error: /.test(originalMessage);
+    const guidance = isExecInfrastructureFailure
+      ? "The setup command could not run in the sandbox. Check the sandbox status and try again."
+      : "Fix the failing setup command in the profile editor, then run setup again.";
+    return `${originalMessage} ${guidance}`;
   }
 
   if (name === "WorkspaceSetupError") {

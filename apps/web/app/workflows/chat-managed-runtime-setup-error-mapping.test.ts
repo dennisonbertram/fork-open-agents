@@ -394,4 +394,106 @@ describe("managed runtime profile setup failure → actionable user message mapp
 
     expect(delta).toBe("Workspace setup failed. Try again in a moment.");
   });
+
+  // Reproduces the P2 review on this PR: chat-sandbox-runtime-impl.ts has a
+  // SECOND throw site that shares this exact same
+  // "Managed runtime profile setup failed while running..." prefix — the one
+  // that fires when `sandbox.exec()` itself throws before the setup command
+  // ever ran (errorKind "setup_exec_error"), as opposed to the command
+  // running and failing (errorKind "setup_command_failed"). Sending users to
+  // "the profile editor" for an infrastructure failure is wrong: there is
+  // nothing to fix there. This must get sandbox/infra guidance instead.
+  test("exec-infrastructure failure (sandbox.exec itself threw) does not get profile-editor guidance", async () => {
+    inferenceProfileError = Object.assign(
+      new Error(
+        "Managed runtime profile setup failed while running Install agent-browser " +
+          "for browser smoke checks for Web app with Bun and browser checks " +
+          "(web-bun-agent-browser). agent-browser lets the managed runtime open " +
+          "preview URLs, inspect the UI, capture browser errors, and run browser " +
+          "smoke checks after the app starts. Error: connect ECONNREFUSED sandbox control plane",
+      ),
+      { name: "WorkspaceSetupError" },
+    );
+
+    try {
+      await runAgentWorkflow(makeOptions());
+    } catch {
+      // expected
+    }
+
+    const delta = getSetupErrorDelta();
+
+    expect(delta).not.toBe("Workspace setup failed. Try again in a moment.");
+    expect(delta).toContain("Install agent-browser");
+    // Must NOT hand out profile-editor guidance — nothing in the profile is
+    // broken when the sandbox couldn't even run the command.
+    expect(delta).not.toContain(
+      "Fix the failing setup command in the profile editor",
+    );
+    // Must carry guidance appropriate to an infrastructure failure instead.
+    expect(delta).toContain("sandbox");
+  });
+
+  // Same defect as above, reproduced through the workflow engine's
+  // retry-wrapped FatalError, which drops the original WorkspaceSetupError
+  // name — the message text is the only signal left.
+  test("retry-wrapped FatalError carrying the exec-infrastructure message still avoids profile-editor guidance", async () => {
+    inferenceProfileError = Object.assign(
+      new Error(
+        'Step "step//./app/workflows/chat//runAgentStep" failed after 3 retries: ' +
+          "Managed runtime profile setup failed while running Install agent-browser " +
+          "for browser smoke checks for Web app with Bun and browser checks " +
+          "(web-bun-agent-browser). agent-browser lets the managed runtime open " +
+          "preview URLs, inspect the UI, capture browser errors, and run browser " +
+          "smoke checks after the app starts. Error: sandbox timed out starting command",
+      ),
+      { name: "FatalError" },
+    );
+
+    try {
+      await runAgentWorkflow(makeOptions());
+    } catch {
+      // expected
+    }
+
+    const delta = getSetupErrorDelta();
+
+    expect(delta).not.toBe("Workspace setup failed. Try again in a moment.");
+    expect(delta).toContain("Install agent-browser");
+    expect(delta).not.toContain(
+      "Fix the failing setup command in the profile editor",
+    );
+    expect(delta).toContain("sandbox");
+    expect(delta).not.toContain("runAgentStep");
+  });
+
+  // A setup_command_failed message can legitimately contain command output
+  // that itself starts with the word "Error:" (many CLIs print that to
+  // stderr) — this must not be misread as an exec-infrastructure failure and
+  // still needs to route to profile-editor guidance.
+  test("command output containing the word 'Error:' still gets profile-editor guidance, not infra guidance", async () => {
+    inferenceProfileError = Object.assign(
+      new Error(
+        "Managed runtime profile setup failed while running Install agent-browser " +
+          "for browser smoke checks for Web app with Bun and browser checks " +
+          "(web-bun-agent-browser). agent-browser lets the managed runtime open " +
+          "preview URLs, inspect the UI, capture browser errors, and run browser " +
+          "smoke checks after the app starts. Command output: Error: exit code 126: " +
+          "permission denied",
+      ),
+      { name: "WorkspaceSetupError" },
+    );
+
+    try {
+      await runAgentWorkflow(makeOptions());
+    } catch {
+      // expected
+    }
+
+    const delta = getSetupErrorDelta();
+
+    expect(delta).toContain(
+      "Fix the failing setup command in the profile editor, then run setup again.",
+    );
+  });
 });
