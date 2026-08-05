@@ -121,6 +121,53 @@ describe("managed runtime profiles", () => {
     expect("setupScript" in profile).toBe(false);
   });
 
+  test("#1109: install-agent-browser pins an explicit version instead of a bare package name", () => {
+    const profile = getManagedRuntimeProfile("web-bun-agent-browser");
+    const installAgentBrowser = profile.setupCommands.find(
+      (command) => command.id === "install-agent-browser",
+    );
+
+    // The version reaches the install through a shell variable rather than
+    // being interpolated at the call site, because the skip-reinstall check
+    // added in #1116 compares the installed version against the same value.
+    // Both halves are asserted so neither can drift: the pin is a concrete
+    // version, and the install uses it rather than a bare package name.
+    expect(installAgentBrowser?.command).toContain(
+      'agent_browser_pinned_version="0.33.2"',
+    );
+    expect(installAgentBrowser?.command).toContain(
+      "bun install -g agent-browser@$agent_browser_pinned_version",
+    );
+    expect(installAgentBrowser?.command).not.toMatch(
+      /bun install -g agent-browser\s*$/m,
+    );
+  });
+
+  test("#1109: install-agent-browser chmods the resolved native binary instead of requiring it pre-executable", () => {
+    const profile = getManagedRuntimeProfile("web-bun-agent-browser");
+    const installAgentBrowser = profile.setupCommands.find(
+      (command) => command.id === "install-agent-browser",
+    );
+
+    expect(installAgentBrowser?.command).toContain(
+      'chmod +x "$agent_browser_path"',
+    );
+    expect(installAgentBrowser?.command).not.toContain(
+      '[ ! -x "$agent_browser_path" ]',
+    );
+  });
+
+  test("#1109: install-agent-browser still fails loudly when the binary is absent", () => {
+    const profile = getManagedRuntimeProfile("web-bun-agent-browser");
+    const installAgentBrowser = profile.setupCommands.find(
+      (command) => command.id === "install-agent-browser",
+    );
+
+    expect(installAgentBrowser?.command).toContain(
+      'if [ ! -f "$agent_browser_path" ]; then echo "agent-browser native binary was not found after install: $agent_browser_path" >&2; exit 1; fi',
+    );
+  });
+
   test("#811 (D3): snapshot commands derive from setupCommands, not a removed setupScript", () => {
     const profile = getManagedRuntimeProfile("web-bun-agent-browser");
     const snapshotCommands = getManagedRuntimeSnapshotCommands(profile);

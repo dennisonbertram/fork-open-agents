@@ -40,9 +40,19 @@ const INSTALL_BUN_COMMAND = [
   "bun --version",
 ].join("\n");
 
-// Pinned so the skip-reinstall check below has a fixed target to compare
-// against. Bump this when intentionally upgrading agent-browser.
-const AGENT_BROWSER_VERSION = "0.27.0";
+// Pinned instead of installing latest: an unpinned `bun install -g
+// agent-browser` silently picked up a breaking upstream packaging change
+// (agent-browser >= 0.29.0 ships its native binary at mode 644 instead of
+// 755) and took the default managed runtime profile down between
+// 2026-06-18 and 2026-08-05. Bump this one constant when intentionally
+// upgrading agent-browser.
+//
+// This is also the target the skip-reinstall check below compares against.
+// Do NOT pin this back to whatever the current base snapshot happens to
+// contain: the snapshot is rebuilt from these commands, not the other way
+// round, and 0.27.0 predates the domain-allowlist and network-containment
+// hardening shipped in 0.32.0.
+const AGENT_BROWSER_VERSION = "0.33.2";
 
 const INSTALL_AGENT_BROWSER_COMMAND = [
   "set -e",
@@ -75,6 +85,14 @@ const INSTALL_AGENT_BROWSER_COMMAND = [
   "fi",
   // Whichever branch ran above, converge on the same postcondition: the
   // native binary must exist, be executable, and have a working shim.
+  //
+  // The chmod is required, not defensive. agent-browser >= 0.29.0 ships its
+  // native platform binary at mode 644 and relies on its own postinstall
+  // (scripts/postinstall.js) to chmod it to 755. Bun blocks that postinstall
+  // as an untrusted lifecycle script, so after a fresh install the binary is
+  // present but not executable. The chmod is the only thing this profile
+  // actually needed from that postinstall — it already writes its own shim
+  // below — so do it here and fail only when the binary itself is missing.
   'if [ ! -f "$agent_browser_path" ]; then echo "agent-browser native binary was not found after install: $agent_browser_path" >&2; exit 1; fi',
   'chmod +x "$agent_browser_path"',
   'rm -f "$profile_bin_dir/agent-browser"',
