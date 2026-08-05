@@ -18,6 +18,33 @@ function apiCallError(statusCode: number, responseBody?: string) {
   });
 }
 
+// Mirrors `ai`'s NoOutputGeneratedError / any `new Error(msg, { cause })`
+// wrapping: the real APICallError travels as `.cause` on a generic Error.
+function causeWrappedApiCallError(statusCode: number, responseBody?: string) {
+  return new Error("No output generated. Check the stream for errors.", {
+    cause: apiCallError(statusCode, responseBody),
+  });
+}
+
+// Mirrors `ai`'s retryWithExponentialBackoffRespectingRetryHeaders: once a
+// request has been attempted more than once, a non-retryable failure is
+// wrapped in a RetryError whose own message is generic ("Failed after N
+// attempts..."), but the real APICallError survives on `.lastError`.
+function retryWrappedApiCallError(statusCode: number, responseBody?: string) {
+  const last = apiCallError(statusCode, responseBody);
+  return Object.assign(
+    new Error(
+      `Failed after 2 attempts with non-retryable error: '${last.message}'`,
+    ),
+    {
+      name: "AI_RetryError",
+      reason: "errorNotRetryable",
+      lastError: last,
+      errors: [last],
+    },
+  );
+}
+
 describe("getProviderErrorDetails", () => {
   test("reads status and body off the AI SDK error shape", () => {
     expect(
@@ -36,6 +63,22 @@ describe("getProviderErrorDetails", () => {
     expect(
       getProviderErrorDetails(apiCallError(400, "   ")).responseBody,
     ).toBeNull();
+  });
+
+  test("walks a .cause chain to find the wrapped API error", () => {
+    expect(
+      getProviderErrorDetails(
+        causeWrappedApiCallError(400, '{"message":"nope"}'),
+      ),
+    ).toEqual({ statusCode: 400, responseBody: '{"message":"nope"}' });
+  });
+
+  test("reads a RetryError's .lastError for the wrapped API error", () => {
+    expect(
+      getProviderErrorDetails(
+        retryWrappedApiCallError(400, '{"message":"nope"}'),
+      ),
+    ).toEqual({ statusCode: 400, responseBody: '{"message":"nope"}' });
   });
 });
 
@@ -75,6 +118,30 @@ describe("isNonRetryableProviderError", () => {
 
   test("a non-API error is left alone", () => {
     expect(isNonRetryableProviderError(new Error("boom"))).toBe(false);
+  });
+
+  test("a .cause-wrapped 400 is still non-retryable", () => {
+    expect(isNonRetryableProviderError(causeWrappedApiCallError(400))).toBe(
+      true,
+    );
+  });
+
+  test("a .cause-wrapped 429 is still left to the normal retry path", () => {
+    expect(isNonRetryableProviderError(causeWrappedApiCallError(429))).toBe(
+      false,
+    );
+  });
+
+  test("a RetryError-wrapped 400 is still non-retryable", () => {
+    expect(isNonRetryableProviderError(retryWrappedApiCallError(400))).toBe(
+      true,
+    );
+  });
+
+  test("a RetryError-wrapped 500 is still left to the normal retry path", () => {
+    expect(isNonRetryableProviderError(retryWrappedApiCallError(500))).toBe(
+      false,
+    );
   });
 });
 
