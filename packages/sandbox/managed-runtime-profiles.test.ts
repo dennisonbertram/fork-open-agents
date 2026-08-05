@@ -17,7 +17,7 @@ describe("managed runtime profiles", () => {
       (command) => command.id === "verify-agent-browser",
     );
 
-    expect(profile.version).toBe("2026-05-23.2");
+    expect(profile.version).toBe("2026-08-05.2");
     expect(profile.expectedTools).toEqual(["bun", "agent-browser"]);
     expect(profile.optionalTools).toEqual(["node", "npm"]);
     expect(installAgentBrowser?.command).toContain(
@@ -49,6 +49,70 @@ describe("managed runtime profiles", () => {
     expect(isManagedRuntimeProfileId("unknown-profile")).toBe(false);
     expect(normalizeManagedRuntimeProfileId("unknown-profile")).toBe(
       "web-bun-agent-browser",
+    );
+  });
+
+  test("D1: install-agent-browser does not unconditionally rm -rf the installed package", () => {
+    const profile = getManagedRuntimeProfile("web-bun-agent-browser");
+    const installAgentBrowser = profile.setupCommands.find(
+      (command) => command.id === "install-agent-browser",
+    );
+
+    expect(installAgentBrowser?.command).not.toMatch(
+      /^rm -rf "\$HOME\/\.bun\/install\/global\/node_modules\/agent-browser"$/m,
+    );
+  });
+
+  test("D1: install-agent-browser skips reinstall only when the pinned version AND the native binary are already present", () => {
+    const profile = getManagedRuntimeProfile("web-bun-agent-browser");
+    const installAgentBrowser = profile.setupCommands.find(
+      (command) => command.id === "install-agent-browser",
+    );
+    const command = installAgentBrowser?.command ?? "";
+
+    // Skip branch must gate on both the pinned version match and the native
+    // binary already existing on disk — neither alone is a safe skip.
+    expect(command).toMatch(
+      /agent_browser_installed_version.*=.*agent_browser_pinned_version.*&&.*-f "\$agent_browser_path"/,
+    );
+  });
+
+  test("D1: install-agent-browser still installs the pinned version on a bare machine", () => {
+    const profile = getManagedRuntimeProfile("web-bun-agent-browser");
+    const installAgentBrowser = profile.setupCommands.find(
+      (command) => command.id === "install-agent-browser",
+    );
+
+    expect(installAgentBrowser?.command).toMatch(
+      /bun install -g agent-browser@\S+/,
+    );
+  });
+
+  test("D1: chmod and the profile shim write happen unconditionally, regardless of which branch ran", () => {
+    const profile = getManagedRuntimeProfile("web-bun-agent-browser");
+    const installAgentBrowser = profile.setupCommands.find(
+      (command) => command.id === "install-agent-browser",
+    );
+    const command = installAgentBrowser?.command ?? "";
+    const lines = command.split("\n");
+
+    // The chmod and shim-write lines must appear exactly once each, after
+    // the if/else install block closes (fi), so both branches converge on
+    // the same postcondition.
+    const fiIndex = lines.findIndex((line) => line.trim() === "fi");
+    const chmodIndex = lines.findIndex((line) =>
+      line.includes('chmod +x "$agent_browser_path"'),
+    );
+    const shimWriteIndex = lines.findIndex((line) =>
+      line.includes('> "$profile_bin_dir/agent-browser"'),
+    );
+
+    expect(fiIndex).toBeGreaterThan(-1);
+    expect(chmodIndex).toBeGreaterThan(fiIndex);
+    expect(shimWriteIndex).toBeGreaterThan(fiIndex);
+    expect(command.match(/chmod \+x "\$agent_browser_path"/g)?.length).toBe(1);
+    expect(command.match(/> "\$profile_bin_dir\/agent-browser"/g)?.length).toBe(
+      1,
     );
   });
 
