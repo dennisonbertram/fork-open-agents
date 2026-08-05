@@ -17,7 +17,7 @@ describe("managed runtime profiles", () => {
       (command) => command.id === "verify-agent-browser",
     );
 
-    expect(profile.version).toBe("2026-05-23.2");
+    expect(profile.version).toBe("2026-08-05.1");
     expect(profile.expectedTools).toEqual(["bun", "agent-browser"]);
     expect(profile.optionalTools).toEqual(["node", "npm"]);
     expect(installAgentBrowser?.command).toContain(
@@ -55,6 +55,45 @@ describe("managed runtime profiles", () => {
   test("#811 (D3): setupScript is removed from the profile contract — setupCommands is the one source of truth", () => {
     const profile = getManagedRuntimeProfile("web-bun-agent-browser");
     expect("setupScript" in profile).toBe(false);
+  });
+
+  test("#1109: install-agent-browser pins an explicit version instead of a bare package name", () => {
+    const profile = getManagedRuntimeProfile("web-bun-agent-browser");
+    const installAgentBrowser = profile.setupCommands.find(
+      (command) => command.id === "install-agent-browser",
+    );
+
+    expect(installAgentBrowser?.command).toContain(
+      "bun install -g agent-browser@0.33.2",
+    );
+    expect(installAgentBrowser?.command).not.toMatch(
+      /bun install -g agent-browser\s*$/m,
+    );
+  });
+
+  test("#1109: install-agent-browser chmods the resolved native binary instead of requiring it pre-executable", () => {
+    const profile = getManagedRuntimeProfile("web-bun-agent-browser");
+    const installAgentBrowser = profile.setupCommands.find(
+      (command) => command.id === "install-agent-browser",
+    );
+
+    expect(installAgentBrowser?.command).toContain(
+      'chmod +x "$agent_browser_path"',
+    );
+    expect(installAgentBrowser?.command).not.toContain(
+      '[ ! -x "$agent_browser_path" ]',
+    );
+  });
+
+  test("#1109: install-agent-browser still fails loudly when the binary is absent", () => {
+    const profile = getManagedRuntimeProfile("web-bun-agent-browser");
+    const installAgentBrowser = profile.setupCommands.find(
+      (command) => command.id === "install-agent-browser",
+    );
+
+    expect(installAgentBrowser?.command).toContain(
+      'if [ ! -f "$agent_browser_path" ]; then echo "agent-browser native binary was not found after install: $agent_browser_path" >&2; exit 1; fi',
+    );
   });
 
   test("#811 (D3): snapshot commands derive from setupCommands, not a removed setupScript", () => {
