@@ -44,16 +44,17 @@ describe("REGRESSION: no-row behavior is byte-for-byte identical to before Phase
     expect(result.profileId).toBeNull();
   });
 
-  it("REG-C-001c: function returns exactly {directSlugs, profileId} — no extra fields", () => {
+  it("REG-C-001c: function returns exactly {directSlugs, profileId, source} — no extra fields", () => {
     const result = resolveComposioSlugsForChatMain({
       chatDirectSlugs: null,
       chatMainProfileId: null,
       agentRowComposioSlugs: null,
       agentRowComposioProfileId: null,
     });
-    // Only these two keys should be present
+    // Only these three keys should be present
     const keys = Object.keys(result).sort();
-    expect(keys).toEqual(["directSlugs", "profileId"]);
+    expect(keys).toEqual(["directSlugs", "profileId", "source"]);
+    expect(result.source).toBeNull();
   });
 });
 

@@ -46,13 +46,41 @@ export type ChatMainComposioInput = {
    * existing callers/behavior are unchanged when omitted.
    */
   repoSelectedSlugs?: string[] | null;
+  /**
+   * Whether repoSelectedSlugs came from a SAVED, non-null
+   * selectedToolkitSlugs in repo/workspace settings (an EXPLICIT choice at
+   * repo scope) rather than the IMPLICIT GitHub default-on applied when a
+   * repo has never been configured. Only meaningful when repoSelectedSlugs
+   * is non-empty. Defaults to false (implicit) so existing callers that omit
+   * it keep today's "repo-default" behavior (PR #1120 P2 review follow-up).
+   */
+  repoSelectedSlugsExplicit?: boolean;
 };
+
+/**
+ * Which precedence tier produced the result. Callers use this to tell an
+ * EXPLICIT user selection ("chat", "agent", or "repo-explicit") apart from
+ * an IMPLICIT default ("repo-default", e.g. GitHub default-on for an
+ * unconfigured repo) — the distinction #1119 needed: an implicit selection
+ * must not be treated the same as a deliberate one when it collides with a
+ * hard incompatibility (managed runtime mode). The repo tier itself splits
+ * into both: a SAVED repo-level selection is explicit, an unconfigured
+ * repo's GitHub default-on is implicit. `null` means no tier matched
+ * (today's off/no-selection outcome).
+ */
+export type ChatMainComposioSource =
+  | "chat"
+  | "agent"
+  | "repo-explicit"
+  | "repo-default";
 
 export type ChatMainComposioResult = {
   /** Final direct toolkit slugs to use (null = off). */
   directSlugs: string[] | null;
   /** Final profile id to use (null = off). */
   profileId: string | null;
+  /** Which tier produced directSlugs/profileId; null when nothing matched. */
+  source: ChatMainComposioSource | null;
 };
 
 /**
@@ -80,42 +108,62 @@ export function resolveComposioSlugsForChatMain(
   // G1). chatDirectSlugs === null (never configured) is NOT this case and
   // falls through to the agent-row/repo tiers below, unchanged.
   if (chatDirectSlugs != null && chatDirectSlugs.length === 0) {
-    return { directSlugs: [], profileId: null };
+    return { directSlugs: [], profileId: null, source: "chat" };
   }
 
   // Explicit per-chat directSlugs wins (non-empty array only)
   const chatSlugsNonEmpty =
     chatDirectSlugs != null && chatDirectSlugs.length > 0;
   if (chatSlugsNonEmpty) {
-    return { directSlugs: chatDirectSlugs, profileId: null };
+    return { directSlugs: chatDirectSlugs, profileId: null, source: "chat" };
   }
 
   // Explicit per-chat profile id wins
   if (chatMainProfileId != null) {
-    return { directSlugs: null, profileId: chatMainProfileId };
+    return { directSlugs: null, profileId: chatMainProfileId, source: "chat" };
   }
 
   // Agent row slugs used as default (non-empty array)
   const agentSlugsNonEmpty =
     agentRowComposioSlugs != null && agentRowComposioSlugs.length > 0;
   if (agentSlugsNonEmpty) {
-    return { directSlugs: agentRowComposioSlugs, profileId: null };
+    return {
+      directSlugs: agentRowComposioSlugs,
+      profileId: null,
+      source: "agent",
+    };
   }
 
   // Agent row profile id used as default
   if (agentRowComposioProfileId != null) {
-    return { directSlugs: null, profileId: agentRowComposioProfileId };
+    return {
+      directSlugs: null,
+      profileId: agentRowComposioProfileId,
+      source: "agent",
+    };
   }
 
   // Repo/workspace-level selection — lowest precedence, only when nothing else
-  // is selected. This is the case that previously yielded no tools and forced
-  // the model onto unauthenticated web_fetch for GitHub.
+  // is selected. Two sub-cases, distinguished by repoSelectedSlugsExplicit:
+  //   - SAVED repo settings (selectedToolkitSlugs non-null) is an EXPLICIT
+  //     choice at repo scope — the user picked these toolkits in workspace
+  //     settings, just like a chat/agent-level selection (PR #1120 P2
+  //     review follow-up).
+  //   - The unconfigured-repo GitHub default-on is IMPLICIT: nobody chose
+  //     this for the chat, so callers must not treat it like an explicit
+  //     selection when it collides with a hard incompatibility (#1119).
   const repoSlugsNonEmpty =
     input.repoSelectedSlugs != null && input.repoSelectedSlugs.length > 0;
   if (repoSlugsNonEmpty) {
-    return { directSlugs: input.repoSelectedSlugs ?? null, profileId: null };
+    return {
+      directSlugs: input.repoSelectedSlugs ?? null,
+      profileId: null,
+      source: input.repoSelectedSlugsExplicit
+        ? "repo-explicit"
+        : "repo-default",
+    };
   }
 
   // No selection — today's behavior (null/null = off)
-  return { directSlugs: null, profileId: null };
+  return { directSlugs: null, profileId: null, source: null };
 }

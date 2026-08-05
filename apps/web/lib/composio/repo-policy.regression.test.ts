@@ -36,7 +36,11 @@ describe("REGRESSION: full chat precedence chain resolves each tier correctly", 
       agentRowComposioProfileId: "agent-profile",
       repoSelectedSlugs: ["slack"],
     });
-    expect(result).toEqual({ directSlugs: [], profileId: null });
+    expect(result).toEqual({
+      directSlugs: [],
+      profileId: null,
+      source: "chat",
+    });
   });
 
   test("REG-PREC-002: tier 1 — chat direct slugs win over chat profile, agent row, and repo tiers", () => {
@@ -47,7 +51,11 @@ describe("REGRESSION: full chat precedence chain resolves each tier correctly", 
       agentRowComposioProfileId: "agent-profile",
       repoSelectedSlugs: ["slack"],
     });
-    expect(result).toEqual({ directSlugs: ["notion"], profileId: null });
+    expect(result).toEqual({
+      directSlugs: ["notion"],
+      profileId: null,
+      source: "chat",
+    });
   });
 
   test("REG-PREC-003: tier 2 — chat profile wins over agent row and repo tiers (no chat direct slugs)", () => {
@@ -58,7 +66,11 @@ describe("REGRESSION: full chat precedence chain resolves each tier correctly", 
       agentRowComposioProfileId: "agent-profile",
       repoSelectedSlugs: ["slack"],
     });
-    expect(result).toEqual({ directSlugs: null, profileId: "chat-profile" });
+    expect(result).toEqual({
+      directSlugs: null,
+      profileId: "chat-profile",
+      source: "chat",
+    });
   });
 
   test("REG-PREC-004: tier 3 — agent-row slugs win over agent-row profile and repo tiers", () => {
@@ -69,7 +81,11 @@ describe("REGRESSION: full chat precedence chain resolves each tier correctly", 
       agentRowComposioProfileId: "agent-profile",
       repoSelectedSlugs: ["slack"],
     });
-    expect(result).toEqual({ directSlugs: ["github"], profileId: null });
+    expect(result).toEqual({
+      directSlugs: ["github"],
+      profileId: null,
+      source: "agent",
+    });
   });
 
   test("REG-PREC-005: tier 4 — agent-row profile wins over the repo tier", () => {
@@ -80,7 +96,11 @@ describe("REGRESSION: full chat precedence chain resolves each tier correctly", 
       agentRowComposioProfileId: "agent-profile",
       repoSelectedSlugs: ["slack"],
     });
-    expect(result).toEqual({ directSlugs: null, profileId: "agent-profile" });
+    expect(result).toEqual({
+      directSlugs: null,
+      profileId: "agent-profile",
+      source: "agent",
+    });
   });
 
   test("REG-PREC-006: tier 5 — repo selected slugs used only when every higher tier is absent", () => {
@@ -91,7 +111,11 @@ describe("REGRESSION: full chat precedence chain resolves each tier correctly", 
       agentRowComposioProfileId: null,
       repoSelectedSlugs: ["slack"],
     });
-    expect(result).toEqual({ directSlugs: ["slack"], profileId: null });
+    expect(result).toEqual({
+      directSlugs: ["slack"],
+      profileId: null,
+      source: "repo-default",
+    });
   });
 
   test("REG-PREC-007: tier 6 — off when nothing at any tier is set", () => {
@@ -102,7 +126,11 @@ describe("REGRESSION: full chat precedence chain resolves each tier correctly", 
       agentRowComposioProfileId: null,
       repoSelectedSlugs: null,
     });
-    expect(result).toEqual({ directSlugs: null, profileId: null });
+    expect(result).toEqual({
+      directSlugs: null,
+      profileId: null,
+      source: null,
+    });
   });
 });
 

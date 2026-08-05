@@ -60,6 +60,8 @@ describe("resolveComposioSlugsForChatMain — repo-level fallback", () => {
     const result = resolveComposioSlugsForChatMain(input);
     expect(result.directSlugs).toEqual(["github"]);
     expect(result.profileId).toBeNull();
+    // Provenance: repo-default is IMPLICIT, not a user choice (#1119).
+    expect(result.source).toBe("repo-default");
   });
 
   it("explicit per-chat selection still wins over repo slugs", () => {
@@ -113,6 +115,8 @@ describe("resolveComposioSlugsForChatMain — explicit chat selection wins", () 
     const result = resolveComposioSlugsForChatMain(input);
     expect(result.directSlugs).toEqual(["slack"]);
     expect(result.profileId).toBeNull();
+    // Provenance: explicit chat selection, not implicit (#1119).
+    expect(result.source).toBe("chat");
   });
 
   it("BT-C-002b: chat mainProfileId wins over agent row composioToolkitSlugs", () => {
@@ -153,6 +157,8 @@ describe("resolveComposioSlugsForChatMain — agent row as default", () => {
     const result = resolveComposioSlugsForChatMain(input);
     expect(result.directSlugs).toEqual(["github", "linear"]);
     expect(result.profileId).toBeNull();
+    // Provenance: agent-row default counts as explicit for #1119's purposes.
+    expect(result.source).toBe("agent");
   });
 
   it("BT-C-003b: agent row composioProfileId used when chat has no explicit selection and no slugs", () => {
@@ -197,6 +203,8 @@ describe("resolveComposioSlugsForChatMain — explicit off sentinel", () => {
     const result = resolveComposioSlugsForChatMain(input);
     expect(result.directSlugs).toEqual([]);
     expect(result.profileId).toBeNull();
+    // Explicit off is still "chat" tier provenance (#1119).
+    expect(result.source).toBe("chat");
   });
 
   it("BT-C-004b: explicit off also short-circuits past an agent-row profileId default", () => {
