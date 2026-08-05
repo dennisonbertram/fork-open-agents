@@ -104,6 +104,41 @@ async function installSessionGlobalSkills(params: {
 }
 
 /**
+ * Stops a sandbox that came up unusable so it is not left running and untracked.
+ *
+ * Best effort by design: the caller is already returning a failure, and failing
+ * to stop is strictly better than turning a typed 409 into an unhandled 500.
+ */
+async function releaseUnusableSandbox({
+  sandbox,
+  sessionId,
+}: {
+  sandbox: { stop?: () => Promise<unknown> };
+  sessionId: string | undefined;
+}): Promise<void> {
+  try {
+    // Bounded: the probe may have returned "unknown" precisely because the
+    // provider control plane is unresponsive, and an unbounded stop() would
+    // then hang the request that is trying to report that failure. A sandbox
+    // left running is a cost problem; a hung request is a user-facing outage.
+    await Promise.race([
+      sandbox.stop?.() ?? Promise.resolve(),
+      new Promise((_resolve, reject) =>
+        setTimeout(
+          () => reject(new Error("sandbox stop timed out after 5000ms")),
+          5000,
+        ),
+      ),
+    ]);
+  } catch (error) {
+    console.error("[sandbox] failed to release an unusable sandbox", {
+      sessionId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+/**
  * A repo-backed sandbox that has no clone is a failed provisioning, not a
  * ready workspace. Surface it as a typed 409 instead of a 200 carrying a
  * branch that is not checked out (issue #1053).
@@ -361,11 +396,15 @@ export async function POST(req: Request) {
   let currentBranch: string | undefined;
   if (repoUrl) {
     const workspace = await readWorkspaceRepoState(sandbox);
-    if (workspace.status === "unknown") {
-      return workspaceProbeFailedResponse(sessionId);
-    }
-    if (workspace.status === "not_cloned") {
-      return workspaceNotClonedResponse(sessionId);
+    if (workspace.status !== "cloned") {
+      // Returning here would leave a running VM that the session does not know
+      // about: the record still holds the provisional state, so nothing will
+      // ever reconnect to this sandbox or stop it, and sandbox duration is
+      // billed. Release it before reporting the failure.
+      await releaseUnusableSandbox({ sandbox, sessionId });
+      return workspace.status === "unknown"
+        ? workspaceProbeFailedResponse(sessionId)
+        : workspaceNotClonedResponse(sessionId);
     }
     currentBranch = workspace.branch;
   }

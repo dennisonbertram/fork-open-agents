@@ -701,9 +701,14 @@ IMPORTANT:
         },
         abortSignal,
       });
-      modelCallPending = false;
 
+      // Deliberately NOT cleared here. Some providers surface a connection or
+      // auth failure while the stream is first iterated rather than when
+      // stream() resolves, and those are still model failures. The flag clears
+      // on the first part actually yielded, which is the earliest point at
+      // which the model is demonstrably producing output.
       for await (const part of result.fullStream) {
+        modelCallPending = false;
         if (part.type === "tool-call") {
           toolCallCount += 1;
           pending = { name: part.toolName, input: part.input };
