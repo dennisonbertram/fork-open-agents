@@ -1,3 +1,4 @@
+import { sandboxNotInitializedResponse } from "@/app/api/sessions/_lib/sandbox-lifecycle-response";
 import { connectSandbox } from "@open-agents/sandbox";
 import {
   requireAuthenticatedUser,
@@ -68,13 +69,19 @@ export async function POST(req: Request) {
   try {
     body = (await req.json()) as CreateSnapshotRequest;
   } catch {
-    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+    return Response.json(
+      { error: "Invalid JSON body", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   const { sessionId } = body;
 
   if (!sessionId) {
-    return Response.json({ error: "Missing sessionId" }, { status: 400 });
+    return Response.json(
+      { error: "Missing sessionId", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   const sessionContext = await requireOwnedSessionWithSandboxGuard({
@@ -90,7 +97,7 @@ export async function POST(req: Request) {
   const { sessionRecord } = sessionContext;
   const sandboxState = sessionRecord.sandboxState;
   if (!sandboxState) {
-    return Response.json({ error: "Sandbox not initialized" }, { status: 400 });
+    return sandboxNotInitializedResponse();
   }
 
   try {
@@ -156,13 +163,19 @@ export async function PUT(req: Request) {
   try {
     body = (await req.json()) as RestoreSnapshotRequest;
   } catch {
-    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+    return Response.json(
+      { error: "Invalid JSON body", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   const { sessionId } = body;
 
   if (!sessionId) {
-    return Response.json({ error: "Missing sessionId" }, { status: 400 });
+    return Response.json(
+      { error: "Missing sessionId", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   const sessionContext = await requireOwnedSession({
@@ -181,6 +194,7 @@ export async function PUT(req: Request) {
       {
         error:
           "Snapshot restoration is only supported for the current cloud sandbox provider",
+        errorKind: "invalid_request",
       },
       { status: 400 },
     );

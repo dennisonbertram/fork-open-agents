@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/select";
 import { listManagedRuntimeProfiles } from "@open-agents/sandbox/managed-runtime-profiles";
 import { AgentConfigFields } from "@/components/agent-config-fields";
+import { readApiError } from "@/lib/api/read-api-error";
 import { useModelOptions } from "@/hooks/use-model-options";
 import {
   EXTERNAL_TOOLS_NONE_ASSIGNED_HINT,
@@ -135,8 +136,10 @@ function AgentEditor({
       });
 
       if (!res.ok) {
-        const body = (await res.json()) as { error?: string };
-        toast.error(body.error ?? "Failed to save role settings.");
+        const body = await res.json().catch(() => null);
+        toast.error(
+          readApiError(body, "Failed to save role settings.").message,
+        );
         return;
       }
 
@@ -159,8 +162,10 @@ function AgentEditor({
       });
 
       if (!res.ok) {
-        const body = (await res.json()) as { error?: string };
-        toast.error(body.error ?? "Failed to reset role settings.");
+        const body = await res.json().catch(() => null);
+        toast.error(
+          readApiError(body, "Failed to reset role settings.").message,
+        );
         return;
       }
 

@@ -164,7 +164,10 @@ describe("POST /api/chat/[chatId]/stop", () => {
     expect(response.status).toBe(500);
 
     const body = await response.json();
-    expect(body).toEqual({ error: "Failed to cancel workflow run" });
+    expect(body).toEqual({
+      error: "Failed to cancel workflow run",
+      errorKind: "internal_error",
+    });
   });
 
   test("persists assistant snapshot when valid message in body", async () => {

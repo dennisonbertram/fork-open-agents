@@ -209,3 +209,24 @@ describe("managed runtime profile builder revision instructions", () => {
     );
   });
 });
+
+describe("draft test response parsing", () => {
+  // RED: `testDraft` awaits `response.json()` with no fallback, so a non-JSON
+  // platform error body (HTML gateway page, empty body) rejects before
+  // `resolveDraftTestOutcome` runs and the user sees a JSON parser message.
+  test("falls back to the intended message when the error body is not JSON", async () => {
+    const response = new Response("<html>502 Bad Gateway</html>", {
+      status: 502,
+      headers: { "Content-Type": "text/html" },
+    });
+    const body = (await response.json().catch(() => null)) as never;
+
+    const outcome = resolveDraftTestOutcome({ responseOk: false, body });
+
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) {
+      throw new Error("expected a thrown-error result");
+    }
+    expect(outcome.message).toBe("Failed to test profile draft");
+  });
+});

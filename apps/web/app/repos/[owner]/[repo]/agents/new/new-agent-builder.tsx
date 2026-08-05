@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import useSWR from "swr";
 import { Button } from "@/components/ui/button";
 import { ReadinessVerdict } from "@/components/ui/readiness-verdict";
+import { readApiError } from "@/lib/api/read-api-error";
 import { canonicalBackgroundAutomationDetailUrl } from "@/lib/automations/definition-routes";
 import {
   buildAgentPayload,
@@ -66,6 +67,7 @@ export function NewAgentBuilder({
 
   const {
     data: readinessData,
+    error: readinessError,
     isLoading: readinessLoading,
     mutate: mutateReadiness,
   } = useSWR<AgentReadinessResponse>(
@@ -75,7 +77,12 @@ export function NewAgentBuilder({
   const combinedReadiness = readinessData
     ? buildCombinedAgentReadiness(readinessData)
     : undefined;
-  const readinessReady = isAgentReadinessReady(combinedReadiness);
+  // SWR keeps `data` when a revalidation fails, so both can be set at once.
+  // A cached "ready" is an assertion about safety — never let a stale one
+  // authorise enabling an automation.
+  const readinessStale = Boolean(readinessError && readinessData);
+  const readinessReady =
+    isAgentReadinessReady(combinedReadiness) && !readinessError;
 
   function handleSelectTemplate(template: AgentTemplate | BlankTemplate) {
     setSelectedTemplate(template);
@@ -127,16 +134,18 @@ export function NewAgentBuilder({
         `/api/background-agents/${createdAgentId}/test`,
         { method: "POST" },
       );
-      const body = (await response.json()) as ManualTestResponse;
+      const body = (await response
+        .json()
+        .catch(() => null)) as ManualTestResponse | null;
       if (!response.ok) {
-        setTestAlert(body.error ?? "Failed to start test");
+        setTestAlert(readApiError(body, "Failed to start test").message);
         return;
       }
-      if (body.skipReason) {
+      if (body?.skipReason) {
         setTestAlert(manualTestSkipMessages[body.skipReason]);
         return;
       }
-      const runId = body.runIds[0];
+      const runId = body?.runIds[0];
       if (!runId) {
         setTestAlert("No background run was created for this test");
         return;
@@ -150,29 +159,54 @@ export function NewAgentBuilder({
 
   const template = selectedTemplate ?? getBlankTemplate();
   const readinessPanel = readinessData ? (
-    <ReadinessVerdict
-      {...mapAgentReadinessToVerdict(combinedReadiness!, surface)}
-      action={
-        <div className="flex flex-wrap gap-2">
-          <Button asChild size="sm" variant="outline">
-            <Link href="/settings/background-agents">
-              <Settings2 className="h-3.5 w-3.5" />
-              Open background agent settings
-            </Link>
-          </Button>
-          {readinessData.repoAccess?.ready === false ? (
-            <Button asChild size="sm" variant="ghost">
-              <Link href="/settings/connections">
-                <PlugZap className="h-3.5 w-3.5" />
-                Manage GitHub connection
+    <div className="space-y-2">
+      <ReadinessVerdict
+        {...mapAgentReadinessToVerdict(combinedReadiness!, surface)}
+        action={
+          <div className="flex flex-wrap gap-2">
+            <Button asChild size="sm" variant="outline">
+              <Link href="/settings/background-agents">
+                <Settings2 className="h-3.5 w-3.5" />
+                Open background agent settings
               </Link>
             </Button>
-          ) : null}
-        </div>
-      }
-      onRefresh={() => void mutateReadiness()}
-      refreshing={readinessLoading}
-    />
+            {readinessData.repoAccess?.ready === false ? (
+              <Button asChild size="sm" variant="ghost">
+                <Link href="/settings/connections">
+                  <PlugZap className="h-3.5 w-3.5" />
+                  Manage GitHub connection
+                </Link>
+              </Button>
+            ) : null}
+          </div>
+        }
+        onRefresh={() => void mutateReadiness()}
+        refreshing={readinessLoading}
+      />
+      {readinessStale ? (
+        <p className="text-xs text-destructive" role="status">
+          These checks couldn&apos;t be refreshed, so this is the last
+          successful result. Enabling stays blocked until it refreshes.
+        </p>
+      ) : null}
+    </div>
+  ) : readinessError ? (
+    // A failed readiness fetch must not masquerade as an in-flight check
+    // (#1093) — otherwise the builder says "Checking…" forever.
+    <div className="flex flex-col items-start gap-2 rounded-lg border border-border bg-muted/20 p-4 text-sm text-muted-foreground">
+      <p>
+        Couldn&apos;t check background agent prerequisites. This is a load
+        failure, not a missing prerequisite.
+      </p>
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        onClick={() => void mutateReadiness()}
+      >
+        Retry
+      </Button>
+    </div>
   ) : (
     <div className="rounded-lg border border-border bg-muted/20 p-4 text-sm text-muted-foreground">
       Checking background agent prerequisites.

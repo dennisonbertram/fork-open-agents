@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useRef } from "react";
+import { readApiError } from "@/lib/api/read-api-error";
 
 type RecordingState = "idle" | "recording" | "processing";
 
@@ -120,14 +121,17 @@ export function useAudioRecording() {
             }),
           });
 
-          const data = (await response.json()) as TranscribeResponse;
-
           if (!response.ok) {
-            setError(data.error ?? "Transcription failed");
+            const errorBody = await response.json().catch(() => null);
+            setError(readApiError(errorBody, "Transcription failed").message);
             setState("idle");
             resolve(null);
             return;
           }
+
+          // An unreadable 2xx body is a real failure — let it throw into the
+          // catch below so the user sees an error instead of a silent null.
+          const data = (await response.json()) as TranscribeResponse;
 
           setState("idle");
           resolve(data.text ?? null);

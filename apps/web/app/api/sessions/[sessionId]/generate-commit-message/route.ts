@@ -14,12 +14,18 @@ export async function POST(
 ) {
   const session = await getServerSession();
   if (!session?.user) {
-    return Response.json({ error: "Not authenticated" }, { status: 401 });
+    return Response.json(
+      { error: "Not authenticated", errorKind: "unauthorized" },
+      { status: 401 },
+    );
   }
 
   const botVerification = await checkBotProtection();
   if (botVerification.isBot) {
-    return Response.json({ error: "Access denied" }, { status: 403 });
+    return Response.json(
+      { error: "Access denied", errorKind: "forbidden" },
+      { status: 403 },
+    );
   }
 
   const limited = await checkRateLimit({
@@ -34,11 +40,17 @@ export async function POST(
   const { sessionId } = await params;
   const dbSession = await getSessionById(sessionId);
   if (!dbSession || dbSession.userId !== session.user.id) {
-    return Response.json({ error: "Session not found" }, { status: 404 });
+    return Response.json(
+      { error: "Session not found", errorKind: "not_found" },
+      { status: 404 },
+    );
   }
 
   if (!isSandboxActive(dbSession.sandboxState)) {
-    return Response.json({ error: "No active sandbox" }, { status: 400 });
+    return Response.json(
+      { error: "No active sandbox", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   const sandbox = await connectSandbox(dbSession.sandboxState);

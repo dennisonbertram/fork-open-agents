@@ -448,3 +448,46 @@ describe("/api/settings/preferences", () => {
     expect(body.error).toBe("Invalid JSON body");
   });
 });
+
+describe("/api/settings/preferences unknown keys (#1051)", () => {
+  beforeEach(() => {
+    currentSession = { user: { id: "user-1" } };
+    updateCalls.length = 0;
+  });
+
+  test("PATCH rejects unknown keys with 400 and names the fields", async () => {
+    const { PATCH } = await routeModulePromise;
+
+    const response = await PATCH(
+      createJsonRequest("PATCH", { diffMode: "not-a-real-mode" }),
+    );
+    const body = (await response.json()) as {
+      error: string;
+      fields?: string[];
+    };
+
+    expect(response.status).toBe(400);
+    expect(body.fields).toEqual(["diffMode"]);
+    expect(updateCalls.length).toBe(0);
+  });
+
+  test("PATCH rejects a body that is not an object", async () => {
+    const { PATCH } = await routeModulePromise;
+
+    const response = await PATCH(createJsonRequest("PATCH", "nope"));
+
+    expect(response.status).toBe(400);
+    expect(updateCalls.length).toBe(0);
+  });
+
+  test("PATCH still accepts known keys", async () => {
+    const { PATCH } = await routeModulePromise;
+
+    const response = await PATCH(
+      createJsonRequest("PATCH", { defaultDiffMode: "split" }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(updateCalls.at(-1)).toEqual({ defaultDiffMode: "split" });
+  });
+});

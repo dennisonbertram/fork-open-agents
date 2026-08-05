@@ -13,7 +13,10 @@ export async function GET() {
   } catch (error) {
     console.error("Failed to get inference profile usage:", error);
     return Response.json(
-      { error: "Failed to get inference profile usage" },
+      {
+        error: "Failed to get inference profile usage",
+        errorKind: "internal_error",
+      },
       { status: 500 },
     );
   }

@@ -102,10 +102,16 @@ export function SessionLayoutShell({
   const {
     chats,
     loading: chatsLoading,
+    error: chatsError,
+    refreshChats,
     createChat,
     deleteChat,
     renameChat,
   } = useSessionChats(sessionId, { initialData: initialChatsData });
+
+  const retryChats = useCallback(() => {
+    void refreshChats();
+  }, [refreshChats]);
 
   const getChatHref = useCallback(
     (chatId: string) => `/sessions/${sessionId}/chats/${chatId}`,
@@ -170,6 +176,8 @@ export function SessionLayoutShell({
       },
       chats,
       chatsLoading,
+      chatsError,
+      retryChats,
       createChat,
       switchChat,
       deleteChat,
@@ -179,6 +187,8 @@ export function SessionLayoutShell({
       initialSession,
       chats,
       chatsLoading,
+      chatsError,
+      retryChats,
       createChat,
       switchChat,
       deleteChat,

@@ -1,3 +1,5 @@
+import { apiErrorKindForStatus } from "@/lib/api/error-response";
+import { sandboxNotInitializedResponse } from "@/app/api/sessions/_lib/sandbox-lifecycle-response";
 import type { NextRequest } from "next/server";
 import { connectSandbox } from "@open-agents/sandbox";
 import {
@@ -43,7 +45,7 @@ export async function GET(_req: NextRequest, context: RouteContext) {
   const { sessionRecord } = sessionContext;
   const sandboxState = sessionRecord.sandboxState;
   if (!sandboxState) {
-    return Response.json({ error: "Sandbox not initialized" }, { status: 400 });
+    return sandboxNotInitializedResponse();
   }
 
   try {
@@ -61,18 +63,27 @@ export async function GET(_req: NextRequest, context: RouteContext) {
         ...buildHibernatedLifecycleUpdate(),
       });
       return Response.json(
-        { error: "Sandbox is unavailable. Please resume sandbox." },
+        {
+          error: "Sandbox is unavailable. Please resume sandbox.",
+          errorKind: "conflict",
+        },
         { status: 409 },
       );
     }
 
     if (error instanceof DiffComputationError) {
-      return Response.json({ error: error.message }, { status: error.status });
+      return Response.json(
+        {
+          error: error.message,
+          errorKind: apiErrorKindForStatus(error.status),
+        },
+        { status: error.status },
+      );
     }
 
     console.error("Failed to get diff:", error);
     return Response.json(
-      { error: "Failed to connect to sandbox" },
+      { error: "Failed to connect to sandbox", errorKind: "internal_error" },
       { status: 500 },
     );
   }

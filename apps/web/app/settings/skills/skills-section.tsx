@@ -20,6 +20,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { readApiError } from "@/lib/api/read-api-error";
 import { fetcher } from "@/lib/swr";
 import {
   type EditableSkill,
@@ -200,9 +201,11 @@ export function SkillsSection() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      const responseData = (await response.json()) as { error?: string };
       if (!response.ok) {
-        return responseData.error ?? "Failed to save skill";
+        return readApiError(
+          await response.json().catch(() => null),
+          "Failed to save skill",
+        ).message;
       }
       await mutate();
       toast.success(editingSkill ? "Skill saved" : "Skill created");
@@ -224,8 +227,12 @@ export function SkillsSection() {
         body: JSON.stringify({ id: skill.id, enabled: !skill.enabled }),
       });
       if (!response.ok) {
-        const responseData = (await response.json()) as { error?: string };
-        setError(responseData.error ?? "Failed to update skill");
+        setError(
+          readApiError(
+            await response.json().catch(() => null),
+            "Failed to update skill",
+          ).message,
+        );
         return;
       }
       await mutate();
@@ -248,8 +255,12 @@ export function SkillsSection() {
         body: JSON.stringify({ id: skill.id }),
       });
       if (!response.ok) {
-        const responseData = (await response.json()) as { error?: string };
-        setError(responseData.error ?? "Failed to delete skill");
+        setError(
+          readApiError(
+            await response.json().catch(() => null),
+            "Failed to delete skill",
+          ).message,
+        );
         return;
       }
       await mutate();

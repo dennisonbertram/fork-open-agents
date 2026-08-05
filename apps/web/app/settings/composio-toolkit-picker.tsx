@@ -110,11 +110,14 @@ export function ComposioToolkitPicker({
   const allToolkits =
     toolkitsLoadState.status === "loaded" ? toolkitsLoadState.toolkits : [];
 
-  const { data: accountsData, mutate: mutateAccounts } =
-    useSWR<ComposioConnectedAccountsResponse>(
-      "/api/composio/connected-accounts",
-      jsonFetcher<ComposioConnectedAccountsResponse>,
-    );
+  const {
+    data: accountsData,
+    error: accountsError,
+    mutate: mutateAccounts,
+  } = useSWR<ComposioConnectedAccountsResponse>(
+    "/api/composio/connected-accounts",
+    jsonFetcher<ComposioConnectedAccountsResponse>,
+  );
 
   const { connectState, connect } = useComposioConnect({
     onConfirmed: () => {
@@ -122,7 +125,13 @@ export function ComposioToolkitPicker({
     },
   });
 
-  const accountsUnavailable = accountsData?.unavailable === true;
+  // "Unavailable" has two inputs, and dropping either one collapses a real
+  // connection into a confident-and-wrong "not connected" (#1088):
+  // `unavailable` is the API's own degraded-upstream flag, and `accountsError`
+  // is the request itself failing (jsonFetcher throws on !res.ok), which
+  // leaves `accountsData` undefined and the status map empty.
+  const accountsUnavailable =
+    accountsData?.unavailable === true || Boolean(accountsError);
   const toolkitStatusMap = buildToolkitStatusMap(accountsData?.accounts ?? []);
   // "has been connected" (any status, including expired) — still shown as
   // selectable/known in the connected-only picker so an expired toolkit

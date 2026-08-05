@@ -18,6 +18,8 @@ export async function POST(
     return Response.json(
       {
         errorKind: "feature_disabled",
+        error:
+          "Agent loops are not enabled. Set AGENT_LOOPS_ENABLED=true to enable.",
         message:
           "Agent loops are not enabled. Set AGENT_LOOPS_ENABLED=true to enable.",
       },

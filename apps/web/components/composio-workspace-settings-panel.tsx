@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { readApiError } from "@/lib/api/read-api-error";
 import { Switch } from "@/components/ui/switch";
 import { ComposioToolkitPicker } from "@/app/settings/composio-toolkit-picker";
 import { computeSelectedToolkitSlugsForSave } from "./composio-workspace-settings-panel-save-payload";
@@ -143,9 +144,7 @@ export function ComposioWorkspaceSettingsPanel({
         | null;
       if (!response.ok || !isRepositoryPolicyResponse(body)) {
         throw new Error(
-          body && "error" in body && body.error
-            ? body.error
-            : "Failed to save repository integrations",
+          readApiError(body, "Failed to save repository integrations").message,
         );
       }
       await mutate(body, { revalidate: false });

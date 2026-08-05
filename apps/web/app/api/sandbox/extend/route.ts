@@ -1,3 +1,4 @@
+import { sandboxNotInitializedResponse } from "@/app/api/sessions/_lib/sandbox-lifecycle-response";
 import { connectSandbox, type SandboxState } from "@open-agents/sandbox";
 import {
   requireAuthenticatedUser,
@@ -26,7 +27,10 @@ export async function POST(req: Request) {
 
   const botVerification = await checkBotProtection();
   if (botVerification.isBot) {
-    return Response.json({ error: "Access denied" }, { status: 403 });
+    return Response.json(
+      { error: "Access denied", errorKind: "forbidden" },
+      { status: 403 },
+    );
   }
 
   const limited = await checkRateLimit({
@@ -42,13 +46,19 @@ export async function POST(req: Request) {
   try {
     body = (await req.json()) as ExtendRequest;
   } catch {
-    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+    return Response.json(
+      { error: "Invalid JSON body", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   const { sessionId } = body;
 
   if (!sessionId) {
-    return Response.json({ error: "Missing sessionId" }, { status: 400 });
+    return Response.json(
+      { error: "Missing sessionId", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   const sessionContext = await requireOwnedSessionWithSandboxGuard({
@@ -64,14 +74,17 @@ export async function POST(req: Request) {
   const { sessionRecord } = sessionContext;
   const sandboxState = sessionRecord.sandboxState;
   if (!sandboxState) {
-    return Response.json({ error: "Sandbox not initialized" }, { status: 400 });
+    return sandboxNotInitializedResponse();
   }
 
   try {
     const sandbox = await connectSandbox(sandboxState);
     if (!sandbox.extendTimeout) {
       return Response.json(
-        { error: "Extend timeout not supported by this sandbox type" },
+        {
+          error: "Extend timeout not supported by this sandbox type",
+          errorKind: "invalid_request",
+        },
         { status: 400 },
       );
     }
@@ -105,7 +118,10 @@ export async function POST(req: Request) {
     const message = error instanceof Error ? error.message : String(error);
     console.error("Failed to extend sandbox timeout:", message);
     return Response.json(
-      { error: "Failed to extend sandbox timeout" },
+      {
+        error: "Failed to extend sandbox timeout",
+        errorKind: "internal_error",
+      },
       { status: 500 },
     );
   }

@@ -12,6 +12,7 @@ import {
 import { useId, useState } from "react";
 import { toast } from "sonner";
 import type { ManagedRuntimeProfile } from "@open-agents/sandbox/managed-runtime-profiles";
+import { readApiError } from "@/lib/api/read-api-error";
 import type { ManagedRuntimeSavedProfile } from "@/lib/db/schema";
 import { Button } from "@/components/ui/button";
 import {
@@ -128,18 +129,16 @@ function builtInProfileToFormState(
  * and falling back to a generic message otherwise. Never returns empty. */
 function extractApiErrorMessage(body: unknown, fallback: string): string {
   if (body && typeof body === "object") {
-    const record = body as Record<string, unknown>;
-    if (typeof record.failureMessage === "string" && record.failureMessage) {
-      return record.failureMessage;
-    }
-    if (typeof record.error === "string" && record.error) {
-      return record.error;
-    }
-    if (typeof record.errorKind === "string" && record.errorKind) {
-      return `${fallback} (${record.errorKind})`;
+    const failureMessage = (body as Record<string, unknown>).failureMessage;
+    if (typeof failureMessage === "string" && failureMessage) {
+      return failureMessage;
     }
   }
-  return fallback;
+  const parsed = readApiError(body, fallback);
+  if (parsed.message !== fallback) {
+    return parsed.message;
+  }
+  return parsed.kind === "unknown" ? fallback : `${fallback} (${parsed.kind})`;
 }
 
 // ---------------------------------------------------------------------------

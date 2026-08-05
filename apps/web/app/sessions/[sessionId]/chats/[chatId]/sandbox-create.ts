@@ -1,3 +1,4 @@
+import { readApiError } from "@/lib/api/read-api-error";
 import type { SandboxInfo } from "./session-chat-context";
 
 type CreateSandboxResponse = SandboxInfo & {
@@ -114,9 +115,10 @@ export async function createSandbox(
   if (!response.ok) {
     const rawBody = await response.text().catch(() => "");
     const payload = parseCreateSandboxErrorResponse(rawBody);
-    const message =
-      getOptionalString(payload?.error) ??
-      getFallbackSandboxCreateErrorMessage(response.status);
+    const message = readApiError(
+      payload,
+      getFallbackSandboxCreateErrorMessage(response.status),
+    ).message;
 
     throw new SandboxCreateRequestError(message, {
       status: response.status,
@@ -143,9 +145,10 @@ export async function resetSandboxProvisioning(
   if (!response.ok) {
     const rawBody = await response.text().catch(() => "");
     const payload = parseCreateSandboxErrorResponse(rawBody);
-    const message =
-      getOptionalString(payload?.error) ??
-      "Failed to reset sandbox provisioning state.";
+    const message = readApiError(
+      payload,
+      "Failed to reset sandbox provisioning state.",
+    ).message;
 
     throw new SandboxCreateRequestError(message, {
       status: response.status,
@@ -170,8 +173,7 @@ export async function createOnDemandSandboxForSession({
   if (!attachResponse.ok) {
     const rawBody = await attachResponse.text().catch(() => "");
     const payload = parseCreateSandboxErrorResponse(rawBody);
-    const message =
-      getOptionalString(payload?.error) ?? "Failed to attach sandbox";
+    const message = readApiError(payload, "Failed to attach sandbox").message;
 
     throw new SandboxCreateRequestError(message, {
       status: attachResponse.status,

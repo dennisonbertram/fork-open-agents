@@ -34,6 +34,7 @@ export async function GET(request: Request): Promise<Response> {
       {
         requestId,
         errorKind: parsed.errorKind,
+        error: "Automation filters are invalid.",
         message: "Automation filters are invalid.",
       },
       { status: 400, headers: responseHeaders(requestId) },

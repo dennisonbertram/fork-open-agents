@@ -18,7 +18,10 @@ export async function PATCH(req: Request, context: RouteContext) {
   try {
     body = await req.json();
   } catch {
-    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+    return Response.json(
+      { error: "Invalid JSON body", errorKind: "invalid_request" },
+      { status: 400 },
+    );
   }
 
   const parsed = updateMcpServerSchema.safeParse(body);
@@ -27,6 +30,7 @@ export async function PATCH(req: Request, context: RouteContext) {
       {
         error: "Invalid MCP server",
         details: parsed.error.flatten(),
+        errorKind: "invalid_request",
       },
       { status: 400 },
     );
@@ -39,19 +43,25 @@ export async function PATCH(req: Request, context: RouteContext) {
       parsed.data,
     );
     if (!server) {
-      return Response.json({ error: "Server not found" }, { status: 404 });
+      return Response.json(
+        { error: "Server not found", errorKind: "not_found" },
+        { status: 404 },
+      );
     }
     return Response.json({ server });
   } catch (error) {
     if (error instanceof McpServerConflictError) {
       return Response.json(
-        { error: "A server with that name already exists." },
+        {
+          error: "A server with that name already exists.",
+          errorKind: "conflict",
+        },
         { status: 409 },
       );
     }
 
     return Response.json(
-      { error: "Failed to save MCP server." },
+      { error: "Failed to save MCP server.", errorKind: "invalid_request" },
       { status: 400 },
     );
   }
@@ -67,7 +77,10 @@ export async function DELETE(req: Request, context: RouteContext) {
 
   const deleted = await deleteMcpServer(authResult.userId, serverId);
   if (!deleted) {
-    return Response.json({ error: "Server not found" }, { status: 404 });
+    return Response.json(
+      { error: "Server not found", errorKind: "not_found" },
+      { status: 404 },
+    );
   }
 
   return Response.json({ ok: true });

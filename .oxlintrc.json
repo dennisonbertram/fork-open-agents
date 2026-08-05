@@ -1,6 +1,8 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
   "ignorePatterns": [
+    ".claude/worktrees/**",
+    ".worktrees/**",
     ".agents/skills/**",
     "apps/web/components/ui/**",
     "apps/web/lib/api/openapi-types.ts"
