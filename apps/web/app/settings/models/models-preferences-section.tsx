@@ -20,6 +20,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useModelOptions } from "@/hooks/use-model-options";
+import { getModelOptionSelectionId } from "@/lib/inference/model-option-id";
 import { useUserPreferences } from "@/hooks/use-user-preferences";
 import {
   type ModelOption,
@@ -94,8 +95,13 @@ function useModelPreferencesSectionState() {
   const { modelOptions, loading: modelOptionsLoading } = useModelOptions();
   const [isSaving, setIsSaving] = useState(false);
 
+  // #1123: the default model and its inference profile are stored split, so
+  // recompose the composite option id the pickers are keyed by.
   const selectedDefaultModelId =
-    preferences?.defaultModelId ?? getDefaultModelOptionId(modelOptions);
+    getModelOptionSelectionId(
+      preferences?.defaultModelId,
+      preferences?.defaultInferenceProfileId,
+    ) || getDefaultModelOptionId(modelOptions);
   const selectedSubagentModelId = preferences?.defaultSubagentModelId ?? "auto";
 
   const defaultModelOptions = useMemo(

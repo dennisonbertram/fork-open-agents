@@ -148,6 +148,64 @@ describe("Regression: synthetic fallback == today's behavior (null rows)", () =>
     // Sub-role uses subagent model
     expect(executor.modelId).toBe("sub-model");
   });
+
+  // #1123: defaultInferenceProfileId is paired with defaultModelId only. The
+  // subagent default is a standalone option id and must carry its own profile,
+  // never inherit the main model's.
+  it("REG-003b: subagent default splits its own inference profile and never inherits the main one", async () => {
+    mockGetUserPreferences.mockResolvedValue({
+      defaultModelId: "zai-glm-4.7",
+      defaultSubagentModelId: "user-profile:profile-b:sub-model",
+      defaultInferenceProfileId: "profile-a",
+      defaultManagedRuntimeProfileId: "web-bun-agent-browser",
+      composioAgentDefaults: {
+        main: { defaultProfileId: null },
+        explorer: { defaultProfileId: null },
+        executor: { defaultProfileId: null },
+        design: { defaultProfileId: null },
+      },
+    });
+
+    const main = await resolveAgentForRole({ userId: "u1", role: "main" });
+    const executor = await resolveAgentForRole({
+      userId: "u1",
+      role: "executor",
+    });
+
+    expect(main).toMatchObject({
+      modelId: "zai-glm-4.7",
+      inferenceProfileId: "profile-a",
+    });
+    expect(executor).toMatchObject({
+      modelId: "sub-model",
+      inferenceProfileId: "profile-b",
+    });
+  });
+
+  it("REG-003c: a plain gateway subagent default does not inherit the main model's profile", async () => {
+    mockGetUserPreferences.mockResolvedValue({
+      defaultModelId: "zai-glm-4.7",
+      defaultSubagentModelId: "openai/gpt-5.4",
+      defaultInferenceProfileId: "profile-a",
+      defaultManagedRuntimeProfileId: "web-bun-agent-browser",
+      composioAgentDefaults: {
+        main: { defaultProfileId: null },
+        explorer: { defaultProfileId: null },
+        executor: { defaultProfileId: null },
+        design: { defaultProfileId: null },
+      },
+    });
+
+    const executor = await resolveAgentForRole({
+      userId: "u1",
+      role: "executor",
+    });
+
+    expect(executor).toMatchObject({
+      modelId: "openai/gpt-5.4",
+      inferenceProfileId: null,
+    });
+  });
 });
 
 // ─── Regression 2: pickMostSpecificAgent precedence invariant ────────────────

@@ -1,5 +1,6 @@
 import { listAgentsForUser } from "@/lib/db/agents";
 import { getUserPreferences } from "@/lib/db/user-preferences";
+import { parseModelOptionSelection } from "@/lib/inference/model-option-id";
 import type { GlobalSkillRef } from "@/lib/skills/global-skill-refs";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -155,17 +156,23 @@ export async function resolveAgentForRole(
   // when no agent rows exist.
   const prefs = await getUserPreferences(userId);
 
+  // #1123: only `defaultModelId` is paired with `defaultInferenceProfileId`.
+  // The subagent default is a standalone option id, so it carries its own
+  // profile inside the composite — never inherit the main model's profile.
   const isSubRole = role !== "main";
-  const modelId = isSubRole
-    ? (prefs.defaultSubagentModelId ?? prefs.defaultModelId)
-    : prefs.defaultModelId;
+  const subagentSelection =
+    isSubRole && prefs.defaultSubagentModelId
+      ? parseModelOptionSelection(prefs.defaultSubagentModelId)
+      : null;
 
   return {
     role,
     fromDbRow: false,
     agentId: null,
-    modelId,
-    inferenceProfileId: prefs.defaultInferenceProfileId ?? null,
+    modelId: subagentSelection?.modelId ?? prefs.defaultModelId,
+    inferenceProfileId: subagentSelection
+      ? subagentSelection.inferenceProfileId
+      : (prefs.defaultInferenceProfileId ?? null),
     instructions: null, // null = use built-in system prompt for the role
     skillRefs: [],
     builtinToolNames: null, // null = use role's default policy from packages/agent
