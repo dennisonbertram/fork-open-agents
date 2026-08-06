@@ -261,7 +261,18 @@ function buildAgentSteps() {
 
 // ── Module mocks ───────────────────────────────────────────────────
 
+// Mirrors @workflow/errors' real FatalError (name + message only — chat.ts
+// only relies on those two fields): a step throwing this stops immediately
+// instead of being retried by the engine.
+class FatalError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "FatalError";
+  }
+}
+
 mock.module("workflow", () => ({
+  FatalError,
   getWorkflowMetadata: () => ({ workflowRunId: "wrun_test-123" }),
   getWritable: () => {
     const writable = new WritableStream<UIMessageChunk>({
@@ -1674,6 +1685,67 @@ describe("runAgentWorkflow", () => {
         },
       ]),
     );
+  });
+
+  test("surfaces the provider-rejection message for a wrapped non-retryable provider error, not the generic setup-failed fallback", async () => {
+    // Mirrors how the AI SDK actually delivers a non-retryable APICallError to
+    // this app's stream-error capture: wrapped as `.cause` on a generic Error
+    // (e.g. NoOutputGeneratedError), not as the bare APICallError itself.
+    const apiCallError = Object.assign(new Error("Bad Request"), {
+      name: "AI_APICallError",
+      statusCode: 400,
+      responseBody:
+        '{"error":{"message":"reasoning_content is not a valid field"}}',
+    });
+    agentStreamError = new Error(
+      "No output generated. Check the stream for errors.",
+      { cause: apiCallError },
+    );
+
+    await expect(runAgentWorkflow(makeOptions())).rejects.toThrow(
+      "The model provider rejected this request",
+    );
+
+    const setupErrorChunk = writtenChunks.find(
+      (chunk) => chunk.type === "text-delta" && chunk.id === "setup-error",
+    );
+    expect(setupErrorChunk?.type).toBe("text-delta");
+    if (setupErrorChunk?.type === "text-delta") {
+      expect(setupErrorChunk.delta).not.toContain("Workspace setup failed");
+      expect(setupErrorChunk.delta).toContain("HTTP 400");
+      expect(setupErrorChunk.delta).toContain("reasoning_content");
+      expect(setupErrorChunk.delta).toContain(
+        "switch back to the model that last worked",
+      );
+    }
+  });
+
+  test("leaves a wrapped 401 on the normal (non-fatal) error path", async () => {
+    // 401 is deliberately excluded from the non-retryable set — it gets its
+    // own auth guidance elsewhere, and must not be short-circuited into the
+    // provider-rejection message just because it arrives wrapped the same way.
+    const apiCallError = Object.assign(new Error("Unauthorized"), {
+      name: "AI_APICallError",
+      statusCode: 401,
+      responseBody: '{"error":{"message":"Invalid API key"}}',
+    });
+    agentStreamError = new Error(
+      "No output generated. Check the stream for errors.",
+      { cause: apiCallError },
+    );
+
+    await expect(runAgentWorkflow(makeOptions())).rejects.toThrow(
+      "Provider error",
+    );
+
+    const setupErrorChunk = writtenChunks.find(
+      (chunk) => chunk.type === "text-delta" && chunk.id === "setup-error",
+    );
+    if (setupErrorChunk?.type === "text-delta") {
+      expect(setupErrorChunk.delta).not.toContain(
+        "The model provider rejected this request",
+      );
+    }
   });
 
   test("persists assistant message after run", async () => {
