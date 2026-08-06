@@ -28,6 +28,14 @@ const CEREBRAS_REJECTION = {
     "'messages.3.assistant.reasoning_content' is unsupported",
 };
 
+// The mirror image: an endpoint on the same base URL that wants the default.
+const REASONING_REJECTION = {
+  code: "wrong_api_format",
+  message:
+    "messages.3.assistant.reasoning: property " +
+    "'messages.3.assistant.reasoning' is unsupported",
+};
+
 const HISTORY_WITH_REASONING: ModelMessage[] = [
   { role: "user", content: "hi" },
   {
@@ -199,6 +207,45 @@ describe("openai-compatible reasoning serialization", () => {
     expect(assistantOf(fresh.requests[3])).not.toHaveProperty(
       "reasoning_content",
     );
+  });
+
+  test("falls back and unlearns when the adapted serialization is rejected", async () => {
+    // One base URL, two models: the first wants `reasoning`, the second wants
+    // `reasoning_content` back. Learning from the first must not break the
+    // second.
+    let rejects: "reasoning_content" | "reasoning" = "reasoning_content";
+    const { requests, baseURL } = startServer((body) => {
+      const offends = (body.messages ?? []).some(
+        (message) => message[rejects] !== undefined,
+      );
+      if (!offends) {
+        return completionResponse();
+      }
+
+      return Response.json(
+        rejects === "reasoning_content"
+          ? CEREBRAS_REJECTION
+          : REASONING_REJECTION,
+        { status: 400 },
+      );
+    });
+
+    await generate(baseURL, HISTORY_WITH_REASONING);
+    expect(requests).toHaveLength(2);
+
+    rejects = "reasoning";
+    const result = await generate(baseURL, HISTORY_WITH_REASONING);
+
+    // Adapted attempt is rejected, then the default serialization succeeds.
+    expect(result.text).toBe("ok");
+    expect(requests).toHaveLength(4);
+    expect(assistantOf(requests[2]).reasoning).toBe(REASONING_TEXT);
+    expect(assistantOf(requests[3]).reasoning_content).toBe(REASONING_TEXT);
+
+    // Unlearned: the next call starts from the default again.
+    await generate(baseURL, HISTORY_WITH_REASONING);
+    expect(requests).toHaveLength(5);
+    expect(assistantOf(requests[4]).reasoning_content).toBe(REASONING_TEXT);
   });
 
   test("surfaces the original error and stops when the retry also fails", async () => {

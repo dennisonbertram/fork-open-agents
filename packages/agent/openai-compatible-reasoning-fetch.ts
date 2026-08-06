@@ -98,8 +98,33 @@ export function createReasoningCompatibleFetch(
     init?: FetchInit,
   ): Promise<Response> => {
     if (endpointsRejectingReasoningContent.has(baseURL)) {
-      // Already learned: adapt up front and never retry, so we cannot loop.
-      return baseFetch(input, withRenamedReasoning(init) ?? init);
+      const learned = withRenamedReasoning(init);
+      if (!learned) {
+        return baseFetch(input, init);
+      }
+
+      const response = await baseFetch(input, learned);
+      if (response.status !== 400) {
+        return response;
+      }
+
+      const rejected = unsupportedProperty(await response.clone().text());
+      if (rejected !== REASONING) {
+        return response;
+      }
+
+      // The learned rename is wrong for this request — the same base URL can
+      // serve a model that wants `reasoning_content` back. Forget it and fall
+      // back to the default serialization once, so one model cannot poison
+      // another. Still at most two requests, so this cannot loop.
+      //
+      // ponytail: keyed by base URL, so a mixed endpoint re-learns on every
+      // alternation instead of converging. Every request still succeeds, at
+      // the cost of one extra round-trip. Add the model id to the key only if
+      // such an endpoint turns out to exist.
+      endpointsRejectingReasoningContent.delete(baseURL);
+      const fallback = await baseFetch(input, init);
+      return fallback.ok ? fallback : response;
     }
 
     const response = await baseFetch(input, init);
