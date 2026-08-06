@@ -780,6 +780,31 @@ export async function getChatMessages(chatId: string) {
   });
 }
 
+/**
+ * Ids of this chat's assistant messages the workflow recorded as abandoned
+ * (issue #1133 — a turn that failed fatally before its request ran).
+ *
+ * Ids only: this runs on every chat turn, so it must not pull each message's
+ * full parts JSON. `parts` holds the whole persisted UI message, so the flag
+ * lives at `parts -> metadata -> abandoned`.
+ */
+export async function getAbandonedAssistantMessageIds(
+  chatId: string,
+): Promise<string[]> {
+  const rows = await db
+    .select({ id: chatMessages.id })
+    .from(chatMessages)
+    .where(
+      and(
+        eq(chatMessages.chatId, chatId),
+        eq(chatMessages.role, "assistant"),
+        sql`${chatMessages.parts} -> 'metadata' ->> 'abandoned' = 'true'`,
+      ),
+    );
+
+  return rows.map((row) => row.id);
+}
+
 type DeleteChatMessageAndFollowingResult =
   | { status: "not_found" }
   | { status: "not_user_message" }

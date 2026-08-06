@@ -127,6 +127,7 @@ mock.module("@open-agents/sandbox", () => ({
 }));
 
 mock.module("@/lib/db/sessions", () => ({
+  getAbandonedAssistantMessageIds: async () => [],
   claimChatActiveStreamId: async () => true,
   compareAndSetChatActiveStreamId: async () => true,
   createChatMessageIfNotExists: async ({ id }: { id: string }) => ({ id }),
