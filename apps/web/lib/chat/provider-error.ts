@@ -13,12 +13,14 @@ export type ProviderErrorDetails = {
  */
 const NON_RETRYABLE_STATUS_CODES = new Set([400, 404, 405, 409, 413, 422]);
 
+const MAX_UNWRAP_DEPTH = 5;
+
 /**
- * Read the AI SDK's `APICallError` shape structurally rather than importing
- * `@ai-sdk/provider` here: the class travels through several provider packages
- * and the app does not otherwise depend on it directly.
+ * Reads `statusCode`/`responseBody` directly off a single error-shaped value,
+ * without following any wrapping. Returns nulls when the value carries
+ * neither field.
  */
-export function getProviderErrorDetails(error: unknown): ProviderErrorDetails {
+function readOwnProviderErrorDetails(error: unknown): ProviderErrorDetails {
   if (typeof error !== "object" || error === null) {
     return { responseBody: null, statusCode: null };
   }
@@ -35,6 +37,64 @@ export function getProviderErrorDetails(error: unknown): ProviderErrorDetails {
       : null;
 
   return { responseBody, statusCode };
+}
+
+/**
+ * Read the AI SDK's `APICallError` shape structurally rather than importing
+ * `@ai-sdk/provider` here: the class travels through several provider packages
+ * and the app does not otherwise depend on it directly.
+ *
+ * The real `APICallError` does not always arrive directly: the AI SDK itself
+ * wraps a non-retryable failure in other error types before it reaches this
+ * app's stream-error capture site — `NoOutputGeneratedError` (and any other
+ * `new Error(message, { cause })`) carries the original error on `.cause`,
+ * and `retryWithExponentialBackoffRespectingRetryHeaders` wraps a failure
+ * that followed at least one other attempt in a `RetryError` whose own
+ * `.message` is a generic "Failed after N attempts..." string but whose
+ * `.lastError` is the real, structured error. Walk both wrapping shapes
+ * (bounded, since either could in principle nest) before giving up.
+ *
+ * Each level's own `statusCode`/`responseBody` are kept as a pair (never
+ * merged field-by-field across two different error objects — a status from
+ * one frame and a body from an unrelated frame could misrepresent what the
+ * provider actually returned). Across levels, the most complete pair found
+ * wins; a full match (both fields) short-circuits the walk. On a tie (e.g.
+ * an outer wrapper and an inner cause each carry exactly one field), the
+ * inner, more specific error wins over the outer generic wrapper.
+ */
+export function getProviderErrorDetails(error: unknown): ProviderErrorDetails {
+  let current = error;
+  let best: ProviderErrorDetails = { responseBody: null, statusCode: null };
+  let bestFieldCount = 0;
+
+  for (let depth = 0; depth < MAX_UNWRAP_DEPTH; depth++) {
+    const details = readOwnProviderErrorDetails(current);
+    const fieldCount =
+      (details.statusCode !== null ? 1 : 0) +
+      (details.responseBody !== null ? 1 : 0);
+
+    if (fieldCount > 0 && fieldCount >= bestFieldCount) {
+      best = details;
+      bestFieldCount = fieldCount;
+    }
+
+    if (bestFieldCount === 2) {
+      break;
+    }
+
+    if (typeof current !== "object" || current === null) {
+      break;
+    }
+
+    const wrapper = current as { cause?: unknown; lastError?: unknown };
+    const next = wrapper.cause ?? wrapper.lastError;
+    if (next === undefined || next === current) {
+      break;
+    }
+    current = next;
+  }
+
+  return best;
 }
 
 /**
