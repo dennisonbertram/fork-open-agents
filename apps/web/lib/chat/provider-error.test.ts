@@ -26,6 +26,17 @@ function causeWrappedApiCallError(statusCode: number, responseBody?: string) {
   });
 }
 
+// Mirrors a response-parse failure: the provider's body says exactly what
+// went wrong ("invalid api key", "quota exceeded"), but nothing ever set a
+// numeric statusCode on the error object.
+function bodyOnlyError(responseBody: string) {
+  return Object.assign(new Error("Bad Request"), {
+    name: "AI_APICallError",
+    responseBody,
+    url: "https://api.example.com/v1/chat/completions",
+  });
+}
+
 // Mirrors `ai`'s retryWithExponentialBackoffRespectingRetryHeaders: once a
 // request has been attempted more than once, a non-retryable failure is
 // wrapped in a RetryError whose own message is generic ("Failed after N
@@ -80,6 +91,37 @@ describe("getProviderErrorDetails", () => {
       ),
     ).toEqual({ statusCode: 400, responseBody: '{"message":"nope"}' });
   });
+
+  test("returns the response body when there is no numeric statusCode", () => {
+    // Regression: a response-parse failure where the body is the only place
+    // that says what went wrong (e.g. invalid API key) must not be discarded
+    // just because no numeric statusCode was ever set.
+    expect(
+      getProviderErrorDetails(bodyOnlyError('{"message":"invalid api key"}')),
+    ).toEqual({
+      statusCode: null,
+      responseBody: '{"message":"invalid api key"}',
+    });
+  });
+
+  test("returns the statusCode when there is no response body", () => {
+    expect(getProviderErrorDetails(apiCallError(400))).toEqual({
+      statusCode: 400,
+      responseBody: null,
+    });
+  });
+
+  test("walks a .cause chain to find a body-only wrapped error", () => {
+    const wrapped = new Error(
+      "No output generated. Check the stream for errors.",
+      { cause: bodyOnlyError('{"message":"invalid api key"}') },
+    );
+
+    expect(getProviderErrorDetails(wrapped)).toEqual({
+      statusCode: null,
+      responseBody: '{"message":"invalid api key"}',
+    });
+  });
 });
 
 describe("describeProviderError", () => {
@@ -101,6 +143,15 @@ describe("describeProviderError", () => {
 
   test("falls back to the bare message when there is no API detail", () => {
     expect(describeProviderError(new Error("boom"))).toBe("boom");
+  });
+
+  test("surfaces the provider response when there is no numeric status", () => {
+    const described = describeProviderError(
+      bodyOnlyError('{"message":"invalid api key"}'),
+    );
+
+    expect(described).toContain("invalid api key");
+    expect(described).not.toContain("HTTP");
   });
 });
 

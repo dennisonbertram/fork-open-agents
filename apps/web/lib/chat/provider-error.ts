@@ -53,14 +53,33 @@ function readOwnProviderErrorDetails(error: unknown): ProviderErrorDetails {
  * `.message` is a generic "Failed after N attempts..." string but whose
  * `.lastError` is the real, structured error. Walk both wrapping shapes
  * (bounded, since either could in principle nest) before giving up.
+ *
+ * Each level's own `statusCode`/`responseBody` are kept as a pair (never
+ * merged field-by-field across two different error objects — a status from
+ * one frame and a body from an unrelated frame could misrepresent what the
+ * provider actually returned). Across levels, the most complete pair found
+ * wins; a full match (both fields) short-circuits the walk. On a tie (e.g.
+ * an outer wrapper and an inner cause each carry exactly one field), the
+ * inner, more specific error wins over the outer generic wrapper.
  */
 export function getProviderErrorDetails(error: unknown): ProviderErrorDetails {
   let current = error;
+  let best: ProviderErrorDetails = { responseBody: null, statusCode: null };
+  let bestFieldCount = 0;
 
   for (let depth = 0; depth < MAX_UNWRAP_DEPTH; depth++) {
     const details = readOwnProviderErrorDetails(current);
-    if (details.statusCode !== null) {
-      return details;
+    const fieldCount =
+      (details.statusCode !== null ? 1 : 0) +
+      (details.responseBody !== null ? 1 : 0);
+
+    if (fieldCount > 0 && fieldCount >= bestFieldCount) {
+      best = details;
+      bestFieldCount = fieldCount;
+    }
+
+    if (bestFieldCount === 2) {
+      break;
     }
 
     if (typeof current !== "object" || current === null) {
@@ -75,7 +94,7 @@ export function getProviderErrorDetails(error: unknown): ProviderErrorDetails {
     current = next;
   }
 
-  return { responseBody: null, statusCode: null };
+  return best;
 }
 
 /**
