@@ -154,7 +154,9 @@ describe("openai-compatible reasoning serialization", () => {
   test("does not retry a 400 that names no unsupported property", async () => {
     const { requests, baseURL } = startServer(() =>
       Response.json(
-        { error: { message: "model `mock-model` not found", type: "not_found" } },
+        {
+          error: { message: "model `mock-model` not found", type: "not_found" },
+        },
         { status: 400 },
       ),
     );

@@ -13,6 +13,7 @@ import {
 import type { OpenAIResponsesProviderOptions } from "@ai-sdk/openai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { toAnthropicDirectModelId } from "./model-ids";
+import { createReasoningCompatibleFetch } from "./openai-compatible-reasoning-fetch";
 
 type WrappableLanguageModel = Parameters<typeof wrapLanguageModel>[0]["model"];
 
@@ -214,6 +215,7 @@ export function directOpenAIModel(
       ...attributionHeaders,
       ...(usesApiKeyAuth ? { Authorization: `Api-Key ${config.apiKey}` } : {}),
     },
+    fetch: createReasoningCompatibleFetch(config.baseURL),
   });
 
   return openAIProvider.chatModel(
