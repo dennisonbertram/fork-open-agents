@@ -54,6 +54,7 @@ import {
   runAutoCreatePrStep,
   sendFinish,
 } from "./chat-post-finish";
+import { annotateAbandonedTurns } from "@/lib/chat/annotate-abandoned-turns";
 import { dedupeMessageReasoning } from "@/lib/chat/dedupe-message-reasoning";
 import {
   buildProviderRejectionMessage,
@@ -171,7 +172,8 @@ const convertMessages = async (
   // Drop orphaned tool-calls (e.g. an approved web_fetch that never executed
   // before a new user turn) so conversion never emits a tool-call without a
   // paired tool-result, which the provider rejects and which wedges the chat.
-  const sanitizedMessages = sanitizeInterruptedToolCalls(messages);
+  const annotatedMessages = annotateAbandonedTurns(messages);
+  const sanitizedMessages = sanitizeInterruptedToolCalls(annotatedMessages);
   const dedupedMessages = sanitizedMessages.map(dedupeMessageReasoning);
   const modelMessages = await convertToModelMessages<WebAgentUIMessage>(
     dedupedMessages,
@@ -2398,6 +2400,12 @@ export async function runAgentWorkflow(options: Options) {
       pendingAssistantResponse = {
         ...pendingAssistantResponse,
         parts: [{ type: "text", text: errorText }],
+        // Issue #1133: the triggering request never ran. Record that outcome
+        // on the persisted message so a later, unrelated user turn is not
+        // read by the model as license to silently resume it — see
+        // `annotateAbandonedTurns`, which reads this flag on the next
+        // `convertMessages` call.
+        metadata: { ...pendingAssistantResponse.metadata, abandoned: true },
       };
       await sendTextMessage(writable, "setup-error", errorText);
       await persistAssistantMessage(options.chatId, pendingAssistantResponse);
