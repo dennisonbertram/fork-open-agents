@@ -1,4 +1,5 @@
 import { afterAll, beforeEach, describe, expect, mock, test } from "bun:test";
+import type { WebAgentUIMessage } from "@/app/types";
 
 mock.module("server-only", () => ({}));
 
@@ -59,6 +60,7 @@ let preferencesState: {
 };
 let cachedSkillsState: unknown = null;
 let discoverSkillDirsCalls: string[][] = [];
+let abandonedAssistantMessageIds: string[] = [];
 
 const claimChatActiveStreamIdSpy = mock(
   async () => claimActiveStreamDefaultResult,
@@ -173,6 +175,7 @@ mock.module("@open-agents/sandbox", () => ({
 }));
 
 mock.module("@/lib/db/sessions", () => ({
+  getAbandonedAssistantMessageIds: async () => abandonedAssistantMessageIds,
   claimChatActiveStreamId: claimChatActiveStreamIdSpy,
   compareAndSetChatActiveStreamId: compareAndSetChatActiveStreamIdSpy,
   createChatMessageIfNotExists: createChatMessageIfNotExistsSpy,
@@ -319,6 +322,7 @@ describe("/api/chat route", () => {
     delete process.env.OPEN_AGENTS_EXPOSE_VERIFIED_BUILD;
     cachedSkillsState = null;
     discoverSkillDirsCalls = [];
+    abandonedAssistantMessageIds = [];
     preferencesState = {
       autoCommitPush: true,
       autoCreatePr: false,
@@ -769,5 +773,88 @@ describe("/api/chat route", () => {
 
     expect(response.ok).toBe(true);
     expect(response.headers.get("x-workflow-run-id")).toBe("wrun_test-123");
+  });
+
+  // Issue #1133 / PR #1134 review. Same open chat, no reload: the client
+  // re-posts its own copy of the failed assistant turn, which never received
+  // `metadata.abandoned` because the live stream only carries text chunks.
+  // The server must re-derive the flag from the persisted row before the
+  // workflow builds the model-facing history, otherwise the abandoned request
+  // is silently resumed by the next unrelated message.
+  test("restores the persisted abandoned flag onto client-supplied history", async () => {
+    abandonedAssistantMessageIds = ["assistant-1"];
+    const { POST } = await routeModulePromise;
+
+    const response = await POST(
+      createRequest(
+        JSON.stringify({
+          sessionId: "session-1",
+          chatId: "chat-1",
+          messages: [
+            {
+              id: "user-1",
+              role: "user",
+              parts: [
+                { type: "text", text: "please read github access tools" },
+              ],
+            },
+            {
+              id: "assistant-1",
+              role: "assistant",
+              parts: [
+                {
+                  type: "text",
+                  text: "Workspace setup failed. Try again in a moment.",
+                },
+              ],
+            },
+            {
+              id: "user-2",
+              role: "user",
+              parts: [{ type: "text", text: "Hi here is the second turn." }],
+            },
+          ],
+        }),
+      ),
+    );
+
+    expect(response.ok).toBe(true);
+    expect(startCalls).toHaveLength(1);
+    const [workflowInput] = (startCalls[0]?.[1] ?? []) as [
+      { messages: WebAgentUIMessage[] },
+    ];
+    const assistantMessage = workflowInput.messages.find(
+      (message) => message.id === "assistant-1",
+    );
+
+    expect(assistantMessage?.metadata?.abandoned).toBe(true);
+    // New user input is never rewritten by this fix.
+    expect(
+      workflowInput.messages.find((message) => message.id === "user-2"),
+    ).toEqual({
+      id: "user-2",
+      role: "user",
+      parts: [{ type: "text", text: "Hi here is the second turn." }],
+    });
+  });
+
+  test("leaves client-supplied history untouched when nothing was abandoned", async () => {
+    const { POST } = await routeModulePromise;
+
+    const response = await POST(createValidRequest());
+
+    expect(response.ok).toBe(true);
+    expect(startCalls).toHaveLength(1);
+    const [workflowInput] = (startCalls[0]?.[1] ?? []) as [
+      { messages: WebAgentUIMessage[] },
+    ];
+
+    expect(workflowInput.messages).toEqual([
+      {
+        id: "user-1",
+        role: "user",
+        parts: [{ type: "text", text: "Fix the bug" }],
+      },
+    ]);
   });
 });

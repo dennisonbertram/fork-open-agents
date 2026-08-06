@@ -32,6 +32,7 @@ import {
 import { parseChatRequestBody, requireChatIdentifiers } from "./_lib/request";
 import { runAgentWorkflow } from "@/app/workflows/chat";
 import { persistAssistantMessagesWithToolResults } from "./_lib/persist-tool-results";
+import { restoreAbandonedTurnFlags } from "./_lib/restore-abandoned-turns";
 import {
   validateWorkflowInputs,
   persistWorkflowInputSnapshot,
@@ -316,10 +317,17 @@ export async function POST(req: Request) {
     };
   }
 
+  // Issue #1133: the client's copy of a fatally failed assistant turn never
+  // received `metadata.abandoned` — the live stream carries text chunks only.
+  // Re-derive it from the persisted row so the flag survives a second turn
+  // sent from the same open chat, and so a stale or altered client copy cannot
+  // clear it. See `_lib/restore-abandoned-turns`.
+  const workflowMessages = await restoreAbandonedTurnFlags(chatId, messages);
+
   // Step 2: Start the durable workflow (only reached after validation passes)
   const run = await start(runAgentWorkflow, [
     {
-      messages,
+      messages: workflowMessages,
       chatId,
       sessionId,
       userId,
