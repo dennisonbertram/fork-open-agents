@@ -1621,6 +1621,31 @@ describe("runAgentWorkflow", () => {
     );
   });
 
+  // DEFECT A regression: a fatally failed turn that produced no output must
+  // persist an outcome marking the triggering request as abandoned. Without
+  // this, the next user message — even an unrelated greeting — reads as
+  // license to silently resume the failed request (production evidence: chat
+  // itSZNUSgb_ikmPSnm7Ukm, issue #1133).
+  test("marks a fatally failed, zero-output turn as abandoned on the persisted message", async () => {
+    spies.resolveChatSandboxRuntime.mockImplementationOnce(async (params) => {
+      writtenChunks.push({ type: "start", messageId: params.assistantId });
+      throw new Error("Connect GitHub to access repositories");
+    });
+
+    await expect(runAgentWorkflow(makeOptions())).rejects.toThrow(
+      "Connect GitHub to access repositories",
+    );
+
+    expect(spies.persistAssistantMessage).toHaveBeenCalledWith(
+      "chat-1",
+      expect.objectContaining({
+        id: "gen-id-1",
+        role: "assistant",
+        metadata: expect.objectContaining({ abandoned: true }),
+      }),
+    );
+  });
+
   test("streams an archived-session setup message when runtime rejects", async () => {
     spies.resolveChatSandboxRuntime.mockImplementationOnce(async (params) => {
       writtenChunks.push({ type: "start", messageId: params.assistantId });
@@ -1754,6 +1779,19 @@ describe("runAgentWorkflow", () => {
     expect(spies.persistAssistantMessage).toHaveBeenCalledTimes(1);
     const paCalls = spies.persistAssistantMessage.mock.calls as unknown[][];
     expect(paCalls[0][0]).toBe("chat-1");
+  });
+
+  // DEFECT A regression counterpart: a normal, successful turn must not be
+  // marked abandoned. Only a fatally failed, zero-output turn sets this flag.
+  test("does not mark a normal successful turn as abandoned", async () => {
+    await runAgentWorkflow(makeOptions());
+
+    const paCalls = spies.persistAssistantMessage.mock.calls as Array<
+      [string, { metadata?: { abandoned?: boolean } }]
+    >;
+    for (const [, message] of paCalls) {
+      expect(message.metadata?.abandoned).not.toBe(true);
+    }
   });
 
   test("persists incoming messages during workflow startup", async () => {

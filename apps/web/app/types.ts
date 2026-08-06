@@ -69,6 +69,14 @@ export type WebAgentMessageMetadata = {
   lastStepFinishReason?: FinishReason;
   lastStepRawFinishReason?: string;
   stepFinishReasons?: WebAgentStepFinishMetadata[];
+  /**
+   * Set when this assistant turn failed fatally before producing any output.
+   * The request that triggered it was never executed. A later, unrelated user
+   * message must not be read as license to silently resume it — see
+   * `annotateAbandonedTurns` in `@/lib/chat/annotate-abandoned-turns`, which
+   * flags this turn to the model on the next conversion.
+   */
+  abandoned?: boolean;
 };
 
 export type WebAgentGitDataStatus = "pending" | "success" | "error" | "skipped";
