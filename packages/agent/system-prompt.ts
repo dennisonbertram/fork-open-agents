@@ -395,6 +395,77 @@ The user configured the following system-prompt customization for the selected i
 
 If this customization describes another provider product, another coding harness, or tools that are not available here, translate only the useful behavioral intent to the Open Agents harness and ignore incompatible mechanics.`;
 
+// ---------------------------------------------------------------------------
+// Managed-runtime coordinator core prompt
+// ---------------------------------------------------------------------------
+//
+// The managed-runtime coordinator does not hold file, search, or shell tools
+// (see MANAGED_RUNTIME_COORDINATOR_TOOL_NAMES in open-agent.ts), but
+// CORE_SYSTEM_PROMPT documents `read`/`write`/`edit`/`grep`/`glob`/`bash` as
+// the model's own tools. Appending a contradictory instruction after the fact
+// is not enough -- the model still reads a manual for tools it does not hold.
+// Instead, build a coordinator-specific core prompt by slicing the sections
+// that describe those tools out of CORE_SYSTEM_PROMPT (via indexOf on unique
+// section headings) and substituting the coordinator's actual, delegation-only
+// tool set. Slicing off the same source string -- rather than hand-duplicating
+// it -- keeps the shared sections (Guardrails, Harness Contract, Planning,
+// Verification Loop, etc.) byte-identical to the classic prompt by
+// construction, and CORE_SYSTEM_PROMPT itself is never modified, so the
+// classic-mode prompt output is unaffected.
+
+function sliceBetween(source: string, start: string, end?: string): string {
+  const startIndex = source.indexOf(start);
+  if (startIndex === -1) {
+    throw new Error(
+      `system-prompt: expected marker not found in CORE_SYSTEM_PROMPT: ${JSON.stringify(start)}`,
+    );
+  }
+  if (!end) {
+    return source.slice(startIndex);
+  }
+  const endIndex = source.indexOf(end, startIndex);
+  if (endIndex === -1) {
+    throw new Error(
+      `system-prompt: expected marker not found in CORE_SYSTEM_PROMPT: ${JSON.stringify(end)}`,
+    );
+  }
+  return source.slice(startIndex, endIndex);
+}
+
+// Mirrors MANAGED_RUNTIME_COORDINATOR_TOOL_NAMES in open-agent.ts (the
+// always-on subset -- propose_composio_tool and manage_background_agent are
+// feature-flagged and already covered by the generic "current tool list"
+// language in the Harness Contract below). Not imported directly: open-agent.ts
+// imports buildSystemPrompt from this file, so importing the constant back
+// would create a circular module dependency. The test file for this module
+// imports MANAGED_RUNTIME_COORDINATOR_TOOL_NAMES independently and asserts
+// every tool named here is a member, so the two cannot silently drift apart.
+const MANAGED_RUNTIME_COORDINATOR_TOOL_LIST = `
+## Coordinator Tool Set
+
+You do not hold file, search, or shell tools in this mode. Your tools are:
+- \`todo_write\` - Create/update task list. Use FREQUENTLY to plan and track progress.
+- \`task\` - Spawn a subagent to do ALL file reading, editing, repository search, shell commands, verification, and browser/service work on your behalf.
+- \`ask_user_question\` - Ask structured questions to gather user input.
+- \`setup_managed_runtime_profile\` - Emit a managed runtime profile draft for user review.
+- \`skill\` - Execute a skill to extend your capabilities.
+- \`web_fetch\` - Fetch a URL's contents.
+
+You do NOT have \`read\`, \`write\`, \`edit\`, \`grep\`, \`glob\`, or \`bash\`. Never call them or tell the user you used them -- delegate any file, search, or shell work to a subagent with \`task\`.
+`;
+
+const MANAGED_RUNTIME_CORE_SYSTEM_PROMPT =
+  sliceBetween(
+    CORE_SYSTEM_PROMPT,
+    "You are Open Agent",
+    "\n# Fast Context Understanding",
+  ) +
+  "\n" +
+  sliceBetween(CORE_SYSTEM_PROMPT, "\n# Tool Usage", "\n## File Operations") +
+  MANAGED_RUNTIME_COORDINATOR_TOOL_LIST +
+  sliceBetween(CORE_SYSTEM_PROMPT, "\n## Planning", "\n# Verification Loop") +
+  sliceBetween(CORE_SYSTEM_PROMPT, "\n# Verification Loop");
+
 const MANAGED_RUNTIME_COORDINATOR_PROMPT = `# Managed Runtime Coordinator Mode
 
 The user selected managed runtime for this session. In this mode, you are the top-level coordinator, not the direct implementation worker.
@@ -509,8 +580,12 @@ npx skills --help                      # all options
  */
 export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
   const family = detectModelFamily(options.modelId);
+  const isManagedRuntime = options.runtimeMode === "managed_runtime";
+  const coreSystemPrompt = isManagedRuntime
+    ? MANAGED_RUNTIME_CORE_SYSTEM_PROMPT
+    : CORE_SYSTEM_PROMPT;
 
-  const parts = [CORE_SYSTEM_PROMPT, getModelOverlay(family, options.modelId)];
+  const parts = [coreSystemPrompt, getModelOverlay(family, options.modelId)];
 
   if (options.modelId) {
     parts.push(
@@ -522,7 +597,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
     parts.push(SANDBOX_FREE_PROMPT);
   }
 
-  if (options.runtimeMode === "managed_runtime") {
+  if (isManagedRuntime) {
     parts.push(MANAGED_RUNTIME_COORDINATOR_PROMPT);
   }
 
