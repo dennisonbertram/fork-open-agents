@@ -431,6 +431,7 @@ describe("direct provider models", () => {
     expect(createOpenAICompatibleCalls).toEqual([
       {
         name: "openai-compatible",
+        fetch: expect.any(Function),
         apiKey: "openai-key",
         baseURL: "https://openai.example/v1",
         headers: {
@@ -458,6 +459,7 @@ describe("direct provider models", () => {
     expect(createOpenAICompatibleCalls).toEqual([
       {
         name: "openai-compatible",
+        fetch: expect.any(Function),
         baseURL: "https://inference.baseten.co/v1",
         headers: {
           Authorization: "Api-Key baseten-key",
@@ -539,6 +541,7 @@ describe("gateway attribution headers", () => {
     expect(createOpenAICompatibleCalls).toEqual([
       {
         name: "openai-compatible",
+        fetch: expect.any(Function),
         apiKey: "sk-openai",
         baseURL: "https://openai.example/v1",
         headers: {
