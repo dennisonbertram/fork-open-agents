@@ -166,6 +166,86 @@ describe("resolveStepAgentModels", () => {
     expect(JSON.stringify(resolved)).not.toContain("user-profile:");
   });
 
+  // A broken subagent profile must not take the coordinator down with it.
+  // `default_subagent_model_id` is a plain text column with no foreign key
+  // (schema.ts:2890), while `default_inference_profile_id` has one — so
+  // deleting a profile leaves a stale `user-profile:<deletedId>:…` preference
+  // behind, and the resolver throws on a missing or disabled profile. An eager
+  // await would kill every step, including coordinator turns that never
+  // delegate at all.
+  test("a failing subagent resolution does not break the turn", async () => {
+    const resolve = mock(async (params: { selection: { id: string } }) => {
+      if (params.selection.id.includes("deleted-profile")) {
+        throw new Error("Selected inference profile is unavailable.");
+      }
+      return { id: params.selection.id.split(":").slice(2).join(":") };
+    });
+
+    const resolved = await resolveStepAgentModels({
+      userId: "user-1",
+      inferenceProfileId: "profile-a",
+      agentOptions: {
+        model: { id: "user-profile:profile-a:gpt-oss-120b" },
+        subagentModel: { id: "user-profile:deleted-profile:gemma-4-31b" },
+      },
+      resolve: resolve as never,
+    });
+
+    // Main model still resolved, so the coordinator runs.
+    expect((resolved.model as unknown as { id: string }).id).toBe(
+      "gpt-oss-120b",
+    );
+    // Broken override dropped rather than passed through: subagents inherit the
+    // main model, and no internal composite id escapes to a provider.
+    expect(resolved.subagentModel).toBeUndefined();
+    expect(JSON.stringify(resolved)).not.toContain("user-profile:");
+  });
+
+  test("reports a failed subagent resolution instead of swallowing it", async () => {
+    const failure = new Error("Selected inference profile is unavailable.");
+    const resolve = mock(async (params: { selection: { id: string } }) => {
+      if (params.selection.id.includes("deleted-profile")) {
+        throw failure;
+      }
+      return { id: params.selection.id.split(":").slice(2).join(":") };
+    });
+    const onSubagentResolutionFailed = mock((_error: unknown) => {
+      // noop
+    });
+
+    await resolveStepAgentModels({
+      userId: "user-1",
+      inferenceProfileId: "profile-a",
+      agentOptions: {
+        model: { id: "user-profile:profile-a:gpt-oss-120b" },
+        subagentModel: { id: "user-profile:deleted-profile:gemma-4-31b" },
+      },
+      resolve: resolve as never,
+      onSubagentResolutionFailed,
+    });
+
+    expect(onSubagentResolutionFailed).toHaveBeenCalledTimes(1);
+    expect(onSubagentResolutionFailed.mock.calls[0][0]).toBe(failure);
+  });
+
+  // Guard against over-correcting: the MAIN model failing means the session
+  // genuinely cannot run, and swallowing that would replace a clear error with
+  // a confusing downstream one.
+  test("must stay green: a failing MAIN model resolution still throws", async () => {
+    const resolve = mock(async () => {
+      throw new Error("Selected inference profile is unavailable.");
+    });
+
+    await expect(
+      resolveStepAgentModels({
+        userId: "user-1",
+        inferenceProfileId: "profile-a",
+        agentOptions: { model: { id: "user-profile:profile-a:gpt-oss-120b" } },
+        resolve: resolve as never,
+      }),
+    ).rejects.toThrow("Selected inference profile is unavailable.");
+  });
+
   test("accepts a bare string model id", async () => {
     const resolve = fakeResolver();
     const resolved = await resolveStepAgentModels({

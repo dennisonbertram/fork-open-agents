@@ -2701,6 +2701,19 @@ const runAgentStep = async (
           inferenceProfileId: id as string,
           selection,
         }),
+      // A stale subagent preference (its profile deleted or disabled) drops the
+      // override and lets subagents inherit the main model, rather than killing
+      // a coordinator turn that may never delegate. Silent substitution is only
+      // acceptable because it is reported here.
+      onSubagentResolutionFailed: (error) => {
+        console.warn("[chat] subagent model resolution failed", {
+          chatId,
+          sessionId,
+          workflowRunId,
+          stepNumber,
+          errorKind: error instanceof Error ? error.name : "unknown",
+        });
+      },
     });
     const workflowActionAgentOptions = buildWorkflowActionAgentOptions({
       userId,
