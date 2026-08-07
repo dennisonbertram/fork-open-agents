@@ -880,6 +880,14 @@ IMPORTANT:
       // The model call failed after the workspace checks already passed, so
       // surface the model/provider failure instead of leaving the parent agent
       // to guess at a workspace cause.
+      //
+      // `cause` already preserves the caught error — it is
+      // `pendingStreamError ?? error` — and the stream's error part is the more
+      // informative of the two. `preserve-caught-error` only recognizes the
+      // caught binding by name, and its autofix rewrites this to
+      // `{ cause: error }`, silently restoring the generic "No output
+      // generated" message this change exists to replace.
+      // oxlint-disable-next-line preserve-caught-error
       throw new Error(
         `subagent_model_failed: the delegated worker model "${subagentModelId}" failed before returning output: ${sanitizeProviderErrorMessage(cause)}. Check that the model is reachable and configured; the shared workspace was not the cause.`,
         { cause },

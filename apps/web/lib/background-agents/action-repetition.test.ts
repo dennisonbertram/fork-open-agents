@@ -35,12 +35,8 @@ describe("hashTurnToolFailures", () => {
   });
 
   test("different tools failing with the same error hash differently", () => {
-    const a = hashTurnToolFailures([
-      { toolName: "task", errorText: "boom" },
-    ]);
-    const b = hashTurnToolFailures([
-      { toolName: "bash", errorText: "boom" },
-    ]);
+    const a = hashTurnToolFailures([{ toolName: "task", errorText: "boom" }]);
+    const b = hashTurnToolFailures([{ toolName: "bash", errorText: "boom" }]);
     expect(a).not.toBe(b);
   });
 

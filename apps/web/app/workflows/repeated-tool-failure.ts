@@ -3,7 +3,7 @@ import {
   detectRepetition,
   hashTurnToolFailures,
 } from "@/lib/background-agents/action-repetition";
-import type { WebAgentUIMessage } from "@/lib/types";
+import type { WebAgentUIMessage } from "@/app/types";
 
 /**
  * Circuit breaker for a tool that keeps failing the same way (#1143, #1142).
