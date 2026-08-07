@@ -1752,6 +1752,55 @@ describe("tools execute behavior", () => {
     expect(message).toContain("connection reset");
   });
 
+  // #1140 follow-up: a provider can emit real output and *then* fail — a
+  // partial response followed by a 5xx that echoes the request. That path
+  // rethrows past the model-failure wrapper, so it needs its own sanitizing.
+  test("taskTool sanitizes a provider error that arrives after output began", async () => {
+    const workspace = await createGitWorkspace();
+    mockToolLoopAgentStream = mock(
+      providerFailureStream({
+        error: new Error(
+          "upstream 502: Authorization: Bearer sk-live-abcdef123456",
+        ),
+        partsBeforeFailure: [
+          { type: "tool-call", toolName: "bash", input: {} },
+        ],
+      }),
+    );
+
+    const result = taskTool.execute?.(
+      {
+        subagentType: "explorer",
+        workspacePolicy: "shared",
+        task: "Inspect files",
+        instructions: "Summarize the repository.",
+      },
+      executionOptions({
+        ...createContext({ workingDirectory: workspace }),
+        sessionId: "session-post-output-secret",
+      }),
+    ) as AsyncIterable<unknown> | undefined;
+
+    if (!result) {
+      throw new Error("taskTool execute missing in test");
+    }
+
+    let thrown: unknown;
+    try {
+      for await (const _output of result) {
+        // drain
+      }
+    } catch (error) {
+      thrown = error;
+    }
+
+    const message = (thrown as Error | undefined)?.message ?? "";
+    expect(message).not.toContain("sk-live-abcdef123456");
+    expect(message).toContain("upstream 502");
+    // Post-output, so this is NOT a model failure and must not claim to be.
+    expect(message).not.toContain("subagent_model_failed");
+  });
+
   test("taskTool preserves a non-model worker failure instead of blaming the model", async () => {
     const workspace = await createGitWorkspace();
     mockToolLoopAgentStream = mock(() => ({

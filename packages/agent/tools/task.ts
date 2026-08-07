@@ -873,9 +873,21 @@ IMPORTANT:
       // message is rendered to the user and persisted with the chat message.
       const cause = pendingStreamError ?? error;
       if (abortSignal?.aborted || !modelCallPending) {
-        throw cause instanceof Error
-          ? cause
-          : new Error(sanitizeProviderErrorMessage(cause));
+        // A provider-originated message is untrusted whether or not output had
+        // already begun — a partial response followed by a 5xx that echoes the
+        // request is exactly the case that reaches here — so it is sanitized on
+        // this path too. Without it the raw body becomes the task part's
+        // persisted `errorText` and is rendered in chat, including shared
+        // chats, bypassing the bounds and scrubbing applied elsewhere.
+        if (pendingStreamError === undefined) {
+          // Not provider text: rethrow untouched so the error's own type
+          // survives for callers that narrow on it.
+          throw error;
+        }
+        // oxlint-disable-next-line preserve-caught-error
+        throw new Error(sanitizeProviderErrorMessage(pendingStreamError), {
+          cause: pendingStreamError,
+        });
       }
       // The model call failed after the workspace checks already passed, so
       // surface the model/provider failure instead of leaving the parent agent

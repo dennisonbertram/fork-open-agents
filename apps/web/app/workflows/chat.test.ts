@@ -439,8 +439,14 @@ mock.module("ai", () => ({
       };
     }),
   generateId: () => "gen-id-1",
+  // Mirrors the real SDK: `isStaticToolUIPart(part) || isDynamicToolUIPart(part)`
+  // (ai/dist/index.mjs:5250-5255). `dynamic-tool` must be included — external
+  // tools (Composio, GitHub) arrive with that type, and a double that excludes
+  // them hides any bug in how production handles them.
   isToolUIPart: (part: { type: string }) =>
-    part.type === "tool-invocation" || part.type.startsWith("tool-"),
+    part.type === "tool-invocation" ||
+    part.type.startsWith("tool-") ||
+    part.type === "dynamic-tool",
   pruneMessages: ({ messages }: { messages: Array<Record<string, unknown>> }) =>
     messages.filter((message) => {
       const content = message.content;
@@ -3303,7 +3309,13 @@ describe("runAgentWorkflow", () => {
       expect(stepCount()).toBe(5);
     });
 
-    test("must stay green: two different tools each failing twice is not stopped", async () => {
+    // Regression: this previously used maxSteps 4, so the loop ended at 4
+    // whether or not the breaker fired — it could not tell the two apart and
+    // passed vacuously. The reused detector's cycle arm treats
+    // task/A, bash/B, task/A, bash/B as a period-2 cycle and DID stop the turn,
+    // contradicting the documented "three identical failures in a row"
+    // contract. maxSteps must exceed the step a cycle would trip at.
+    test("must stay green: two tools alternating failures is not stopped", async () => {
       agentFinishReason = "tool-calls";
       let call = 0;
       agentAssistantPartsFactory = () => {
@@ -3317,9 +3329,70 @@ describe("runAgentWorkflow", () => {
         ];
       };
 
-      await runAgentWorkflow(makeOptions({ maxSteps: 4 }));
+      await runAgentWorkflow(makeOptions({ maxSteps: 8 }));
 
-      expect(stepCount()).toBe(4);
+      expect(stepCount()).toBe(8);
+    });
+
+    // Regression: external tools arrive as `dynamic-tool` parts carrying their
+    // real identity in `part.toolName`. Naming them by `part.type` collapsed
+    // every one to "dynamic-tool", so three different external tools returning
+    // the same generic error looked like one tool failing three times.
+    test("must stay green: three external tools failing alike is not stopped", async () => {
+      agentFinishReason = "tool-calls";
+      const toolNames = ["COMPOSIO_LINEAR", "COMPOSIO_SLACK", "GITHUB_ISSUES"];
+      let call = 0;
+      agentAssistantPartsFactory = () => {
+        call += 1;
+        return [
+          {
+            type: "dynamic-tool",
+            toolName: toolNames[(call - 1) % toolNames.length],
+            toolCallId: `call-${call}`,
+            state: "output-error",
+            preliminary: false,
+            input: {},
+            errorText: "Request failed",
+          },
+        ];
+      };
+
+      await runAgentWorkflow(makeOptions({ maxSteps: 6 }));
+
+      expect(stepCount()).toBe(6);
+    });
+
+    test("names the real external tool when one dynamic tool keeps failing", async () => {
+      agentFinishReason = "tool-calls";
+      let call = 0;
+      agentAssistantPartsFactory = () => {
+        call += 1;
+        return [
+          {
+            type: "dynamic-tool",
+            toolName: "COMPOSIO_LINEAR",
+            toolCallId: `call-${call}`,
+            state: "output-error",
+            preliminary: false,
+            input: {},
+            errorText: "Request failed",
+          },
+        ];
+      };
+
+      await runAgentWorkflow(makeOptions({ maxSteps: 9 }));
+
+      expect(stepCount()).toBe(3);
+
+      const emitted = (spies.emitSessionEvent.mock.calls as unknown[][]).map(
+        (entry) =>
+          entry[0] as { eventName?: string; payload?: Record<string, unknown> },
+      );
+      const repeated = emitted.findLast(
+        (event) => event.eventName === "workflow.tool.repeated-failure",
+      );
+
+      expect(repeated?.payload).toMatchObject({ toolName: "COMPOSIO_LINEAR" });
     });
 
     test("emits workflow.tool.repeated-failure with correlation fields", async () => {
