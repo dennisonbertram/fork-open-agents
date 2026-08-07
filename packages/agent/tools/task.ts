@@ -52,6 +52,7 @@ import {
   type SharedWorkspaceDriftCheck,
 } from "../shared-workspace-drift";
 import { SharedWorkspaceDriftError } from "../shared-workspace-drift-error";
+import { sanitizeProviderErrorMessage } from "../provider-error-message";
 import {
   buildSubagentSummaryLines,
   SUBAGENT_REGISTRY,
@@ -65,6 +66,28 @@ import {
   getSubagentModel,
   getSubagentRoster,
 } from "./utils";
+
+/**
+ * Stream part types that prove the provider actually responded (#1141).
+ *
+ * `start` and `start-step` are deliberately absent: the SDK enqueues `start`
+ * before the provider request is made, so treating it as output is what made
+ * the model-failure diagnostic unreachable. Anything not listed here is treated
+ * as "not yet proof of output", which is the safe default when the SDK adds a
+ * part type.
+ */
+const PROVIDER_OUTPUT_PART_TYPES: ReadonlySet<string> = new Set([
+  "text-start",
+  "text-delta",
+  "reasoning-start",
+  "reasoning-delta",
+  "tool-input-start",
+  "tool-input-delta",
+  "tool-call",
+  "tool-result",
+  "finish-step",
+  "finish",
+]);
 
 const subagentTypeSchema = z.enum(SUBAGENT_TYPES);
 
@@ -680,6 +703,12 @@ IMPORTANT:
       delegatedWorkerLifecycleEvents: [...delegatedWorkerLifecycleEvents],
     };
     let modelCallPending = false;
+    // The AI SDK reports a provider failure as an `error` part on fullStream and
+    // then rejects the derived `response` promise with a generic
+    // "No output generated" message. Capturing the part is the only way to keep
+    // the provider's own reason; without it the generic message is all that
+    // reaches the user, which is exactly what #1140 fixed.
+    let pendingStreamError: unknown;
     try {
       const runningLifecycle = appendLifecycleEvent(
         "running",
@@ -704,11 +733,22 @@ IMPORTANT:
 
       // Deliberately NOT cleared here. Some providers surface a connection or
       // auth failure while the stream is first iterated rather than when
-      // stream() resolves, and those are still model failures. The flag clears
-      // on the first part actually yielded, which is the earliest point at
-      // which the model is demonstrably producing output.
+      // stream() resolves, and those are still model failures.
+      //
+      // The flag clears on the first part that proves the provider actually
+      // responded — an ALLOWLIST, not "the first part of any type". The SDK
+      // opens every stream with a synthetic `start` before the request is even
+      // made, and emits `start-step` alongside it, so a denylist would clear
+      // the flag before the provider had done anything and leave every
+      // pre-output failure unattributed (#1141). An allowlist also fails safe
+      // when the SDK adds a part type we have not seen.
       for await (const part of result.fullStream) {
-        modelCallPending = false;
+        if (PROVIDER_OUTPUT_PART_TYPES.has(part.type)) {
+          modelCallPending = false;
+        }
+        if (part.type === "error") {
+          pendingStreamError = (part as { error?: unknown }).error;
+        }
         if (part.type === "tool-call") {
           toolCallCount += 1;
           pending = { name: part.toolName, input: part.input };
@@ -827,15 +867,42 @@ IMPORTANT:
         completionPacket,
         completionPacketValidation,
       };
+      // The provider's own reason, when the stream gave us one, always beats
+      // the SDK's generic "No output generated. Check the stream for errors."
+      // that `result.response` rejects with. Bounded and scrubbed because this
+      // message is rendered to the user and persisted with the chat message.
+      const cause = pendingStreamError ?? error;
       if (abortSignal?.aborted || !modelCallPending) {
-        throw error;
+        // A provider-originated message is untrusted whether or not output had
+        // already begun — a partial response followed by a 5xx that echoes the
+        // request is exactly the case that reaches here — so it is sanitized on
+        // this path too. Without it the raw body becomes the task part's
+        // persisted `errorText` and is rendered in chat, including shared
+        // chats, bypassing the bounds and scrubbing applied elsewhere.
+        if (pendingStreamError === undefined) {
+          // Not provider text: rethrow untouched so the error's own type
+          // survives for callers that narrow on it.
+          throw error;
+        }
+        // oxlint-disable-next-line preserve-caught-error
+        throw new Error(sanitizeProviderErrorMessage(pendingStreamError), {
+          cause: pendingStreamError,
+        });
       }
       // The model call failed after the workspace checks already passed, so
       // surface the model/provider failure instead of leaving the parent agent
       // to guess at a workspace cause.
+      //
+      // `cause` already preserves the caught error — it is
+      // `pendingStreamError ?? error` — and the stream's error part is the more
+      // informative of the two. `preserve-caught-error` only recognizes the
+      // caught binding by name, and its autofix rewrites this to
+      // `{ cause: error }`, silently restoring the generic "No output
+      // generated" message this change exists to replace.
+      // oxlint-disable-next-line preserve-caught-error
       throw new Error(
-        `subagent_model_failed: the delegated worker model "${subagentModelId}" failed before returning output: ${error instanceof Error ? error.message : String(error)}. Check that the model is reachable and configured; the shared workspace was not the cause.`,
-        { cause: error },
+        `subagent_model_failed: the delegated worker model "${subagentModelId}" failed before returning output: ${sanitizeProviderErrorMessage(cause)}. Check that the model is reachable and configured; the shared workspace was not the cause.`,
+        { cause },
       );
     } finally {
       releaseSharedWriterLease(

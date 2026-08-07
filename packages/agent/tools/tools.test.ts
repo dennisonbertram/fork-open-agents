@@ -157,6 +157,45 @@ async function createGitWorkspace() {
   return workspace;
 }
 
+/**
+ * A delegated-worker stream shaped the way the AI SDK actually behaves when the
+ * provider fails: `stream()` resolves, `fullStream` opens with the synthetic
+ * `start` part *before* the request is made, the failure arrives as an `error`
+ * part, and the derived `response` promise rejects with the SDK's generic
+ * no-output message.
+ *
+ * A mock that throws synchronously from `stream()` exercises a path production
+ * never takes, which is how #1140 and #1141 stayed green in CI while every
+ * delegated worker in production failed without attribution.
+ *
+ * `response` is a getter so the rejected promise is only created when the code
+ * under test actually awaits it — an eagerly-created rejection would surface as
+ * an unhandled rejection in the cases that throw before reaching it.
+ */
+function providerFailureStream({
+  error,
+  partsBeforeFailure = [],
+}: {
+  error: Error;
+  partsBeforeFailure?: Record<string, unknown>[];
+}) {
+  return () => ({
+    fullStream: (async function* () {
+      yield { type: "start" };
+      for (const part of partsBeforeFailure) {
+        yield part;
+      }
+      yield { type: "error", error };
+    })(),
+    get response() {
+      return Promise.reject(
+        new Error("No output generated. Check the stream for errors."),
+      );
+    },
+    usage: Promise.resolve({}),
+  });
+}
+
 function createFakeIsolatedWorkspaceProvisioner(childId = "child-sandbox") {
   return mock(async (input: { parentWorkspaceId: string }) => ({
     sandbox: {
@@ -1547,9 +1586,9 @@ describe("tools execute behavior", () => {
 
   test("taskTool reports an unreachable subagent model as a model failure, not workspace drift", async () => {
     const workspace = await createGitWorkspace();
-    mockToolLoopAgentStream = mock(() => {
-      throw new Error("fetch failed");
-    });
+    mockToolLoopAgentStream = mock(
+      providerFailureStream({ error: new Error("fetch failed") }),
+    );
 
     const result = taskTool.execute?.(
       {
@@ -1583,6 +1622,183 @@ describe("tools execute behavior", () => {
     expect(message).toContain("fetch failed");
     expect(message).not.toContain("drift");
     expect(message).not.toContain("baseline");
+  });
+
+  // #1140: the AI SDK surfaces the provider's own failure as an `error` part on
+  // fullStream, then rejects `response` with a generic no-output message. The
+  // generic message is what reached users; the provider's message must survive.
+  test("taskTool surfaces the provider error instead of the generic no-output message", async () => {
+    const workspace = await createGitWorkspace();
+    const providerError = new Error("HTTP 404 model_not_found");
+    mockToolLoopAgentStream = mock(
+      providerFailureStream({ error: providerError }),
+    );
+
+    const result = taskTool.execute?.(
+      {
+        subagentType: "explorer",
+        workspacePolicy: "shared",
+        task: "Inspect files",
+        instructions: "Summarize the repository.",
+      },
+      executionOptions({
+        ...createContext({ workingDirectory: workspace }),
+        sessionId: "session-provider-error",
+      }),
+    ) as AsyncIterable<unknown> | undefined;
+
+    if (!result) {
+      throw new Error("taskTool execute missing in test");
+    }
+
+    let thrown: unknown;
+    try {
+      for await (const _output of result) {
+        // drain
+      }
+    } catch (error) {
+      thrown = error;
+    }
+
+    const message = (thrown as Error | undefined)?.message ?? "";
+    expect(message).toContain("HTTP 404 model_not_found");
+    expect((thrown as Error | undefined)?.cause).toBe(providerError);
+  });
+
+  // #1140: the message reaching the user must not carry an unbounded provider
+  // body or a credential echoed back in one.
+  test("taskTool bounds and redacts the provider error it surfaces", async () => {
+    const workspace = await createGitWorkspace();
+    mockToolLoopAgentStream = mock(
+      providerFailureStream({
+        error: new Error(
+          `unauthorized: Authorization: Bearer sk-live-abcdef123456 ${"x".repeat(4000)}`,
+        ),
+      }),
+    );
+
+    const result = taskTool.execute?.(
+      {
+        subagentType: "explorer",
+        workspacePolicy: "shared",
+        task: "Inspect files",
+        instructions: "Summarize the repository.",
+      },
+      executionOptions({
+        ...createContext({ workingDirectory: workspace }),
+        sessionId: "session-provider-secret",
+      }),
+    ) as AsyncIterable<unknown> | undefined;
+
+    if (!result) {
+      throw new Error("taskTool execute missing in test");
+    }
+
+    let thrown: unknown;
+    try {
+      for await (const _output of result) {
+        // drain
+      }
+    } catch (error) {
+      thrown = error;
+    }
+
+    const message = (thrown as Error | undefined)?.message ?? "";
+    expect(message).not.toContain("sk-live-abcdef123456");
+    expect(message.length).toBeLessThan(1000);
+    expect(message).toContain("unauthorized");
+  });
+
+  // #1141: `start` is not the only part the SDK emits before the provider
+  // responds — `start-step` does too. The guard must use an allowlist of
+  // output-bearing parts so an unrecognized pre-output part fails safe.
+  test("taskTool still attributes the model when start-step precedes the failure", async () => {
+    const workspace = await createGitWorkspace();
+    mockToolLoopAgentStream = mock(
+      providerFailureStream({
+        error: new Error("connection reset"),
+        partsBeforeFailure: [{ type: "start-step" }],
+      }),
+    );
+
+    const result = taskTool.execute?.(
+      {
+        subagentType: "explorer",
+        workspacePolicy: "shared",
+        task: "Inspect files",
+        instructions: "Summarize the repository.",
+      },
+      executionOptions({
+        ...createContext({ workingDirectory: workspace }),
+        sessionId: "session-start-step",
+      }),
+    ) as AsyncIterable<unknown> | undefined;
+
+    if (!result) {
+      throw new Error("taskTool execute missing in test");
+    }
+
+    let thrown: unknown;
+    try {
+      for await (const _output of result) {
+        // drain
+      }
+    } catch (error) {
+      thrown = error;
+    }
+
+    const message = (thrown as Error | undefined)?.message ?? "";
+    expect(message).toContain("subagent_model_failed");
+    expect(message).toContain("connection reset");
+  });
+
+  // #1140 follow-up: a provider can emit real output and *then* fail — a
+  // partial response followed by a 5xx that echoes the request. That path
+  // rethrows past the model-failure wrapper, so it needs its own sanitizing.
+  test("taskTool sanitizes a provider error that arrives after output began", async () => {
+    const workspace = await createGitWorkspace();
+    mockToolLoopAgentStream = mock(
+      providerFailureStream({
+        error: new Error(
+          "upstream 502: Authorization: Bearer sk-live-abcdef123456",
+        ),
+        partsBeforeFailure: [
+          { type: "tool-call", toolName: "bash", input: {} },
+        ],
+      }),
+    );
+
+    const result = taskTool.execute?.(
+      {
+        subagentType: "explorer",
+        workspacePolicy: "shared",
+        task: "Inspect files",
+        instructions: "Summarize the repository.",
+      },
+      executionOptions({
+        ...createContext({ workingDirectory: workspace }),
+        sessionId: "session-post-output-secret",
+      }),
+    ) as AsyncIterable<unknown> | undefined;
+
+    if (!result) {
+      throw new Error("taskTool execute missing in test");
+    }
+
+    let thrown: unknown;
+    try {
+      for await (const _output of result) {
+        // drain
+      }
+    } catch (error) {
+      thrown = error;
+    }
+
+    const message = (thrown as Error | undefined)?.message ?? "";
+    expect(message).not.toContain("sk-live-abcdef123456");
+    expect(message).toContain("upstream 502");
+    // Post-output, so this is NOT a model failure and must not claim to be.
+    expect(message).not.toContain("subagent_model_failed");
   });
 
   test("taskTool preserves a non-model worker failure instead of blaming the model", async () => {

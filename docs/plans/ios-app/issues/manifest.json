@@ -1,0 +1,709 @@
+{
+  "milestones": [
+    {
+      "key": "M0",
+      "title": "Server enablers: native auth",
+      "goal": "Make apps/web a bearer-token multi-client auth platform — bearer/OTT plugins, deep-link handoff routes, Sign in with Apple, native sign-out, and in-app account deletion — landed as red-first web PRs into develop before any Swift work depends on them.",
+      "issues": [
+        {
+          "key": "M0-01",
+          "title": "Enable better-auth bearer + one-time-token plugins with native deep-link handoff routes",
+          "scope": "Edit `apps/web/lib/auth/config.ts` to add `bearer({ requireSignature: true })`, `oneTimeToken({ expiresIn: 3, storeToken: \"hashed\" })`, and `trustedOrigins: [\"openagents://\", \"https://appleid.apple.com\"]`, then create `apps/web/app/api/native-auth/complete/route.ts` (cookie session -> OTT -> 303 to `openagents://auth`) and `apps/web/app/api/native-auth/bridge/route.ts` (OTT -> cookie session -> sanitized internal redirect) exactly per `docs/plans/ios-app/04-auth.md` sections 3.1-3.3 and 3.7. Write the section 3.8 tests first (bearer session resolution including tampered/raw-token rejection, complete-route redirect matrix, OTT round-trip carrying `set-auth-token`, single-use second-verify 400) and confirm red before implementing. Protected path: a native client signs in via browser handoff and calls every session-gated API — including SSE — with `Authorization: Bearer` and no cookies. Attach SSE bearer curl evidence (`x-vercel-ai-ui-message-stream: v1` on `GET /api/chat/{chatId}/stream`) to the PR. Web behavior must not change (cookies keep working) and `bun --bun run ci` stays green.",
+          "dependsOn": [],
+          "docRefs": ["04-auth.md", "00-overview.md"],
+          "labels": ["server", "type:feature"]
+        },
+        {
+          "key": "M0-02",
+          "title": "Sign in with Apple provider (App Store guideline 4.8)",
+          "scope": "Add the `apple` social provider to `apps/web/lib/auth/config.ts` with `appBundleIdentifier` (`APPLE_APP_BUNDLE_IDENTIFIER`), a `mapAppleProfileToUser` mapper, and `accountLinking.trustedProviders` extended to include `\"apple\"`, per `docs/plans/ios-app/04-auth.md` section 3.4. Add `apps/web/scripts/generate-apple-client-secret.ts` (ES256 JWT, 179-day expiry) and the three `APPLE_*` env vars to `apps/web/.env.example` with comments. Nonce comparison is verbatim — no hashing across the client/server boundary. Protected path: a native `POST /api/auth/sign-in/social` with `provider: \"apple\"` and an idToken/nonce pair returns a session plus a `set-auth-token` header. Document the Apple Developer portal prerequisites (App ID capability, .p8 key) in the PR; do not fix the hardcoded `authProvider: \"vercel\"` cosmetic gap here (file a follow-up).",
+          "dependsOn": ["M0-01"],
+          "docRefs": ["04-auth.md"],
+          "labels": ["server", "type:feature"]
+        },
+        {
+          "key": "M0-03",
+          "title": "Native sign-out route and in-app account deletion (guideline 5.1.1(v))",
+          "scope": "Extract `revokeVercelToken`/`getRevocableVercelToken` from `apps/web/lib/auth/actions.ts` into a new `apps/web/lib/auth/revoke-vercel-token.ts`, create `apps/web/app/api/native-auth/sign-out/route.ts` (bearer-authenticated; best-effort Vercel token revocation then `auth.api.signOut`), and enable `user.deleteUser` with a `beforeDelete` revocation hook per `docs/plans/ios-app/04-auth.md` sections 3.5-3.6. Write tests 4 and 5 from section 3.8 first: sign-out kills the session row for the same bearer, unauthenticated gets 401, a fresh-session `POST /api/auth/delete-user` with `{}` cascades the user row and seeded sessions, and a 25-hour-old session gets 400. Protected path: a bearer-authenticated native client can sign out (Vercel token revoked) and delete its account entirely in-app. Note the GitHub-installation and live-sandbox survivors for App Review notes.",
+          "dependsOn": ["M0-01"],
+          "docRefs": ["04-auth.md"],
+          "labels": ["server", "type:feature"]
+        }
+      ]
+    },
+    {
+      "key": "M1",
+      "title": "Server enablers: OpenAPI contract expansion",
+      "goal": "Grow apps/web/openapi.json from 6 paths / 10 operations to the full iOS-consumed surface with Swift-codegen-safe hygiene, one PR-sized batch at a time, keeping openapi:check, the spec unit test, and bun --bun run ci green and regenerating both committed artifacts in every PR.",
+      "issues": [
+        {
+          "key": "M1-01",
+          "title": "Batch A — OpenAPI spec hygiene for Swift codegen",
+          "scope": "Implement all five codegen blockers from `docs/plans/ios-app/02-api-contract-and-networking.md` section 2.2 inside `buildOpenApiDocument()` in `apps/web/lib/api/openapi-spec.ts`: recursive `additionalProperties: false` stripping, a schema registry hoisting named shapes into `components.schemas` with `$ref`s and collision detection, `securitySchemes` (bearerAuth + cookieAuth) with global `security`, `z.iso.datetime()` on ISO timestamp response fields (keeping epoch-ms lifecycle numbers as documented numbers), and real `CommitResult`/`OpenPullRequestResult`/`MergePullRequestResult` shapes replacing the three untyped records. Amend `apps/web/lib/api/openapi-spec.test.ts` with a `publicOperationIds` allowlist so public operations may omit the documented 401. Regenerate `apps/web/openapi.json` and `apps/web/lib/api/openapi-types.ts` in the same PR per section 2.4. Acceptance: `grep -c '\"additionalProperties\": false' apps/web/openapi.json` returns 0 and `bun run --cwd apps/web openapi:check` is green. Protected path: existing spec consumers and both drift gates keep working unchanged.",
+          "dependsOn": [],
+          "docRefs": ["02-api-contract-and-networking.md"],
+          "labels": ["server", "type:feature"]
+        },
+        {
+          "key": "M1-02",
+          "title": "Batch B — sessions and chats paths",
+          "scope": "Add the sessions and chats paths from `02-api-contract-and-networking.md` section 2.3 Batch B (`/api/sessions`, `/api/sessions/{sessionId}`, chats CRUD, messages, fork, read, share — 17 operations with the exact operationIds listed). Where routes validate manually, first extract a Zod schema into a colocated `apps/web/lib/<domain>/http-schemas.ts` and make the route validate with it, red-first. Register response shapes via the schema registry using the stable names from section 2.2 (e.g. `SessionSummary`, `ChatListResponse`); declare `UIMessage` with the deliberately loose shape because ChatKit owns the real decode. Ship black-box contract tests in `apps/web/tests/contract/` for every added path using the `CONTRACT_BASE_URL` + test-auth harness. Protected path: spec-documented sessions/chats operations match the live route shapes, and both artifacts regenerate in the same PR.",
+          "dependsOn": ["M1-01"],
+          "docRefs": ["02-api-contract-and-networking.md"],
+          "labels": ["server", "type:feature"]
+        },
+        {
+          "key": "M1-03",
+          "title": "Batch C — sandbox lifecycle paths",
+          "scope": "Add the sandbox lifecycle paths from `02-api-contract-and-networking.md` section 2.3 Batch C (`/api/sandbox` POST/DELETE, `status`, `reconnect`, `extend`, `snapshot` POST/PUT, `activity`, `/api/sessions/{sessionId}/sandbox` — 9 operations). Document the epoch-milliseconds unit on the `lifecycle` fields in field descriptions instead of `format: date-time`, and document the 409 sandbox-unavailable error envelope. Extract Zod request schemas for the manually-validated sandbox routes red-first, then register `SandboxStatusResponse`, `SandboxReconnectResponse`, and friends under the stable names. Ship contract tests for the status and reconnect shapes. Protected path: the sandbox status/resume contract the iOS one-tap Resume affordance depends on is spec-covered and drift-gated.",
+          "dependsOn": ["M1-01"],
+          "docRefs": ["02-api-contract-and-networking.md"],
+          "labels": ["server", "type:feature"]
+        },
+        {
+          "key": "M1-04",
+          "title": "Batch D — files, diff, and remaining git paths",
+          "scope": "Add the files, diff, and remaining git paths from `02-api-contract-and-networking.md` section 2.3 Batch D (`/files`, `/files/content`, `/diff`, `/diff/cached`, `git/discard`, `git/pr/generate`, `git/pr/close`, `git/pr/readiness`, `git/deployment-url`, `/generate-commit-message`, `/checks/fix`, `/api/generate-pr` — 12 operations). Reuse the existing schemas in `apps/web/lib/git/http-schemas.ts` where present; register `DiffResponse`, `DiffFile`, `CachedDiffResponse`, `MergeReadinessResponse`, `CheckRun`, and friends under the section 2.2 stable names. Raw-body endpoints (`diff/patch`, dev-server logs) stay excluded per section 0.4. Ship contract tests covering the diff and merge-readiness shapes. Protected path: the diff/PR-readiness contracts behind the iOS ship-code screens are spec-covered and drift-gated.",
+          "dependsOn": ["M1-01"],
+          "docRefs": ["02-api-contract-and-networking.md"],
+          "labels": ["server", "type:feature"]
+        },
+        {
+          "key": "M1-05",
+          "title": "Batch E — settings, models, usage, transcribe, and title paths",
+          "scope": "Add the settings/models/usage/misc paths from `02-api-contract-and-networking.md` section 2.3 Batch E (preferences, agents + tool-entries, skills, model-variants, runtime-profiles, composio settings/status/toolkits/connect/connected-accounts, inference-profiles + test, `/api/models`, `/api/usage`, `/api/usage/rank`, `/api/generate-title`, `/api/transcribe` — 35 operations). Reuse route-owned Zod schemas (`apps/web/lib/skills/skill-types.ts`, `apps/web/lib/composio/types.ts`) and extract http-schemas red-first where validation is manual; `/api/models` is public and joins the `publicOperationIds` allowlist. This is the largest batch — keep changes mechanical, and split a follow-up PR only if the `openapi-spec.ts` diff becomes unreviewable. Ship contract tests covering the preferences round-trip, models catalog, and usage shapes. Protected path: the preferences/models/usage contracts behind iOS settings are spec-covered and drift-gated.",
+          "dependsOn": ["M1-01"],
+          "docRefs": ["02-api-contract-and-networking.md"],
+          "labels": ["server", "type:feature"]
+        },
+        {
+          "key": "M1-06",
+          "title": "Batch F — GitHub, repos, Vercel, background agents, shares, and auth-info paths",
+          "scope": "Add the Batch F paths from `02-api-contract-and-networking.md` section 2.3 (GitHub installations/repos/branches/connection-status/user/orgs-install-status, `/api/repos/{owner}/{repo}/dashboard`, `/api/vercel/repo-projects`, background-agents CRUD/status/test/readiness, background-agent-runs list/detail, session observability/skills/managed-runtime profiles, `/api/shared/{shareId}/status` — 21 operations), plus the auth surface from `04-auth.md` section 12: `/api/auth/info` and the `/api/native-auth/complete|sign-out|bridge` routes. `getSharedChatStatus` joins the public allowlist. Ship contract tests covering connection-status, the repo dashboard, background-run detail, and shared status. Protected path: every generated-client endpoint the iOS app consumes is now documented in `apps/web/openapi.json` with spec and artifacts regenerated together.",
+          "dependsOn": ["M1-01", "M0-01", "M0-03"],
+          "docRefs": ["02-api-contract-and-networking.md", "04-auth.md"],
+          "labels": ["server", "type:feature"]
+        },
+        {
+          "key": "M1-07",
+          "title": "BotID native-client exemption and usage_events.source 'ios'",
+          "scope": "Spike how `checkBotProtection()` treats bearer-authenticated non-browser traffic on the BotID-gated routes (`POST /api/chat`, `/api/sessions`, `/api/sandbox`, `/api/generate-title`, `/api/generate-pr`, `/api/transcribe`, `/api/sessions/*/generate-commit-message`, `/api/settings/skills/generate`), then implement either a pass-through for bearer-authenticated requests or a scoped exemption per `02-api-contract-and-networking.md` section 2.5 — red-first with a route test proving a bearer request is not 403'd. Add a Drizzle migration extending the `usage_events.source` enum with `\"ios\"` (`bun run --cwd apps/web db:generate`, commit the .sql file) so native-originated turns attribute correctly. Protected path: chat send from a bearer-authenticated native client is never blocked by bot protection in production. Record the resolution so the iOS `forbidden`/`botid_blocked` error mapping has a real-world contract.",
+          "dependsOn": ["M0-01"],
+          "docRefs": ["02-api-contract-and-networking.md", "04-auth.md"],
+          "labels": ["server", "type:feature"]
+        }
+      ]
+    },
+    {
+      "key": "M2",
+      "title": "iOS foundation: scaffold, codegen, CI",
+      "goal": "Stand up the ios/ tree: XcodeGen project plus the 16-package skeleton, the checked-in generated OpenAPI client with drift scripts, the swift-format gate and one-command ios CI script, the path-filtered GitHub Actions gate, and the shared test-support package — with the monorepo isolation exit test green in both directions.",
+      "issues": [
+        {
+          "key": "M2-01",
+          "title": "ios/ scaffold: XcodeGen project, app target, and 16-package skeleton",
+          "scope": "Create the `ios/` scaffold exactly per `docs/plans/ios-app/03-architecture.md`: `ios/App/project.yml` (settings, entitlements, Info.plist keys including `CFBundleURLTypes` for the `openagents` scheme and `OpenAgentsBaseURL`), the ~30-line `OpenAgentsApp.swift`, `ios/.gitignore`, `ios/Scripts/generate-project.sh`, and all 16 local packages under `ios/Packages/*` using the two `Package.swift` templates verbatim (exact pins from section 2.3; MainActor-default vs nonisolated-default per section 12.1) with placeholder sources so every package compiles. The Observability package ships its minimal `Log`/`RequestID` API so Layer-1 packages can depend on it from day one. Acceptance: `xcodegen generate` produces a project that builds the empty app for iPhone 17 Pro and iPad Pro 13-inch simulators with zero warnings, and every package passes `swift build`. Protected path: a contributor clones, runs the generate script, and builds.",
+          "dependsOn": [],
+          "docRefs": ["03-architecture.md", "00-overview.md"],
+          "labels": ["ios", "type:feature"]
+        },
+        {
+          "key": "M2-02",
+          "title": "OpenAgentsAPI generated client package with drift scripts",
+          "scope": "Set up the checked-in generated client in `ios/Packages/OpenAgentsAPI` per `02-api-contract-and-networking.md` section 3: a vendored copy of `apps/web/openapi.json`, `openapi-generator-config.yaml` with the include-filter excluding the four hand-rolled chat operations (`postChat`, `resumeChatStream`, `stopChat`, `getChat`), `ios/Scripts/generate-api.sh` + `check-api-drift.sh` per `08-ci-cd-release.md` section 7.3, the filter-update Bun script, and committed generated sources that compile with swift-openapi-generator pinned at 1.12.2. Construct the client factory with `dateTranscoder: .iso8601WithFractionalSeconds` and add a generated-client smoke test decoding a fixture response. Protected path: P10 — regeneration from the committed spec is a no-op (drift script exits 0) and a spec change without regeneration turns the drift script red.",
+          "dependsOn": ["M2-01", "M1-01"],
+          "docRefs": [
+            "02-api-contract-and-networking.md",
+            "08-ci-cd-release.md",
+            "03-architecture.md"
+          ],
+          "labels": ["ios", "type:feature"]
+        },
+        {
+          "key": "M2-03",
+          "title": "Formatting gate, ios CI workflow, and monorepo isolation exit test",
+          "scope": "Wire the iOS gate per `08-ci-cd-release.md`: `ios/.swift-format`, `ios/Scripts/{env.sh,select-xcode.sh,install-xcodegen.sh,lint.sh,format.sh,test-unit.sh,ci.sh}` with the pinned constants, and `.github/workflows/ios-ci.yml` using the changes/ios-build-test/ios-api-drift/ios-gate job pattern so web-only PRs never spin a Mac runner. Run the section 16 exit checks: confirm web tooling (ultracite, turbo, `scripts/test-isolated.ts`) ignores `ios/**` (adding ignore entries if needed), prove T6 with one trivial iOS-only PR (web CI green and unaffected) and one spec-change-without-regeneration PR (drift red), and verify the pinned Xcode/simulator names on a real macos-26 runner, correcting `ios/Scripts/env.sh`. Also land the `ios-feature-slice.yml` issue-template variant and `docs/process/ios-gate.md` documenting `./ios/Scripts/ci.sh` as the gate. The `ios-gate` branch-protection promotion is documented as a one-time operator step once this milestone exits green.",
+          "dependsOn": ["M2-01", "M2-02"],
+          "docRefs": [
+            "08-ci-cd-release.md",
+            "06-testing-strategy.md",
+            "00-overview.md"
+          ],
+          "labels": ["ios", "type:feature"]
+        },
+        {
+          "key": "M2-04",
+          "title": "OpenAgentsTestSupport package and test plans",
+          "scope": "Create `ios/Packages/OpenAgentsTestSupport` per `06-testing-strategy.md` sections 4-5: `StubURLProtocol` with chunked SSE delivery and configurable inter-chunk delay, the mandatory chunk-boundary spike test (two SSE events delivered as two chunks must arrive as two parser emissions — record the outcome in `docs/agents/lessons-learned.md` if it fails and fall back to the FlyingFox tier), the `Tag` taxonomy, fixture loader helpers, GRDB temp-database helpers, fixed clock/locale providers, and the FlyingFox test-only dependency pinned at adoption time. Define the `UnitTests` and `UISmoke` test plans in `ios/App/project.yml` (UnitTests includes every package test target plus the snapshot target, excludes UI tests, and sets the snapshot record env to never in CI). Protected path: every deterministic test layer has shared infrastructure before the first feature test is written.",
+          "dependsOn": ["M2-01"],
+          "docRefs": ["06-testing-strategy.md", "03-architecture.md"],
+          "labels": ["ios", "type:feature"]
+        }
+      ]
+    },
+    {
+      "key": "M3",
+      "title": "Networking layer and typed facades",
+      "goal": "A middleware-driven API client with one error taxonomy, class-based timeout/retry policy, environment switching, and OpenAgentsCore domain models plus facades covering every generated-client endpoint a v1 screen consumes.",
+      "issues": [
+        {
+          "key": "M3-01",
+          "title": "APIClient networking core: sessions, middleware chain, errors, environments, RawHTTPClient",
+          "scope": "Build the networking core in `ios/Packages/APIClient` per `02-api-contract-and-networking.md` section 4: `apiSession`/`longRunningSession` (ephemeral, cookie-free, `waitsForConnectivity`, class-based timeouts), the middleware chain in fixed order (RequestID -> Auth -> EnvironmentHeaders -> Logging -> Retry), the single `APIError` taxonomy with `ConflictKind` string matching and table-driven mapping tests, per-class retry/backoff with an injected clock (mutations never auto-retried after bytes are sent; 409 sandbox-unavailable never retried), and the `RawHTTPClient` applying middlewares 1-4 to SSE/raw-body requests. Include `AppEnvironment` (production/preview/localhost, DEBUG-only picker, preview bypass header, per-environment token namespacing hook) and the `NetworkingContainer` that rebuilds the stack on environment change. AuthMiddleware tests use an in-memory `AuthTokenStore` fake asserting bearer injection, `set-auth-token` rotation persistence, and exactly-once 401 signaling. Protected path: every repository call shares one error taxonomy and one auth/rotation behavior.",
+          "dependsOn": ["M2-02", "M2-04"],
+          "docRefs": [
+            "02-api-contract-and-networking.md",
+            "03-architecture.md",
+            "07-observability.md"
+          ],
+          "labels": ["ios", "type:feature"]
+        },
+        {
+          "key": "M3-02",
+          "title": "Domain models + facades: sessions, chats, sandbox, files, diff, git",
+          "scope": "Define the `OpenAgentsCore` domain models for sessions, chats, sandbox, files, diff, and git results per `03-architecture.md` section 3.1 (wire-name properties so no CodingKeys, lenient `.unknown` enum decoding, ISO-8601 fractional dates, `JSONValue`), then build the typed facades (`SessionsAPI`, `ChatsAPI`, sandbox/files/diff/git surfaces) mapping generated `Components.Schemas.*` types to domain models strictly inside the APIClient boundary. Regenerate `ios/Packages/OpenAgentsAPI` against the spec with batches B-D landed and commit the diff. Decode recorded JSON fixtures for sessions list, chats list, sandbox status, diff, and git status through the generated client via `StubURLProtocol`. Protected path: generated types never leak above APIClient, and a server schema change breaks decoding in this layer's tests, never in UI code.",
+          "dependsOn": ["M3-01", "M1-02", "M1-03", "M1-04"],
+          "docRefs": [
+            "02-api-contract-and-networking.md",
+            "03-architecture.md"
+          ],
+          "labels": ["ios", "type:feature"]
+        },
+        {
+          "key": "M3-03",
+          "title": "Domain models + facades: settings, models, usage, GitHub, repos, background agents, shares",
+          "scope": "Extend the domain models and facades to settings/preferences, the models catalog, usage + rank, GitHub (installations, installation repos, branches, connection status, user, orgs install-status), the repo dashboard, Vercel repo-projects, background agents + runs, and shared-status surfaces, regenerating the client for batches E-F and committing the diff. Implement the `AdaptivePoller` utility encoding the section 4.5 cadence table (paused when the scene is inactive) and the 30-second NSCache dedupe for GitHub list endpoints (memory-only, never persisted). Fixture-decode tests cover preferences, models, usage, installations/repos, background-run detail, and dashboard shapes. Protected path: every endpoint a v1 screen consumes has a typed facade method with fixture-proven decoding.",
+          "dependsOn": ["M3-01", "M1-05", "M1-06"],
+          "docRefs": [
+            "02-api-contract-and-networking.md",
+            "03-architecture.md"
+          ],
+          "labels": ["ios", "type:feature"]
+        }
+      ]
+    },
+    {
+      "key": "M4",
+      "title": "iOS auth: sign-in, token custody, lifecycle",
+      "goal": "P1 protected path — sign-in (Vercel OAuth and Sign in with Apple) lands a bearer token in the Keychain that survives relaunch, rotates transparently, signs out cleanly, and never appears in a log.",
+      "issues": [
+        {
+          "key": "M4-01",
+          "title": "KeychainTokenStore and Vercel OAuth sign-in flow",
+          "scope": "Implement `KeychainTokenStore` (actor; exact attribute set from `04-auth.md` section 8.3 — generic password, AfterFirstUnlockThisDeviceOnly, never synchronizable) and the Vercel OAuth `SignInCoordinator`: `POST /api/auth/sign-in/social` for the authorize URL, `ASWebAuthenticationSession` with `.customScheme(\"openagents\")`, callback parsing per section 8.2 (ott/error/silent-cancel), the OTT verify exchange capturing `set-auth-token`, and `Origin: openagents://` on auth POSTs. Enforce the section 11 security rules: no token material in any log, `redactedForLogging` for callback URLs, cookie-free sessions, and the grep proof attached to the PR. Unit tests per section 9 cover the callback parsing matrix, Keychain round-trip, and middleware rotation. Protected path: P1 — sign-in lands a bearer token in the Keychain that authenticates `GET /api/auth/info`.",
+          "dependsOn": ["M0-01", "M3-01"],
+          "docRefs": ["04-auth.md", "03-architecture.md"],
+          "labels": ["ios", "type:feature"]
+        },
+        {
+          "key": "M4-02",
+          "title": "Native Sign in with Apple flow",
+          "scope": "Implement native Sign in with Apple per `04-auth.md` section 8.6: `AppleSignInCoordinator` generating a random nonce set verbatim on both the ASAuthorization request and the `idToken` POST body, identityToken extraction, `set-auth-token` capture into the Keychain, and `SignInWithAppleButton(.signIn)` rendered with equal prominence to the Vercel button (guideline 4.8). Handle `ASAuthorizationError.canceled` as silent cancel and surface token-exchange failures through the standard sign-in error state. Record the Apple-only-user gap (no GitHub or Vercel connections) as gating input consumed by onboarding. Protected path: a user signs in with Apple alone and reaches the signed-in state with a working bearer token.",
+          "dependsOn": ["M0-02", "M4-01"],
+          "docRefs": ["04-auth.md", "01-product-and-ux.md"],
+          "labels": ["ios", "type:feature"]
+        },
+        {
+          "key": "M4-03",
+          "title": "AuthController state machine, bootstrap, 401 handling, sign-out, dev test-auth",
+          "scope": "Implement the `AuthController` `@Observable` state machine (unknown / signedOut(reason) / signingIn / signedIn) with the `04-auth.md` section 7 bootstrap rules: Keychain read then `GET /api/auth/info` (hand-written `SessionUserInfo` until the spec covers it), dead-token Keychain clear, and network failure staying `.unknown` with cached UI (never sign out on airplane mode). Wire the 401 confirmation probe (one `/api/auth/info` recheck before sign-out, exactly once), the native sign-out flow (`POST /api/native-auth/sign-out`, Keychain clear, GRDB-nuke hook seam, `.signedOut(reason:)`), and the `onSignedOut` callback. Add the DEBUG-only local test-auth path (static `open_agents_test_user_id` cookie header against `bun run web`, ATS localhost exception, compiled out of Release). Protected path: P1 — the session survives app relaunch, and a server-side revocation produces the re-auth sheet exactly once, never a stuck state.",
+          "dependsOn": ["M4-01", "M0-03"],
+          "docRefs": ["04-auth.md", "02-api-contract-and-networking.md"],
+          "labels": ["ios", "type:feature"]
+        }
+      ]
+    },
+    {
+      "key": "M5",
+      "title": "Design system and app shell",
+      "goal": "Tokens and chrome exist; the app boots into signed-out onboarding or the four-tab shell with typed routing, deep links, and destination-preserving sign-in gates.",
+      "issues": [
+        {
+          "key": "M5-01",
+          "title": "DesignSystem package: tokens, components, contrast tests, snapshots",
+          "scope": "Build `ios/Packages/DesignSystem` per `01-product-and-ux.md` section 3: the 12 asset-catalog color sets exposed as named tokens with a WCAG-AA contrast unit test in both modes, typography/spacing/radius tokens, and the shared components (`StatusDot`, `PillLabel`, `EmptyStateView`, `GlassComposerContainer`) honoring the Liquid Glass usage map (glass only on mapped chrome; content always opaque; never glass-on-glass). Ship the `DesignSystemGallery` preview plus snapshot baselines in canonical and dark variants, and add the grep-lint rule (no hex, `Font.system(size:)`, or `Color(red:)` outside this package) to `ios/Scripts/ci.sh`. Protected path: U8 groundwork — every later screen consumes tokens by name only and status is always icon + word + color.",
+          "dependsOn": ["M2-01", "M2-04"],
+          "docRefs": [
+            "01-product-and-ux.md",
+            "03-architecture.md",
+            "06-testing-strategy.md"
+          ],
+          "labels": ["ios", "type:feature"]
+        },
+        {
+          "key": "M5-02",
+          "title": "AppShell composition root: tabs, typed router, deep links, scene-phase hooks",
+          "scope": "Build the AppShell composition root per `03-architecture.md` sections 8-10: `AppEnvironment.live()/.preview()`, `AppRouter` with typed route arrays (`NavigationPath` banned), the four-tab labeled `TabView` with per-tab `NavigationStack`s, `RootView` switching on auth state, all `navigationDestination` registrations with constructor-injected stores, and cross-feature navigation closures (features never import features). Implement `DeepLink` parsing in OpenAgentsCore with exhaustive unit tests for every section 10.6 row, `onOpenURL` dispatch giving AuthKit first refusal, and the scene-phase reconciliation hooks (foreground refresh and poller pause seams). Protected path: a deep link to a session, chat, or run lands on the right tab and stack from any app state.",
+          "dependsOn": ["M5-01", "M4-03"],
+          "docRefs": ["03-architecture.md", "01-product-and-ux.md"],
+          "labels": ["ios", "type:feature"]
+        },
+        {
+          "key": "M5-03",
+          "title": "Onboarding screens: Welcome, auth progress, sign-in gate, Connect GitHub",
+          "scope": "Implement the onboarding flow per `01-product-and-ux.md` section 8 and SCR-01/02/03/51: the Welcome wall with Sign in with Apple + Continue with Vercel (offline and error footnotes, exact copy), the non-blank Auth In Progress state that survives process death, the deep-link Sign-in Gate preserving destinations (lesson B12 — never silently bounce), and Connect GitHub driven by `GET /api/github/connection-status` with the bridge-route `ASWebAuthenticationSession` hop, the `request_sent` admin-pending state, and a 'Not now' path into a usable Chat-Only app. Snapshot all four screens and wire the DEBUG launch-environment seam so XCUITest can bypass the real OAuth dance. Protected path: U1 — first launch to signed-in inbox in under a minute with zero premature permission prompts.",
+          "dependsOn": ["M5-02", "M4-02", "M3-03"],
+          "docRefs": ["01-product-and-ux.md", "04-auth.md"],
+          "labels": ["ios", "type:feature"]
+        }
+      ]
+    },
+    {
+      "key": "M6",
+      "title": "Read-only core: persistence, inbox, transcripts",
+      "goal": "P2/P9 — a cache-first session inbox, session creation, and offline-readable transcripts that render every persisted message part type from GRDB before the network answers.",
+      "issues": [
+        {
+          "key": "M6-01",
+          "title": "PersistenceKit: GRDB schema v1, caches, nuke, pruning",
+          "scope": "Implement `PersistenceKit` migration v1 per `03-architecture.md` section 9: all eleven tables with the exact column lists, indexes, and FK-cascade creation order, internal record types, and cache APIs (`replaceAll` deleting absent ids without clobbering `detailJson`, targeted upserts, `ValueObservation` AsyncSequences with `removeDuplicates`), plus `chatDraft`/`syncState`/`appMeta`, `nuke()`, the account-id-mismatch guard, launch pruning (50 recent chats, 7-day repos), and DEBUG `eraseDatabaseOnSchemaChange`. Wire `auth.onSignedOut` to the nuke. Swift Testing round-trips run on in-memory databases on the macOS host. Protected path: P9 — cached rows survive relaunch, and sign-out or account switch provably wipes them.",
+          "dependsOn": ["M3-02"],
+          "docRefs": ["03-architecture.md"],
+          "labels": ["ios", "type:feature"]
+        },
+        {
+          "key": "M6-02",
+          "title": "Sessions inbox (SCR-10) with cache-first rendering and polling",
+          "scope": "Build the Sessions inbox per `01-product-and-ux.md` SCR-10: an app-scoped `SessionListStore` polling `GET /api/sessions` at 3 s while any session streams else 30 s (paused when backgrounded), a repo-grouped list with Active/Archive counts, status glyphs (streaming pulse, unread dot, PR-state icon), bottom-aligned search, swipe rename/archive with optimistic writes and revert-on-failure, archived-tab offset pagination, and the full state set (skeletons, the invitation empty state with three suggestion chips, offline cached list + amber banner). Cold launch renders from GRDB before the first network response (U2), and renames propagate to any open chat header (lesson B15). Protected path: P2 — a signed-in user sees their sessions instantly and opens one.",
+          "dependsOn": ["M6-01", "M5-02"],
+          "docRefs": [
+            "01-product-and-ux.md",
+            "02-api-contract-and-networking.md",
+            "03-architecture.md"
+          ],
+          "labels": ["ios", "type:feature"]
+        },
+        {
+          "key": "M6-03",
+          "title": "New Session flow (SCR-11): repo picker, branch picker, error matrix",
+          "scope": "Build New Session per `01-product-and-ux.md` SCR-11: the two-mode control with one-line captions that never resets repo selection (lesson B13), the searchable repo picker with org filter, private-repo locks, reconnect-required banner, and a 'Manage repository access' escape hatch, the branch picker defaulting to 'New branch (auto)' with the branch-safety caption (lesson B10), the optional title field, and the prompt field with a mic affordance stub. Wire `POST /api/sessions` and hand the first message to the chat send interface (a stub until M7 lands is acceptable behind the same protocol). Cover the full error matrix: validation alerts with server messages, 429 session-rate copy, 403 bot-protection copy, and the offline-disabled form. Protected path: P6 — a user creates a repo-backed session and lands in its chat.",
+          "dependsOn": ["M6-02", "M3-03"],
+          "docRefs": [
+            "01-product-and-ux.md",
+            "02-api-contract-and-networking.md"
+          ],
+          "labels": ["ios", "type:feature"]
+        },
+        {
+          "key": "M6-04",
+          "title": "Chat history models, GRDB message cache, read receipts",
+          "scope": "Implement the hand-rolled chat history layer per `05-streaming-chat-engine.md` sections 1.6 and 6: `UIMessage`/`UIMessagePart` Codable models that round-trip every part type byte-identically including unknown parts (raw payload retention), the `GET /api/sessions/{sessionId}/chats/{chatId}` snapshot fetch over `RawHTTPClient`, and the `chat_message` GRDB write points (snapshot replace preserving `pending_send`/`failed_send` outbox rows, position renumbering on every refetch). Add read receipts (`POST .../read` on open and foreground with a 3 s throttle) and the per-chat draft store. Round-trip tests decode and re-encode recorded history fixtures byte-equal. Protected path: history echo-back fidelity — what we persist is exactly what we can POST back in `messages`.",
+          "dependsOn": ["M6-01", "M3-02"],
+          "docRefs": [
+            "05-streaming-chat-engine.md",
+            "02-api-contract-and-networking.md",
+            "03-architecture.md"
+          ],
+          "labels": ["ios", "type:feature"]
+        },
+        {
+          "key": "M6-05",
+          "title": "Read-only transcript: markdown, code blocks, reasoning, chat shell",
+          "scope": "Render the read-only transcript per `01-product-and-ux.md` sections 5.5/5.7: `ChatScreen` reachable from the inbox with instant GRDB-cached render, `MessageRow` per message, progressive-Markdown blocks via apple/swift-markdown cached per completed message, CodeUI's `CodeBlockView` (Highlightr actor off-main, two token-tied themes, >40-line collapse, copy button with checkmark swap), GFM tables/blockquotes/headings/links/images, collapsed reasoning parts, and user bubbles versus bubble-less assistant text. Include the archived banner ('Unarchive to resume'), the offline cached banner, and empty-chat suggestion chips. Snapshot the required transcript states. Protected path: P9/P5 — a transcript with text, code, and reasoning renders correctly offline from cache.",
+          "dependsOn": ["M6-04", "M5-01"],
+          "docRefs": [
+            "01-product-and-ux.md",
+            "03-architecture.md",
+            "05-streaming-chat-engine.md"
+          ],
+          "labels": ["ios", "type:feature"]
+        },
+        {
+          "key": "M6-06",
+          "title": "Tool rows, data-part chips, and message badges",
+          "scope": "Render tool and data parts per `01-product-and-ux.md` section 5.4 and `05-streaming-chat-engine.md` section 1.6: 44-pt collapsed tool rows with the fixed kind-symbol map and status icon + word + color, tap-to-expand stdout mini code blocks with errors auto-expanded, the consecutive-tool group summary header ('Ran {n} tools · {e} edits · {r} reads'), `dynamic-tool` support without a hardcoded tool-name enum, data-commit/data-pr/data-snippet chips with pending-to-resolved states, unknown parts rendered as generic chips (never dropped), and assistant footer duration/cost/model badges with the cost-context popover (lesson B9). Apply the section 7.2 accessibility labels and add canonical/dark/ax3 snapshots. Protected path: P5 — every persisted part type in the fixture set renders without crashes or blank rows.",
+          "dependsOn": ["M6-05"],
+          "docRefs": [
+            "01-product-and-ux.md",
+            "05-streaming-chat-engine.md",
+            "06-testing-strategy.md"
+          ],
+          "labels": ["ios", "type:feature"]
+        }
+      ]
+    },
+    {
+      "key": "M7",
+      "title": "Streaming chat engine",
+      "goal": "T3/U3/U4 — a deterministic, fixture-proven SSE engine: decode every ai@6.0.168 chunk type, reduce to messages off-main, resume by rebuilding from scratch, and render the live run at 60 fps with zero duplicated or lost content.",
+      "issues": [
+        {
+          "key": "M7-01",
+          "title": "SSE line parser, lenient chunk decoder, recorded fixture catalog",
+          "scope": "Implement `parseSSELine` and the lenient `UIMessageChunk` union decoding all 26 chunk shapes from `05-streaming-chat-engine.md` section 1.4 (discriminated on `type`, arbitrary JSON to `JSONValue`, the `data-*` prefix family, and an `.unknown(type:)` fallback that never throws), plus the recorded-fixture infrastructure: the capture and sanitize scripts per section 8.1 and the 14-fixture catalog per section 8.2 committed with metadata and a Fixtures README. Parser edge-case tests cover `data:` spacing, `[DONE]`, comment lines, CRLF, malformed-JSON skip, and payloads split across byte-chunk boundaries. If local capture hits a BotID 403, resolve via the M1-07 workstream rather than hand-editing fixtures. Protected path: T3 — every chunk type the server emits decodes against true server bytes, and unknown types are skipped, never fatal.",
+          "dependsOn": ["M2-04", "M3-02"],
+          "docRefs": ["05-streaming-chat-engine.md", "06-testing-strategy.md"],
+          "labels": ["ios", "type:feature"]
+        },
+        {
+          "key": "M7-02",
+          "title": "ChatTurnState reducer with golden and replay-idempotence tests",
+          "scope": "Implement the pure `ChatTurnState.apply` reducer per `05-streaming-chat-engine.md` section 4: the full chunk-to-mutation table, the assistant-message continuation rule, per-turn tool registries with `finish-step` clearing of text/reasoning registries only, data-part replace-by-id, the transient-data callback (workspace-status never persisted), deep-merged metadata, and the tool-part state machine including approval states. Golden tests byte-compare canonical JSON against committed `.expected.json` for every fixture, with the env-gated record mode, the replay-idempotence test (apply twice plus rebuild-from-history all byte-equal), and the round-trip test. Protected path: U3/U4 core — fixture replay produces a stable, duplicate-free transcript regardless of how many times chunks are applied.",
+          "dependsOn": ["M7-01", "M6-04"],
+          "docRefs": ["05-streaming-chat-engine.md"],
+          "labels": ["ios", "type:feature"]
+        },
+        {
+          "key": "M7-03",
+          "title": "ChatStreamClient actor: connect, resume probe, stop semantics, error mapping",
+          "scope": "Implement the `ChatStreamClient` actor per `05-streaming-chat-engine.md` section 3: `postTurn`/`resume`/`cancelActiveConnection` over the dedicated streaming session (600 s idle timeout), the mandatory `x-vercel-ai-ui-message-stream: v1` assertion, 204 no-active-stream handling, the `ChatStreamError` taxonomy with its full handling matrix, and stop semantics (fire-and-forget `POST /api/chat/{chatId}/stop` carrying the in-flight snapshot, the `userStopped` flag, instant local cancel) kept distinct from navigation-away cancellation which never stops the server run. Capture `x-workflow-run-id`/`x-request-id` onto the connection for attribution. Tests run against `StubURLProtocol` chunked replays including cancellation mid-stream. Protected path: stop is instant, preserves partial output, and suppresses reconnects until the next send.",
+          "dependsOn": ["M7-01", "M3-01"],
+          "docRefs": [
+            "05-streaming-chat-engine.md",
+            "02-api-contract-and-networking.md",
+            "07-observability.md"
+          ],
+          "labels": ["ios", "type:feature"]
+        },
+        {
+          "key": "M7-04",
+          "title": "ChatRuntime, registry, send flow, and GRDB write points",
+          "scope": "Implement `ChatRuntime`/`ChatRuntimeRegistry` and the send flow per `05-streaming-chat-engine.md` sections 5 and 6.3: optimistic user-message insert with `pending_send` flipping to `synced` on the `start` chunk, the section 5.3 rollback matrix (failed badge with Retry/Delete, 409 attach-to-active-run, composer text restoration — typed content is never lost), 75 ms coalesced snapshot flushes to the main actor, the `effectiveStatus` blend with server `isStreaming`, auto-resubmit per `shouldAutoSubmit` with the 5-run guard, and the first-message `POST /api/generate-title` + session PATCH. The registry keeps streaming runtimes alive across navigation and evicts idle ones on memory warnings and scene background. GRDB write-point tests prove no writes occur between flush boundaries. Protected path: P3 — send a message, watch the reply stream, and never lose typed content on failure.",
+          "dependsOn": ["M7-02", "M7-03", "M6-04"],
+          "docRefs": ["05-streaming-chat-engine.md", "03-architecture.md"],
+          "labels": ["ios", "type:feature"]
+        },
+        {
+          "key": "M7-05",
+          "title": "Resume, reconnect, and app-lifecycle reconciliation (U4)",
+          "scope": "Implement resume per `05-streaming-chat-engine.md` section 2: rebuild-from-scratch on every 200 replay (fresh `ChatTurnState` seeded with persisted history, replace-by-messageId on first flush, never append across reconnects), the 204 path refetching the chat snapshot and reconciling GRDB while preserving the outbox, the full reconnect trigger table (foreground, `NWPathMonitor` regain, dirty-EOF backoff with jitter and `userStopped` suppression, the 0/1/2.5/5.5/10 s mount probe schedule, the 300 s watchdog probing `isStreaming`), and backgrounding behavior (≤5 s drain budget, `partial_stream` snapshot, stream task cancel). Never re-POST `/api/chat` as a reconnect strategy. Land the named U4 deterministic regression: background mid-stream, foreground, replay fixture 07 — zero duplicated or lost content. Protected path: U4/P4.",
+          "dependsOn": ["M7-04"],
+          "docRefs": [
+            "05-streaming-chat-engine.md",
+            "02-api-contract-and-networking.md"
+          ],
+          "labels": ["ios", "type:feature"]
+        },
+        {
+          "key": "M7-06",
+          "title": "Run-watching UI: streaming render, scroll rules, stop, status strip, perf budget",
+          "scope": "Build the run-watching UI per `01-product-and-ux.md` sections 5.2-5.3 and 9: the shimmer placeholder, the block-caret overlay (never inside `Text`), the frozen-block/live-tail Markdown strategy with highlight-on-freeze, the exact scroll-anchoring rules with the S5 jump-to-now pill, the elapsed timer from the first second with `monospacedDigit`, the stop button on the app's only tinted glass capsule, the S4 completion fold-in (tool summary, badges, View diff/Open PR chips, exactly one success/error haptic), and the S2 heartbeat status strip (`TabViewBottomAccessory`) shown whenever a chat streams while the user is elsewhere. Enforce one alive indicator on screen and no per-token animation (P2). Run the XCTest measure throughput check (≥5,000 chunks/s on fixture 04) and a manual Instruments hang pass. Protected path: U3 — chunk arrival to rendered update within 200 ms at a sustained 60 fps.",
+          "dependsOn": ["M7-05", "M6-06"],
+          "docRefs": ["01-product-and-ux.md", "05-streaming-chat-engine.md"],
+          "labels": ["ios", "type:feature"]
+        }
+      ]
+    },
+    {
+      "key": "M8",
+      "title": "Interaction: composer, approvals, chat management",
+      "goal": "U5 — compose with attachments and voice, answer AskUserQuestion prompts and edit approvals in two taps or fewer, switch models per chat, and manage chats and messages without ever stranding the composer.",
+      "issues": [
+        {
+          "key": "M8-01",
+          "title": "Composer: anatomy, attachments, drafts, queued sends, S1 liftoff",
+          "scope": "Build the composer per `01-product-and-ux.md` section 5.1: a single glass container with attach/field/mic/send anatomy, 1-to-6 line growth, GRDB-debounced drafts restored across launches, the exact v1 `+` menu (Photo Library / Take Photo / Paste as File with >2,000-character auto-conversion and toast), attachment chips with 44-pt remove targets, the queued-send chip while a run streams (the field never disables), `Cmd+Enter` send, the send-to-stop symbol swap, and the S1 'Liftoff' matchedGeometry send with its single light-impact haptic. Image attachments downscale to 1600 px and travel as data-URL file parts; failed sends badge with tap-to-retry per section 5.8. Protected path: lesson B3 — the composer is never dead; enablement derives from observable run state and re-evaluates on every foreground.",
+          "dependsOn": ["M7-06"],
+          "docRefs": ["01-product-and-ux.md", "05-streaming-chat-engine.md"],
+          "labels": ["ios", "type:feature"]
+        },
+        {
+          "key": "M8-02",
+          "title": "Voice dictation via /api/transcribe",
+          "scope": "Implement voice dictation per `01-product-and-ux.md` section 5.1: the mic button starts recording with a `.start` haptic and a live waveform in the field area, posts audio to `POST /api/transcribe` (base64 body; handle 413 over 10 MiB and the 5-per-minute 429), inserts the transcript at the caret without ever auto-sending, and discards the recording with the failure toast on error. Add the `NSMicrophoneUsageDescription` key and ensure the first permission prompt appears only on the first mic tap (onboarding rule: no premature prompts). Reuse the same dictation path from the SCR-11 prompt field. Protected path: a user dictates a prompt end-to-end and edits it before sending.",
+          "dependsOn": ["M8-01", "M1-05"],
+          "docRefs": [
+            "01-product-and-ux.md",
+            "02-api-contract-and-networking.md"
+          ],
+          "labels": ["ios", "type:feature"]
+        },
+        {
+          "key": "M8-03",
+          "title": "AskUserQuestion morph and edit-approval cards (U5)",
+          "scope": "Implement the two unblock interactions per `01-product-and-ux.md` sections 5.4 and 9 (S3): the composer morphs into the AskUserQuestion wizard (1-4 questions, option chips or free text, draft preserved and restored) whose answer locally flips the `tool-ask_user_question` part to `output-available` with the `{answers}` payload, fire-and-forget persists the snapshot via `POST .../messages` (tolerating 409), and lets auto-resubmit continue the run; and the edit-approval card on tool rows rendering the proposed diff with Approve/Deny posting `addToolApprovalResponse`, the medium-impact arrival haptic, and posting-failure re-enable with inline retry. Engine-level tests drive fixture 05 through the full round trip; snapshots cover both surfaces. Note: the reducer already models approval states per `05-streaming-chat-engine.md` section 1.5 — this issue adds only UI and response plumbing. Protected path: U5 — a blocking prompt is answered in two taps or fewer and the run continues.",
+          "dependsOn": ["M8-01", "M7-05"],
+          "docRefs": ["01-product-and-ux.md", "05-streaming-chat-engine.md"],
+          "labels": ["ios", "type:feature"]
+        },
+        {
+          "key": "M8-04",
+          "title": "Model picker, run options, and session info sheets (SCR-13/14/15)",
+          "scope": "Build the per-chat configuration sheets per `01-product-and-ux.md`: the SCR-14 model picker (curated 'Your models' first, full catalog behind a disclosure, search, cost/context captions, the unavailable-current-model row, single-tap selection persisted via the chat PATCH with revert toast — the touch path is the tested path, lesson B5), the SCR-15 run options sheet (read-only Tools/Composio and Runtime rows with web-managed footers, auto-commit and auto-PR toggles with the dependency footnote per lesson B7), and the SCR-13 session info & chat switcher (inline rename, copyable repo/branch rows, chats list with model pills and streaming dots, New Chat using the client-UUID idempotent create, Archive with confirmation dialog and warning haptic). Protected path: P7 slice — a model switch round-trips to the server and survives reopening the sheet.",
+          "dependsOn": ["M6-06", "M3-03"],
+          "docRefs": [
+            "01-product-and-ux.md",
+            "02-api-contract-and-networking.md"
+          ],
+          "labels": ["ios", "type:feature"]
+        },
+        {
+          "key": "M8-05",
+          "title": "Message actions: copy, share, fork, edit & resend",
+          "scope": "Implement message actions per `01-product-and-ux.md` section 5.9: the long-press context menu with Copy, Share, Fork-from-here on assistant messages (`POST .../fork` then navigate to the new chat), and Edit & resend on user messages (confirmation dialog, `DELETE .../messages/{messageId}` applying the returned `deletedMessageIds` to the GRDB cache, text restored to the composer), plus deletion of failed-send rows. Handle the 409 cannot-delete-while-streaming conflict with the standard copy and disable the action while a run streams. Tests cover cascade application against the cache. Protected path: editing a message never strands the transcript in a mixed local/server state.",
+          "dependsOn": ["M7-04", "M6-06"],
+          "docRefs": [
+            "01-product-and-ux.md",
+            "02-api-contract-and-networking.md"
+          ],
+          "labels": ["ios", "type:feature"]
+        }
+      ]
+    },
+    {
+      "key": "M9",
+      "title": "Ship code: sandbox, files, diff, commit, PR",
+      "goal": "U6/U7 — review diffs (including cached offline), commit and push, open and merge PRs, and resume paused workspaces with one tap — every sandbox-dependent surface degrades to cached content plus a Resume CTA, never a blank screen.",
+      "issues": [
+        {
+          "key": "M9-01",
+          "title": "Workspace status row and sandbox lifecycle surface",
+          "scope": "Make sandbox lifecycle a first-class surface per `01-product-and-ux.md` SCR-12: the workspace status row (Creating / Active auto-hide / Paused + Resume / Resuming / Failed + Retry, always glyph + word + color) driven by `GET /api/sandbox/status` polling with the ≥5 s throttle and `lifecycleVersion` change detection, `GET /api/sandbox/reconnect` once on session entry, one-tap resume via `PUT /api/sandbox/snapshot`, extend support, and the throttled activity ping on composer focus. Map every 409 sandbox-unavailable `APIError` to the global Resume affordance — never a raw error string (lesson B14). Countdown math uses server-time deltas, never the device clock. Protected path: U7 — returning to a paused workspace always shows cached content plus one-tap Resume.",
+          "dependsOn": ["M6-05", "M3-02"],
+          "docRefs": [
+            "01-product-and-ux.md",
+            "02-api-contract-and-networking.md"
+          ],
+          "labels": ["ios", "type:feature"]
+        },
+        {
+          "key": "M9-02",
+          "title": "Git panel container, Files browser, and File Viewer (SCR-16a/16b)",
+          "scope": "Build the Git panel container per `01-product-and-ux.md` SCR-16 (segmented Files | Diff | Changes | PR as a full-height sheet on compact, every segment failure-isolated per lesson B2) with the Files browser (SCR-16a: disclosure tree from `GET .../files`, modified-file dots, malformed entries skipped without crashing the panel) and the File Viewer (SCR-16b: monospaced content from `files/content`, middle-truncated copyable path, Raw/Pretty toggle for markdown, binary/too-large/empty states). Paused-workspace states show the GRDB-cached tree and content with the amber banner plus Resume — the fallback the web file viewer lacks (lesson B14). Add the 'Code' toolbar entry with a changed-file count badge on SCR-12. Protected path: a Files failure never takes down Diff or the chat.",
+          "dependsOn": ["M9-01", "M6-05"],
+          "docRefs": [
+            "01-product-and-ux.md",
+            "02-api-contract-and-networking.md"
+          ],
+          "labels": ["ios", "type:feature"]
+        },
+        {
+          "key": "M9-03",
+          "title": "Diff tab with cached-offline fallback (SCR-16c)",
+          "scope": "Build the Diff tab on CodeUI's structured `UnifiedDiffView` per `01-product-and-ux.md` section 5.6 (DiffHunk/DiffLine model — never colored raw text — fixed-width gutters, intraline spans, per-hunk Added/Removed badges under Differentiate Without Color): the scope control Uncommitted vs All-changes with the 'vs origin/{base}' footer, per-file +/- counts with sticky headers and the file-jump toolbar menu, generated/lock-file collapse, single-file discard with confirmation via `git/discard`, and the offline fallback from `GET .../diff/cached` with the amber stale banner and Resume CTA. Tool-card 'View diff' chips deep-link here filtered to a file. Snapshot the cached/offline state. Protected path: U7/P5 — the diff renders for a real session including the cached-offline state.",
+          "dependsOn": ["M9-02"],
+          "docRefs": [
+            "01-product-and-ux.md",
+            "02-api-contract-and-networking.md",
+            "03-architecture.md"
+          ],
+          "labels": ["ios", "type:feature"]
+        },
+        {
+          "key": "M9-04",
+          "title": "Commit & Push with base-branch guard (SCR-16d)",
+          "scope": "Build the Changes segment per `01-product-and-ux.md` SCR-16d: the changed-file summary from `git/status`, the optional commit message field with the AI Generate button (editable result from `/generate-commit-message`, 10/min rate-limit copy), Commit & Push via `POST git/commit` surfacing the in-200 `error` field as result-state rather than a thrown error, the base-branch guard card with Create Branch (`POST git/branch`, lesson B10 branch-safety copy), the 'Pushed {shortSHA}' success pill with GitHub link (no success haptic — run completion owns it), and the paused-workspace disabled state with Resume. Protected path: U6 slice — commit and push round-trips from the phone with an honest success or failure signal.",
+          "dependsOn": ["M9-02"],
+          "docRefs": [
+            "01-product-and-ux.md",
+            "02-api-contract-and-networking.md"
+          ],
+          "labels": ["ios", "type:feature"]
+        },
+        {
+          "key": "M9-05",
+          "title": "PR surface: create, checks, merge, Squash & Archive, fix hand-backs (SCR-16e)",
+          "scope": "Build the PR segment per `01-product-and-ux.md` SCR-16e: the locked-until-commit card with its reason, Create PR with AI title/body (`git/pr/generate`) and a Draft toggle, the PR header with status badge and GitHub link, the checks list (icon + word + color per check), `git/pr/readiness` polling at 5 s while the panel is open, the merge panel (squash/merge/rebase method menu, delete-branch toggle, Squash & Archive that merges then archives the session), close & archive, Fix Errors (`POST .../checks/fix` handing failures back to the agent) and Fix Conflicts actions, and the deployment-URL preview link. Merge failures surface server messages inline with Retry; offline shows cached PR state read-only. Protected path: U6 — a user ships a PR (create, checks green, squash-merge, archive) entirely from the phone.",
+          "dependsOn": ["M9-04"],
+          "docRefs": [
+            "01-product-and-ux.md",
+            "02-api-contract-and-networking.md"
+          ],
+          "labels": ["ios", "type:feature"]
+        }
+      ]
+    },
+    {
+      "key": "M10",
+      "title": "Monitoring and secondary surfaces",
+      "goal": "The remaining v1 surfaces: repos tab, background-agent monitoring, share links and the public viewer, the settings subset with in-app alerts, account management with deletion, and usage glances.",
+      "issues": [
+        {
+          "key": "M10-01",
+          "title": "Repos tab: list and failure-isolated repo dashboard (SCR-20/21)",
+          "scope": "Build the Repos tab per `01-product-and-ux.md`: SCR-20 list grouped by org from installations/repos with private locks, active-session counts, search, the connect-GitHub empty state, and the reconnect-required banner; and SCR-21 repo dashboard from `GET /api/repos/{owner}/{repo}/dashboard` with failure-isolated cards (Sessions, Open PRs, Background Agents with enable toggles, Recent Runs) where each card loads and errors independently (lesson B2), plus the New Session CTA prefilled with the repo. Cross-tab navigation (open session, open run) uses AppShell-injected closures. Protected path: a repo-first user reaches an existing session or starts a new one in two taps.",
+          "dependsOn": ["M5-02", "M3-03"],
+          "docRefs": [
+            "01-product-and-ux.md",
+            "02-api-contract-and-networking.md"
+          ],
+          "labels": ["ios", "type:feature"]
+        },
+        {
+          "key": "M10-02",
+          "title": "Agents tab: run feed, agent detail, run detail with proof grid (SCR-30/31/32)",
+          "scope": "Build the Agents tab per `01-product-and-ux.md`: SCR-30 home with the reverse-chron run feed and per-agent rows with enable toggles (`PATCH /api/background-agents/{agentId}` with revert-on-failure toast), SCR-32 read-only agent detail with the derived-permission explanation copy (lesson B20) and Run Test dispatch navigating to the run, and SCR-31 run detail — the proof grid, live timeline polled at 2 s while queued/running, stdout/stderr code blocks with failed-run stderr auto-expanded (P5), output Open links, and copyable debug IDs. Authoring stays on the web with explicit link-outs; offline shows the cached snapshot with polling suspended. Protected path: a user monitors a background run to completion and reads its failure evidence on the phone.",
+          "dependsOn": ["M5-02", "M3-03"],
+          "docRefs": [
+            "01-product-and-ux.md",
+            "02-api-contract-and-networking.md"
+          ],
+          "labels": ["ios", "type:feature"]
+        },
+        {
+          "key": "M10-03",
+          "title": "Sharing: share-link sheet and public shared-chat viewer (SCR-17/50)",
+          "scope": "Build sharing per `01-product-and-ux.md`: the SCR-17 sheet (explanation-first copy about link visibility and env redaction, create/copy/revoke with a confirmation that always offers Cancel per lesson B19, the system share sheet including the Markdown-transcript item via the raw `GET /api/shared/{shareId}/markdown` client) and the SCR-50 public shared-chat viewer — signed-out capable, transcript reusing the read-only renderers, repo/branch/PR badges, the 3 s status poll with playful status word and elapsed timer while live, the owner banner, and the 404-revoked state. Wire `/shared/{shareId}` links to open SCR-50 with no auth gate (custom-scheme and in-app routing until the AASA lands in M13-02). Protected path: a recipient opens a share link on a phone with no account and reads the full chat.",
+          "dependsOn": ["M6-06", "M3-03", "M5-02"],
+          "docRefs": [
+            "01-product-and-ux.md",
+            "02-api-contract-and-networking.md"
+          ],
+          "labels": ["ios", "type:feature"]
+        },
+        {
+          "key": "M10-04",
+          "title": "Settings core, preferences, default model, App Lock, in-app alerts (SCR-40/42/44/46)",
+          "scope": "Build the Settings core per `01-product-and-ux.md`: SCR-40 root with grouped sections, the copyable version/build footer, the App Lock Face ID toggle (`LocalAuthentication`), and the Open Web Settings link-out for everything not on iOS; SCR-42 preferences (diff style with the iPhone-always-unified footer, auto-commit/auto-PR with dependency gating per lesson B7, appearance picker) writing through `PATCH /api/settings/preferences` with revert-on-failure toasts; and SCR-44 default model reusing the picker. Include the v1 notifications story: SCR-46 rendered as in-app alert toggles (`alertsEnabled`), foreground-polling completion alerts driven by the app-scoped sessions poll, and the post-first-send 'Notify me' card that collapses permanently on Not now (APNs is deferred per `00-overview.md` section 4). Protected path: P7 — settings persist across relaunch and every failed write visibly reverts.",
+          "dependsOn": ["M5-02", "M3-03", "M6-02"],
+          "docRefs": [
+            "01-product-and-ux.md",
+            "02-api-contract-and-networking.md",
+            "00-overview.md"
+          ],
+          "labels": ["ios", "type:feature"]
+        },
+        {
+          "key": "M10-05",
+          "title": "Account surfaces: profile, connections, delete account (SCR-41/43/47)",
+          "scope": "Build the account surfaces per `01-product-and-ux.md` and `04-auth.md` section 8.9: SCR-41 profile (Vercel-synced identity, the usage snapshot card, the public-usage-profile toggle with Copy Public Link, Sign Out with confirmation), SCR-43 connections (GitHub status / Connect / Reconnect / Disconnect with cancel-always-present dialogs, Manage repository access via the bridge-route browser session, the Vercel managed read-only card), and SCR-47 delete account (the exact warning copy, typed-DELETE confirmation, `POST /api/auth/delete-user`, the stale-session re-auth-then-retry-once branch, full local wipe back to SCR-01). Protected path: P8 — a user deletes their account entirely in-app, satisfying App Store guideline 5.1.1(v).",
+          "dependsOn": ["M10-04", "M4-03", "M0-03"],
+          "docRefs": ["01-product-and-ux.md", "04-auth.md"],
+          "labels": ["ios", "type:feature"]
+        },
+        {
+          "key": "M10-06",
+          "title": "Usage screen with heatmap and rank (SCR-45)",
+          "scope": "Build the Usage screen per `01-product-and-ux.md` SCR-45: the 7D/30D/All range control mapping to the `from`/`to` query pair, headline cards (tokens, cost, messages, tool calls — all monospaced digits), the Swift Charts contribution heatmap with an accessible summary alternative ('Most active day: …'), the insights rows (tracked PRs, merge rate, largest turn, averages, cache-hit ratio), and the rank row hidden when `GET /api/usage/rank` returns null. Cache for offline reading with the standard amber banner; the empty state invites starting a session. Protected path: usage glances load in one tap from Settings and the Profile snapshot card.",
+          "dependsOn": ["M10-04", "M3-03"],
+          "docRefs": [
+            "01-product-and-ux.md",
+            "02-api-contract-and-networking.md"
+          ],
+          "labels": ["ios", "type:feature"]
+        }
+      ]
+    },
+    {
+      "key": "M11",
+      "title": "Observability hardening",
+      "goal": "Discipline-grade client observability: structured redacted events with server-joinable correlation IDs, a bounded diagnostics pipeline with in-app export, and the crash/metrics/analytics stack measuring the U9 crash-free criterion.",
+      "issues": [
+        {
+          "key": "M11-01",
+          "title": "Structured event emitter, correlation IDs, and Redactor port",
+          "scope": "Implement the observability core per `07-observability.md`: the `LogEvent`/`EventLogging` emitter formatting snake_case key=value lines over the six fixed categories, the complete section 4 event vocabulary wired into the existing auth/api/stream/db/ui/bg call sites, `CorrelationMiddleware` stamping `x-request-id: ios.<lowercase-uuid>` and capturing echoed ids (plus the stream client's `x-workflow-run-id` capture and attribution row), `StreamMetricsRecorder` (TTFB/TTFT/gap percentiles), and the `Redactor` port of `apps/web/lib/harness/redaction.ts` with the parity fixture suite and an OSLog privacy-annotation audit (tokens, prompt content, diff hunks never logged at any level). Error kinds stay byte-identical to the section 6 table shared with `APIError`. Protected path: any device report joins to `session_events` and harness logs on `request_id`.",
+          "dependsOn": ["M3-01", "M7-03"],
+          "docRefs": [
+            "07-observability.md",
+            "02-api-contract-and-networking.md"
+          ],
+          "labels": ["ios", "type:feature"]
+        },
+        {
+          "key": "M11-02",
+          "title": "Ring buffer, debug console, and diagnostic bundle export",
+          "scope": "Implement on-device diagnostics per `07-observability.md` section 10: the bounded `RingBufferLog` (2,000 entries x 4,000 chars, backup-excluded, coalesced writes), `OSLogStoreReader`, the debug console screen (merged ring-buffer/OSLog view, category and level filters, search, version-row five-tap entry, DEBUG-only verbose toggle), and the `ios_debug_bundle` v1 builder with ShareLink export, the redaction-blocked refusal path, and the optional server debug-link pairing via `POST .../debug-bundle`. Export emits its own `ui_diagnostics_exported` event; no automatic upload, ever. Protected path: a TestFlight user can export a bounded, redacted diagnostic bundle that support can join to server logs on request_id/chat_id.",
+          "dependsOn": ["M11-01"],
+          "docRefs": ["07-observability.md", "01-product-and-ux.md"],
+          "labels": ["ios", "type:feature"]
+        },
+        {
+          "key": "M11-03",
+          "title": "MetricKit, Sentry, PostHog, consent, and signposts",
+          "scope": "Wire the crash/metrics/analytics stack per `07-observability.md` sections 8-9: `MetricKitSubscriber` with the local latest-payload cache, Sentry 8.49.0 (enableMetricKit, app-hang and watchdog-termination tracking, `tracePropagationTargets` limited to the API host, `beforeSend` Redactor scrub, opaque user id only) and PostHog 3.56.0 (`errorTrackingConfig.autoCapture` false permanently, session replay off) as app-target-only exact pins, the 'Share Diagnostics & Analytics' consent toggle gating both SDKs, the three `mxSignpost` flows (chat_ttft, session_list_load, diff_render), and the sentry-cli dSYM upload step added to the release workflow. Protected path: U9 instrumentation — crash-free-session measurement works before the TestFlight beta starts.",
+          "dependsOn": ["M11-01"],
+          "docRefs": ["07-observability.md", "08-ci-cd-release.md"],
+          "labels": ["ios", "type:feature"]
+        }
+      ]
+    },
+    {
+      "key": "M12",
+      "title": "Polish, accessibility, iPad, UI smoke",
+      "goal": "U8-grade accessibility, restraint-audited motion and haptics, a first-class iPad experience at every window size, and the machine-executable XCUITest smoke that locks P1-P3.",
+      "issues": [
+        {
+          "key": "M12-01",
+          "title": "Accessibility pass and motion/haptics restraint audit",
+          "scope": "Run the accessibility and restraint pass per `01-product-and-ux.md` sections 7 and 3.7-3.8: Dynamic Type to AX5 (`@ScaledMetric`, `ViewThatFits` flips for the composer and action rows), the per-screen VoiceOver table (combined message elements, tool-row labels, custom actions, proof-grid combinations, heatmap summary), exactly one streaming `updatesFrequently` status element with the single completion announcement, Differentiate Without Color (diff badges), Reduce Motion and Reduce Transparency fallbacks, and the haptics-map plus anti-delight conformance audit (exactly two haptics per run, no unlisted motion or sounds). Add the required ax3 snapshot variants for the transcript and session list and fix everything they catch. Protected path: U8 — every disabled control states why, and the transcript is fully usable with VoiceOver at AX5 type sizes.",
+          "dependsOn": ["M9-05", "M8-03"],
+          "docRefs": ["01-product-and-ux.md", "06-testing-strategy.md"],
+          "labels": ["ios", "type:feature"]
+        },
+        {
+          "key": "M12-02",
+          "title": "iPad: split view, inspector, keyboard shortcuts, pointer, window-size matrix",
+          "scope": "Make iPad first-class per `01-product-and-ux.md` section 6: the two-column `NavigationSplitView` (sessions sidebar, chat detail, `.balanced`), the Git panel as a resizable trailing inspector at regular width (420 pt default), the 672 pt transcript measure centered beyond, size-class-only layout branching (never device idiom), the exact Cmd shortcut table declared via `.keyboardShortcut` on visible controls plus `Commands` groups for the menu bar, hover/pointer effects on every tappable, and the section 6.4 window-size QA matrix as snapshot configurations (including the iPadOS 26 small floating window). Protected path: the full workspace — inbox, chat, diff inspector — works at every window size from a 400 pt floating window to 13-inch full screen.",
+          "dependsOn": ["M9-05"],
+          "docRefs": ["01-product-and-ux.md", "03-architecture.md"],
+          "labels": ["ios", "type:feature"]
+        },
+        {
+          "key": "M12-03",
+          "title": "XCUITest smoke suite and nightly workflow",
+          "scope": "Land the thin XCUITest smoke per `06-testing-strategy.md` section 7: the DEBUG-only launch-environment seam (in-memory GRDB and token store, animations off, API base-URL override), the shared `A11yID` registry compiled into both the app target and UITests, page objects, and the single scenario — launch signed-in against an in-process FlyingFox mock streaming the simple-text fixture, open the session, send a message, and assert the streamed reply with predicate waits only (sleep is banned and grep-enforced). Wire `.github/workflows/ios-nightly.yml` with the 25-hour change guard and `-test-iterations 3` flake detection, plus the release-lane blocking hook. Document the 20-consecutive-green-nightlies PR-blocking promotion rule. Protected path: P1-P3 have a machine-executable end-to-end proof.",
+          "dependsOn": ["M8-01", "M2-03", "M2-04"],
+          "docRefs": ["06-testing-strategy.md", "08-ci-cd-release.md"],
+          "labels": ["ios", "type:feature"]
+        }
+      ]
+    },
+    {
+      "key": "M13",
+      "title": "Release: TestFlight and App Store",
+      "goal": "TestFlight internal and external lanes proven from CI with cloud-managed signing, server-side release compatibility (universal links + shipped-binary contract lane), and a compliant App Store 1.0 submission.",
+      "issues": [
+        {
+          "key": "M13-01",
+          "title": "Release workflow, cloud signing, and TestFlight lanes",
+          "scope": "Stand up the release lane per `08-ci-cd-release.md`: `.github/workflows/ios-release.yml` (UI smoke, archive, upload, ubuntu postprocess), `ios/Scripts/archive-and-upload.sh` with cloud-managed signing via the App Store Connect API key, `ios/App/ExportOptions.plist`, `ios/Scripts/asc-release-notes.ts` (poll processing, set What to Test, assign the external group), the UTC `YYYYMMDDHHMM` build numbering with serialized concurrency, `ios-build/<n>` tags, and release-notes generation. Complete the one-time Apple portal/ASC checklist and the section 14 secrets/variables, then run the cloud-signing validation dispatch and record the evidence (workflow summary, tag, TestFlight build with notes, install on one device); file the manual-keychain fallback slice only if signing fails. Protected path: T7 — a develop merge touching ios/ produces an installable TestFlight internal build with zero local signing.",
+          "dependsOn": ["M2-03", "M12-03"],
+          "docRefs": ["08-ci-cd-release.md", "00-overview.md"],
+          "labels": ["ios", "type:feature"]
+        },
+        {
+          "key": "M13-02",
+          "title": "Server release readiness: AASA universal links and shipped-binary contract-compat lane",
+          "scope": "Add the server-side release-compatibility pieces: serve the `apple-app-site-association` file from `apps/web` so universal links for `/shared/{shareId}`, `/sessions/...`, and `/background-runs/...` (the `01-product-and-ux.md` section 2.4 table) open the installed app, matching the associated-domains entitlement in `ios/App/project.yml`; and stand up the T8 contract-compat lane — the previous app release's contract fixtures running in web CI so spec-covered paths can only change additively while binaries are in the field (per `02-api-contract-and-networking.md` and `00-overview.md` section 9 risk 8). Verify one universal link opens the TestFlight build on a device and record it. Protected path: shipped app binaries never break on a web deploy without a red CI signal first.",
+          "dependsOn": ["M13-01", "M1-06"],
+          "docRefs": [
+            "02-api-contract-and-networking.md",
+            "00-overview.md",
+            "01-product-and-ux.md",
+            "08-ci-cd-release.md"
+          ],
+          "labels": ["server", "type:feature"]
+        },
+        {
+          "key": "M13-03",
+          "title": "App Store submission: privacy, metadata, compliance, 1.0 release",
+          "scope": "Prepare and execute the App Store submission per `01-product-and-ux.md` section 10 and `08-ci-cd-release.md` section 13: `PrivacyInfo.xcprivacy` with the `07-observability.md` section 13.1 accessed-API entries, SDK privacy-manifest verification, the nutrition-label questionnaire matching the section 13.2 inventory ('Data Not Used to Track'), the screenshot set and metadata strings from section 10 (dropping the deferred push/Live Activity scene), review notes with a seeded demo account and the SIWA no-token-revocation explanation, the export-compliance answer, and final verification of guidelines 4.8 and 5.1.1(v) in the shipping build. Verify the beta-exit criteria U1-U9 (crash-free ≥ 99.5%) before submitting, then run the submission and the rejection-triage loop budgeting at least two review round-trips. Protected path: the 1.0 release reaches the App Store with no compliance surprises.",
+          "dependsOn": ["M13-01", "M11-03", "M12-01"],
+          "docRefs": [
+            "01-product-and-ux.md",
+            "08-ci-cd-release.md",
+            "07-observability.md",
+            "00-overview.md"
+          ],
+          "labels": ["ios", "type:feature"]
+        }
+      ]
+    }
+  ],
+  "deferred": [
+    "APNs push notifications and notification quick-replies — no server push infrastructure (device-token registry, event fan-out) exists; 00-overview section 4 defers to a post-1.0 epic and v1 ships foreground-polling in-app alerts (note: 01-product-and-ux section 1.1 lists push as v1, but 00-overview is the canonical decision record).",
+    "Live Activities / Dynamic Island for in-flight runs — depends on the deferred push/background infrastructure; post-1.0 epic per 00-overview section 4.",
+    "Widgets, App Intents, Siri/Shortcuts, Spotlight indexing — v1.1 candidates per 01-product-and-ux section 1.1.",
+    "In-browser code editor (/codespace/[sessionId]) — full VS Code on a phone is pointless; web-only per 00-overview section 4.",
+    "Managed-runtime profile authoring/editing UI — dense operator console; iOS only renders runtime status the API returns (00-overview section 4).",
+    "Verified Build surfaces including plan approval — operator console; iOS renders data-verified-build chat parts read-only; plan-approval action is a v1.5 candidate (00-overview section 4).",
+    "Composio profile configuration — copy-paste-heavy ac_/ca_ ID setup; web-only; iOS shows read-only per-chat selections (00-overview section 4).",
+    "Background-agent authoring (triggers, cron, conditions, instructions) — desktop-ish and mid-redesign (web issues #224/#229); iOS ships monitoring, enable/disable, and Test dispatch only.",
+    "Split side-by-side diffs — iPhone is unified-only by decision; the iPad-regular split toggle is revisited after v1 (00-overview section 4, 01 section 6.1).",
+    "Offline write queue — offline is read-only in v1; mutations fail fast with .offline while drafts preserve typed content (02 section 5.4).",
+    "Multi-account support — single Keychain slot and single GRDB database; switching accounts is sign out + sign in (04-auth section 10).",
+    "Slash commands, @-file mentions, and snippet comments in the composer — explicitly out of the v1 chat scope per 01-product-and-ux section 1.1.",
+    "Skills authoring, model-variant JSON editing, inference-profile (BYOK) management, runtime-profile settings, leaderboard, public usage profiles, and admin panels — power web surfaces; iOS links out (01 section 1.1).",
+    "Workflow picker — all four server catalog entries are enabled:false and the picker is inert even on web (02 section 1.14).",
+    "Dev-server start/stop, browser checks, sandbox services, and the runtime inspector — deferred sandbox surfaces per 02 section 1.14; contracts documented for a post-v1 phase.",
+    "Force-merge past failing checks and .diff patch download — power/desktop git flows excluded by 01 section 1.1.",
+    "Transcript full-text search (FTS5 over chatMessage) — reserved for a later GRDB migration (03-architecture section 9.3).",
+    "ETag/If-None-Match conditional requests on hot polls — server enhancement to be filed once v1 polling telemetry quantifies payload waste (02 section 5.3).",
+    "GET /api/chat/{chatId}/stream ?startIndex= partial replay — optional bandwidth optimization; full replay-from-chunk-0 is the v1 contract (02 section 2.5).",
+    "HTTPS universal-link auth callback — v2 hardening; v1 accepts the custom scheme because the OTT is single-use with a 3-minute TTL (04-auth section 11).",
+    "PostHog session replay — off until a screen-by-screen masking audit of diff/settings/key fields (07-observability section 9.1).",
+    "App Store submission automation via the ASC appStoreVersions API — manual submission until release cadence justifies it (08-ci-cd-release section 13).",
+    "CI test sharding — adopt only when the UnitTests plan exceeds ~20 minutes warm; mechanism pre-designed but deliberately not built (08-ci-cd-release section 15)."
+  ]
+}
