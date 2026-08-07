@@ -201,6 +201,12 @@ let testPreferences: {
 // Track what the agent stream yields
 let agentStreamParts: Array<Record<string, unknown>> = [];
 let agentAssistantParts: Array<Record<string, unknown>> | undefined;
+// Per-step parts, for tests that need the assistant to behave differently on
+// each step (a tool that fails then succeeds, or fails a different way each
+// time). Takes precedence over the fixed `agentAssistantParts` above.
+let agentAssistantPartsFactory:
+  | (() => Array<Record<string, unknown>>)
+  | undefined;
 let agentFinishReason = "stop";
 let agentRawFinishReason: string | undefined = "provider_stop";
 let agentTotalUsage = { inputTokens: 10, outputTokens: 5, totalTokens: 15 };
@@ -322,16 +328,28 @@ mock.module("@/app/config", () => ({
         }) => {
           const priorAssistantMessage = opts.originalMessages?.at(-1);
           const assistantMessage = (
-            priorAssistantMessage?.role === "assistant"
-              ? structuredClone(priorAssistantMessage)
-              : {
+            agentAssistantPartsFactory
+              ? {
+                  // The factory owns the whole message each step, so a test can
+                  // model an agent that behaves differently per step. Cloning
+                  // the prior message would carry the previous step's parts
+                  // forward and make "three failures" indistinguishable from
+                  // "one failure seen three times".
                   id: "assistant-1",
                   role: "assistant",
-                  parts: agentAssistantParts ?? [
-                    { type: "text", text: "Hello!" },
-                  ],
+                  parts: agentAssistantPartsFactory(),
                   metadata: {},
                 }
+              : priorAssistantMessage?.role === "assistant"
+                ? structuredClone(priorAssistantMessage)
+                : {
+                    id: "assistant-1",
+                    role: "assistant",
+                    parts: agentAssistantParts ?? [
+                      { type: "text", text: "Hello!" },
+                    ],
+                    metadata: {},
+                  }
           ) as {
             id: string;
             role: "assistant";
@@ -666,6 +684,7 @@ beforeEach(() => {
   runStatus = "running";
   agentStreamParts = [{ type: "text-delta", textDelta: "Hi" }];
   agentAssistantParts = undefined;
+  agentAssistantPartsFactory = undefined;
   agentFinishReason = "stop";
   agentRawFinishReason = "provider_stop";
   agentTotalUsage = { inputTokens: 10, outputTokens: 5, totalTokens: 15 };
@@ -3350,5 +3369,180 @@ describe("runAgentWorkflow", () => {
 
     // The finally block should still fire
     expect(spies.clearActiveStream).toHaveBeenCalled();
+  });
+});
+
+// #1143 / #1142. The reported incident: a chat turn spent 9 steps and 69.5s
+// re-running a `task` call that failed identically every time, and ended only
+// by exhausting its step budget. Nothing noticed.
+describe("repeated tool failure circuit breaker", () => {
+  function failingToolPart(
+    toolName: string,
+    errorText: string,
+    toolCallId = "call-1",
+  ) {
+    return {
+      type: `tool-${toolName}`,
+      toolCallId,
+      state: "output-error",
+      preliminary: false,
+      input: { task: "List repository files" },
+      errorText,
+    };
+  }
+
+  function stepCount() {
+    const rwCalls = spies.recordWorkflowUsage.mock.calls as unknown[][];
+    const workflowRun = rwCalls[0][5] as {
+      stepTimings: Array<{ stepNumber: number }>;
+    };
+    return workflowRun.stepTimings.length;
+  }
+
+  // Each step issues a genuinely new tool call, so the ids differ even when the
+  // failure is identical. That is what the incident looked like, and it is what
+  // keeps "three failures" distinct from "one failure re-read three times".
+  function failEveryStep(errorText: (call: number) => string, toolName = "task") {
+    let call = 0;
+    agentAssistantPartsFactory = () => {
+      call += 1;
+      return [failingToolPart(toolName, errorText(call), `call-${call}`)];
+    };
+  }
+
+  test("stops the turn after three identical tool failures instead of reaching the step cap", async () => {
+    agentFinishReason = "tool-calls";
+    failEveryStep(() => "No output generated. Check the stream for errors.");
+
+    await runAgentWorkflow(makeOptions({ maxSteps: 9 }));
+
+    expect(stepCount()).toBe(3);
+  });
+
+  test("tells the user which tool failed, how it failed, and how many times", async () => {
+    agentFinishReason = "tool-calls";
+    failEveryStep(
+      () => 'subagent_model_failed: model "gemma-4-31b" is unreachable',
+    );
+
+    await runAgentWorkflow(makeOptions({ maxSteps: 9 }));
+
+    const persistCalls = spies.persistAssistantMessage.mock
+      .calls as unknown[][];
+    const persisted = persistCalls.at(-1)?.[1] as {
+      parts: Array<{ type: string; text?: string }>;
+    };
+    const text = persisted.parts
+      .filter((part) => part.type === "text")
+      .map((part) => part.text ?? "")
+      .join("\n");
+
+    expect(text).toContain("task");
+    expect(text).toContain("gemma-4-31b");
+    expect(text).toContain("3");
+  });
+
+  // R5 — over-correction guards. A breaker that kills legitimate retries is a
+  // worse bug than the one it replaces.
+  test("must stay green: a tool that fails once then succeeds is not stopped", async () => {
+    agentFinishReason = "tool-calls";
+    let call = 0;
+    agentAssistantPartsFactory = () => {
+      call += 1;
+      return call === 1
+        ? [failingToolPart("task", "transient blip", "call-1")]
+        : [
+            {
+              type: "tool-task",
+              toolCallId: `call-${call}`,
+              state: "output-available",
+              preliminary: false,
+              input: { task: "List repository files" },
+              output: { final: [] },
+            },
+          ];
+    };
+
+    await runAgentWorkflow(makeOptions({ maxSteps: 5 }));
+
+    expect(stepCount()).toBe(5);
+  });
+
+  test("must stay green: the same tool failing three different ways is not stopped", async () => {
+    agentFinishReason = "tool-calls";
+    failEveryStep((call) => `failure variant ${call}`);
+
+    await runAgentWorkflow(makeOptions({ maxSteps: 5 }));
+
+    expect(stepCount()).toBe(5);
+  });
+
+  test("must stay green: two different tools each failing twice is not stopped", async () => {
+    agentFinishReason = "tool-calls";
+    let call = 0;
+    agentAssistantPartsFactory = () => {
+      call += 1;
+      return [
+        failingToolPart(
+          call % 2 === 1 ? "task" : "bash",
+          "same message",
+          `call-${call}`,
+        ),
+      ];
+    };
+
+    await runAgentWorkflow(makeOptions({ maxSteps: 4 }));
+
+    expect(stepCount()).toBe(4);
+  });
+
+  test("emits workflow.tool.repeated-failure with correlation fields", async () => {
+    agentFinishReason = "tool-calls";
+    failEveryStep(() => "No output generated.");
+
+    await runAgentWorkflow(makeOptions({ maxSteps: 9 }));
+
+    const emitted = (spies.emitSessionEvent.mock.calls as unknown[][]).map(
+      (call) => call[0] as { eventName?: string; payload?: Record<string, unknown> },
+    );
+    const repeated = emitted.find(
+      (event) => event.eventName === "workflow.tool.repeated-failure",
+    );
+
+    expect(repeated).toBeDefined();
+    expect(repeated?.payload).toMatchObject({
+      toolName: "task",
+      failureCount: 3,
+      reason: "repeat",
+    });
+  });
+
+  test("says delegation was the only execution path in managed_runtime mode", async () => {
+    agentFinishReason = "tool-calls";
+    spies.resolveChatSandboxRuntime.mockImplementation(
+      (params: { assistantId: string }) => {
+        writtenChunks.push({ type: "start", messageId: params.assistantId });
+        return Promise.resolve(
+          createResolvedChatSandboxRuntime({
+            runtimeMode: "managed_runtime",
+          }),
+        );
+      },
+    );
+    failEveryStep(() => "No output generated.");
+
+    await runAgentWorkflow(makeOptions({ maxSteps: 9 }));
+
+    const persistCalls = spies.persistAssistantMessage.mock
+      .calls as unknown[][];
+    const persisted = persistCalls.at(-1)?.[1] as {
+      parts: Array<{ type: string; text?: string }>;
+    };
+    const text = persisted.parts
+      .filter((part) => part.type === "text")
+      .map((part) => part.text ?? "")
+      .join("\n");
+
+    expect(text).toContain("only");
   });
 });

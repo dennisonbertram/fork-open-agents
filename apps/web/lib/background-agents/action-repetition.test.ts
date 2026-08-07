@@ -1,5 +1,77 @@
 import { describe, expect, test } from "bun:test";
-import { detectRepetition, hashTurnToolCalls } from "./action-repetition";
+import {
+  detectRepetition,
+  hashTurnToolCalls,
+  hashTurnToolFailures,
+} from "./action-repetition";
+
+describe("hashTurnToolFailures", () => {
+  test("returns null for a turn with no failed tool parts", () => {
+    expect(hashTurnToolFailures([])).toBeNull();
+    expect(
+      hashTurnToolFailures([{ toolName: "task", errorText: undefined }]),
+    ).toBeNull();
+  });
+
+  test("two turns failing the same way in the same tool hash identically", () => {
+    const a = hashTurnToolFailures([
+      { toolName: "task", errorText: "No output generated." },
+    ]);
+    const b = hashTurnToolFailures([
+      { toolName: "task", errorText: "No output generated." },
+    ]);
+    expect(a).not.toBeNull();
+    expect(a).toBe(b);
+  });
+
+  test("the same tool failing with different errors hashes differently", () => {
+    const a = hashTurnToolFailures([
+      { toolName: "task", errorText: "No output generated." },
+    ]);
+    const b = hashTurnToolFailures([
+      { toolName: "task", errorText: "workspace_drift_detected" },
+    ]);
+    expect(a).not.toBe(b);
+  });
+
+  test("different tools failing with the same error hash differently", () => {
+    const a = hashTurnToolFailures([
+      { toolName: "task", errorText: "boom" },
+    ]);
+    const b = hashTurnToolFailures([
+      { toolName: "bash", errorText: "boom" },
+    ]);
+    expect(a).not.toBe(b);
+  });
+
+  test("the returned hash is hex and never contains the raw error text", () => {
+    const secret = "Bearer sk-super-secret-token-value-12345";
+    const hash = hashTurnToolFailures([
+      { toolName: "task", errorText: secret },
+    ]);
+    expect(hash).not.toBeNull();
+    expect(hash).toMatch(/^[0-9a-f]+$/);
+    expect(hash).not.toContain(secret);
+  });
+
+  test("feeds detectRepetition so an identical failure trips at the threshold", () => {
+    const signature = hashTurnToolFailures([
+      { toolName: "task", errorText: "No output generated." },
+    ]);
+    if (signature === null) {
+      throw new Error("expected a signature");
+    }
+    expect(
+      detectRepetition([signature, signature], { repeatThreshold: 3 }).flagged,
+    ).toBe(false);
+    const verdict = detectRepetition([signature, signature, signature], {
+      repeatThreshold: 3,
+    });
+    expect(verdict.flagged).toBe(true);
+    expect(verdict.reason).toBe("repeat");
+    expect(verdict.repeatCount).toBe(3);
+  });
+});
 
 describe("hashTurnToolCalls", () => {
   test("returns null for an empty tool-call array", () => {
