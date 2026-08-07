@@ -29,8 +29,16 @@ export async function resolveStepAgentModels<
     inferenceProfileId: string | null;
     selection: AgentModelSelection;
   }) => Promise<AgentModelSelection>;
+  /** Called when the subagent model cannot be resolved. See the guard below. */
+  onSubagentResolutionFailed?: (error: unknown) => void;
 }): Promise<TOptions> {
-  const { agentOptions, inferenceProfileId, resolve, userId } = params;
+  const {
+    agentOptions,
+    inferenceProfileId,
+    onSubagentResolutionFailed,
+    resolve,
+    userId,
+  } = params;
 
   const toSelection = (model: NonNullable<TOptions["model"]>) =>
     typeof model === "string"
@@ -82,14 +90,34 @@ export async function resolveStepAgentModels<
   // Guarded above, so an absent subagent model stays absent — that means
   // "inherit the main model", and materializing the key would turn it into an
   // explicit override.
+  //
+  // A broken subagent profile must not take the coordinator down with it.
+  // `default_subagent_model_id` is plain text with no foreign key
+  // (schema.ts:2890) while `default_inference_profile_id` has one, so deleting
+  // a profile leaves a stale `user-profile:<deletedId>:…` preference behind and
+  // the resolver throws on a missing, disabled, or undecryptable profile.
+  // Letting that propagate would kill every step — including coordinator turns
+  // that never delegate at all — which is strictly worse than the delegation
+  // failure it describes.
+  //
+  // So: drop the broken override and let subagents inherit the (working) main
+  // model, and report it. Dropping rather than passing it through keeps the
+  // internal composite id away from the provider. The cost is that a
+  // misconfigured subagent model is silently substituted, which is why the
+  // failure is reported rather than swallowed.
   if (resolveSubagent && agentOptions.subagentModel) {
-    resolved.subagentModel = (await resolve({
-      userId,
-      inferenceProfileId: null,
-      selection: toSelection(
-        agentOptions.subagentModel as NonNullable<TOptions["model"]>,
-      ),
-    })) as TOptions["subagentModel"];
+    try {
+      resolved.subagentModel = (await resolve({
+        userId,
+        inferenceProfileId: null,
+        selection: toSelection(
+          agentOptions.subagentModel as NonNullable<TOptions["model"]>,
+        ),
+      })) as TOptions["subagentModel"];
+    } catch (error) {
+      resolved.subagentModel = undefined as TOptions["subagentModel"];
+      onSubagentResolutionFailed?.(error);
+    }
   }
 
   return resolved;
