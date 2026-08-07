@@ -2684,6 +2684,11 @@ const runAgentStep = async (
   const stepManagedRuntimeProfileRunId =
     agentOptions.managedRuntime?.profileRunId ?? null;
   let lastStreamError: unknown;
+  // Set when the configured subagent model could not be resolved and delegated
+  // workers fell back to the main model. Threaded into the step's completion
+  // event so the substitution is visible in the run's own metadata, not only in
+  // the one-off fallback event above.
+  let subagentModelFallbackReason: string | null = null;
 
   try {
     // Resolves BOTH the main and subagent model. Resolving only the main one
@@ -2704,14 +2709,45 @@ const runAgentStep = async (
       // A stale subagent preference (its profile deleted or disabled) drops the
       // override and lets subagents inherit the main model, rather than killing
       // a coordinator turn that may never delegate. Silent substitution is only
-      // acceptable because it is reported here.
+      // acceptable because it is recorded in the session's own observability,
+      // not just a transient server log — an operator explaining unexpected
+      // model behaviour, quality, or cost has to be able to query it.
+      //
+      // Emitted once per run, on the first step: the subagent selection is
+      // static for a run, so every later step would report the identical
+      // substitution. A profile deleted mid-run still surfaces through the
+      // delegation failure itself.
       onSubagentResolutionFailed: (error) => {
-        console.warn("[chat] subagent model resolution failed", {
-          chatId,
+        subagentModelFallbackReason =
+          error instanceof Error ? error.message : String(error);
+        if (stepNumber !== 1) {
+          return;
+        }
+        void emitWorkflowSessionEvent({
           sessionId,
+          chatId,
+          userId,
+          source: "workflow",
+          actorType: "coordinator",
+          eventName: "workflow.subagent-model.fallback",
+          // The run continues and succeeds; only the delegated worker model is
+          // substituted. "info" over "failed" so this does not read as a run
+          // failure in operator views.
+          status: "info",
+          summary:
+            "Subagent model could not be resolved; delegated workers will use the main model.",
+          requestId,
           workflowRunId,
-          stepNumber,
-          errorKind: error instanceof Error ? error.name : "unknown",
+          payload: {
+            stepNumber,
+            runtimeMode: agentOptions.runtimeMode ?? null,
+            inferenceProfileId,
+            // Never the stale model id or any key material — the reason string
+            // comes from InferenceProfileResolutionError, which is secret-free
+            // by construction.
+            errorKind: error instanceof Error ? error.name : "unknown",
+            reason: error instanceof Error ? error.message : String(error),
+          },
         });
       },
     });
@@ -3272,6 +3308,10 @@ const runAgentStep = async (
         ),
         usage: stepUsage ?? null,
         cost: stepsCost ?? null,
+        // Present on every step of a run where delegated workers fell back to
+        // the main model, so the substitution is explicable from the step's own
+        // record rather than only from a single earlier event.
+        subagentModelFallbackReason,
       },
     });
 
