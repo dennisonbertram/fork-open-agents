@@ -32,6 +32,7 @@ import {
   createRepeatedToolFailureState,
   observeStepForRepeatedFailure,
 } from "./repeated-tool-failure";
+import { resolveStepAgentModels } from "./resolve-step-agent-models";
 import type {
   WebAgentCommitData,
   WebAgentCommitDataPart,
@@ -2685,22 +2686,22 @@ const runAgentStep = async (
   let lastStreamError: unknown;
 
   try {
-    const resolvedStepAgentOptions =
-      inferenceProfileId && agentOptions.model
-        ? {
-            ...agentOptions,
-            model: await resolveStepInferenceProfileModel({
-              userId,
-              inferenceProfileId,
-              selection:
-                typeof agentOptions.model === "string"
-                  ? ({
-                      id: agentOptions.model,
-                    } as AgentModelSelection)
-                  : (agentOptions.model as AgentModelSelection),
-            }),
-          }
-        : agentOptions;
+    // Resolves BOTH the main and subagent model. Resolving only the main one
+    // sent the subagent's raw `user-profile:<profileId>:<modelId>` composite to
+    // the provider, and every delegated worker died with `Model '...' not
+    // found` while the coordinator on the same profile worked.
+    const resolvedStepAgentOptions = await resolveStepAgentModels({
+      userId,
+      inferenceProfileId,
+      agentOptions,
+      resolve: ({ userId: resolveUserId, inferenceProfileId: id, selection }) =>
+        resolveStepInferenceProfileModel({
+          userId: resolveUserId,
+          // Guarded by resolveStepAgentModels, which returns early when null.
+          inferenceProfileId: id as string,
+          selection,
+        }),
+    });
     const workflowActionAgentOptions = buildWorkflowActionAgentOptions({
       userId,
       chatId,
