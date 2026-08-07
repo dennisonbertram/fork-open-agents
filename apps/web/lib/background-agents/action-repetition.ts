@@ -63,6 +63,47 @@ export function hashTurnToolCalls(
   return createHash("sha256").update(canonical).digest("hex");
 }
 
+type MinimalToolFailure = {
+  toolName: string;
+  errorText?: string | undefined;
+};
+
+/**
+ * Hashes an entire turn's *failed* tool calls into a single sha256 hex digest,
+ * keyed on tool name + error text. Returns null for a turn with no failures,
+ * which callers use as the reset signal — a turn that succeeded clears the
+ * trailing run rather than extending it.
+ *
+ * The sibling of `hashTurnToolCalls`, and fed to the same `detectRepetition`
+ * (#1143). The two answer different questions: `hashTurnToolCalls` catches a
+ * run that keeps *doing* the same thing, this catches one that keeps *failing*
+ * the same way. A background agent editing files in a loop needs the first; a
+ * chat turn whose only execution path is dead needs the second, because the
+ * inputs vary (different task instructions each retry) while the failure does
+ * not.
+ *
+ * Identity is name + error, never name alone: a tool legitimately failing three
+ * different ways is a working tool being used badly, not a dead one.
+ *
+ * Like its sibling, only the digest is returned, so callers can log or store
+ * the signature without redacting a provider message that may quote the
+ * request back.
+ */
+export function hashTurnToolFailures(
+  toolFailures: ReadonlyArray<MinimalToolFailure>,
+): string | null {
+  const failures = toolFailures.filter(
+    (failure) => typeof failure.errorText === "string",
+  );
+  if (failures.length === 0) {
+    return null;
+  }
+  const canonical = failures
+    .map((failure) => `${failure.toolName}\x00${failure.errorText}`)
+    .join("\x01");
+  return createHash("sha256").update(canonical).digest("hex");
+}
+
 export type RepetitionVerdict = {
   flagged: boolean;
   reason: "repeat" | "cycle" | null;

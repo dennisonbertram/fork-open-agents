@@ -27,6 +27,11 @@ import { assistantFileLinkPrompt } from "@/lib/assistant-file-links";
 import { addLanguageModelUsage } from "./usage-utils";
 import { extractGatewayCost } from "./gateway-metadata";
 import { hasGithubTool, mergeExtraTools } from "./merge-extra-tools";
+import {
+  buildRepeatedToolFailureMessage,
+  createRepeatedToolFailureState,
+  observeStepForRepeatedFailure,
+} from "./repeated-tool-failure";
 import type {
   WebAgentCommitData,
   WebAgentCommitDataPart,
@@ -1774,6 +1779,8 @@ export async function runAgentWorkflow(options: Options) {
   let sandboxState: OpenAgentCallOptions["sandbox"]["state"] | undefined;
   let shouldRefreshCachedDiff = false;
   let runtimeMode: "classic" | "managed_runtime" | null = null;
+  const repeatedToolFailureState = createRepeatedToolFailureState();
+  let stoppedForRepeatedToolFailure = false;
   // Goal ledger tracking — null until recordGoalLedgerStart resolves.
   let goalLedgerId: string | null = null;
   let runtimeSandboxName: string | null = null;
@@ -2035,6 +2042,60 @@ export async function runAgentWorkflow(options: Options) {
             progressErr,
           );
         }
+      }
+
+      // (#1143, #1142) Stop a turn that is re-running a tool which fails the
+      // same way every time, instead of letting it consume the step budget and
+      // end with nothing. In managed_runtime the failing tool is usually `task`,
+      // which is the coordinator's only execution path.
+      const repeatedFailure = observeStepForRepeatedFailure(
+        repeatedToolFailureState,
+        result.responseMessage?.parts ?? pendingAssistantResponse.parts,
+      );
+      if (repeatedFailure) {
+        stoppedForRepeatedToolFailure = true;
+        await emitWorkflowSessionEvent({
+          sessionId: options.sessionId,
+          chatId: options.chatId,
+          userId: options.userId,
+          source: "workflow",
+          actorType: "coordinator",
+          eventName: "workflow.tool.repeated-failure",
+          status: "failed",
+          summary: `Stopped after ${repeatedFailure.failureCount} identical ${repeatedFailure.toolName} failures.`,
+          requestId: options.requestId ?? null,
+          workflowRunId,
+          sandboxName: runtimeSandboxName,
+          managedRuntimeProfileRunId,
+          payload: {
+            // Tool NAME and the repeated error only — never the tool input,
+            // which is folded into the irreversible signature hash and never
+            // surfaced.
+            toolName: repeatedFailure.toolName,
+            failureCount: repeatedFailure.failureCount,
+            reason: repeatedFailure.reason,
+            stepNumber: step + 1,
+            runtimeMode,
+          },
+        });
+
+        const stopText = buildRepeatedToolFailureMessage(
+          repeatedFailure,
+          runtimeMode,
+        );
+        await sendTextMessage(
+          writable,
+          `${assistantId}:repeated-tool-failure`,
+          stopText,
+        );
+        pendingAssistantResponse = {
+          ...pendingAssistantResponse,
+          parts: [
+            ...pendingAssistantResponse.parts,
+            { type: "text", text: stopText },
+          ],
+        };
+        break;
       }
 
       const shouldContinue =
@@ -2322,7 +2383,7 @@ export async function runAgentWorkflow(options: Options) {
 
     workflowStatus = wasAborted
       ? "aborted"
-      : exhaustedMaxSteps
+      : exhaustedMaxSteps || stoppedForRepeatedToolFailure
         ? "failed"
         : "completed";
 
@@ -2498,6 +2559,13 @@ export async function runAgentWorkflow(options: Options) {
           stepCount: stepTimings.length,
           totalDurationMs: runFinishedAt.getTime() - runStartedAt.getTime(),
           finishReason: finalFinishReason ?? null,
+          // Distinguishes an early stop from a normal finish and from the step
+          // cap, so a run that ends at step 3 is not read as a short success.
+          stopReason: stoppedForRepeatedToolFailure
+            ? "repeated_tool_failure"
+            : exhaustedMaxSteps
+              ? "max_steps"
+              : null,
         },
       });
 
