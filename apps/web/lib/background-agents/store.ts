@@ -468,15 +468,38 @@ export async function createRunForTrigger(params: {
     return { run: existingRun, created: false };
   }
 
-  const { resolveBackgroundAgentInferenceSnapshot } =
-    await import("./inference-snapshot");
+  const {
+    resolveBackgroundAgentInferenceSnapshot,
+    resolveBackgroundAgentSubagentInferenceSnapshot,
+  } = await import("./inference-snapshot");
   const inference = await resolveBackgroundAgentInferenceSnapshot({
     userId: params.agent.userId,
     modelId: params.agent.modelId,
   });
+  // #1158 follow-up: freeze the subagent selection with the run at
+  // creation time, alongside the main model above, so a preference change
+  // made while this run sits queued cannot change what a delegated `task`
+  // worker uses when the run finally executes. Non-fatal by existing
+  // convention for this field — a broken subagent preference (deleted
+  // profile) must not block run creation.
+  let subagentInference: Awaited<
+    ReturnType<typeof resolveBackgroundAgentSubagentInferenceSnapshot>
+  >;
+  try {
+    subagentInference = await resolveBackgroundAgentSubagentInferenceSnapshot(
+      params.agent.userId,
+    );
+  } catch (error) {
+    console.error(
+      `[background-agents] failed to resolve subagent model preference for user "${params.agent.userId}" at run creation (non-fatal, delegated workers will use the main model):`,
+      error,
+    );
+    subagentInference = undefined;
+  }
   const executionSnapshot = buildBackgroundAgentExecutionSnapshot(
     params.agent,
     inference,
+    subagentInference,
   );
   const definitionHash =
     hashBackgroundAgentExecutionSnapshot(executionSnapshot);

@@ -723,39 +723,67 @@ export async function executeAgentStep(
   // chat workflow already uses for this exact job — no new parser. Resolved
   // before repo access / sandbox costs, matching the background-agent
   // executor's "fail before paying for a sandbox" precedent.
+  //
+  // Bounded by the same stepDeadlineAt used for repo access below: a stalled
+  // preferences or inference-profile DB lookup must not bypass stepTimeoutMs
+  // and hang the whole step regardless of its configured budget.
+  const modelResolutionTimeoutMs = stepDeadlineAt - Date.now();
+  if (modelResolutionTimeoutMs <= 0) {
+    return recordAgentStepFailure({
+      ...failureCtx,
+      errorKind: "sandbox_unavailable",
+      errorMessage: `Repository access timed out after ${effectiveStepTimeoutMs}ms before sandbox startup`,
+    });
+  }
+
   let resolvedAgentModels: {
     model: AgentModelSelection;
     subagentModel?: AgentModelSelection;
   };
   try {
-    const preferences = await getUserPreferences(executionUserId);
-    resolvedAgentModels = await resolveStepAgentModels({
-      userId: executionUserId,
-      inferenceProfileId: preferences.defaultInferenceProfileId,
-      agentOptions: {
-        model: { id: preferences.defaultModelId } as AgentModelSelection,
-        ...(preferences.defaultSubagentModelId
-          ? {
-              subagentModel: {
-                id: preferences.defaultSubagentModelId,
-              } as AgentModelSelection,
-            }
-          : {}),
-      },
-      resolve: resolveInferenceProfileModelSelection,
-      onSubagentResolutionFailed: (error) => {
-        // A broken subagent-model preference (its profile deleted or
-        // disabled) must not fail the whole step — the coordinator turn may
-        // never delegate at all. Drop the override so delegated workers
-        // inherit the (working) main model instead, mirroring the chat
-        // workflow's fallback in resolve-step-agent-models.ts.
-        console.error(
-          `[agent-loops] subagent model resolution failed for user "${executionUserId}" (non-fatal, delegated workers will use the main model):`,
-          error,
-        );
-      },
-    });
+    resolvedAgentModels = await withAgentStepPreparationTimeout(
+      (async () => {
+        const preferences = await getUserPreferences(executionUserId);
+        return resolveStepAgentModels({
+          userId: executionUserId,
+          inferenceProfileId: preferences.defaultInferenceProfileId,
+          agentOptions: {
+            model: { id: preferences.defaultModelId } as AgentModelSelection,
+            ...(preferences.defaultSubagentModelId
+              ? {
+                  subagentModel: {
+                    id: preferences.defaultSubagentModelId,
+                  } as AgentModelSelection,
+                }
+              : {}),
+          },
+          resolve: resolveInferenceProfileModelSelection,
+          onSubagentResolutionFailed: (error) => {
+            // A broken subagent-model preference (its profile deleted or
+            // disabled) must not fail the whole step — the coordinator turn
+            // may never delegate at all. Drop the override so delegated
+            // workers inherit the (working) main model instead, mirroring
+            // the chat workflow's fallback in resolve-step-agent-models.ts.
+            console.error(
+              `[agent-loops] subagent model resolution failed for user "${executionUserId}" (non-fatal, delegated workers will use the main model):`,
+              error,
+            );
+          },
+        });
+      })(),
+      modelResolutionTimeoutMs,
+    );
   } catch (error) {
+    if (
+      error instanceof Error &&
+      error.name === AGENT_STEP_PREPARATION_TIMEOUT_ERROR
+    ) {
+      return recordAgentStepFailure({
+        ...failureCtx,
+        errorKind: "sandbox_unavailable",
+        errorMessage: error.message,
+      });
+    }
     return recordAgentStepFailure({
       ...failureCtx,
       errorKind: "model_resolution_failed",
@@ -1180,6 +1208,16 @@ export async function executeAgentStep(
             ),
             usage: agentResult.usage,
             totalUsage: agentResult.totalUsage,
+            // A step can now run on a user-selected model or BYOK inference
+            // profile (#1158) — without this, an operator cannot tell which
+            // route produced a result. Sanitized (id + route + profile id
+            // only, never directInference credentials).
+            model: resolvedAgentModels.model.id,
+            inferenceRoute:
+              resolvedAgentModels.model.attribution?.inferenceRoute ?? null,
+            inferenceProfileId:
+              resolvedAgentModels.model.attribution?.inferenceProfileId ??
+              null,
           },
           workflowRunId,
         });
@@ -1239,6 +1277,13 @@ export async function executeAgentStep(
           (c, s) => c + s.toolCalls.length,
           0,
         ),
+        // See agent-loop.step.agent.turn.completed above — same
+        // sanitized model/route attribution (#1158).
+        model: resolvedAgentModels.model.id,
+        inferenceRoute:
+          resolvedAgentModels.model.attribution?.inferenceRoute ?? null,
+        inferenceProfileId:
+          resolvedAgentModels.model.attribution?.inferenceProfileId ?? null,
       },
       workflowRunId,
     });

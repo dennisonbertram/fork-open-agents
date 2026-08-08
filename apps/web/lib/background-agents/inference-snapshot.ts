@@ -2,6 +2,7 @@ import "server-only";
 
 import { defaultModelLabel } from "@open-agents/agent";
 import { getInferenceProfileByIdForUser } from "@/lib/db/inference-profiles";
+import { getUserPreferences } from "@/lib/db/user-preferences";
 import {
   parseModelOptionSelection,
   USER_INFERENCE_OPTION_PREFIX,
@@ -59,5 +60,26 @@ export async function resolveBackgroundAgentInferenceSnapshot(params: {
       profile.provider,
       profile.baseUrl,
     ),
+  });
+}
+
+/**
+ * Resolves the user's `default_subagent_model_id` preference (#1158) into
+ * the same frozen-snapshot shape as the main model, so it can be captured
+ * with the run at creation time instead of read live at execution. Throws
+ * on a broken preference (deleted/disabled profile) — callers decide
+ * whether that's fatal; the existing convention for this field is
+ * non-fatal (delegated workers fall back to inheriting the main model).
+ */
+export async function resolveBackgroundAgentSubagentInferenceSnapshot(
+  userId: string,
+): Promise<BackgroundAgentInferenceSnapshotV1 | undefined> {
+  const preferences = await getUserPreferences(userId);
+  if (!preferences.defaultSubagentModelId) {
+    return undefined;
+  }
+  return resolveBackgroundAgentInferenceSnapshot({
+    userId,
+    modelId: preferences.defaultSubagentModelId,
   });
 }

@@ -103,8 +103,6 @@ import {
   assertInferenceProfileRouteAvailable,
   resolveInferenceProfileModelSelection,
 } from "@/lib/inference/profile-resolution";
-import { getUserPreferences } from "@/lib/db/user-preferences";
-import { resolveStepAgentModels } from "@/app/workflows/resolve-step-agent-models";
 import {
   BackgroundAgentSnapshotError,
   resolveBackgroundAgentExecutionDefinition,
@@ -112,7 +110,10 @@ import {
   type BackgroundAgentInferenceSnapshotV1,
 } from "./execution-snapshot";
 import { sha256CanonicalJson } from "@/lib/execution-snapshots/canonical-json";
-import { resolveBackgroundAgentInferenceSnapshot } from "./inference-snapshot";
+import {
+  resolveBackgroundAgentInferenceSnapshot,
+  resolveBackgroundAgentSubagentInferenceSnapshot,
+} from "./inference-snapshot";
 import {
   NormalizedUnattendedInputError,
   type NormalizedUnattendedStepInputV1,
@@ -615,6 +616,7 @@ async function assertLiveBackgroundExecution(params: {
     );
   }
   let legacyInference: BackgroundAgentInferenceSnapshotV1 | undefined;
+  let legacySubagentInference: BackgroundAgentInferenceSnapshotV1 | undefined;
   if (
     !params.normalizedInput &&
     row.run.executionSnapshot == null &&
@@ -635,6 +637,22 @@ async function assertLiveBackgroundExecution(params: {
           : "Selected inference profile is unavailable.",
       );
     }
+    // Pre-#1158-follow-up runs never had a frozen snapshot at all, so there
+    // is no queued-vs-live inconsistency to protect against here — resolve
+    // it live, same as the main model above. Non-fatal (existing
+    // convention for this field): a broken subagent preference must not
+    // block execution of a run that may never delegate.
+    try {
+      legacySubagentInference =
+        await resolveBackgroundAgentSubagentInferenceSnapshot(
+          row.run.userId,
+        );
+    } catch (error) {
+      console.error(
+        `[background-agents] failed to resolve subagent model preference for user "${row.run.userId}" (non-fatal, delegated workers will use the main model):`,
+        error,
+      );
+    }
   }
   const resolved = params.normalizedInput
     ? null
@@ -642,6 +660,7 @@ async function assertLiveBackgroundExecution(params: {
         row.run,
         row.agent,
         legacyInference,
+        legacySubagentInference,
       );
   if (!isBackgroundAgentsEnabled()) {
     throw new BackgroundAgentSnapshotError(
@@ -1124,51 +1143,51 @@ async function resolveBackgroundAgentModel(params: {
 }
 
 /**
- * Resolves the user's `default_subagent_model_id` preference (#1158) so
- * delegated `task` workers honor it instead of silently inheriting the main
- * model. Unlike the main model, the run's frozen inference snapshot carries
- * no subagent selection — this reads the live preference directly, the same
- * source the chat workflow uses for the same field.
+ * Resolves the accepted Run's frozen `subagentInference` descriptor (#1158
+ * follow-up) into the model selection delegated `task` workers use, the
+ * same way resolveBackgroundAgentModel resolves the main model: the
+ * non-secret route/model choice was captured with the run at creation
+ * time, only live credentials are loaded here after the saved route is
+ * confirmed to still match. This keeps a delegated worker's model
+ * consistent with the rest of the frozen execution snapshot even if the
+ * user changes `default_subagent_model_id` while the run sits queued.
  *
- * Non-fatal by design: a broken preference (its profile deleted or disabled)
- * must not fail the run — the coordinator turn may never delegate at all.
- * Reuses resolveStepAgentModels, which drops the override on failure so
- * delegated workers fall back to inheriting the main model.
+ * Non-fatal by design: a broken preference (its profile deleted or
+ * disabled since the run was created) must not fail the run — the
+ * coordinator turn may never delegate at all.
  */
-async function resolveBackgroundAgentSubagentModel(
-  userId: string,
-): Promise<AgentModelSelection | undefined> {
-  // The whole body — including the preference lookup itself, not just the
-  // model resolution below — must stay non-fatal: this runs after the
-  // sandbox is already connected, and a transient failure here (e.g. the
-  // preferences read) must not take the run down for a field that only
-  // affects delegated `task` workers.
+async function resolveBackgroundAgentSubagentModel(params: {
+  userId: string;
+  subagentInference: BackgroundAgentInferenceSnapshotV1 | undefined;
+}): Promise<AgentModelSelection | undefined> {
+  if (!params.subagentInference) {
+    return undefined;
+  }
   try {
-    const preferences = await getUserPreferences(userId);
-    if (!preferences.defaultSubagentModelId) {
-      return undefined;
+    const baseSelection: AgentModelSelection = {
+      id: toProviderModelId(params.subagentInference.modelId),
+    };
+    if (params.subagentInference.route === "gateway") {
+      return {
+        ...baseSelection,
+        attribution: {
+          inferenceRoute: "gateway",
+          provider: params.subagentInference.modelId.split("/")[0],
+        },
+      };
     }
-
-    const resolved = await resolveStepAgentModels({
-      userId,
-      inferenceProfileId: null,
-      agentOptions: {
-        subagentModel: {
-          id: preferences.defaultSubagentModelId,
-        } as AgentModelSelection,
-      },
-      resolve: resolveInferenceProfileModelSelection,
-      onSubagentResolutionFailed: (error) => {
-        console.error(
-          `[background-agents] subagent model resolution failed for user "${userId}" (non-fatal, delegated workers will use the main model):`,
-          error,
-        );
+    return await resolveInferenceProfileModelSelection({
+      userId: params.userId,
+      inferenceProfileId: params.subagentInference.inferenceProfileId,
+      selection: baseSelection,
+      expectedRoute: {
+        provider: params.subagentInference.provider,
+        baseUrl: params.subagentInference.baseUrl,
       },
     });
-    return resolved.subagentModel;
   } catch (error) {
     console.error(
-      `[background-agents] failed to read subagent model preference for user "${userId}" (non-fatal, delegated workers will use the main model):`,
+      `[background-agents] subagent model resolution failed for user "${params.userId}" (non-fatal, delegated workers will use the main model):`,
       error,
     );
     return undefined;
@@ -1197,6 +1216,9 @@ async function runBackgroundAgent(params: {
   /** The model id recorded on usage events / the started event payload. */
   recordedModelId: string;
   inference: BackgroundAgentInferenceSnapshotV1;
+  /** Resolved delegated-task-worker model (#1158 follow-up), frozen with
+   * the run at creation time. undefined = no subagent override configured. */
+  subagentModelSelection?: AgentModelSelection;
   assertLiveAuthorization: () => Promise<void>;
 }) {
   let messages: ModelMessage[] = [
@@ -1205,11 +1227,7 @@ async function runBackgroundAgent(params: {
       content: params.prompt,
     },
   ];
-  // #1158: honor the user's default_subagent_model_id preference so delegated
-  // `task` workers stop silently inheriting the main model.
-  const subagentModelSelection = await resolveBackgroundAgentSubagentModel(
-    params.userId,
-  );
+  const subagentModelSelection = params.subagentModelSelection;
   const options: OpenAgentCallOptions = {
     sandbox: {
       state: getSandboxState(params.sandbox),
@@ -1295,6 +1313,16 @@ async function runBackgroundAgent(params: {
       stallFinalizeTurns,
       timeoutMs: DEFAULT_AGENT_TIMEOUT_MS,
       modelId: params.recordedModelId,
+      // #1158 follow-up: delegated `task` workers can now run on a
+      // different (BYOK) model than the coordinator above — without this,
+      // run evidence cannot show which provider a delegated call used, or
+      // that one was configured at all. Sanitized (no directInference
+      // credentials): model id + route + profile id only.
+      subagentModelId: subagentModelSelection?.id ?? null,
+      subagentInferenceRoute:
+        subagentModelSelection?.attribution?.inferenceRoute ?? null,
+      subagentInferenceProfileId:
+        subagentModelSelection?.attribution?.inferenceProfileId ?? null,
     },
   });
 
@@ -2323,6 +2351,14 @@ export async function executeBackgroundAgentRun(params: {
     return;
   }
   const recordedModelId = resolvedModelSelection.id;
+  // #1158 follow-up: resolved from the frozen snapshot (not a live
+  // preferences read) so a delegated `task` worker's model stays
+  // consistent with the rest of this run's frozen state. Non-fatal by
+  // existing convention for this field.
+  const subagentModelSelection = await resolveBackgroundAgentSubagentModel({
+    userId: sandboxInput.identity.userId,
+    subagentInference: resolvedDefinition.definition.subagentInference,
+  });
 
   if (!(await ensureLiveAuthorization())) return;
   let setupToken: ScopedInstallationToken | undefined;
@@ -2683,6 +2719,7 @@ export async function executeBackgroundAgentRun(params: {
       modelSelection: resolvedModelSelection,
       recordedModelId,
       inference: sandboxInput.model,
+      subagentModelSelection,
       assertLiveAuthorization,
     });
   } catch (error) {
