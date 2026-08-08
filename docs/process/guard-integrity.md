@@ -38,6 +38,7 @@ Read these before writing a guard. They are not hypotheticals.
 | 3 | The same guard, locally | `PRODUCTION_DB_HOST` was absent from `.env.local` and `.env.example`, so the guard was unarmed on every developer machine. |
 | 4 | `isToolUIPart` test doubles (#1153) | Ten hand-written doubles diverged from the real library predicate, hiding an entire class of tool from every test that used them. |
 | 5 | The test enforcing *this document* | It asserted `PRODUCTION_DB_HOST` was present in `.env.example` and concluded "a fresh checkout arms the guard". The template ships the key **empty**, `init.sh`'s offline path copies it verbatim, and the guard fails open on a falsy host. The enforcement committed the error it was written to prevent. |
+| 6 | The fix for #5 | The `DISARMED` warning was added to `init.sh`'s reporter, but the reporter was invoked on only 1 of 3 env routes — the two that actually *create* `.env.local` reported nothing. The replacement test asserted the string `DISARMED` appeared in the function, which is true regardless of whether the function is ever called. |
 
 Instance 2 had a second edge worth internalizing: fixing only the variable the
 reviewer named would have armed the guard while leaving `VERCEL_ENV` stripped —
@@ -86,6 +87,11 @@ A key existing in `.env.example`, `turbo.json`, or a Vercel environment does not
 mean it holds a usable value. Templates ship keys empty on purpose. An assertion
 that a key is *present* proves documentation, not arming — say which one you are
 claiming.
+
+Instance 6 is the same rule one step further out: a warning that exists in a
+function is not a warning that fires. If a check must run on several code paths,
+**execute each path in the test** rather than asserting the check's text exists.
+A source-text assertion cannot tell you whether the code runs.
 
 Where a checkout cannot be proven armed from the repo, make the disarmed state
 **announce itself** instead. `init.sh` warns `the migration guard is DISARMED`

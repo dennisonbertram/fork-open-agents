@@ -84,21 +84,53 @@ describe("guard config coverage", () => {
     },
   );
 
-  // The previous version of this test asserted key presence and claimed that
-  // meant "a fresh checkout arms the guard". It does not: `.env.example` ships
-  // `PRODUCTION_DB_HOST=` empty, `init.sh`'s offline path copies the template
-  // verbatim, and `decideMigrationTarget` fails open on a falsy host. The test
-  // that was supposed to enforce this document committed the very error the
-  // document describes.
+  // Two prior versions of this test were wrong in the same way, one step apart:
   //
-  // A checkout cannot be proven armed from the repo, so assert the next best
-  // thing: that a disarmed checkout says so out loud.
-  test("init.sh warns when the guard is disarmed by an empty host", async () => {
-    const source = await Bun.file(new URL("init.sh", REPO_ROOT)).text();
-    const reporter = source.slice(source.indexOf("report_database_target() {"));
+  //   v1 asserted the key existed in `.env.example` and called the guard armed.
+  //      The template ships it empty.
+  //   v2 asserted the string "DISARMED" appeared somewhere in the reporter.
+  //      The reporter was only invoked on 1 of `init.sh`'s 3 env routes, so the
+  //      two routes that actually create `.env.local` reported nothing.
+  //
+  // Both checked for the presence of a thing rather than its delivery. This
+  // version EXECUTES each route with stubs and asserts the report appears, which
+  // is the only form that would have caught v2.
+  test.each([
+    ["offline skeleton", "OFFLINE=1; FORCE_ENV_PULL=0; rm -f $WEB_ENV_FILE"],
+    ["reuse existing", "OFFLINE=0; FORCE_ENV_PULL=0"],
+    ["fresh pull", "OFFLINE=0; FORCE_ENV_PULL=1"],
+  ])(
+    "init.sh reports the database target on the %s route",
+    async (_name, setup) => {
+      const initPath = new URL("init.sh", REPO_ROOT).pathname;
+      const script = [
+        "set -uo pipefail",
+        "ROOT_DIR=$TMP; WEB_ENV_FILE=$TMP/e.env; WEB_ENV_EXAMPLE=$TMP/e.example",
+        "ENVIRONMENT=development",
+        'info(){ echo "INFO $*"; }; ok(){ :; }; warn(){ echo "WARN $*"; }',
+        'die(){ echo "DIE $*"; return 1; }',
+        "ensure_better_auth_secret(){ :; }; link_vercel_if_requested(){ :; }",
+        // real call is: vercel env pull "$tmp_file" --environment=... => file is $3
+        `vercel(){ printf 'POSTGRES_URL="postgresql://u:p@ep-probe-host.aws.neon.tech/db"\n' > "$3"; }`,
+        `printf 'POSTGRES_URL="postgresql://u:p@ep-probe-host.aws.neon.tech/db"\n' > "$WEB_ENV_EXAMPLE"`,
+        `eval "$(sed -n '/^report_database_target() {/,/^}/p' ${initPath})"`,
+        `eval "$(sed -n '/^create_env_skeleton() {/,/^}/p' ${initPath})"`,
+        `eval "$(sed -n '/^resolve_web_env() {/,/^}/p' ${initPath})"`,
+        `eval "$(sed -n '/^pull_vercel_env() {/,/^}/p' ${initPath})"`,
+        setup,
+        "pull_vercel_env",
+      ].join("\n");
 
-    expect(reporter).toContain("DISARMED");
-  });
+      const tmp = `/tmp/guard-probe-${Math.random().toString(36).slice(2)}`;
+      await Bun.$`mkdir -p ${tmp}`.quiet();
+      try {
+        const out = await Bun.$`TMP=${tmp} bash -c ${script}`.text();
+        expect(out).toContain("database target:");
+      } finally {
+        await Bun.$`rm -rf ${tmp}`.quiet();
+      }
+    },
+  );
 
   test("the guard's fail-open default is documented where it is defined", async () => {
     const source = await Bun.file(
