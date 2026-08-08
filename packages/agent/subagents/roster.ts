@@ -9,6 +9,7 @@
 
 import type { LanguageModel } from "ai";
 import { gateway } from "ai";
+import type { ProviderModelId } from "../provider-model-id";
 
 /**
  * The per-role override record that the web layer resolves and the agent
@@ -16,7 +17,7 @@ import { gateway } from "ai";
  */
 export interface SubagentRosterEntry {
   /** Override model id for this role. null = use the shared subagent default. */
-  modelId?: string | null;
+  modelId?: ProviderModelId | null;
   /** Additional instructions appended to this role's system prompt. null = none. */
   instructions?: string | null;
   /** Composio toolkit slugs for this role. Empty array or absent = no tools. */
@@ -69,9 +70,7 @@ export function applyRosterOverrides({
   // Model override
   const model =
     entry.modelId != null
-      ? (gateway(
-          entry.modelId as Parameters<typeof gateway>[0],
-        ) as LanguageModel)
+      ? (gateway(entry.modelId) as LanguageModel)
       : base.model;
 
   // Instructions override — append to base

@@ -2,6 +2,7 @@ import "server-only";
 
 import {
   toAnthropicDirectModelId,
+  toProviderModelId,
   type AgentModelSelection,
   type DirectInferenceConfig,
 } from "@open-agents/agent";
@@ -81,7 +82,7 @@ export async function resolveInferenceProfileModelSelection(params: {
   const resolvedSelection: AgentModelSelection =
     parsedSelection.modelId === selection.id
       ? selection
-      : { ...selection, id: parsedSelection.modelId as typeof selection.id };
+      : { ...selection, id: toProviderModelId(parsedSelection.modelId) };
 
   if (!inferenceProfileId) {
     return {

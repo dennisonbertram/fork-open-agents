@@ -13,6 +13,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { type SubagentRoster, applyRosterOverrides } from "./roster";
+import { toProviderModelId } from "../provider-model-id";
 import { getSubagentRoster } from "../tools/utils";
 
 // ── REG-P4-001: Model override does not bleed across roles ────────────────────
@@ -20,7 +21,7 @@ import { getSubagentRoster } from "../tools/utils";
 describe("REG-P4-001: Model override stays isolated to configured role", () => {
   test("executor model override does not affect explorer or design", () => {
     const roster: SubagentRoster = {
-      executor: { modelId: "openai/gpt-4o" },
+      executor: { modelId: toProviderModelId("openai/gpt-4o") },
     };
     const explorerBase = {
       model: { modelId: "anthropic/claude-haiku-4.5" },
@@ -170,8 +171,14 @@ describe("REG-P4-005: Composio tool slugs stay isolated per role", () => {
 describe("REG-P4-006: All three roles can be configured in one roster", () => {
   test("each role receives its own unique config when all three have entries", () => {
     const roster: SubagentRoster = {
-      explorer: { modelId: "openai/gpt-4o", instructions: "Explore only." },
-      executor: { modelId: "openai/gpt-4.5", composioToolkitSlugs: ["linear"] },
+      explorer: {
+        modelId: toProviderModelId("openai/gpt-4o"),
+        instructions: "Explore only.",
+      },
+      executor: {
+        modelId: toProviderModelId("openai/gpt-4.5"),
+        composioToolkitSlugs: ["linear"],
+      },
       design: {
         instructions: "Make it beautiful.",
         composioToolkitSlugs: ["figma"],

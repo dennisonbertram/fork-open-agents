@@ -198,12 +198,30 @@ function normalizeSkillRefs(value: unknown): GlobalSkillRef[] {
 }
 
 function rowToResolvedAgent(row: AgentRow): ResolvedAgent {
+  // Mirror the synthetic-fallback branch below: a stored row.modelId can
+  // still carry a "user-profile:<id>:<modelId>" composite (#1123), so strip
+  // it the same way before handing this id further downstream.
+  //
+  // The Settings -> Agents "User model" picker persists that composite into
+  // agents.model_id, but its PATCH path does not populate the row's own
+  // inferenceProfileId column — so for that row, the composite is the ONLY
+  // carrier of the profile reference. Stripping it down to the bare model id
+  // without also recovering the profile id (#1155 finding 2) would silently
+  // route a bare id that happens to collide with a real gateway catalog id
+  // (e.g. an Anthropic model) through the Vercel gateway under the wrong
+  // provider and key, instead of the user's own profile. An explicit
+  // row.inferenceProfileId (the main-role pairing) still wins when set.
+  const parsedModel = row.modelId
+    ? parseModelOptionSelection(row.modelId)
+    : null;
+
   return {
     role: row.role,
     fromDbRow: true,
     agentId: row.id,
-    modelId: row.modelId,
-    inferenceProfileId: row.inferenceProfileId,
+    modelId: parsedModel?.modelId ?? null,
+    inferenceProfileId:
+      row.inferenceProfileId ?? parsedModel?.inferenceProfileId ?? null,
     instructions: row.instructions,
     skillRefs: normalizeSkillRefs(row.skillRefs),
     builtinToolNames: row.builtinToolNames,

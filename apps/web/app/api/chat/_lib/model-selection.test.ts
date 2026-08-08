@@ -1,3 +1,4 @@
+import { toProviderModelId } from "@open-agents/agent";
 import { describe, expect, test } from "bun:test";
 import { BUILT_IN_VARIANTS, type ModelVariant } from "@/lib/model-variants";
 import { APP_DEFAULT_MODEL_ID } from "@/lib/models";
@@ -12,7 +13,7 @@ describe("resolveChatModelSelection", () => {
     });
 
     expect(selection).toEqual({
-      id: "openai/gpt-5",
+      id: toProviderModelId("openai/gpt-5"),
     });
   });
 
@@ -35,7 +36,7 @@ describe("resolveChatModelSelection", () => {
     });
 
     expect(selection).toEqual({
-      id: "openai/gpt-5",
+      id: toProviderModelId("openai/gpt-5"),
       providerOptionsOverrides: {
         openai: {
           reasoningEffort: "medium",
@@ -53,7 +54,7 @@ describe("resolveChatModelSelection", () => {
     });
 
     expect(selection).toEqual({
-      id: "openai/gpt-5.4",
+      id: toProviderModelId("openai/gpt-5.4"),
       providerOptionsOverrides: {
         openai: {
           reasoningEffort: "xhigh",
@@ -79,7 +80,7 @@ describe("resolveChatModelSelection", () => {
       });
 
       expect(selection).toEqual({
-        id: APP_DEFAULT_MODEL_ID,
+        id: toProviderModelId(APP_DEFAULT_MODEL_ID),
       });
       expect(warnings).toEqual([
         [
@@ -99,7 +100,7 @@ describe("resolveChatModelSelection", () => {
     });
 
     expect(selection).toEqual({
-      id: APP_DEFAULT_MODEL_ID,
+      id: toProviderModelId(APP_DEFAULT_MODEL_ID),
     });
   });
 });

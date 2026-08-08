@@ -31,6 +31,7 @@ mock.module("@open-agents/agent", () => ({
   directOpenAIModel: (config: unknown) => config,
   toAnthropicDirectModelId: (modelId: string) =>
     modelId === "anthropic/claude-haiku-4.5" ? "claude-haiku-4-5" : null,
+  toProviderModelId: (modelId: string) => modelId,
 }));
 
 mock.module("@/lib/db/inference-profiles", () => ({
@@ -71,7 +72,7 @@ describe("resolveInferenceProfileModelSelection user-profile option ids", () => 
     });
 
     expect(lookupCalls).toEqual([{ userId: "user-1", profileId: PROFILE_ID }]);
-    expect(selection.id).toBe("zai-glm-4.7");
+    expect(selection.id).toBe("zai-glm-4.7" as never);
     expect(selection).toMatchObject({
       directInference: {
         provider: "openai-compatible",
@@ -94,7 +95,7 @@ describe("resolveInferenceProfileModelSelection user-profile option ids", () => 
       selection: { id: COMPOSITE_ID as never },
     });
 
-    expect(selection.id).toBe("zai-glm-4.7");
+    expect(selection.id).toBe("zai-glm-4.7" as never);
     expect(selection).toMatchObject({
       directInference: { modelId: "zai-glm-4.7" },
     });

@@ -11,6 +11,7 @@ import {
   type ProviderOptionsByProvider,
 } from "./models";
 
+import { type ProviderModelId, toProviderModelId } from "./provider-model-id";
 import type { SkillMetadata } from "./skills/types";
 import type { SubagentRoster } from "./subagents/roster";
 import { buildSystemPrompt } from "./system-prompt";
@@ -55,7 +56,7 @@ export type ManagedRuntimeAgentContext = {
 };
 
 export interface AgentModelSelection {
-  id: GatewayModelId;
+  id: ProviderModelId;
   directInference?: DirectInferenceConfig;
   directAnthropic?: DirectAnthropicConfig;
   providerOptionsOverrides?: ProviderOptionsByProvider;
@@ -187,10 +188,12 @@ function normalizeAgentModelSelection(
   fallbackId: GatewayModelId,
 ): AgentModelSelection {
   if (!selection) {
-    return { id: fallbackId };
+    return { id: toProviderModelId(fallbackId) };
   }
 
-  return typeof selection === "string" ? { id: selection } : selection;
+  return typeof selection === "string"
+    ? { id: toProviderModelId(selection) }
+    : selection;
 }
 
 const tools = {

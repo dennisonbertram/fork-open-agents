@@ -288,6 +288,7 @@ mock.module("@open-agents/agent", () => ({
   sanitizeUnattendedToolCalls: (messages: unknown) => messages,
   gateway: (id: string) => id,
   defaultModelLabel: "anthropic/claude-opus-4.6",
+  toProviderModelId: (id: string) => id,
   openAgent: { generate },
 }));
 
