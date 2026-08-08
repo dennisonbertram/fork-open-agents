@@ -362,6 +362,23 @@ mock.module("@/lib/inference/profile-resolution", () => ({
   ),
 }));
 
+// #1158: user_preferences.default_subagent_model_id must reach delegated
+// `task` workers as `options.subagentModel`. Defaults to unset (today's
+// pre-fix behavior for every other test in this file).
+let currentUserPreferences: { defaultSubagentModelId: string | null } = {
+  defaultSubagentModelId: null,
+};
+const getUserPreferences = mock(async () => currentUserPreferences);
+// Composio's db layer (transitively imported by executor.ts) also imports
+// updateUserPreferences from this module — re-export a no-op so that import
+// still resolves under this mock.
+const updateUserPreferences = mock(async () => currentUserPreferences);
+
+mock.module("@/lib/db/user-preferences", () => ({
+  getUserPreferences,
+  updateUserPreferences,
+}));
+
 const executorModulePromise = import("./executor");
 const originalAppUrl = process.env.NEXT_PUBLIC_APP_URL;
 
@@ -454,9 +471,11 @@ beforeEach(() => {
   process.env.NEXT_PUBLIC_APP_URL = "https://open-agents.example";
   currentRun = buildRun();
   currentAgent = buildAgent();
+  currentUserPreferences = { defaultSubagentModelId: null };
   commandResults = new Map<string, ExecResult>();
   recordedOutputs = [];
   outputIdCounter = 0;
+  getUserPreferences.mockClear();
   getBackgroundAgentRunWithAgent.mockClear();
   recordBackgroundAgentEvent.mockClear();
   recordBackgroundAgentOutput.mockClear();
@@ -746,6 +765,38 @@ describe("executeBackgroundAgentRun", () => {
       "grep",
       "read",
     ]);
+  });
+
+  test("#1158: sets options.subagentModel from user_preferences.default_subagent_model_id", async () => {
+    currentUserPreferences = { defaultSubagentModelId: "zai/glm-4.7" };
+    currentAgent = buildAgent();
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "workflow-1",
+    });
+
+    const call = (generate.mock.calls[0] as unknown[] | undefined)?.[0] as {
+      options?: { subagentModel?: { id?: string } };
+    };
+    expect(call?.options?.subagentModel?.id).toBe("zai/glm-4.7");
+  });
+
+  test("#1158: options.subagentModel is absent when no subagent model preference is set", async () => {
+    currentUserPreferences = { defaultSubagentModelId: null };
+    currentAgent = buildAgent();
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "workflow-1",
+    });
+
+    const call = (generate.mock.calls[0] as unknown[] | undefined)?.[0] as {
+      options?: { subagentModel?: unknown };
+    };
+    expect(call?.options?.subagentModel).toBeUndefined();
   });
 
   test("defaults builtinToolNames to null (no restriction) when the agent has none", async () => {
