@@ -501,6 +501,97 @@ describe("resolveAgentForRole — ResolvedAgent shape", () => {
   });
 });
 
+// ─── BT-008: rowToResolvedAgent preserves the profile embedded in a composite modelId
+
+describe("resolveAgentForRole — DB row composite modelId preserves the profile", () => {
+  // #1155 finding 2 (P1): the Settings -> Agents picker persists a
+  // "User model" selection as `user-profile:<profileId>:<modelId>` into
+  // agents.model_id, and the PATCH path does NOT populate the row's separate
+  // inferenceProfileId column. The composite is the ONLY carrier of the
+  // profile reference for a DB-row agent. rowToResolvedAgent already stripped
+  // the composite down to the bare modelId (mirroring the synthetic-fallback
+  // branch's parseModelOptionSelection call) but discarded the profile half —
+  // so a bare modelId that happens to collide with a real gateway catalog id
+  // (e.g. an Anthropic model) would silently route through the Vercel gateway
+  // instead of the user's own profile and key.
+  beforeEach(() => {
+    mockListAgentsForUser.mockReset();
+    mockGetUserPreferences.mockReset();
+    mockGetUserPreferences.mockResolvedValue({
+      defaultModelId: "anthropic/claude-opus-4",
+      defaultSubagentModelId: null,
+      defaultInferenceProfileId: null,
+      defaultManagedRuntimeProfileId: "web-bun-agent-browser",
+      composioAgentDefaults: {
+        main: { defaultProfileId: null },
+        explorer: { defaultProfileId: null },
+        executor: { defaultProfileId: null },
+        design: { defaultProfileId: null },
+      },
+    });
+  });
+
+  it("BT-008a: a composite row.modelId yields BOTH the bare model id and the profile id", async () => {
+    mockListAgentsForUser.mockResolvedValue([
+      makeAgent({
+        id: "row-composite",
+        role: "explorer",
+        scope: "user_default",
+        modelId: "user-profile:profile-xyz:claude-opus-4",
+        inferenceProfileId: null,
+      }),
+    ]);
+
+    const resolved = await resolveAgentForRole({
+      userId: "user-1",
+      role: "explorer",
+    });
+
+    expect(resolved.modelId).toBe("claude-opus-4");
+    expect(resolved.inferenceProfileId).toBe("profile-xyz");
+  });
+
+  it("BT-008b: a plain gateway row.modelId is unchanged and does not invent a profile", async () => {
+    mockListAgentsForUser.mockResolvedValue([
+      makeAgent({
+        id: "row-plain",
+        role: "executor",
+        scope: "user_default",
+        modelId: "openai/gpt-5.4",
+        inferenceProfileId: null,
+      }),
+    ]);
+
+    const resolved = await resolveAgentForRole({
+      userId: "user-1",
+      role: "executor",
+    });
+
+    expect(resolved.modelId).toBe("openai/gpt-5.4");
+    expect(resolved.inferenceProfileId).toBeNull();
+  });
+
+  it("BT-008c: an explicit row.inferenceProfileId wins over a composite-embedded one", async () => {
+    mockListAgentsForUser.mockResolvedValue([
+      makeAgent({
+        id: "row-explicit",
+        role: "design",
+        scope: "user_default",
+        modelId: "user-profile:profile-embedded:claude-opus-4",
+        inferenceProfileId: "profile-explicit",
+      }),
+    ]);
+
+    const resolved = await resolveAgentForRole({
+      userId: "user-1",
+      role: "design",
+    });
+
+    expect(resolved.modelId).toBe("claude-opus-4");
+    expect(resolved.inferenceProfileId).toBe("profile-explicit");
+  });
+});
+
 // ─── BT-006: listAgentsForUser is called with correct userId ──────────────────
 
 describe("resolveAgentForRole — data-access contract", () => {

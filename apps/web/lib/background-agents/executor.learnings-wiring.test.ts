@@ -226,6 +226,7 @@ mock.module("@open-agents/agent", () => ({
   sanitizeUnattendedToolCalls: (messages: unknown) => messages,
   gateway: (modelId: string) => modelId,
   defaultModelLabel: "anthropic/claude-opus-4.6",
+  toProviderModelId: (modelId: string) => modelId,
   openAgent: { generate: mock(async () => ({})) },
 }));
 
@@ -237,6 +238,13 @@ mock.module("@/lib/inference/model-option-id", () => ({
   }),
   getModelOptionSelectionId: (modelId: string | null | undefined) =>
     modelId ?? "",
+  splitModelSelection: (
+    modelId: string,
+    explicitInferenceProfileId?: string | null,
+  ) => ({
+    modelId,
+    inferenceProfileId: explicitInferenceProfileId ?? null,
+  }),
 }));
 
 mock.module("@/lib/inference/profile-resolution", () => ({

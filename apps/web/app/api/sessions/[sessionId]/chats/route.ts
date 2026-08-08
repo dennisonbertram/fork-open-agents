@@ -10,6 +10,7 @@ import {
 } from "@/lib/db/sessions";
 import { isComposioProfileAllowedForRepository } from "@/lib/db/composio";
 import { getUserPreferences } from "@/lib/db/user-preferences";
+import { splitModelSelection } from "@/lib/inference/model-option-id";
 
 type RouteContext = {
   params: Promise<{ sessionId: string }>;
@@ -103,10 +104,11 @@ export async function POST(req: Request, context: RouteContext) {
     id: requestedChatId ?? nanoid(),
     sessionId,
     title: "New chat",
-    modelId: preferences.defaultModelId,
-    inferenceProfileId:
+    ...splitModelSelection(
+      preferences.defaultModelId,
       sessionContext.sessionRecord.inferenceProfileId ??
-      preferences.defaultInferenceProfileId,
+        preferences.defaultInferenceProfileId,
+    ),
     composioSelection: {
       mainProfileId:
         defaultComposioProfileId && composioPolicy.allowed

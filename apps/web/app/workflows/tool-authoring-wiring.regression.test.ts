@@ -386,7 +386,7 @@ mock.module("ai", () => ({
         : [],
     })),
   isToolUIPart: (part: { type: string }) =>
-    part.type === "tool-invocation" || part.type.startsWith("tool-"),
+    part.type.startsWith("tool-") || part.type === "dynamic-tool",
   pruneMessages: ({ messages }: { messages: Array<Record<string, unknown>> }) =>
     messages,
 }));
@@ -396,6 +396,7 @@ mock.module("@open-agents/agent", () => ({
     modelId.startsWith("anthropic/")
       ? modelId.slice("anthropic/".length).replaceAll(".", "-")
       : null,
+  toProviderModelId: (modelId: string) => modelId,
 }));
 
 // Import after all mocks are set up

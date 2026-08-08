@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { DEFAULT_MANAGED_RUNTIME_PROFILE_ID } from "@open-agents/sandbox/managed-runtime-profiles";
 import type { SandboxType } from "@/components/sandbox-selector-compact";
-import { parseModelOptionSelection } from "@/lib/inference/model-option-id";
+import { splitModelSelection } from "@/lib/inference/model-option-id";
 import { modelVariantsSchema, type ModelVariant } from "@/lib/model-variants";
 import { APP_DEFAULT_MODEL_ID } from "@/lib/models";
 import {
@@ -186,14 +186,14 @@ function splitDefaultModelSelection(
     return updates;
   }
 
-  const parsed = parseModelOptionSelection(updates.defaultModelId);
+  const split = splitModelSelection(
+    updates.defaultModelId,
+    updates.defaultInferenceProfileId,
+  );
   return {
     ...updates,
-    defaultModelId: parsed.modelId,
-    defaultInferenceProfileId:
-      updates.defaultInferenceProfileId !== undefined
-        ? updates.defaultInferenceProfileId
-        : parsed.inferenceProfileId,
+    defaultModelId: split.modelId,
+    defaultInferenceProfileId: split.inferenceProfileId,
   };
 }
 

@@ -343,6 +343,7 @@ mock.module("@open-agents/agent", () => ({
   sanitizeUnattendedToolCalls: (messages: unknown) => messages,
   gateway: (modelId: string) => modelId,
   defaultModelLabel: "anthropic/claude-opus-4.6",
+  toProviderModelId: (modelId: string) => modelId,
   openAgent: { generate },
 }));
 
@@ -354,6 +355,13 @@ mock.module("@/lib/inference/model-option-id", () => ({
   }),
   getModelOptionSelectionId: (modelId: string | null | undefined) =>
     modelId ?? "",
+  splitModelSelection: (
+    modelId: string,
+    explicitInferenceProfileId?: string | null,
+  ) => ({
+    modelId,
+    inferenceProfileId: explicitInferenceProfileId ?? null,
+  }),
 }));
 
 mock.module("@/lib/inference/profile-resolution", () => ({
@@ -361,6 +369,17 @@ mock.module("@/lib/inference/profile-resolution", () => ({
   resolveInferenceProfileModelSelection: mock(
     async (params: { selection: unknown }) => params.selection,
   ),
+}));
+
+// #1158: runBackgroundAgent now reads default_subagent_model_id. The real
+// "./composio-tools" is not mocked in this file, so it pulls in the real
+// lib/db/composio.ts, which also imports updateUserPreferences from this
+// same module — a getUserPreferences-only mock breaks that import.
+mock.module("@/lib/db/user-preferences", () => ({
+  getUserPreferences: mock(async () => ({ defaultSubagentModelId: null })),
+  updateUserPreferences: mock(async () => {
+    throw new Error("updateUserPreferences is not used by this test");
+  }),
 }));
 
 const executorModulePromise = import("./executor");

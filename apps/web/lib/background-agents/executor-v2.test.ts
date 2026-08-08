@@ -353,6 +353,11 @@ mock.module("./composio-tools", () => ({
   resolveComposioToolsForBgRun,
 }));
 
+// #1158: runBackgroundAgent now reads default_subagent_model_id.
+mock.module("@/lib/db/user-preferences", () => ({
+  getUserPreferences: mock(async () => ({ defaultSubagentModelId: null })),
+}));
+
 type NormalizedSandboxBuilderInput = Parameters<
   typeof normalizedRuntime.buildNormalizedBackgroundSandboxInput
 >[0];
@@ -461,19 +466,33 @@ let inferenceProfileResolutionShouldFail = false;
 let inferenceRouteAvailabilityFailureAt: number | null = null;
 let inferenceRouteAvailabilityCalls = 0;
 const inferenceResolutionCalls: Array<Record<string, unknown>> = [];
-mock.module("@/lib/inference/model-option-id", () => ({
-  USER_INFERENCE_OPTION_PREFIX: "user-profile:",
-  parseModelOptionSelection: (optionId: string) => {
+mock.module("@/lib/inference/model-option-id", () => {
+  const parseModelOptionSelection = (optionId: string) => {
     if (optionId.startsWith("user-profile:")) {
       const rest = optionId.slice("user-profile:".length);
       const [profileId, modelId] = rest.split(":");
       return { modelId, inferenceProfileId: profileId ?? null };
     }
     return { modelId: optionId, inferenceProfileId: null };
-  },
-  getModelOptionSelectionId: (modelId: string | null | undefined) =>
-    modelId ?? "",
-}));
+  };
+  return {
+    USER_INFERENCE_OPTION_PREFIX: "user-profile:",
+    parseModelOptionSelection,
+    getModelOptionSelectionId: (modelId: string | null | undefined) =>
+      modelId ?? "",
+    splitModelSelection: (
+      modelId: string,
+      explicitInferenceProfileId?: string | null,
+    ) => {
+      const parsed = parseModelOptionSelection(modelId);
+      return {
+        modelId: parsed.modelId,
+        inferenceProfileId:
+          explicitInferenceProfileId ?? parsed.inferenceProfileId,
+      };
+    },
+  };
+});
 mock.module("@/lib/db/inference-profiles", () => ({
   getInferenceProfileByIdForUser: mock(
     async (_userId: string, profileId: string) => ({

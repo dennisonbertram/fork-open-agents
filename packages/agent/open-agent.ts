@@ -4,13 +4,11 @@ import { z } from "zod";
 import { addCacheControl } from "./context-management";
 import type { IsolatedWorkspaceProvisioner } from "./isolated-worker-workspace";
 import {
-  type DirectAnthropicConfig,
-  type DirectInferenceConfig,
+  type AgentModelSelection,
   type GatewayModelId,
   gateway,
-  type ProviderOptionsByProvider,
 } from "./models";
-
+import { toProviderModelId } from "./provider-model-id";
 import type { SkillMetadata } from "./skills/types";
 import type { SubagentRoster } from "./subagents/roster";
 import { buildSystemPrompt } from "./system-prompt";
@@ -44,6 +42,10 @@ import {
   type ManageBackgroundAgentAction,
 } from "./tools/manage-background-agent";
 
+// Re-exported for backward compatibility: this type originated here before
+// moving to ./models (roster.ts needs it and cannot import from open-agent.ts).
+export type { AgentModelSelection } from "./models";
+
 export const OPEN_AGENT_RUNTIME_MODES = ["classic", "managed_runtime"] as const;
 export type OpenAgentRuntimeMode = (typeof OPEN_AGENT_RUNTIME_MODES)[number];
 
@@ -53,19 +55,6 @@ export type ManagedRuntimeAgentContext = {
   profileDisplayName?: string;
   sandboxName?: string;
 };
-
-export interface AgentModelSelection {
-  id: GatewayModelId;
-  directInference?: DirectInferenceConfig;
-  directAnthropic?: DirectAnthropicConfig;
-  providerOptionsOverrides?: ProviderOptionsByProvider;
-  attribution?: {
-    inferenceRoute?: "gateway" | "user";
-    inferenceProfileId?: string;
-    inferenceProfileName?: string;
-    provider?: string;
-  };
-}
 
 export type OpenAgentModelInput = GatewayModelId | AgentModelSelection;
 
@@ -187,10 +176,12 @@ function normalizeAgentModelSelection(
   fallbackId: GatewayModelId,
 ): AgentModelSelection {
   if (!selection) {
-    return { id: fallbackId };
+    return { id: toProviderModelId(fallbackId) };
   }
 
-  return typeof selection === "string" ? { id: selection } : selection;
+  return typeof selection === "string"
+    ? { id: toProviderModelId(selection) }
+    : selection;
 }
 
 const tools = {
@@ -429,6 +420,22 @@ export const openAgent = new ToolLoopAgent({
       ? normalizeAgentModelSelection(options.subagentModel, defaultModelLabel)
       : undefined;
 
+    // Runtime backstop (#1156). `.id` is typed `ProviderModelId`, but that
+    // brand is compile-time only — normalizeAgentModelSelection only mints
+    // through toProviderModelId() (#1161) when the caller passes a plain
+    // string; a caller-constructed AgentModelSelection *object* (the shape
+    // every resolved chat/background-agent/agent-loop selection actually
+    // takes, often round-tripped through DB/workflow-state JSON) skips that
+    // branch entirely. Re-mint here, at the last moment before either model
+    // reaches gateway(), so a still-composite id throws a diagnosable,
+    // named error instead of being handed to a provider. This does NOT
+    // cover packages/agent/subagents/roster.ts, which builds its own model
+    // downstream of prepareCall (#1157).
+    toProviderModelId(mainSelection.id);
+    if (subagentSelection) {
+      toProviderModelId(subagentSelection.id);
+    }
+
     const callModel = gateway(mainSelection.id, {
       directInference:
         mainSelection.directInference ?? mainSelection.directAnthropic,
@@ -442,6 +449,10 @@ export const openAgent = new ToolLoopAgent({
           providerOptionsOverrides: subagentSelection.providerOptionsOverrides,
         })
       : undefined;
+    // The role's effective default selection before any roster override —
+    // threaded raw (not just the constructed model) so a roster entry with a
+    // plain model id override can still reuse this routing (#1157).
+    const subagentModelSelection = subagentSelection ?? mainSelection;
     const customInstructions = options.customInstructions;
     const modelSystemPrompt = options.modelSystemPrompt;
     const sandbox = options.sandbox;
@@ -497,6 +508,7 @@ export const openAgent = new ToolLoopAgent({
         skills,
         model: callModel,
         subagentModel,
+        subagentModelSelection,
         runtimeMode,
         managedRuntime,
         githubToolAvailable,

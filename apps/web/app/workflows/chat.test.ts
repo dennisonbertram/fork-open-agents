@@ -1,5 +1,12 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 import type { UIMessageChunk } from "ai";
+import type { AgentModelSelection } from "@open-agents/agent";
+
+// resolveInferenceProfileModelSelection (used to resolve a roster entry's own
+// inference profile, #1157) lives in a "server-only" module. Dynamically
+// importing it under bun test throws unless "server-only" is stubbed, same as
+// every other test file in this repo that reaches a server-only module.
+mock.module("server-only", () => ({}));
 
 // ── Spy state ──────────────────────────────────────────────────────
 
@@ -138,6 +145,23 @@ const spies = {
     }),
   ),
   emitSessionEvent: mock(() => Promise.resolve(null)),
+  getInferenceProfileByIdForUser: mock(
+    async (
+      _userId: string,
+      profileId: string,
+    ): Promise<{
+      id: string;
+      name: string;
+      provider: "anthropic";
+      enabled: boolean;
+    } | null> => ({
+      id: profileId,
+      name: `Profile ${profileId}`,
+      provider: "anthropic" as const,
+      enabled: true,
+    }),
+  ),
+  decryptInferenceProfileApiKey: mock(() => "decrypted-test-key"),
   resolveComposioToolsForChat: mock(
     async (): Promise<unknown> => ({ status: "off" as const }),
   ),
@@ -459,6 +483,7 @@ mock.module("@open-agents/agent", () => ({
     modelId.startsWith("anthropic/")
       ? modelId.slice("anthropic/".length).replaceAll(".", "-")
       : null,
+  toProviderModelId: (modelId: string) => modelId,
 }));
 
 mock.module("@/lib/db/sessions", () => ({
@@ -471,15 +496,11 @@ mock.module("@/lib/db/user-preferences", () => ({
 }));
 
 mock.module("@/lib/db/inference-profiles", () => ({
-  getInferenceProfileByIdForUser: async (
-    _userId: string,
-    profileId: string,
-  ) => ({
-    id: profileId,
-    name: "Personal Anthropic",
-    provider: "anthropic",
-    enabled: true,
-  }),
+  getInferenceProfileByIdForUser: spies.getInferenceProfileByIdForUser,
+  decryptInferenceProfileApiKey: spies.decryptInferenceProfileApiKey,
+  INFERENCE_PROFILE_REENTER_KEY_MESSAGE:
+    "Re-enter your API key for this profile.",
+  recordInferenceProfileTestResult: mock(() => Promise.resolve()),
 }));
 
 mock.module("@/lib/observability/events", () => ({
@@ -3135,7 +3156,9 @@ describe("runAgentWorkflow", () => {
     // roster must exist because executor has a real DB row
     expect(roster).toBeDefined();
     // only executor appears
-    expect(roster?.executor).toMatchObject({ modelId: "openai/gpt-5.4" });
+    expect(roster?.executor).toMatchObject({
+      modelSelection: { id: "openai/gpt-5.4" },
+    });
     // explorer and design must be absent (synthetic, no entry emitted)
     expect(roster?.explorer).toBeUndefined();
     expect(roster?.design).toBeUndefined();
@@ -3180,9 +3203,127 @@ describe("runAgentWorkflow", () => {
     const roster = opts?.subagentRoster as Record<string, unknown> | undefined;
     expect(roster).toBeDefined();
     expect(roster?.explorer).toMatchObject({
-      modelId: "openai/gpt-5.4",
+      modelSelection: { id: "openai/gpt-5.4" },
       instructions: "Focus on reading, not writing.",
     });
+  });
+
+  // #1157 guard (a): a plain gateway roster id (no inferenceProfileId) must be
+  // left completely alone — never handed to a profile resolver. Handing it to
+  // the resolver would call a custom endpoint with a model it does not serve.
+  test("regression: BT-ROSTER-REG-002 a plain-gateway DB row roster override is never sent through the profile resolver", async () => {
+    resolveAgentForRoleSpy.mockImplementation(
+      async (params: { role: string }) => {
+        if (params.role === "executor") {
+          return {
+            ...makeSyntheticResolvedAgent(
+              "executor",
+              "anthropic/claude-opus-4",
+            ),
+            fromDbRow: true,
+            inferenceProfileId: null,
+          };
+        }
+        return makeSyntheticResolvedAgent(params.role);
+      },
+    );
+
+    await runAgentWorkflow(makeOptions());
+
+    const opts = agentStreamOptions as Record<string, unknown> | undefined;
+    const roster = opts?.subagentRoster as Record<string, unknown> | undefined;
+    expect(roster?.executor).toEqual({
+      modelSelection: { id: "anthropic/claude-opus-4" },
+    });
+    expect(spies.getInferenceProfileByIdForUser).not.toHaveBeenCalled();
+  });
+
+  // #1157 guard (b): a roster entry with its own inference profile must
+  // resolve through THAT profile (never the main model's, never dropped) and
+  // end up carrying real provider routing (directInference), not a bare id.
+  test("regression: BT-ROSTER-REG-003 a profile-bound DB row resolves through its OWN inference profile into modelSelection", async () => {
+    resolveAgentForRoleSpy.mockImplementation(
+      async (params: { role: string }) => {
+        if (params.role === "executor") {
+          return {
+            ...makeSyntheticResolvedAgent(
+              "executor",
+              "anthropic/claude-opus-4",
+            ),
+            fromDbRow: true,
+            inferenceProfileId: "profile-executor-own",
+            instructions: "Be careful with credentials.",
+          };
+        }
+        return makeSyntheticResolvedAgent(params.role);
+      },
+    );
+
+    await runAgentWorkflow(makeOptions());
+
+    const opts = agentStreamOptions as Record<string, unknown> | undefined;
+    const roster = opts?.subagentRoster as Record<string, unknown> | undefined;
+    const executorEntry = roster?.executor as
+      | { modelSelection?: AgentModelSelection; instructions?: string }
+      | undefined;
+
+    expect(executorEntry?.instructions).toBe("Be careful with credentials.");
+    expect(executorEntry?.modelSelection).toMatchObject({
+      directInference: expect.objectContaining({
+        provider: "anthropic",
+        apiKey: "decrypted-test-key",
+      }),
+      attribution: expect.objectContaining({
+        inferenceRoute: "user",
+        inferenceProfileId: "profile-executor-own",
+      }),
+    });
+    // Resolved through this role's OWN profile id, not the main model's
+    // (which has none configured in this test) and not a different role's.
+    expect(spies.getInferenceProfileByIdForUser).toHaveBeenCalledWith(
+      "user-1",
+      "profile-executor-own",
+    );
+  });
+
+  test("regression: BT-ROSTER-REG-004 a profile-bound roster override that fails to resolve drops the override and emits a structured session event, not a console.warn", async () => {
+    spies.getInferenceProfileByIdForUser.mockImplementationOnce(
+      async () => null,
+    );
+    resolveAgentForRoleSpy.mockImplementation(
+      async (params: { role: string }) => {
+        if (params.role === "executor") {
+          return {
+            ...makeSyntheticResolvedAgent(
+              "executor",
+              "anthropic/claude-opus-4",
+            ),
+            fromDbRow: true,
+            inferenceProfileId: "profile-deleted",
+          };
+        }
+        return makeSyntheticResolvedAgent(params.role);
+      },
+    );
+
+    await runAgentWorkflow(makeOptions());
+
+    const opts = agentStreamOptions as Record<string, unknown> | undefined;
+    const roster = opts?.subagentRoster as Record<string, unknown> | undefined;
+    // No other field is set for this role, so once the override is dropped no
+    // roster entry should be emitted at all — the role inherits the default
+    // subagent model instead.
+    expect(roster?.executor).toBeUndefined();
+    expect(spies.emitSessionEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventName: "workflow.subagent-roster.profile-fallback",
+        status: "info",
+        payload: expect.objectContaining({
+          role: "executor",
+          inferenceProfileId: "profile-deleted",
+        }),
+      }),
+    );
   });
 
   // #1143 / #1142. The reported incident: a chat turn spent 9 steps and 69.5s

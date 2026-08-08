@@ -381,6 +381,55 @@ mock.module("@open-agents/agent", () => ({
     generate: openAgentGenerateMock,
   },
   gateway: mock((model: string) => model),
+  toProviderModelId: (modelId: string) => modelId,
+}));
+
+// ── User preferences + inference profile resolution mocks (#1158) ────────────
+// Loops previously never resolved a model at all — every step ran on the
+// package default. Defaults below reproduce that default's inputs (plain
+// gateway model, no profile); individual tests override to exercise the
+// profile-resolution path.
+
+let userPreferencesResult: {
+  defaultModelId: string;
+  defaultInferenceProfileId: string | null;
+  defaultSubagentModelId: string | null;
+} = {
+  defaultModelId: "openai/gpt-5.4",
+  defaultInferenceProfileId: null,
+  defaultSubagentModelId: null,
+};
+const getUserPreferencesMock = mock(
+  async (_userId: string) => userPreferencesResult,
+);
+
+mock.module("@/lib/db/user-preferences", () => ({
+  getUserPreferences: getUserPreferencesMock,
+}));
+
+type FakeAgentModelSelection = {
+  id: string;
+  directInference?: unknown;
+  attribution?: unknown;
+};
+
+// Identity pass-through by default (gateway route, nothing to resolve);
+// individual tests override to return a distinct, profile-routed selection.
+let resolveInferenceProfileModelSelectionImpl: (params: {
+  userId: string;
+  inferenceProfileId: string | null | undefined;
+  selection: FakeAgentModelSelection;
+}) => Promise<FakeAgentModelSelection> = async ({ selection }) => selection;
+
+const resolveInferenceProfileModelSelectionMock = mock(
+  async (
+    params: Parameters<typeof resolveInferenceProfileModelSelectionImpl>[0],
+  ) => resolveInferenceProfileModelSelectionImpl(params),
+);
+
+mock.module("@/lib/inference/profile-resolution", () => ({
+  resolveInferenceProfileModelSelection:
+    resolveInferenceProfileModelSelectionMock,
 }));
 
 // ── Commit mocks ──────────────────────────────────────────────────────────────
@@ -602,6 +651,22 @@ function resetMocks() {
     stderr: "",
     truncated: false,
   };
+
+  userPreferencesResult = {
+    defaultModelId: "openai/gpt-5.4",
+    defaultInferenceProfileId: null,
+    defaultSubagentModelId: null,
+  };
+  resolveInferenceProfileModelSelectionImpl = async ({ selection }) =>
+    selection;
+  getUserPreferencesMock.mockClear();
+  // Restore the default implementation: BT-S25e below overrides it with a
+  // never-resolving promise to simulate a stalled DB lookup, which must not
+  // leak into later tests in this file.
+  getUserPreferencesMock.mockImplementation(
+    async (_userId: string) => userPreferencesResult,
+  );
+  resolveInferenceProfileModelSelectionMock.mockClear();
 
   verifyRepoAccessResult = {
     ok: true,
@@ -1163,6 +1228,193 @@ describe("BT-S01: happy path — sandbox, agent, output JSON, commit", () => {
     );
     expect(succeededUpdate).toBeDefined();
     expect(succeededUpdate?.stepOutput).toBeDefined();
+  });
+});
+
+// ── #1158: loops honor the user's model + inference profile ─────────────────
+
+describe("#1158: loop steps honor the user's model + inference profile", () => {
+  beforeEach(() => {
+    resetMocks();
+    currentStepRun = makeStepRun();
+    currentLoopRun = makeLoopRun();
+    currentLoop = makeLoop();
+  });
+
+  test("sends the user's plain default model (not the package default) when no profile is set", async () => {
+    userPreferencesResult = {
+      defaultModelId: "openai/gpt-5.4",
+      defaultInferenceProfileId: null,
+      defaultSubagentModelId: null,
+    };
+
+    await executeAgentStep({
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+      loopRunId: "loop-run-1",
+      node: makeAgentStepNode() as Parameters<
+        typeof executeAgentStep
+      >[0]["node"],
+      loopRun: currentLoopRun,
+      loop: currentLoop,
+      startedAt: Date.now(),
+    });
+
+    const call = openAgentGenerateMock.mock.calls[0]?.[0] as {
+      options?: { model?: { id?: string } };
+    };
+    expect(call?.options?.model?.id).toBe("openai/gpt-5.4");
+  });
+
+  test("sends the user's custom inference profile's model, NOT anthropic/claude-opus-4.6", async () => {
+    userPreferencesResult = {
+      defaultModelId: "glm-4.7",
+      defaultInferenceProfileId: "profile-1",
+      defaultSubagentModelId: null,
+    };
+    resolveInferenceProfileModelSelectionImpl = async (params) => {
+      expect(params.inferenceProfileId).toBe("profile-1");
+      expect(params.selection.id).toBe("glm-4.7");
+      return {
+        id: "glm-4.7",
+        directInference: {
+          provider: "openai-compatible",
+          modelId: "glm-4.7",
+          apiKey: "zai-test-key",
+          baseURL: "https://api.z.ai/v1",
+        },
+        attribution: {
+          inferenceRoute: "user",
+          inferenceProfileId: "profile-1",
+          inferenceProfileName: "ZAI",
+          provider: "openai-compatible",
+        },
+      };
+    };
+
+    await executeAgentStep({
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+      loopRunId: "loop-run-1",
+      node: makeAgentStepNode() as Parameters<
+        typeof executeAgentStep
+      >[0]["node"],
+      loopRun: currentLoopRun,
+      loop: currentLoop,
+      startedAt: Date.now(),
+    });
+
+    const call = openAgentGenerateMock.mock.calls[0]?.[0] as {
+      options?: {
+        model?: { id?: string; directInference?: { provider?: string } };
+      };
+    };
+    expect(call?.options?.model?.id).not.toBe("anthropic/claude-opus-4.6");
+    expect(call?.options?.model?.id).toBe("glm-4.7");
+    expect(call?.options?.model?.directInference?.provider).toBe(
+      "openai-compatible",
+    );
+  });
+
+  test("sends the user's default subagent model when configured", async () => {
+    userPreferencesResult = {
+      defaultModelId: "openai/gpt-5.4",
+      defaultInferenceProfileId: null,
+      defaultSubagentModelId: "gemma-4-31b",
+    };
+
+    await executeAgentStep({
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+      loopRunId: "loop-run-1",
+      node: makeAgentStepNode() as Parameters<
+        typeof executeAgentStep
+      >[0]["node"],
+      loopRun: currentLoopRun,
+      loop: currentLoop,
+      startedAt: Date.now(),
+    });
+
+    const call = openAgentGenerateMock.mock.calls[0]?.[0] as {
+      options?: { subagentModel?: { id?: string } };
+    };
+    expect(call?.options?.subagentModel?.id).toBe("gemma-4-31b");
+  });
+
+  test("a broken inference-profile preference fails the step as model_resolution_failed, before sandbox connect", async () => {
+    userPreferencesResult = {
+      defaultModelId: "glm-4.7",
+      defaultInferenceProfileId: "deleted-profile",
+      defaultSubagentModelId: null,
+    };
+    resolveInferenceProfileModelSelectionImpl = async () => {
+      throw new Error(
+        "Selected inference profile is unavailable. Choose another User model or switch back to Vercel AI Gateway.",
+      );
+    };
+
+    const result = await executeAgentStep({
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+      loopRunId: "loop-run-1",
+      node: makeAgentStepNode() as Parameters<
+        typeof executeAgentStep
+      >[0]["node"],
+      loopRun: currentLoopRun,
+      loop: currentLoop,
+      startedAt: Date.now(),
+    });
+
+    expect(result.outcome).toBe("failure");
+    expect((result as { errorKind?: string }).errorKind).toBe(
+      "model_resolution_failed",
+    );
+    expect(connectSandboxMock.mock.calls.length).toBe(0);
+  });
+
+  test("BT-S25e: a hanging preferences lookup is bounded by the step timeout, not left unbounded", async () => {
+    // getUserPreferences never resolves — simulates a stalled DB lookup.
+    // Model resolution runs before withAgentStepPreparationTimeout wraps
+    // anything else in the step, so a bug here means stepTimeoutMs never
+    // bounds it and the step hangs forever regardless of configuration.
+    getUserPreferencesMock.mockImplementation(
+      () => new Promise<never>(() => undefined),
+    );
+
+    const result = await Promise.race([
+      executeAgentStep({
+        stepRunId: "step-run-1",
+        workflowRunId: "wf-run-1",
+        loopRunId: "loop-run-1",
+        node: makeAgentStepNode() as Parameters<
+          typeof executeAgentStep
+        >[0]["node"],
+        loopRun: currentLoopRun,
+        loop: currentLoop,
+        startedAt: Date.now(),
+        stepTimeoutMs: 25,
+      }),
+      new Promise<Awaited<ReturnType<typeof executeAgentStep>>>((resolve) => {
+        setTimeout(
+          () =>
+            resolve({
+              outcome: "failure",
+              errorKind: "test_timeout",
+              errorMessage: "executeAgentStep did not return",
+            }),
+          200,
+        );
+      }),
+    ]);
+
+    expect(result.outcome).toBe("failure");
+    expect((result as { errorKind?: string }).errorKind).not.toBe(
+      "test_timeout",
+    );
+    expect((result as { errorMessage?: string }).errorMessage).toContain(
+      "timed out",
+    );
+    expect(connectSandboxMock.mock.calls.length).toBe(0);
   });
 });
 
@@ -1821,6 +2073,54 @@ describe("BT-S19: agent-loop.step.agent.completed emitted with usage", () => {
     const payload = agentEvent?.payload as Record<string, unknown>;
     // Usage summary should be present
     expect(payload?.["usage"]).toBeDefined();
+  });
+
+  test("records which model/inference-route produced the result, not just usage", async () => {
+    // A loop can now run on a user-selected model or BYOK inference profile
+    // (#1158) — without this, an operator cannot tell which route produced
+    // a result from the completed event alone.
+    userPreferencesResult = {
+      defaultModelId: "glm-4.7",
+      defaultInferenceProfileId: "profile-1",
+      defaultSubagentModelId: null,
+    };
+    resolveInferenceProfileModelSelectionImpl = async () => ({
+      id: "glm-4.7",
+      directInference: {
+        provider: "openai-compatible",
+        modelId: "glm-4.7",
+        apiKey: "zai-test-key",
+        baseURL: "https://api.z.ai/v1",
+      },
+      attribution: {
+        inferenceRoute: "user",
+        inferenceProfileId: "profile-1",
+        inferenceProfileName: "ZAI",
+        provider: "openai-compatible",
+      },
+    });
+
+    await executeAgentStep({
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+      loopRunId: "loop-run-1",
+      node: makeAgentStepNode() as Parameters<
+        typeof executeAgentStep
+      >[0]["node"],
+      loopRun: currentLoopRun,
+      loop: currentLoop,
+      startedAt: Date.now(),
+    });
+
+    const agentEvent = recordedEvents.find(
+      (e) => e.eventName === "agent-loop.step.agent.completed",
+    );
+    const payload = agentEvent?.payload as Record<string, unknown>;
+    expect(payload?.["model"]).toBe("glm-4.7");
+    expect(payload?.["inferenceRoute"]).toBe("user");
+    expect(payload?.["inferenceProfileId"]).toBe("profile-1");
+    // Never the API key or base URL — those are secrets.
+    expect(JSON.stringify(payload)).not.toContain("zai-test-key");
   });
 });
 
@@ -2741,6 +3041,50 @@ describe("BT-S31: per-turn heartbeat events (#863)", () => {
     );
     expect(completedIndex).toBeGreaterThan(-1);
     expect(lastTurnIndex).toBeLessThan(completedIndex);
+  });
+
+  test("BT-S31c: turn.completed carries model + inference-route attribution", async () => {
+    userPreferencesResult = {
+      defaultModelId: "glm-4.7",
+      defaultInferenceProfileId: "profile-1",
+      defaultSubagentModelId: null,
+    };
+    resolveInferenceProfileModelSelectionImpl = async () => ({
+      id: "glm-4.7",
+      directInference: {
+        provider: "openai-compatible",
+        modelId: "glm-4.7",
+        apiKey: "zai-test-key",
+        baseURL: "https://api.z.ai/v1",
+      },
+      attribution: {
+        inferenceRoute: "user",
+        inferenceProfileId: "profile-1",
+        inferenceProfileName: "ZAI",
+        provider: "openai-compatible",
+      },
+    });
+
+    await executeAgentStep({
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+      loopRunId: "loop-run-1",
+      node: makeAgentStepNode() as Parameters<
+        typeof executeAgentStep
+      >[0]["node"],
+      loopRun: currentLoopRun,
+      loop: currentLoop,
+      startedAt: Date.now(),
+    });
+
+    const turnEvent = recordedEvents.find(
+      (e) => e.eventName === "agent-loop.step.agent.turn.completed",
+    );
+    const payload = turnEvent?.payload as Record<string, unknown>;
+    expect(payload?.["model"]).toBe("glm-4.7");
+    expect(payload?.["inferenceRoute"]).toBe("user");
+    expect(payload?.["inferenceProfileId"]).toBe("profile-1");
+    expect(JSON.stringify(payload)).not.toContain("zai-test-key");
   });
 
   test("BT-S31b: turn-budget exhaustion still records a turn.completed heartbeat per turn", async () => {

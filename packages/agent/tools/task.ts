@@ -64,6 +64,7 @@ import { sumLanguageModelUsage } from "../usage";
 import {
   getSandboxContext,
   getSubagentModel,
+  getSubagentModelSelection,
   getSubagentRoster,
 } from "./utils";
 
@@ -371,6 +372,8 @@ IMPORTANT:
     const startedAt = Date.now();
     const sandboxContext = getSandboxContext(experimental_context, "task");
     const defaultModel = getSubagentModel(experimental_context, "task");
+    const defaultModelSelection =
+      getSubagentModelSelection(experimental_context);
     const roster = getSubagentRoster(experimental_context);
     const runtime = getManagedRuntimeOutput(experimental_context, subagentType);
     const workspacePolicyOutput =
@@ -418,7 +421,11 @@ IMPORTANT:
       ? applyRosterOverrides({
           role: subagentType,
           roster,
-          base: { model: defaultModel, instructions: delegatedInstructions },
+          base: {
+            model: defaultModel,
+            instructions: delegatedInstructions,
+            selection: defaultModelSelection,
+          },
         })
       : { model: defaultModel, instructions: delegatedInstructions };
 

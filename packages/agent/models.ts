@@ -14,6 +14,7 @@ import type { OpenAIResponsesProviderOptions } from "@ai-sdk/openai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { toAnthropicDirectModelId } from "./model-ids";
 import { createReasoningCompatibleFetch } from "./openai-compatible-reasoning-fetch";
+import type { ProviderModelId } from "./provider-model-id";
 
 type WrappableLanguageModel = Parameters<typeof wrapLanguageModel>[0]["model"];
 
@@ -165,6 +166,31 @@ export interface GatewayOptions {
 }
 
 export type { GatewayModelId, LanguageModel, JSONValue };
+
+/**
+ * A model choice resolved to a real provider id (never an unparsed internal
+ * composite), plus the routing it should carry: BYOK/direct-inference config
+ * and any provider option overrides. Shared by the main model, the subagent
+ * default, and per-role roster overrides (`SubagentRosterEntry.modelSelection`
+ * in `./subagents/roster`) so all three build through this file's `gateway()`
+ * — the only place `directInference` actually reaches a provider call.
+ *
+ * Lives here (not in open-agent.ts, where it originated) because
+ * `./subagents/roster` needs it too, and roster.ts cannot import from
+ * open-agent.ts (open-agent.ts imports `SubagentRoster` from roster.ts).
+ */
+export interface AgentModelSelection {
+  id: ProviderModelId;
+  directInference?: DirectInferenceConfig;
+  directAnthropic?: DirectAnthropicConfig;
+  providerOptionsOverrides?: ProviderOptionsByProvider;
+  attribution?: {
+    inferenceRoute?: "gateway" | "user";
+    inferenceProfileId?: string;
+    inferenceProfileName?: string;
+    provider?: string;
+  };
+}
 
 export function shouldApplyOpenAIReasoningDefaults(modelId: string): boolean {
   return modelId.startsWith("openai/gpt-5");

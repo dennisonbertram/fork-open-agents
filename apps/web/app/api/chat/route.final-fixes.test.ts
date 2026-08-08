@@ -73,7 +73,7 @@ mock.module("ai", () => ({
     headers?: Record<string, string>;
   }) => new Response(stream, { status: 200, headers }),
   isToolUIPart: (part: { type: string }) =>
-    part.type === "tool-invocation" || part.type.startsWith("tool-"),
+    part.type.startsWith("tool-") || part.type === "dynamic-tool",
 }));
 
 mock.module("workflow/api", () => ({

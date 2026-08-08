@@ -15,6 +15,7 @@ import {
   type SubagentRoster,
   applyRosterOverrides,
 } from "./roster";
+import { toProviderModelId } from "../provider-model-id";
 import { getSubagentRoster } from "../tools/utils";
 
 // ── BT-P4-001: No roster in context ─────────────────────────────────────────
@@ -48,7 +49,9 @@ describe("BT-P4-001: No roster / no rows => default behavior unchanged", () => {
   });
 
   test("applyRosterOverrides returns base options unchanged when roster has no entry for role", () => {
-    const roster: SubagentRoster = { executor: { modelId: "openai/gpt-4.5" } };
+    const roster: SubagentRoster = {
+      executor: { modelSelection: { id: toProviderModelId("openai/gpt-4.5") } },
+    };
     const base = {
       model: { modelId: "anthropic/claude-haiku-4.5" },
       instructions: "base",
@@ -62,9 +65,9 @@ describe("BT-P4-001: No roster / no rows => default behavior unchanged", () => {
 // ── BT-P4-002: Explorer row with modelId ─────────────────────────────────────
 
 describe("BT-P4-002: Explorer row with modelId => explorer uses that model", () => {
-  test("applyRosterOverrides overrides model when entry has modelId", () => {
+  test("applyRosterOverrides overrides model when entry has modelSelection", () => {
     const roster: SubagentRoster = {
-      explorer: { modelId: "openai/gpt-4o" },
+      explorer: { modelSelection: { id: toProviderModelId("openai/gpt-4o") } },
     };
     const base = {
       model: { modelId: "anthropic/claude-haiku-4.5" },
@@ -76,9 +79,9 @@ describe("BT-P4-002: Explorer row with modelId => explorer uses that model", () 
     expect((result.model as { modelId: string }).modelId).toBe("openai/gpt-4o");
   });
 
-  test("applyRosterOverrides uses base model when entry has null modelId", () => {
+  test("applyRosterOverrides uses base model when entry has null modelSelection", () => {
     const roster: SubagentRoster = {
-      explorer: { modelId: null },
+      explorer: { modelSelection: null },
     };
     const base = {
       model: { modelId: "anthropic/claude-haiku-4.5" },
@@ -151,7 +154,10 @@ describe("BT-P4-004: Role row with composioToolkitSlugs => subagent gets those t
 describe("BT-P4-005: Executor unaffected when only explorer row is configured", () => {
   test("applyRosterOverrides does not touch executor when only explorer entry exists", () => {
     const roster: SubagentRoster = {
-      explorer: { modelId: "openai/gpt-4o", instructions: "Only explore." },
+      explorer: {
+        modelSelection: { id: toProviderModelId("openai/gpt-4o") },
+        instructions: "Only explore.",
+      },
     };
     const baseExecutor = {
       model: { modelId: "anthropic/claude-haiku-4.5" },
@@ -173,18 +179,22 @@ describe("BT-P4-005: Executor unaffected when only explorer row is configured", 
 describe("SubagentRosterEntry shape validation", () => {
   test("SubagentRosterEntry accepts all-null/undefined optional fields (synthetic fallback)", () => {
     const entry: SubagentRosterEntry = {
-      modelId: null,
+      modelSelection: null,
       instructions: null,
       composioToolkitSlugs: [],
     };
-    expect(entry.modelId).toBeNull();
+    expect(entry.modelSelection).toBeNull();
     expect(entry.instructions).toBeNull();
     expect(entry.composioToolkitSlugs).toEqual([]);
   });
 
-  test("SubagentRosterEntry accepts partial fields (only modelId set)", () => {
-    const entry: SubagentRosterEntry = { modelId: "openai/gpt-4o" };
-    expect(entry.modelId).toBe("openai/gpt-4o");
+  test("SubagentRosterEntry accepts partial fields (only modelSelection set)", () => {
+    const entry: SubagentRosterEntry = {
+      modelSelection: { id: toProviderModelId("openai/gpt-4o") },
+    };
+    expect(entry.modelSelection).toEqual({
+      id: toProviderModelId("openai/gpt-4o"),
+    });
   });
 });
 
@@ -193,7 +203,7 @@ describe("SubagentRosterEntry shape validation", () => {
 describe("REGRESSION: getSubagentRoster extracts roster from experimental_context", () => {
   test("getSubagentRoster returns the roster when present in context", () => {
     const roster: SubagentRoster = {
-      explorer: { modelId: "openai/gpt-4o" },
+      explorer: { modelSelection: { id: toProviderModelId("openai/gpt-4o") } },
     };
     const ctx = {
       sandbox: { state: {}, workingDirectory: "/" },

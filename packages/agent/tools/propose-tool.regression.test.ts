@@ -33,7 +33,9 @@ mock.module("ai", () => {
       if (!part || typeof part !== "object") return false;
       const candidate = part as { type?: unknown };
       return (
-        typeof candidate.type === "string" && candidate.type.startsWith("tool-")
+        typeof candidate.type === "string" &&
+        (candidate.type.startsWith("tool-") ||
+          candidate.type === "dynamic-tool")
       );
     },
     stepCountIs: (count: number) => ({ count }),

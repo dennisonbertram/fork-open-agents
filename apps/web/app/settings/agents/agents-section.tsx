@@ -16,6 +16,7 @@ import { listManagedRuntimeProfiles } from "@open-agents/sandbox/managed-runtime
 import { AgentConfigFields } from "@/components/agent-config-fields";
 import { readApiError } from "@/lib/api/read-api-error";
 import { useModelOptions } from "@/hooks/use-model-options";
+import { getModelOptionSelectionId } from "@/lib/inference/model-option-id";
 import {
   EXTERNAL_TOOLS_NONE_ASSIGNED_HINT,
   EXTERNAL_TOOLS_NONE_ASSIGNED_LABEL,
@@ -95,7 +96,13 @@ function AgentEditor({
   onCancel: () => void;
 }) {
   const { modelOptions } = useModelOptions();
-  const [modelId, setModelId] = useState<string>(row.model ?? "");
+  // Recompose the same "user-profile:<profileId>:<modelId>" composite the
+  // Model picker's own options use (buildModelOptions), so a profile-bound
+  // role's own-key routing shows selected AND an untouched Save round-trips
+  // it instead of silently dropping it (#1157).
+  const [modelId, setModelId] = useState<string>(
+    getModelOptionSelectionId(row.model, row.inferenceProfileId),
+  );
   const [slugs, setSlugs] = useState<string[]>(row.composioToolkitSlugs);
   const [instructions, setInstructions] = useState<string>(
     row.instructions ?? "",

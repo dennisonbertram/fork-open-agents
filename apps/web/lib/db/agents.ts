@@ -45,6 +45,14 @@ export async function getAgentById(
 
 export interface UserDefaultAgentPatch {
   modelId?: string | null;
+  /**
+   * The user inference profile this role's model override is served by, when
+   * it is not the plain Vercel AI Gateway (#1157). Split out of a
+   * "user-profile:<profileId>:<modelId>" composite by the API layer
+   * (`agents-api-mapper.ts`'s `splitAgentPatchModel`) before this patch is
+   * built — never re-derived here.
+   */
+  inferenceProfileId?: string | null;
   composioToolkitSlugs?: string[];
   composioProfileId?: string | null;
   instructions?: string | null;
@@ -102,6 +110,7 @@ export async function upsertUserDefaultAgent(
     repoOwner: null,
     repoName: null,
     modelId: patch.modelId ?? null,
+    inferenceProfileId: patch.inferenceProfileId ?? null,
     composioToolkitSlugs: patch.composioToolkitSlugs ?? [],
     composioProfileId: patch.composioProfileId ?? null,
     instructions: patch.instructions ?? null,
@@ -120,6 +129,7 @@ export async function upsertUserDefaultAgent(
       targetWhere: sql`${agents.scope} = 'user_default'`,
       set: {
         modelId: row.modelId,
+        inferenceProfileId: row.inferenceProfileId,
         composioToolkitSlugs: row.composioToolkitSlugs,
         composioProfileId: row.composioProfileId,
         instructions: row.instructions,

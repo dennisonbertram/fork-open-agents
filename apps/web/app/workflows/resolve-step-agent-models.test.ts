@@ -1,24 +1,45 @@
+import {
+  type AgentModelSelection,
+  toProviderModelId,
+} from "@open-agents/agent";
 import { describe, expect, mock, test } from "bun:test";
 import { resolveStepAgentModels } from "./resolve-step-agent-models";
 
 /**
  * Stands in for `resolveInferenceProfileModelSelection`, which strips the
  * internal `user-profile:<profileId>:` prefix so a provider only ever sees a
- * real model id.
+ * real model id. `resolveStepAgentModels` now always parses a composite
+ * before calling this, so `selection.id` never actually carries the prefix
+ * in practice — the `startsWith` branch is kept only so this fake still
+ * behaves sanely if a test constructs a still-composite fixture directly.
  */
 function fakeResolver() {
   return mock(
     async (params: {
       userId: string;
       inferenceProfileId: string | null;
-      selection: { id: string };
-    }) => {
+      selection: AgentModelSelection;
+    }): Promise<AgentModelSelection> => {
       const id = params.selection.id.startsWith("user-profile:")
         ? params.selection.id.split(":").slice(2).join(":")
         : params.selection.id;
-      return { ...params.selection, id };
+      return { ...params.selection, id: toProviderModelId(id) };
     },
   );
+}
+
+/**
+ * Builds a deliberately still-composite `AgentModelSelection.id` for test
+ * fixtures. toProviderModelId() now rejects a composite id at the mint
+ * itself (#1155), so a still-composite selection can only be constructed by
+ * bypassing the type system — the same `as never` idiom already used
+ * elsewhere in this codebase for deliberately malformed test input. These
+ * fixtures simulate an already-selection-shaped value arriving with a
+ * composite id (e.g. from an upstream bug), independent of the string
+ * branch under test below.
+ */
+function compositeId(raw: string): AgentModelSelection["id"] {
+  return raw as never;
 }
 
 const BASE = {
@@ -31,7 +52,9 @@ describe("resolveStepAgentModels", () => {
     const resolve = fakeResolver();
     const resolved = await resolveStepAgentModels({
       ...BASE,
-      agentOptions: { model: { id: "user-profile:profile-1:gpt-oss-120b" } },
+      agentOptions: {
+        model: { id: compositeId("user-profile:profile-1:gpt-oss-120b") },
+      },
       resolve,
     });
 
@@ -47,8 +70,10 @@ describe("resolveStepAgentModels", () => {
     const resolved = await resolveStepAgentModels({
       ...BASE,
       agentOptions: {
-        model: { id: "user-profile:profile-1:gpt-oss-120b" },
-        subagentModel: { id: "user-profile:profile-1:gemma-4-31b" },
+        model: { id: compositeId("user-profile:profile-1:gpt-oss-120b") },
+        subagentModel: {
+          id: compositeId("user-profile:profile-1:gemma-4-31b"),
+        },
       },
       resolve,
     });
@@ -61,8 +86,10 @@ describe("resolveStepAgentModels", () => {
     const resolved = await resolveStepAgentModels({
       ...BASE,
       agentOptions: {
-        model: { id: "user-profile:profile-1:gpt-oss-120b" },
-        subagentModel: { id: "user-profile:profile-1:gemma-4-31b" },
+        model: { id: compositeId("user-profile:profile-1:gpt-oss-120b") },
+        subagentModel: {
+          id: compositeId("user-profile:profile-1:gemma-4-31b"),
+        },
       },
       resolve,
     });
@@ -81,7 +108,9 @@ describe("resolveStepAgentModels", () => {
     const resolved = await resolveStepAgentModels({
       userId: "user-1",
       inferenceProfileId: null,
-      agentOptions: { model: { id: "user-profile:profile-a:zai-glm-4.7" } },
+      agentOptions: {
+        model: { id: compositeId("user-profile:profile-a:zai-glm-4.7") },
+      },
       resolve,
     });
 
@@ -94,8 +123,8 @@ describe("resolveStepAgentModels", () => {
   test("leaves options untouched when there is no inference profile", async () => {
     const resolve = fakeResolver();
     const agentOptions = {
-      model: { id: "anthropic/claude-haiku-4.5" },
-      subagentModel: { id: "anthropic/claude-haiku-4.5" },
+      model: { id: toProviderModelId("anthropic/claude-haiku-4.5") },
+      subagentModel: { id: toProviderModelId("anthropic/claude-haiku-4.5") },
     };
     const resolved = await resolveStepAgentModels({
       ...BASE,
@@ -112,7 +141,9 @@ describe("resolveStepAgentModels", () => {
     const resolve = fakeResolver();
     const resolved = await resolveStepAgentModels({
       ...BASE,
-      agentOptions: { model: { id: "user-profile:profile-1:gpt-oss-120b" } },
+      agentOptions: {
+        model: { id: compositeId("user-profile:profile-1:gpt-oss-120b") },
+      },
       resolve,
     });
 
@@ -129,8 +160,10 @@ describe("resolveStepAgentModels", () => {
       userId: "user-1",
       inferenceProfileId: "profile-a",
       agentOptions: {
-        model: { id: "user-profile:profile-a:gpt-oss-120b" },
-        subagentModel: { id: "user-profile:profile-b:sub-model" },
+        model: { id: compositeId("user-profile:profile-a:gpt-oss-120b") },
+        subagentModel: {
+          id: compositeId("user-profile:profile-b:sub-model"),
+        },
       },
       resolve,
     });
@@ -139,8 +172,11 @@ describe("resolveStepAgentModels", () => {
     const subagentCall = calls.find((c) =>
       c.selection.id.includes("sub-model"),
     );
-    // null lets the resolver derive profile-b from the composite itself;
-    // passing profile-a would route a profile-b model at profile-a's endpoint.
+    // These fixtures are already-selection-shaped (object, not string), so
+    // toSelection() passes them through untouched (#1155 only changed the
+    // string branch — see the parsing tests below). null lets the resolver
+    // derive profile-b from the still-composite selection.id itself; passing
+    // profile-a would route a profile-b model at profile-a's endpoint.
     expect(subagentCall?.inferenceProfileId).toBeNull();
   });
 
@@ -150,8 +186,8 @@ describe("resolveStepAgentModels", () => {
       userId: "user-1",
       inferenceProfileId: "profile-a",
       agentOptions: {
-        model: { id: "user-profile:profile-a:gpt-oss-120b" },
-        subagentModel: { id: "anthropic/claude-haiku-4.5" },
+        model: { id: compositeId("user-profile:profile-a:gpt-oss-120b") },
+        subagentModel: { id: toProviderModelId("anthropic/claude-haiku-4.5") },
       },
       resolve,
     });
@@ -159,7 +195,7 @@ describe("resolveStepAgentModels", () => {
     // Untouched: routing it through profile-a would call that custom endpoint
     // with a model it does not serve, breaking delegation that worked before.
     expect(resolved.subagentModel).toEqual({
-      id: "anthropic/claude-haiku-4.5",
+      id: toProviderModelId("anthropic/claude-haiku-4.5"),
     });
     expect(
       resolve.mock.calls.some((c) => c[0].selection.id.includes("anthropic/")),
@@ -175,8 +211,10 @@ describe("resolveStepAgentModels", () => {
       userId: "user-1",
       inferenceProfileId: null,
       agentOptions: {
-        model: { id: "anthropic/claude-haiku-4.5" },
-        subagentModel: { id: "user-profile:profile-b:gemma-4-31b" },
+        model: { id: toProviderModelId("anthropic/claude-haiku-4.5") },
+        subagentModel: {
+          id: compositeId("user-profile:profile-b:gemma-4-31b"),
+        },
       },
       resolve,
     });
@@ -195,6 +233,10 @@ describe("resolveStepAgentModels", () => {
   // await would kill every step, including coordinator turns that never
   // delegate at all.
   test("a failing subagent resolution does not break the turn", async () => {
+    // These are already-selection-shaped fixtures (object, not string), so
+    // toSelection() passes selection.id through untouched — still the full
+    // composite — matching resolveInferenceProfileModelSelection's real
+    // input shape for this branch.
     const resolve = mock(async (params: { selection: { id: string } }) => {
       if (params.selection.id.includes("deleted-profile")) {
         throw new Error("Selected inference profile is unavailable.");
@@ -206,8 +248,10 @@ describe("resolveStepAgentModels", () => {
       userId: "user-1",
       inferenceProfileId: "profile-a",
       agentOptions: {
-        model: { id: "user-profile:profile-a:gpt-oss-120b" },
-        subagentModel: { id: "user-profile:deleted-profile:gemma-4-31b" },
+        model: { id: compositeId("user-profile:profile-a:gpt-oss-120b") },
+        subagentModel: {
+          id: compositeId("user-profile:deleted-profile:gemma-4-31b"),
+        },
       },
       resolve: resolve as never,
     });
@@ -238,8 +282,10 @@ describe("resolveStepAgentModels", () => {
       userId: "user-1",
       inferenceProfileId: "profile-a",
       agentOptions: {
-        model: { id: "user-profile:profile-a:gpt-oss-120b" },
-        subagentModel: { id: "user-profile:deleted-profile:gemma-4-31b" },
+        model: { id: compositeId("user-profile:profile-a:gpt-oss-120b") },
+        subagentModel: {
+          id: compositeId("user-profile:deleted-profile:gemma-4-31b"),
+        },
       },
       resolve: resolve as never,
       onSubagentResolutionFailed,
@@ -261,10 +307,39 @@ describe("resolveStepAgentModels", () => {
       resolveStepAgentModels({
         userId: "user-1",
         inferenceProfileId: "profile-a",
-        agentOptions: { model: { id: "user-profile:profile-a:gpt-oss-120b" } },
+        agentOptions: {
+          model: {
+            id: compositeId("user-profile:profile-a:gpt-oss-120b"),
+          },
+        },
         resolve: resolve as never,
       }),
     ).rejects.toThrow("Selected inference profile is unavailable.");
+  });
+
+  // #1155 finding 1 (P2): toProviderModelId() used to be a no-op wrapper, so
+  // this string branch could mint a still-composite id directly — it
+  // "type-checked" as already resolved without ever being parsed. Prove the
+  // opposite directly: resolve() must receive the already-parsed model id,
+  // never the raw composite. Under the pre-fix implementation this fails
+  // because `call.selection.id` is still the full composite string.
+  test("the string branch parses a composite id before resolve() ever sees it", async () => {
+    const resolve = fakeResolver();
+    const resolved = await resolveStepAgentModels({
+      ...BASE,
+      agentOptions: {
+        model: "user-profile:profile-1:gpt-oss-120b",
+      },
+      resolve,
+    });
+
+    const call = resolve.mock.calls[0]?.[0] as {
+      selection: { id: string };
+    };
+    expect(call.selection.id).toBe("gpt-oss-120b");
+    expect((resolved.model as unknown as { id: string }).id).toBe(
+      "gpt-oss-120b",
+    );
   });
 
   test("accepts a bare string model id", async () => {

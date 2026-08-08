@@ -1,6 +1,7 @@
 import { connectSandbox, type Sandbox } from "@open-agents/sandbox";
 import type { LanguageModel, ModelMessage } from "ai";
 import * as path from "path";
+import type { AgentModelSelection } from "../models";
 import type { AgentContext } from "../types";
 import type { SubagentRoster } from "../subagents/roster";
 
@@ -206,6 +207,20 @@ export function getSubagentModel(
     );
   }
   return context.subagentModel ?? context.model;
+}
+
+/**
+ * The raw selection (id + directInference + providerOptionsOverrides) that
+ * built the role's default model, when the context carries it. Used to
+ * backfill routing onto a roster override that has none of its own (#1157).
+ */
+export function getSubagentModelSelection(
+  experimental_context: unknown,
+): AgentModelSelection | undefined {
+  const context = isAgentContext(experimental_context)
+    ? experimental_context
+    : undefined;
+  return context?.subagentModelSelection;
 }
 
 /**

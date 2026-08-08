@@ -102,6 +102,13 @@ export const backgroundAgentExecutionSnapshotV1Schema = z
     writeScope: writeScopeSchema,
     requireCiGreenForMerge: z.boolean(),
     inference: backgroundAgentInferenceSnapshotV1Schema,
+    // #1158 follow-up: the user's default_subagent_model_id preference,
+    // resolved and frozen at the SAME time as the main `inference` field
+    // above. Delegated `task` workers must not observe a live preference
+    // change made while this run sat queued — undefined means "no subagent
+    // override was configured (or the snapshot predates this field)",
+    // matching the pre-existing behavior of inheriting the main model.
+    subagentInference: backgroundAgentInferenceSnapshotV1Schema.optional(),
   })
   .strict();
 
@@ -145,6 +152,7 @@ export function buildBackgroundAgentExecutionSnapshot(
   inference: BackgroundAgentInferenceSnapshotV1 = buildLocalBackgroundAgentInferenceSnapshot(
     agent.modelId,
   ),
+  subagentInference?: BackgroundAgentInferenceSnapshotV1,
 ): BackgroundAgentExecutionSnapshotV1 {
   return backgroundAgentExecutionSnapshotV1Schema.parse({
     snapshotVersion: 1,
@@ -178,6 +186,7 @@ export function buildBackgroundAgentExecutionSnapshot(
     writeScope: normalizeWriteScope(agent.writeScope),
     requireCiGreenForMerge: agent.requireCiGreenForMerge ?? true,
     inference,
+    ...(subagentInference ? { subagentInference } : {}),
   });
 }
 
@@ -243,6 +252,7 @@ export function resolveBackgroundAgentExecutionDefinition(
   run: BackgroundAgentRun,
   liveAgent: BackgroundAgent | null,
   legacyInference?: BackgroundAgentInferenceSnapshotV1,
+  legacySubagentInference?: BackgroundAgentInferenceSnapshotV1,
 ): ResolvedBackgroundAgentExecutionDefinition {
   const tuple = [
     run.executionSnapshot,
@@ -275,6 +285,7 @@ export function resolveBackgroundAgentExecutionDefinition(
         liveAgent,
         legacyInference ??
           buildLocalBackgroundAgentInferenceSnapshot(liveAgent.modelId),
+        legacySubagentInference,
       ),
       snapshotSource: "legacy_live_fallback",
       definitionVersion: null,

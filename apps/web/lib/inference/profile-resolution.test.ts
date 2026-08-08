@@ -22,6 +22,7 @@ mock.module("@open-agents/agent", () => ({
   directOpenAIModel: (config: unknown) => config,
   toAnthropicDirectModelId: (modelId: string) =>
     modelId === "anthropic/claude-haiku-4.5" ? "claude-haiku-4-5" : null,
+  toProviderModelId: (modelId: string) => modelId,
 }));
 
 mock.module("@/lib/db/inference-profiles", () => ({

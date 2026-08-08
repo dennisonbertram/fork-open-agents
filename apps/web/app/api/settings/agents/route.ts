@@ -7,7 +7,11 @@ import {
   listAgentsForUser,
 } from "@/lib/db/agents";
 import { requireAuthenticatedUser } from "@/app/api/sessions/_lib/session-context";
-import { agentPatchSchema, agentDeleteSchema } from "./agents-api-mapper";
+import {
+  agentPatchSchema,
+  agentDeleteSchema,
+  splitAgentPatchModel,
+} from "./agents-api-mapper";
 import type { AgentRole } from "@/lib/agents/resolve-agent";
 
 /** The four canonical roles — returned in order by GET. */
@@ -16,6 +20,7 @@ const AGENT_ROLES: AgentRole[] = ["main", "explorer", "executor", "design"];
 export type AgentSettingsRow = {
   role: AgentRole;
   modelId: string | null;
+  inferenceProfileId: string | null;
   composioToolkitSlugs: string[];
   composioProfileId: string | null;
   instructions: string | null;
@@ -53,6 +58,7 @@ export async function GET() {
       return {
         role,
         modelId: null,
+        inferenceProfileId: null,
         composioToolkitSlugs: [],
         composioProfileId: null,
         instructions: null,
@@ -64,6 +70,7 @@ export async function GET() {
     return {
       role,
       modelId: row.modelId,
+      inferenceProfileId: row.inferenceProfileId,
       composioToolkitSlugs: row.composioToolkitSlugs,
       composioProfileId: row.composioProfileId,
       instructions: row.instructions,
@@ -109,7 +116,12 @@ export async function PATCH(req: Request) {
     );
   }
 
-  const { role, ...patch } = parsed.data;
+  const { role } = parsed.data;
+  // A "user-profile:<profileId>:<modelId>" composite (emitted by the Settings
+  // -> Agents "User model" picker) must never land in agents.model_id while
+  // inference_profile_id stays null (#1157) — split it at this write
+  // boundary, same as the read-side parsing in resolve-agent.ts.
+  const patch = splitAgentPatchModel(parsed.data);
 
   await upsertUserDefaultAgent(authResult.userId, role, patch);
 
@@ -118,6 +130,7 @@ export async function PATCH(req: Request) {
   const result: AgentSettingsRow = {
     role,
     modelId: updated?.modelId ?? null,
+    inferenceProfileId: updated?.inferenceProfileId ?? null,
     composioToolkitSlugs: updated?.composioToolkitSlugs ?? [],
     composioProfileId: updated?.composioProfileId ?? null,
     instructions: updated?.instructions ?? null,

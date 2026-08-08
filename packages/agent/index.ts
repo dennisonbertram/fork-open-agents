@@ -17,6 +17,11 @@ export type {
   OpenAgentModelInput,
   OpenAgentRuntimeMode,
 } from "./open-agent";
+export type { ProviderModelId } from "./provider-model-id";
+export {
+  toProviderModelId,
+  UnresolvedCompositeModelIdError,
+} from "./provider-model-id";
 export {
   defaultModel,
   defaultModelLabel,
