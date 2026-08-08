@@ -660,6 +660,12 @@ function resetMocks() {
   resolveInferenceProfileModelSelectionImpl = async ({ selection }) =>
     selection;
   getUserPreferencesMock.mockClear();
+  // Restore the default implementation: BT-S25e below overrides it with a
+  // never-resolving promise to simulate a stalled DB lookup, which must not
+  // leak into later tests in this file.
+  getUserPreferencesMock.mockImplementation(
+    async (_userId: string) => userPreferencesResult,
+  );
   resolveInferenceProfileModelSelectionMock.mockClear();
 
   verifyRepoAccessResult = {
@@ -1365,6 +1371,51 @@ describe("#1158: loop steps honor the user's model + inference profile", () => {
     );
     expect(connectSandboxMock.mock.calls.length).toBe(0);
   });
+
+  test("BT-S25e: a hanging preferences lookup is bounded by the step timeout, not left unbounded", async () => {
+    // getUserPreferences never resolves — simulates a stalled DB lookup.
+    // Model resolution runs before withAgentStepPreparationTimeout wraps
+    // anything else in the step, so a bug here means stepTimeoutMs never
+    // bounds it and the step hangs forever regardless of configuration.
+    getUserPreferencesMock.mockImplementation(
+      () => new Promise<never>(() => undefined),
+    );
+
+    const result = await Promise.race([
+      executeAgentStep({
+        stepRunId: "step-run-1",
+        workflowRunId: "wf-run-1",
+        loopRunId: "loop-run-1",
+        node: makeAgentStepNode() as Parameters<
+          typeof executeAgentStep
+        >[0]["node"],
+        loopRun: currentLoopRun,
+        loop: currentLoop,
+        startedAt: Date.now(),
+        stepTimeoutMs: 25,
+      }),
+      new Promise<Awaited<ReturnType<typeof executeAgentStep>>>((resolve) => {
+        setTimeout(
+          () =>
+            resolve({
+              outcome: "failure",
+              errorKind: "test_timeout",
+              errorMessage: "executeAgentStep did not return",
+            }),
+          200,
+        );
+      }),
+    ]);
+
+    expect(result.outcome).toBe("failure");
+    expect((result as { errorKind?: string }).errorKind).not.toBe(
+      "test_timeout",
+    );
+    expect((result as { errorMessage?: string }).errorMessage).toContain(
+      "timed out",
+    );
+    expect(connectSandboxMock.mock.calls.length).toBe(0);
+  });
 });
 
 // ── BT-S02: No changes — skip commit ─────────────────────────────────────────
@@ -2022,6 +2073,54 @@ describe("BT-S19: agent-loop.step.agent.completed emitted with usage", () => {
     const payload = agentEvent?.payload as Record<string, unknown>;
     // Usage summary should be present
     expect(payload?.["usage"]).toBeDefined();
+  });
+
+  test("records which model/inference-route produced the result, not just usage", async () => {
+    // A loop can now run on a user-selected model or BYOK inference profile
+    // (#1158) — without this, an operator cannot tell which route produced
+    // a result from the completed event alone.
+    userPreferencesResult = {
+      defaultModelId: "glm-4.7",
+      defaultInferenceProfileId: "profile-1",
+      defaultSubagentModelId: null,
+    };
+    resolveInferenceProfileModelSelectionImpl = async () => ({
+      id: "glm-4.7",
+      directInference: {
+        provider: "openai-compatible",
+        modelId: "glm-4.7",
+        apiKey: "zai-test-key",
+        baseURL: "https://api.z.ai/v1",
+      },
+      attribution: {
+        inferenceRoute: "user",
+        inferenceProfileId: "profile-1",
+        inferenceProfileName: "ZAI",
+        provider: "openai-compatible",
+      },
+    });
+
+    await executeAgentStep({
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+      loopRunId: "loop-run-1",
+      node: makeAgentStepNode() as Parameters<
+        typeof executeAgentStep
+      >[0]["node"],
+      loopRun: currentLoopRun,
+      loop: currentLoop,
+      startedAt: Date.now(),
+    });
+
+    const agentEvent = recordedEvents.find(
+      (e) => e.eventName === "agent-loop.step.agent.completed",
+    );
+    const payload = agentEvent?.payload as Record<string, unknown>;
+    expect(payload?.["model"]).toBe("glm-4.7");
+    expect(payload?.["inferenceRoute"]).toBe("user");
+    expect(payload?.["inferenceProfileId"]).toBe("profile-1");
+    // Never the API key or base URL — those are secrets.
+    expect(JSON.stringify(payload)).not.toContain("zai-test-key");
   });
 });
 
@@ -2942,6 +3041,50 @@ describe("BT-S31: per-turn heartbeat events (#863)", () => {
     );
     expect(completedIndex).toBeGreaterThan(-1);
     expect(lastTurnIndex).toBeLessThan(completedIndex);
+  });
+
+  test("BT-S31c: turn.completed carries model + inference-route attribution", async () => {
+    userPreferencesResult = {
+      defaultModelId: "glm-4.7",
+      defaultInferenceProfileId: "profile-1",
+      defaultSubagentModelId: null,
+    };
+    resolveInferenceProfileModelSelectionImpl = async () => ({
+      id: "glm-4.7",
+      directInference: {
+        provider: "openai-compatible",
+        modelId: "glm-4.7",
+        apiKey: "zai-test-key",
+        baseURL: "https://api.z.ai/v1",
+      },
+      attribution: {
+        inferenceRoute: "user",
+        inferenceProfileId: "profile-1",
+        inferenceProfileName: "ZAI",
+        provider: "openai-compatible",
+      },
+    });
+
+    await executeAgentStep({
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+      loopRunId: "loop-run-1",
+      node: makeAgentStepNode() as Parameters<
+        typeof executeAgentStep
+      >[0]["node"],
+      loopRun: currentLoopRun,
+      loop: currentLoop,
+      startedAt: Date.now(),
+    });
+
+    const turnEvent = recordedEvents.find(
+      (e) => e.eventName === "agent-loop.step.agent.turn.completed",
+    );
+    const payload = turnEvent?.payload as Record<string, unknown>;
+    expect(payload?.["model"]).toBe("glm-4.7");
+    expect(payload?.["inferenceRoute"]).toBe("user");
+    expect(payload?.["inferenceProfileId"]).toBe("profile-1");
+    expect(JSON.stringify(payload)).not.toContain("zai-test-key");
   });
 
   test("BT-S31b: turn-budget exhaustion still records a turn.completed heartbeat per turn", async () => {

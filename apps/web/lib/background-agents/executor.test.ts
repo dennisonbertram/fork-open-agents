@@ -9,6 +9,10 @@ import {
 } from "bun:test";
 import type { BackgroundAgent, BackgroundAgentRun } from "@/lib/db/schema";
 import type { ExecResult, Sandbox } from "@open-agents/sandbox";
+import {
+  buildBackgroundAgentExecutionSnapshot,
+  hashBackgroundAgentExecutionSnapshot,
+} from "./execution-snapshot";
 
 mock.module("server-only", () => ({}));
 process.env.BACKGROUND_AGENTS_ENABLED = "true";
@@ -799,6 +803,45 @@ describe("executeBackgroundAgentRun", () => {
     expect(call?.options?.subagentModel).toBeUndefined();
   });
 
+  test("#1158 follow-up: a frozen run uses the subagent model captured at creation, not a preference changed while queued", async () => {
+    currentAgent = buildAgent();
+    const inference = {
+      route: "gateway" as const,
+      modelId: "anthropic/claude-opus-4.6",
+    };
+    const frozenSubagentInference = {
+      route: "gateway" as const,
+      modelId: "frozen/subagent-model",
+    };
+    const snapshot = buildBackgroundAgentExecutionSnapshot(
+      currentAgent,
+      inference,
+      frozenSubagentInference,
+    );
+    currentRun = buildRun({
+      executionSnapshot: snapshot,
+      definitionVersion: 1,
+      definitionHash: hashBackgroundAgentExecutionSnapshot(snapshot),
+    });
+    // The user changed their subagent-model preference AFTER this run was
+    // queued. A run with a frozen snapshot must not observe it.
+    currentUserPreferences = {
+      defaultSubagentModelId: "live-changed/subagent-model",
+    };
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "workflow-1",
+    });
+
+    const call = (generate.mock.calls[0] as unknown[] | undefined)?.[0] as {
+      options?: { subagentModel?: { id?: string } };
+    };
+    expect(call?.options?.subagentModel?.id).toBe("frozen/subagent-model");
+    expect(getUserPreferences).not.toHaveBeenCalled();
+  });
+
   test("defaults builtinToolNames to null (no restriction) when the agent has none", async () => {
     currentAgent = buildAgent();
     const { executeBackgroundAgentRun } = await executorModulePromise;
@@ -853,6 +896,44 @@ describe("executeBackgroundAgentRun", () => {
     const startedEvent = recordedEvent("background-agent.agent.started");
     expect(startedEvent?.payload).toMatchObject({
       modelId: "anthropic/claude-haiku-4.5",
+    });
+  });
+
+  test("#1158 follow-up: background-agent.agent.started carries delegated-model attribution", async () => {
+    currentAgent = buildAgent({ modelId: "anthropic/claude-haiku-4.5" });
+    currentUserPreferences = { defaultSubagentModelId: "zai/glm-4.7" };
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "workflow-1",
+    });
+
+    const startedEvent = recordedEvent("background-agent.agent.started");
+    expect(startedEvent?.payload).toMatchObject({
+      subagentModelId: "zai/glm-4.7",
+      subagentInferenceRoute: "gateway",
+    });
+    // Never the API key/base URL of a direct-inference credential.
+    expect(JSON.stringify(startedEvent?.payload)).not.toContain(
+      "directInference",
+    );
+  });
+
+  test("#1158 follow-up: background-agent.agent.started reports no subagent route when none is configured", async () => {
+    currentAgent = buildAgent();
+    currentUserPreferences = { defaultSubagentModelId: null };
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "workflow-1",
+    });
+
+    const startedEvent = recordedEvent("background-agent.agent.started");
+    expect(startedEvent?.payload).toMatchObject({
+      subagentModelId: null,
+      subagentInferenceRoute: null,
     });
   });
 
