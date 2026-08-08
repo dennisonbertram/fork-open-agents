@@ -113,6 +113,7 @@ mock.module("ai", () => ({
 
 mock.module("@open-agents/agent", () => ({
   toAnthropicDirectModelId: (_id: string) => null,
+  toProviderModelId: (modelId: string) => modelId,
 }));
 
 mock.module("@/lib/db/sessions", () => ({

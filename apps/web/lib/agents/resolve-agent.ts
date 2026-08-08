@@ -202,7 +202,12 @@ function rowToResolvedAgent(row: AgentRow): ResolvedAgent {
     role: row.role,
     fromDbRow: true,
     agentId: row.id,
-    modelId: row.modelId,
+    // Mirror the synthetic-fallback branch below: a stored row.modelId can
+    // still carry a "user-profile:<id>:<modelId>" composite (#1123), so strip
+    // it the same way before handing this id further downstream.
+    modelId: row.modelId
+      ? parseModelOptionSelection(row.modelId).modelId
+      : null,
     inferenceProfileId: row.inferenceProfileId,
     instructions: row.instructions,
     skillRefs: normalizeSkillRefs(row.skillRefs),

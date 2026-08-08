@@ -9,10 +9,11 @@ import {
   pruneMessages,
   type UIMessageChunk,
 } from "ai";
-import type {
-  AgentModelSelection,
-  OpenAgentCallOptions,
-  SubagentRoster,
+import {
+  type AgentModelSelection,
+  type OpenAgentCallOptions,
+  type SubagentRoster,
+  toProviderModelId,
 } from "@open-agents/agent";
 import { toAnthropicDirectModelId } from "@open-agents/agent/model-ids";
 import {
@@ -362,7 +363,9 @@ async function resolveChatModelRuntime(params: {
       }
 
       return {
-        ...(hasModel ? { modelId: resolved.modelId } : {}),
+        ...(hasModel && resolved.modelId
+          ? { modelId: toProviderModelId(resolved.modelId) }
+          : {}),
         ...(hasInstructions ? { instructions: resolved.instructions } : {}),
         ...(hasSlugs
           ? { composioToolkitSlugs: resolved.composioToolkitSlugs }

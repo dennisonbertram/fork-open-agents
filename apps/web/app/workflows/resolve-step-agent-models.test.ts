@@ -1,3 +1,7 @@
+import {
+  type AgentModelSelection,
+  toProviderModelId,
+} from "@open-agents/agent";
 import { describe, expect, mock, test } from "bun:test";
 import { resolveStepAgentModels } from "./resolve-step-agent-models";
 
@@ -11,12 +15,12 @@ function fakeResolver() {
     async (params: {
       userId: string;
       inferenceProfileId: string | null;
-      selection: { id: string };
-    }) => {
+      selection: AgentModelSelection;
+    }): Promise<AgentModelSelection> => {
       const id = params.selection.id.startsWith("user-profile:")
         ? params.selection.id.split(":").slice(2).join(":")
         : params.selection.id;
-      return { ...params.selection, id };
+      return { ...params.selection, id: toProviderModelId(id) };
     },
   );
 }
@@ -31,7 +35,9 @@ describe("resolveStepAgentModels", () => {
     const resolve = fakeResolver();
     const resolved = await resolveStepAgentModels({
       ...BASE,
-      agentOptions: { model: { id: "user-profile:profile-1:gpt-oss-120b" } },
+      agentOptions: {
+        model: { id: toProviderModelId("user-profile:profile-1:gpt-oss-120b") },
+      },
       resolve,
     });
 
@@ -47,8 +53,10 @@ describe("resolveStepAgentModels", () => {
     const resolved = await resolveStepAgentModels({
       ...BASE,
       agentOptions: {
-        model: { id: "user-profile:profile-1:gpt-oss-120b" },
-        subagentModel: { id: "user-profile:profile-1:gemma-4-31b" },
+        model: { id: toProviderModelId("user-profile:profile-1:gpt-oss-120b") },
+        subagentModel: {
+          id: toProviderModelId("user-profile:profile-1:gemma-4-31b"),
+        },
       },
       resolve,
     });
@@ -61,8 +69,10 @@ describe("resolveStepAgentModels", () => {
     const resolved = await resolveStepAgentModels({
       ...BASE,
       agentOptions: {
-        model: { id: "user-profile:profile-1:gpt-oss-120b" },
-        subagentModel: { id: "user-profile:profile-1:gemma-4-31b" },
+        model: { id: toProviderModelId("user-profile:profile-1:gpt-oss-120b") },
+        subagentModel: {
+          id: toProviderModelId("user-profile:profile-1:gemma-4-31b"),
+        },
       },
       resolve,
     });
@@ -81,7 +91,9 @@ describe("resolveStepAgentModels", () => {
     const resolved = await resolveStepAgentModels({
       userId: "user-1",
       inferenceProfileId: null,
-      agentOptions: { model: { id: "user-profile:profile-a:zai-glm-4.7" } },
+      agentOptions: {
+        model: { id: toProviderModelId("user-profile:profile-a:zai-glm-4.7") },
+      },
       resolve,
     });
 
@@ -94,8 +106,8 @@ describe("resolveStepAgentModels", () => {
   test("leaves options untouched when there is no inference profile", async () => {
     const resolve = fakeResolver();
     const agentOptions = {
-      model: { id: "anthropic/claude-haiku-4.5" },
-      subagentModel: { id: "anthropic/claude-haiku-4.5" },
+      model: { id: toProviderModelId("anthropic/claude-haiku-4.5") },
+      subagentModel: { id: toProviderModelId("anthropic/claude-haiku-4.5") },
     };
     const resolved = await resolveStepAgentModels({
       ...BASE,
@@ -112,7 +124,9 @@ describe("resolveStepAgentModels", () => {
     const resolve = fakeResolver();
     const resolved = await resolveStepAgentModels({
       ...BASE,
-      agentOptions: { model: { id: "user-profile:profile-1:gpt-oss-120b" } },
+      agentOptions: {
+        model: { id: toProviderModelId("user-profile:profile-1:gpt-oss-120b") },
+      },
       resolve,
     });
 
@@ -129,8 +143,10 @@ describe("resolveStepAgentModels", () => {
       userId: "user-1",
       inferenceProfileId: "profile-a",
       agentOptions: {
-        model: { id: "user-profile:profile-a:gpt-oss-120b" },
-        subagentModel: { id: "user-profile:profile-b:sub-model" },
+        model: { id: toProviderModelId("user-profile:profile-a:gpt-oss-120b") },
+        subagentModel: {
+          id: toProviderModelId("user-profile:profile-b:sub-model"),
+        },
       },
       resolve,
     });
@@ -150,8 +166,8 @@ describe("resolveStepAgentModels", () => {
       userId: "user-1",
       inferenceProfileId: "profile-a",
       agentOptions: {
-        model: { id: "user-profile:profile-a:gpt-oss-120b" },
-        subagentModel: { id: "anthropic/claude-haiku-4.5" },
+        model: { id: toProviderModelId("user-profile:profile-a:gpt-oss-120b") },
+        subagentModel: { id: toProviderModelId("anthropic/claude-haiku-4.5") },
       },
       resolve,
     });
@@ -159,7 +175,7 @@ describe("resolveStepAgentModels", () => {
     // Untouched: routing it through profile-a would call that custom endpoint
     // with a model it does not serve, breaking delegation that worked before.
     expect(resolved.subagentModel).toEqual({
-      id: "anthropic/claude-haiku-4.5",
+      id: toProviderModelId("anthropic/claude-haiku-4.5"),
     });
     expect(
       resolve.mock.calls.some((c) => c[0].selection.id.includes("anthropic/")),
@@ -175,8 +191,10 @@ describe("resolveStepAgentModels", () => {
       userId: "user-1",
       inferenceProfileId: null,
       agentOptions: {
-        model: { id: "anthropic/claude-haiku-4.5" },
-        subagentModel: { id: "user-profile:profile-b:gemma-4-31b" },
+        model: { id: toProviderModelId("anthropic/claude-haiku-4.5") },
+        subagentModel: {
+          id: toProviderModelId("user-profile:profile-b:gemma-4-31b"),
+        },
       },
       resolve,
     });
@@ -206,8 +224,10 @@ describe("resolveStepAgentModels", () => {
       userId: "user-1",
       inferenceProfileId: "profile-a",
       agentOptions: {
-        model: { id: "user-profile:profile-a:gpt-oss-120b" },
-        subagentModel: { id: "user-profile:deleted-profile:gemma-4-31b" },
+        model: { id: toProviderModelId("user-profile:profile-a:gpt-oss-120b") },
+        subagentModel: {
+          id: toProviderModelId("user-profile:deleted-profile:gemma-4-31b"),
+        },
       },
       resolve: resolve as never,
     });
@@ -238,8 +258,10 @@ describe("resolveStepAgentModels", () => {
       userId: "user-1",
       inferenceProfileId: "profile-a",
       agentOptions: {
-        model: { id: "user-profile:profile-a:gpt-oss-120b" },
-        subagentModel: { id: "user-profile:deleted-profile:gemma-4-31b" },
+        model: { id: toProviderModelId("user-profile:profile-a:gpt-oss-120b") },
+        subagentModel: {
+          id: toProviderModelId("user-profile:deleted-profile:gemma-4-31b"),
+        },
       },
       resolve: resolve as never,
       onSubagentResolutionFailed,
@@ -261,7 +283,11 @@ describe("resolveStepAgentModels", () => {
       resolveStepAgentModels({
         userId: "user-1",
         inferenceProfileId: "profile-a",
-        agentOptions: { model: { id: "user-profile:profile-a:gpt-oss-120b" } },
+        agentOptions: {
+          model: {
+            id: toProviderModelId("user-profile:profile-a:gpt-oss-120b"),
+          },
+        },
         resolve: resolve as never,
       }),
     ).rejects.toThrow("Selected inference profile is unavailable.");

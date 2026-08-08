@@ -1,6 +1,7 @@
-import type {
-  AgentModelSelection,
-  OpenAgentCallOptions,
+import {
+  type AgentModelSelection,
+  type OpenAgentCallOptions,
+  toProviderModelId,
 } from "@open-agents/agent";
 import { USER_INFERENCE_OPTION_PREFIX } from "@/lib/inference/model-option-id";
 
@@ -42,7 +43,7 @@ export async function resolveStepAgentModels<
 
   const toSelection = (model: NonNullable<TOptions["model"]>) =>
     typeof model === "string"
-      ? ({ id: model } as AgentModelSelection)
+      ? { id: toProviderModelId(model) }
       : (model as AgentModelSelection);
 
   const optionId = (model: NonNullable<TOptions["model"]>) =>

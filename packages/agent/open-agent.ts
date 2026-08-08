@@ -188,10 +188,12 @@ function normalizeAgentModelSelection(
   fallbackId: GatewayModelId,
 ): AgentModelSelection {
   if (!selection) {
-    return { id: fallbackId };
+    return { id: toProviderModelId(fallbackId) };
   }
 
-  return typeof selection === "string" ? { id: selection } : selection;
+  return typeof selection === "string"
+    ? { id: toProviderModelId(selection) }
+    : selection;
 }
 
 const tools = {

@@ -6,6 +6,7 @@ import {
   type AgentModelSelection,
   type OpenAgentCallOptions,
   sanitizeUnattendedToolCalls,
+  toProviderModelId,
 } from "@open-agents/agent";
 import {
   connectSandbox,
@@ -1096,7 +1097,7 @@ async function resolveBackgroundAgentModel(params: {
   inference: BackgroundAgentInferenceSnapshotV1;
 }): Promise<AgentModelSelection> {
   const baseSelection: AgentModelSelection = {
-    id: params.inference.modelId as AgentModelSelection["id"],
+    id: toProviderModelId(params.inference.modelId),
   };
 
   if (params.inference.route === "gateway") {

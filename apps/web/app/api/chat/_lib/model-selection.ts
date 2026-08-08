@@ -1,4 +1,7 @@
-import type { AgentModelSelection } from "@open-agents/agent";
+import {
+  type AgentModelSelection,
+  toProviderModelId,
+} from "@open-agents/agent";
 import { resolveAvailableModelId } from "@/lib/model-availability";
 import { type ModelVariant, resolveModelSelection } from "@/lib/model-variants";
 import { APP_DEFAULT_MODEL_ID } from "@/lib/models";
@@ -21,7 +24,7 @@ export function resolveChatModelSelection({
     console.warn(
       `${missingVariantLabel} "${requestedModelId}" was not found. Falling back to default model.`,
     );
-    return { id: APP_DEFAULT_MODEL_ID as AgentModelSelection["id"] };
+    return { id: toProviderModelId(APP_DEFAULT_MODEL_ID) };
   }
 
   const availableModelId = resolveAvailableModelId(selection.resolvedModelId);
@@ -29,11 +32,11 @@ export function resolveChatModelSelection({
     console.warn(
       `${missingVariantLabel} "${requestedModelId}" resolves to disabled model "${selection.resolvedModelId}". Falling back to default model.`,
     );
-    return { id: APP_DEFAULT_MODEL_ID as AgentModelSelection["id"] };
+    return { id: toProviderModelId(APP_DEFAULT_MODEL_ID) };
   }
 
   return {
-    id: availableModelId as AgentModelSelection["id"],
+    id: toProviderModelId(availableModelId),
     ...(selection.providerOptionsByProvider
       ? {
           providerOptionsOverrides: selection.providerOptionsByProvider,

@@ -459,6 +459,7 @@ mock.module("@open-agents/agent", () => ({
     modelId.startsWith("anthropic/")
       ? modelId.slice("anthropic/".length).replaceAll(".", "-")
       : null,
+  toProviderModelId: (modelId: string) => modelId,
 }));
 
 mock.module("@/lib/db/sessions", () => ({
