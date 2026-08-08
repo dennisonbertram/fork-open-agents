@@ -1138,28 +1138,41 @@ async function resolveBackgroundAgentModel(params: {
 async function resolveBackgroundAgentSubagentModel(
   userId: string,
 ): Promise<AgentModelSelection | undefined> {
-  const preferences = await getUserPreferences(userId);
-  if (!preferences.defaultSubagentModelId) {
+  // The whole body — including the preference lookup itself, not just the
+  // model resolution below — must stay non-fatal: this runs after the
+  // sandbox is already connected, and a transient failure here (e.g. the
+  // preferences read) must not take the run down for a field that only
+  // affects delegated `task` workers.
+  try {
+    const preferences = await getUserPreferences(userId);
+    if (!preferences.defaultSubagentModelId) {
+      return undefined;
+    }
+
+    const resolved = await resolveStepAgentModels({
+      userId,
+      inferenceProfileId: null,
+      agentOptions: {
+        subagentModel: {
+          id: preferences.defaultSubagentModelId,
+        } as AgentModelSelection,
+      },
+      resolve: resolveInferenceProfileModelSelection,
+      onSubagentResolutionFailed: (error) => {
+        console.error(
+          `[background-agents] subagent model resolution failed for user "${userId}" (non-fatal, delegated workers will use the main model):`,
+          error,
+        );
+      },
+    });
+    return resolved.subagentModel;
+  } catch (error) {
+    console.error(
+      `[background-agents] failed to read subagent model preference for user "${userId}" (non-fatal, delegated workers will use the main model):`,
+      error,
+    );
     return undefined;
   }
-
-  const resolved = await resolveStepAgentModels({
-    userId,
-    inferenceProfileId: null,
-    agentOptions: {
-      subagentModel: {
-        id: preferences.defaultSubagentModelId,
-      } as AgentModelSelection,
-    },
-    resolve: resolveInferenceProfileModelSelection,
-    onSubagentResolutionFailed: (error) => {
-      console.error(
-        `[background-agents] subagent model resolution failed for user "${userId}" (non-fatal, delegated workers will use the main model):`,
-        error,
-      );
-    },
-  });
-  return resolved.subagentModel;
 }
 
 async function runBackgroundAgent(params: {
@@ -1212,7 +1225,9 @@ async function runBackgroundAgent(params: {
     unattended: true,
     allowedBuiltinToolNames: params.allowedBuiltinToolNames ?? null,
     ...(params.modelSelection ? { model: params.modelSelection } : {}),
-    ...(subagentModelSelection ? { subagentModel: subagentModelSelection } : {}),
+    ...(subagentModelSelection
+      ? { subagentModel: subagentModelSelection }
+      : {}),
     customInstructions:
       "You are running inside an unattended background-agent workflow. Work autonomously, keep changes scoped, and finish with a concise summary.",
   };
