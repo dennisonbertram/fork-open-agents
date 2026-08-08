@@ -65,12 +65,18 @@
 
 import "server-only";
 
-import { openAgent, sanitizeUnattendedToolCalls } from "@open-agents/agent";
+import {
+  type AgentModelSelection,
+  openAgent,
+  sanitizeUnattendedToolCalls,
+} from "@open-agents/agent";
 import {
   connectSandbox,
   hasUncommittedChanges,
   stageAll,
 } from "@open-agents/sandbox";
+import { resolveStepAgentModels } from "@/app/workflows/resolve-step-agent-models";
+import { getUserPreferences } from "@/lib/db/user-preferences";
 import {
   mintInstallationToken,
   revokeInstallationToken,
@@ -79,6 +85,7 @@ import {
 import { verifyRepoAccess } from "@/lib/github/access";
 import { buildCommitIntentFromSandbox } from "@/lib/github/commit-intent";
 import { buildCoAuthor, createCommit } from "@/lib/github/commit";
+import { resolveInferenceProfileModelSelection } from "@/lib/inference/profile-resolution";
 import {
   DEFAULT_SANDBOX_BASE_SNAPSHOT_ID,
   DEFAULT_SANDBOX_PORTS,
@@ -707,6 +714,58 @@ export async function executeAgentStep(
       repoName,
     });
 
+  // ── Resolve the user's own model + subagent model ────────────────────────────
+  // Loops previously built `agentOptions` with no `model`/`subagentModel` at
+  // all, so every step silently ran on the package default
+  // (anthropic/claude-opus-4.6) through the Vercel gateway — ignoring a BYOK
+  // user's own key and model choice entirely (#1158). Reuses the same
+  // resolveStepAgentModels/resolveInferenceProfileModelSelection helpers the
+  // chat workflow already uses for this exact job — no new parser. Resolved
+  // before repo access / sandbox costs, matching the background-agent
+  // executor's "fail before paying for a sandbox" precedent.
+  let resolvedAgentModels: {
+    model: AgentModelSelection;
+    subagentModel?: AgentModelSelection;
+  };
+  try {
+    const preferences = await getUserPreferences(executionUserId);
+    resolvedAgentModels = await resolveStepAgentModels({
+      userId: executionUserId,
+      inferenceProfileId: preferences.defaultInferenceProfileId,
+      agentOptions: {
+        model: { id: preferences.defaultModelId } as AgentModelSelection,
+        ...(preferences.defaultSubagentModelId
+          ? {
+              subagentModel: {
+                id: preferences.defaultSubagentModelId,
+              } as AgentModelSelection,
+            }
+          : {}),
+      },
+      resolve: resolveInferenceProfileModelSelection,
+      onSubagentResolutionFailed: (error) => {
+        // A broken subagent-model preference (its profile deleted or
+        // disabled) must not fail the whole step — the coordinator turn may
+        // never delegate at all. Drop the override so delegated workers
+        // inherit the (working) main model instead, mirroring the chat
+        // workflow's fallback in resolve-step-agent-models.ts.
+        console.error(
+          `[agent-loops] subagent model resolution failed for user "${executionUserId}" (non-fatal, delegated workers will use the main model):`,
+          error,
+        );
+      },
+    });
+  } catch (error) {
+    return recordAgentStepFailure({
+      ...failureCtx,
+      errorKind: "model_resolution_failed",
+      errorMessage:
+        error instanceof Error
+          ? error.message
+          : "Failed to resolve the loop's configured model.",
+    });
+  }
+
   const initialLiveGateDenial = await getLiveGateDenial();
   if (initialLiveGateDenial) {
     return recordAgentStepFailure({
@@ -922,6 +981,12 @@ export async function executeAgentStep(
       // Pre-approved built-in tools for this step. null = default policy.
       allowedBuiltinToolNames,
       customInstructions: BASE_STEP_CUSTOM_INSTRUCTIONS,
+      // The user's own model + inference profile (#1158) — resolved above,
+      // before sandbox connect.
+      model: resolvedAgentModels.model,
+      ...(resolvedAgentModels.subagentModel
+        ? { subagentModel: resolvedAgentModels.subagentModel }
+        : {}),
     };
 
     // Resolve any Composio tools this step is granted (B-P2). Gated by the

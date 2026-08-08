@@ -103,6 +103,8 @@ import {
   assertInferenceProfileRouteAvailable,
   resolveInferenceProfileModelSelection,
 } from "@/lib/inference/profile-resolution";
+import { getUserPreferences } from "@/lib/db/user-preferences";
+import { resolveStepAgentModels } from "@/app/workflows/resolve-step-agent-models";
 import {
   BackgroundAgentSnapshotError,
   resolveBackgroundAgentExecutionDefinition,
@@ -1121,6 +1123,45 @@ async function resolveBackgroundAgentModel(params: {
   });
 }
 
+/**
+ * Resolves the user's `default_subagent_model_id` preference (#1158) so
+ * delegated `task` workers honor it instead of silently inheriting the main
+ * model. Unlike the main model, the run's frozen inference snapshot carries
+ * no subagent selection — this reads the live preference directly, the same
+ * source the chat workflow uses for the same field.
+ *
+ * Non-fatal by design: a broken preference (its profile deleted or disabled)
+ * must not fail the run — the coordinator turn may never delegate at all.
+ * Reuses resolveStepAgentModels, which drops the override on failure so
+ * delegated workers fall back to inheriting the main model.
+ */
+async function resolveBackgroundAgentSubagentModel(
+  userId: string,
+): Promise<AgentModelSelection | undefined> {
+  const preferences = await getUserPreferences(userId);
+  if (!preferences.defaultSubagentModelId) {
+    return undefined;
+  }
+
+  const resolved = await resolveStepAgentModels({
+    userId,
+    inferenceProfileId: null,
+    agentOptions: {
+      subagentModel: {
+        id: preferences.defaultSubagentModelId,
+      } as AgentModelSelection,
+    },
+    resolve: resolveInferenceProfileModelSelection,
+    onSubagentResolutionFailed: (error) => {
+      console.error(
+        `[background-agents] subagent model resolution failed for user "${userId}" (non-fatal, delegated workers will use the main model):`,
+        error,
+      );
+    },
+  });
+  return resolved.subagentModel;
+}
+
 async function runBackgroundAgent(params: {
   runId: string;
   agentId: string | null;
@@ -1151,6 +1192,11 @@ async function runBackgroundAgent(params: {
       content: params.prompt,
     },
   ];
+  // #1158: honor the user's default_subagent_model_id preference so delegated
+  // `task` workers stop silently inheriting the main model.
+  const subagentModelSelection = await resolveBackgroundAgentSubagentModel(
+    params.userId,
+  );
   const options: OpenAgentCallOptions = {
     sandbox: {
       state: getSandboxState(params.sandbox),
@@ -1166,6 +1212,7 @@ async function runBackgroundAgent(params: {
     unattended: true,
     allowedBuiltinToolNames: params.allowedBuiltinToolNames ?? null,
     ...(params.modelSelection ? { model: params.modelSelection } : {}),
+    ...(subagentModelSelection ? { subagentModel: subagentModelSelection } : {}),
     customInstructions:
       "You are running inside an unattended background-agent workflow. Work autonomously, keep changes scoped, and finish with a concise summary.",
   };
