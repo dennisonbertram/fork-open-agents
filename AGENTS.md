@@ -16,6 +16,7 @@ or detailed procedures here; put that material in `docs/agents`,
 - [Process Index](docs/process/index.md)
 - [Local Development Setup](docs/process/local-development.md)
 - [Development Workflow](docs/process/development-workflow.md)
+- [Guard Integrity](docs/process/guard-integrity.md)
 - [Behavior-First TDD](docs/process/behavior-tdd.md)
 - [Authenticated Local UI Smoke](docs/process/development-workflow.md#authenticated-local-ui-smoke)
 - [Observability Discipline](docs/process/observability-discipline.md)
@@ -75,6 +76,14 @@ For behavior-changing work, name the protected user/operator path, write or
 identify the failing test first, confirm the red state, implement the smallest
 green change, and then run the adjacent suite plus `git diff --check` and
 `bun --bun run ci`.
+
+When a change adds a **guard** — anything whose job is to refuse, block, or
+validate — follow [Guard Integrity](docs/process/guard-integrity.md). Passing
+unit tests are not evidence that a guard fires in the real path. This repo has
+shipped four guards that were green and inert. Exercise the refusal through the
+real entry point, check its exit code without a pipe, prove the allow paths, and
+confirm every input the guard reads actually reaches it in Turbo's env
+allowlist, in every Vercel environment, and in `.env.example`.
 
 For managed runtime, sandbox, workflow, browser, deploy, auth, or GitHub App
 changes, include observability evidence: user-visible status, runtime/sandbox

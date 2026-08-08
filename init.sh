@@ -279,7 +279,23 @@ report_database_target() {
     return
   fi
   info "database target: ${endpoint}"
-  if [[ -n "${PRODUCTION_DB_HOST:-}" && "${PRODUCTION_DB_HOST}" == *"${endpoint%-pooler}"* ]]; then
+
+  # PRODUCTION_DB_HOST arms the migration guard in apps/web/lib/db/migrate.ts.
+  # It is present-but-empty in .env.example, so the offline skeleton path
+  # produces a checkout where the guard silently fails open. Say so out loud --
+  # a disarmed guard that nobody knows about is worse than no guard.
+  local guard_host
+  guard_host="$(grep -m1 '^PRODUCTION_DB_HOST=' "$WEB_ENV_FILE" 2>/dev/null | cut -d= -f2- | tr -d '"' || true)"
+  if [[ -z "${guard_host}" ]]; then
+    guard_host="${PRODUCTION_DB_HOST:-}"
+  fi
+
+  if [[ -z "${guard_host}" ]]; then
+    warn "PRODUCTION_DB_HOST is empty -- the migration guard is DISARMED; a production POSTGRES_URL here would not be refused"
+    return
+  fi
+
+  if [[ "${guard_host}" == *"${endpoint%-pooler}"* ]]; then
     warn "this env targets the PRODUCTION database -- migrations and writes will hit live data"
   fi
 }
