@@ -3,6 +3,7 @@ import {
   requireOwnedSessionChat,
 } from "@/app/api/sessions/_lib/session-context";
 import { forkChatThroughMessage, getChatById } from "@/lib/db/sessions";
+import { splitModelSelection } from "@/lib/inference/model-option-id";
 
 type RouteContext = {
   params: Promise<{ sessionId: string; chatId: string }>;
@@ -79,6 +80,19 @@ export async function POST(req: Request, context: RouteContext) {
     }
   }
 
+  // A chat's modelId can already be a composite (#1154) if it was created
+  // before the write-boundary split existed. Normalize it here so a fork
+  // never propagates an internal composite id further.
+  const { modelId, inferenceProfileId } = chatContext.chat.modelId
+    ? splitModelSelection(
+        chatContext.chat.modelId,
+        chatContext.chat.inferenceProfileId,
+      )
+    : {
+        modelId: chatContext.chat.modelId,
+        inferenceProfileId: chatContext.chat.inferenceProfileId,
+      };
+
   const result = await forkChatThroughMessage({
     userId: authResult.userId,
     sourceChatId: chatId,
@@ -87,8 +101,8 @@ export async function POST(req: Request, context: RouteContext) {
       id: requestedChatId ?? crypto.randomUUID(),
       sessionId,
       title: `Fork of ${chatContext.chat.title}`,
-      modelId: chatContext.chat.modelId,
-      inferenceProfileId: chatContext.chat.inferenceProfileId,
+      modelId,
+      inferenceProfileId,
       composioSelection: chatContext.chat.composioSelection,
     },
   });

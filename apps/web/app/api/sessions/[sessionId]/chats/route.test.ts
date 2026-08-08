@@ -122,29 +122,34 @@ mock.module("@/lib/db/sessions", () => ({
   },
 }));
 
-mock.module("@/lib/db/user-preferences", () => ({
-  getUserPreferences: async () => ({
-    defaultModelId: "model-default",
-    defaultSubagentModelId: null,
-    defaultInferenceProfileId: null,
-    defaultSandboxType: "vercel",
-    defaultDiffMode: "unified",
-    autoCommitPush: false,
-    autoCreatePr: false,
-    alertsEnabled: true,
-    alertSoundEnabled: true,
-    publicUsageEnabled: false,
-    globalSkillRefs: [],
-    modelVariants: [],
-    enabledModelIds: [],
-    composioAgentDefaults: {
-      ...defaultComposioAgentDefaults,
-      main: {
-        defaultProfileId: "profile-main",
-        allowChatOverride: true,
-      },
+const DEFAULT_PREFERENCES = {
+  defaultModelId: "model-default",
+  defaultSubagentModelId: null,
+  defaultInferenceProfileId: null,
+  defaultSandboxType: "vercel",
+  defaultDiffMode: "unified",
+  autoCommitPush: false,
+  autoCreatePr: false,
+  alertsEnabled: true,
+  alertSoundEnabled: true,
+  publicUsageEnabled: false,
+  globalSkillRefs: [],
+  modelVariants: [],
+  enabledModelIds: [],
+  composioAgentDefaults: {
+    ...defaultComposioAgentDefaults,
+    main: {
+      defaultProfileId: "profile-main",
+      allowChatOverride: true,
     },
-  }),
+  },
+};
+// Mutable so tests (e.g. #1154 composite-model-id normalization) can swap in
+// a preferences shape without cloning the whole mock.module setup.
+let currentPreferences: Record<string, unknown> = { ...DEFAULT_PREFERENCES };
+
+mock.module("@/lib/db/user-preferences", () => ({
+  getUserPreferences: async () => currentPreferences,
 }));
 
 mock.module("@/lib/db/composio", () => ({
@@ -204,6 +209,7 @@ describe("/api/sessions/[sessionId]/chats", () => {
       composioSelection: { mainProfileId: "profile-main" },
     };
     composioPolicy = { allowed: true, reason: null };
+    currentPreferences = { ...DEFAULT_PREFERENCES };
     getSummaryCalls.length = 0;
     createChatCalls.length = 0;
   });
@@ -335,6 +341,31 @@ describe("/api/sessions/[sessionId]/chats", () => {
         composioSelection: { mainProfileId: "profile-main" },
       },
     ]);
+    expect(body.chat.id).toBe("generated-chat-id");
+  });
+
+  // Regression test for issue #1154 — mirrors the sessions/route.test.ts case:
+  // a legacy composite defaultModelId (predating #1123's write-time split)
+  // must be split into modelId + inferenceProfileId, not copied whole.
+  test("#1154: a legacy composite defaultModelId is split into modelId + inferenceProfileId on a new chat", async () => {
+    currentPreferences = {
+      ...DEFAULT_PREFERENCES,
+      defaultModelId: "user-profile:profile-legacy:claude-sonnet-4.5",
+      defaultInferenceProfileId: null,
+    };
+    const { POST } = await routeModulePromise;
+
+    const response = await POST(
+      createJsonRequest({}),
+      createContext("session-abc"),
+    );
+    const body = (await response.json()) as { chat: ChatRecord };
+
+    expect(response.status).toBe(200);
+    expect(createChatCalls[0]).toMatchObject({
+      modelId: "claude-sonnet-4.5",
+      inferenceProfileId: "profile-legacy",
+    });
     expect(body.chat.id).toBe("generated-chat-id");
   });
 

@@ -329,6 +329,13 @@ mock.module("@/lib/inference/model-option-id", () => ({
   }),
   getModelOptionSelectionId: (modelId: string | null | undefined) =>
     modelId ?? "",
+  splitModelSelection: (
+    modelId: string,
+    explicitInferenceProfileId?: string | null,
+  ) => ({
+    modelId,
+    inferenceProfileId: explicitInferenceProfileId ?? null,
+  }),
 }));
 
 mock.module("@/lib/inference/profile-resolution", () => ({
