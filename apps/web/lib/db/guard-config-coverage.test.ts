@@ -26,14 +26,18 @@ const TURBO_CONFIG = new URL("turbo.json", REPO_ROOT);
 const ENV_EXAMPLE = new URL("apps/web/.env.example", REPO_ROOT);
 
 /**
- * Variables the guard needs supplied per-checkout to be armed at all.
+ * Variables a checkout must supply for the guard to be armed.
  *
- * `POSTGRES_URL` is excluded deliberately: it is the target being guarded, is
- * already present in `.env.example`, and its absence disables migrations
- * outright rather than silently weakening the guard. `VERCEL_ENV` is excluded
- * because the platform injects it; a developer never sets it by hand.
+ * `.env.example` DOCUMENTS these; it does not arm them — the template ships
+ * them empty, and an empty value makes the guard fail open. Key presence is
+ * therefore not evidence of an armed guard, which is why the arming check below
+ * tests `init.sh`'s warning rather than the template's contents.
+ *
+ * `POSTGRES_URL` is excluded deliberately: it is the target being guarded, and
+ * its absence disables migrations outright rather than silently weakening the
+ * guard. `VERCEL_ENV` is excluded because the platform injects it.
  */
-const MUST_BE_IN_ENV_EXAMPLE = ["PRODUCTION_DB_HOST"];
+const MUST_BE_DOCUMENTED_IN_ENV_EXAMPLE = ["PRODUCTION_DB_HOST"];
 
 type TurboConfig = {
   tasks?: Record<string, { env?: string[] }>;
@@ -73,12 +77,28 @@ describe("guard config coverage", () => {
     expect(undelivered).toEqual([]);
   });
 
-  test.each(MUST_BE_IN_ENV_EXAMPLE)(
-    "%s is in .env.example so a fresh checkout arms the guard",
+  test.each(MUST_BE_DOCUMENTED_IN_ENV_EXAMPLE)(
+    "%s is documented in .env.example",
     async (name) => {
       expect(await envExampleKeys()).toContain(name);
     },
   );
+
+  // The previous version of this test asserted key presence and claimed that
+  // meant "a fresh checkout arms the guard". It does not: `.env.example` ships
+  // `PRODUCTION_DB_HOST=` empty, `init.sh`'s offline path copies the template
+  // verbatim, and `decideMigrationTarget` fails open on a falsy host. The test
+  // that was supposed to enforce this document committed the very error the
+  // document describes.
+  //
+  // A checkout cannot be proven armed from the repo, so assert the next best
+  // thing: that a disarmed checkout says so out loud.
+  test("init.sh warns when the guard is disarmed by an empty host", async () => {
+    const source = await Bun.file(new URL("init.sh", REPO_ROOT)).text();
+    const reporter = source.slice(source.indexOf("report_database_target() {"));
+
+    expect(reporter).toContain("DISARMED");
+  });
 
   test("the guard's fail-open default is documented where it is defined", async () => {
     const source = await Bun.file(

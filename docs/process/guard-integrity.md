@@ -37,6 +37,7 @@ Read these before writing a guard. They are not hypotheticals.
 | 2 | Migration target guard (#1167) | `turbo.json`'s build task declares an env allowlist. `PRODUCTION_DB_HOST` was not in it, so under `bun run build` the guard got `undefined` and failed open. |
 | 3 | The same guard, locally | `PRODUCTION_DB_HOST` was absent from `.env.local` and `.env.example`, so the guard was unarmed on every developer machine. |
 | 4 | `isToolUIPart` test doubles (#1153) | Ten hand-written doubles diverged from the real library predicate, hiding an entire class of tool from every test that used them. |
+| 5 | The test enforcing *this document* | It asserted `PRODUCTION_DB_HOST` was present in `.env.example` and concluded "a fresh checkout arms the guard". The template ships the key **empty**, `init.sh`'s offline path copies it verbatim, and the guard fails open on a falsy host. The enforcement committed the error it was written to prevent. |
 
 Instance 2 had a second edge worth internalizing: fixing only the variable the
 reviewer named would have armed the guard while leaving `VERCEL_ENV` stripped —
@@ -78,6 +79,18 @@ cmd >/dev/null 2>&1; echo "exit: $?"
 Over-guarding is the worse failure. A guard on the build path that refuses
 incorrectly blocks every deploy. Every guard needs must-stay-green cases for the
 traffic it must **not** block, named as such in the test file.
+
+### 3b. Presence is not configuration
+
+A key existing in `.env.example`, `turbo.json`, or a Vercel environment does not
+mean it holds a usable value. Templates ship keys empty on purpose. An assertion
+that a key is *present* proves documentation, not arming — say which one you are
+claiming.
+
+Where a checkout cannot be proven armed from the repo, make the disarmed state
+**announce itself** instead. `init.sh` warns `the migration guard is DISARMED`
+when `PRODUCTION_DB_HOST` is empty, which is verifiable from the repo in a way
+that a developer's actual environment is not.
 
 ### 4. Verify every input reaches it in the real environment
 
