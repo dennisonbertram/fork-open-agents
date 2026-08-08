@@ -17,17 +17,18 @@ describe("toProviderModelId", () => {
   });
 
   test("the thrown error says the id must be parsed first", () => {
-    expect(() => toProviderModelId("user-profile:p:m")).toThrow(
-      /parse/i,
-    );
+    expect(() => toProviderModelId("user-profile:p:m")).toThrow(/parse/i);
   });
 
   test("returns a real provider model id unchanged", () => {
-    expect(toProviderModelId("zai-glm-4.7")).toBe("zai-glm-4.7");
+    expect(toProviderModelId("zai-glm-4.7")).toBe(
+      toProviderModelId("zai-glm-4.7"),
+    );
+    expect(toProviderModelId("zai-glm-4.7") as string).toBe("zai-glm-4.7");
   });
 
   test("returns a gateway-style provider/model id unchanged", () => {
-    expect(toProviderModelId("anthropic/claude-opus-4.6")).toBe(
+    expect(toProviderModelId("anthropic/claude-opus-4.6") as string).toBe(
       "anthropic/claude-opus-4.6",
     );
   });

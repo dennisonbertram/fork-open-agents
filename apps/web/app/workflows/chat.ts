@@ -353,10 +353,27 @@ async function resolveChatModelRuntime(params: {
       // with no second argument, silently dropping those overrides.
       const hasInstructions = resolved.instructions !== null;
       const hasSlugs = resolved.composioToolkitSlugs.length > 0;
+      // #1155 finding 2: a DB-row modelId can carry a resolved
+      // inferenceProfileId recovered from a "user-profile:<id>:<modelId>"
+      // composite (resolve-agent.ts). SubagentRosterEntry has no field for a
+      // profile id and applyRosterOverrides always calls gateway(modelId)
+      // directly (tracked separately for #1157) — so a profile-bound modelId
+      // must NOT be threaded into the roster: it would silently route through
+      // the Vercel gateway under the wrong provider and key instead of the
+      // user's own profile whenever the bare id happens to collide with a
+      // real gateway catalog id. Drop just the model override for that role;
+      // it still inherits the (working) default subagent model.
+      const needsProfile = resolved.inferenceProfileId !== null;
+      if (needsProfile && resolved.fromDbRow && resolved.modelId !== null) {
+        console.warn(
+          `[chat] subagent roster entry for role "${resolved.role}" needs user inference profile "${resolved.inferenceProfileId}", which the roster cannot carry yet (#1157); falling back to the default subagent model instead of routing "${resolved.modelId}" through the gateway.`,
+        );
+      }
       // Only include modelId when this resolution came from a real DB row.
       // Synthetic fallback modelId is already wired via subagentModel and must
       // not be duplicated in the roster without its full model selection context.
-      const hasModel = resolved.fromDbRow && resolved.modelId !== null;
+      const hasModel =
+        resolved.fromDbRow && resolved.modelId !== null && !needsProfile;
 
       if (!hasModel && !hasInstructions && !hasSlugs) {
         return null;

@@ -3,7 +3,10 @@ import {
   type OpenAgentCallOptions,
   toProviderModelId,
 } from "@open-agents/agent";
-import { USER_INFERENCE_OPTION_PREFIX } from "@/lib/inference/model-option-id";
+import {
+  parseModelOptionSelection,
+  USER_INFERENCE_OPTION_PREFIX,
+} from "@/lib/inference/model-option-id";
 
 /**
  * Resolves every model selection on a step's agent options through the user's
@@ -41,10 +44,28 @@ export async function resolveStepAgentModels<
     userId,
   } = params;
 
-  const toSelection = (model: NonNullable<TOptions["model"]>) =>
-    typeof model === "string"
-      ? { id: toProviderModelId(model) }
-      : (model as AgentModelSelection);
+  // toProviderModelId() rejects an unresolved "user-profile:<profileId>:
+  // <modelId>" composite outright (#1155) — it is a real runtime boundary,
+  // not just a type-level one. So a raw string must be parsed into its model
+  // id and profile id BEFORE the model id half is ever handed to the mint;
+  // minting the raw string first (as this used to do) would throw for every
+  // composite id this function exists to resolve. A plain gateway id parses
+  // to itself with no profile id, so this is a no-op for that case.
+  const toSelection = (
+    model: NonNullable<TOptions["model"]>,
+  ): { selection: AgentModelSelection; inferenceProfileId: string | null } => {
+    if (typeof model !== "string") {
+      return {
+        selection: model as AgentModelSelection,
+        inferenceProfileId: null,
+      };
+    }
+    const parsed = parseModelOptionSelection(model);
+    return {
+      selection: { id: toProviderModelId(parsed.modelId) },
+      inferenceProfileId: parsed.inferenceProfileId,
+    };
+  };
 
   const optionId = (model: NonNullable<TOptions["model"]>) =>
     typeof model === "string"
@@ -95,10 +116,17 @@ export async function resolveStepAgentModels<
   const resolved = { ...agentOptions };
 
   if (resolveMain && agentOptions.model) {
+    const { selection, inferenceProfileId: parsedProfileId } = toSelection(
+      agentOptions.model,
+    );
     resolved.model = (await resolve({
       userId,
-      inferenceProfileId,
-      selection: toSelection(agentOptions.model),
+      // The resolver also recovers a profile from a still-composite
+      // selection.id (#1123's own defence in depth) — but selection.id is
+      // now always pre-parsed and never composite, so that recovery path is
+      // recovered explicitly here instead, from the same parse.
+      inferenceProfileId: inferenceProfileId || parsedProfileId,
+      selection,
     })) as TOptions["model"];
   }
 
@@ -122,12 +150,16 @@ export async function resolveStepAgentModels<
   // failure is reported rather than swallowed.
   if (resolveSubagent && agentOptions.subagentModel) {
     try {
+      const { selection, inferenceProfileId: parsedProfileId } = toSelection(
+        agentOptions.subagentModel as NonNullable<TOptions["model"]>,
+      );
       resolved.subagentModel = (await resolve({
         userId,
-        inferenceProfileId: null,
-        selection: toSelection(
-          agentOptions.subagentModel as NonNullable<TOptions["model"]>,
-        ),
+        // Its own profile recovered from its own composite, never the main
+        // model's — passing the main model's profile would route a
+        // profile-B model at profile-A's endpoint.
+        inferenceProfileId: parsedProfileId,
+        selection,
       })) as TOptions["subagentModel"];
     } catch (error) {
       resolved.subagentModel = undefined as TOptions["subagentModel"];

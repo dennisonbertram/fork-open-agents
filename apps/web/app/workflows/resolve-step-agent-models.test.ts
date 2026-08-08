@@ -8,7 +8,10 @@ import { resolveStepAgentModels } from "./resolve-step-agent-models";
 /**
  * Stands in for `resolveInferenceProfileModelSelection`, which strips the
  * internal `user-profile:<profileId>:` prefix so a provider only ever sees a
- * real model id.
+ * real model id. `resolveStepAgentModels` now always parses a composite
+ * before calling this, so `selection.id` never actually carries the prefix
+ * in practice — the `startsWith` branch is kept only so this fake still
+ * behaves sanely if a test constructs a still-composite fixture directly.
  */
 function fakeResolver() {
   return mock(
@@ -25,6 +28,20 @@ function fakeResolver() {
   );
 }
 
+/**
+ * Builds a deliberately still-composite `AgentModelSelection.id` for test
+ * fixtures. toProviderModelId() now rejects a composite id at the mint
+ * itself (#1155), so a still-composite selection can only be constructed by
+ * bypassing the type system — the same `as never` idiom already used
+ * elsewhere in this codebase for deliberately malformed test input. These
+ * fixtures simulate an already-selection-shaped value arriving with a
+ * composite id (e.g. from an upstream bug), independent of the string
+ * branch under test below.
+ */
+function compositeId(raw: string): AgentModelSelection["id"] {
+  return raw as never;
+}
+
 const BASE = {
   userId: "user-1",
   inferenceProfileId: "profile-1",
@@ -36,7 +53,7 @@ describe("resolveStepAgentModels", () => {
     const resolved = await resolveStepAgentModels({
       ...BASE,
       agentOptions: {
-        model: { id: toProviderModelId("user-profile:profile-1:gpt-oss-120b") },
+        model: { id: compositeId("user-profile:profile-1:gpt-oss-120b") },
       },
       resolve,
     });
@@ -53,9 +70,9 @@ describe("resolveStepAgentModels", () => {
     const resolved = await resolveStepAgentModels({
       ...BASE,
       agentOptions: {
-        model: { id: toProviderModelId("user-profile:profile-1:gpt-oss-120b") },
+        model: { id: compositeId("user-profile:profile-1:gpt-oss-120b") },
         subagentModel: {
-          id: toProviderModelId("user-profile:profile-1:gemma-4-31b"),
+          id: compositeId("user-profile:profile-1:gemma-4-31b"),
         },
       },
       resolve,
@@ -69,9 +86,9 @@ describe("resolveStepAgentModels", () => {
     const resolved = await resolveStepAgentModels({
       ...BASE,
       agentOptions: {
-        model: { id: toProviderModelId("user-profile:profile-1:gpt-oss-120b") },
+        model: { id: compositeId("user-profile:profile-1:gpt-oss-120b") },
         subagentModel: {
-          id: toProviderModelId("user-profile:profile-1:gemma-4-31b"),
+          id: compositeId("user-profile:profile-1:gemma-4-31b"),
         },
       },
       resolve,
@@ -92,7 +109,7 @@ describe("resolveStepAgentModels", () => {
       userId: "user-1",
       inferenceProfileId: null,
       agentOptions: {
-        model: { id: toProviderModelId("user-profile:profile-a:zai-glm-4.7") },
+        model: { id: compositeId("user-profile:profile-a:zai-glm-4.7") },
       },
       resolve,
     });
@@ -125,7 +142,7 @@ describe("resolveStepAgentModels", () => {
     const resolved = await resolveStepAgentModels({
       ...BASE,
       agentOptions: {
-        model: { id: toProviderModelId("user-profile:profile-1:gpt-oss-120b") },
+        model: { id: compositeId("user-profile:profile-1:gpt-oss-120b") },
       },
       resolve,
     });
@@ -143,9 +160,9 @@ describe("resolveStepAgentModels", () => {
       userId: "user-1",
       inferenceProfileId: "profile-a",
       agentOptions: {
-        model: { id: toProviderModelId("user-profile:profile-a:gpt-oss-120b") },
+        model: { id: compositeId("user-profile:profile-a:gpt-oss-120b") },
         subagentModel: {
-          id: toProviderModelId("user-profile:profile-b:sub-model"),
+          id: compositeId("user-profile:profile-b:sub-model"),
         },
       },
       resolve,
@@ -155,8 +172,11 @@ describe("resolveStepAgentModels", () => {
     const subagentCall = calls.find((c) =>
       c.selection.id.includes("sub-model"),
     );
-    // null lets the resolver derive profile-b from the composite itself;
-    // passing profile-a would route a profile-b model at profile-a's endpoint.
+    // These fixtures are already-selection-shaped (object, not string), so
+    // toSelection() passes them through untouched (#1155 only changed the
+    // string branch — see the parsing tests below). null lets the resolver
+    // derive profile-b from the still-composite selection.id itself; passing
+    // profile-a would route a profile-b model at profile-a's endpoint.
     expect(subagentCall?.inferenceProfileId).toBeNull();
   });
 
@@ -166,7 +186,7 @@ describe("resolveStepAgentModels", () => {
       userId: "user-1",
       inferenceProfileId: "profile-a",
       agentOptions: {
-        model: { id: toProviderModelId("user-profile:profile-a:gpt-oss-120b") },
+        model: { id: compositeId("user-profile:profile-a:gpt-oss-120b") },
         subagentModel: { id: toProviderModelId("anthropic/claude-haiku-4.5") },
       },
       resolve,
@@ -193,7 +213,7 @@ describe("resolveStepAgentModels", () => {
       agentOptions: {
         model: { id: toProviderModelId("anthropic/claude-haiku-4.5") },
         subagentModel: {
-          id: toProviderModelId("user-profile:profile-b:gemma-4-31b"),
+          id: compositeId("user-profile:profile-b:gemma-4-31b"),
         },
       },
       resolve,
@@ -213,6 +233,10 @@ describe("resolveStepAgentModels", () => {
   // await would kill every step, including coordinator turns that never
   // delegate at all.
   test("a failing subagent resolution does not break the turn", async () => {
+    // These are already-selection-shaped fixtures (object, not string), so
+    // toSelection() passes selection.id through untouched — still the full
+    // composite — matching resolveInferenceProfileModelSelection's real
+    // input shape for this branch.
     const resolve = mock(async (params: { selection: { id: string } }) => {
       if (params.selection.id.includes("deleted-profile")) {
         throw new Error("Selected inference profile is unavailable.");
@@ -224,9 +248,9 @@ describe("resolveStepAgentModels", () => {
       userId: "user-1",
       inferenceProfileId: "profile-a",
       agentOptions: {
-        model: { id: toProviderModelId("user-profile:profile-a:gpt-oss-120b") },
+        model: { id: compositeId("user-profile:profile-a:gpt-oss-120b") },
         subagentModel: {
-          id: toProviderModelId("user-profile:deleted-profile:gemma-4-31b"),
+          id: compositeId("user-profile:deleted-profile:gemma-4-31b"),
         },
       },
       resolve: resolve as never,
@@ -258,9 +282,9 @@ describe("resolveStepAgentModels", () => {
       userId: "user-1",
       inferenceProfileId: "profile-a",
       agentOptions: {
-        model: { id: toProviderModelId("user-profile:profile-a:gpt-oss-120b") },
+        model: { id: compositeId("user-profile:profile-a:gpt-oss-120b") },
         subagentModel: {
-          id: toProviderModelId("user-profile:deleted-profile:gemma-4-31b"),
+          id: compositeId("user-profile:deleted-profile:gemma-4-31b"),
         },
       },
       resolve: resolve as never,
@@ -285,7 +309,7 @@ describe("resolveStepAgentModels", () => {
         inferenceProfileId: "profile-a",
         agentOptions: {
           model: {
-            id: toProviderModelId("user-profile:profile-a:gpt-oss-120b"),
+            id: compositeId("user-profile:profile-a:gpt-oss-120b"),
           },
         },
         resolve: resolve as never,

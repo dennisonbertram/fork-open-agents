@@ -3201,7 +3201,10 @@ describe("runAgentWorkflow", () => {
       async (params: { role: string }) => {
         if (params.role === "executor") {
           return {
-            ...makeSyntheticResolvedAgent("executor", "anthropic/claude-opus-4"),
+            ...makeSyntheticResolvedAgent(
+              "executor",
+              "anthropic/claude-opus-4",
+            ),
             fromDbRow: true,
             inferenceProfileId: "profile-xyz",
           };
@@ -3224,7 +3227,10 @@ describe("runAgentWorkflow", () => {
       async (params: { role: string }) => {
         if (params.role === "executor") {
           return {
-            ...makeSyntheticResolvedAgent("executor", "anthropic/claude-opus-4"),
+            ...makeSyntheticResolvedAgent(
+              "executor",
+              "anthropic/claude-opus-4",
+            ),
             fromDbRow: true,
             inferenceProfileId: "profile-xyz",
             instructions: "Be careful with credentials.",
