@@ -332,7 +332,12 @@ create_env_skeleton() {
   warn "created $WEB_ENV_FILE from .env.example; fill missing service credentials before running the full app"
 }
 
-pull_vercel_env() {
+# Resolves apps/web/.env.local by whichever route applies. Has three exits
+# (offline skeleton, reuse existing, fresh pull), which is why the reporting
+# lives in the wrapper below rather than in here -- a per-exit call was added to
+# only one of the three and silently skipped the two that actually create the
+# file.
+resolve_web_env() {
   if [[ "$OFFLINE" -eq 1 ]]; then
     create_env_skeleton
     return
@@ -340,7 +345,6 @@ pull_vercel_env() {
 
   if [[ -f "$WEB_ENV_FILE" && "$FORCE_ENV_PULL" -eq 0 ]]; then
     ok "using existing apps/web/.env.local"
-    report_database_target
     ensure_better_auth_secret
     return
   fi
@@ -362,6 +366,15 @@ pull_vercel_env() {
     rm -rf "$tmp_dir"
     die "failed to pull Vercel ${ENVIRONMENT} env. Check Vercel auth/linking, or rerun with --offline"
   fi
+}
+
+# Single entry point. Reports the resolved database target on EVERY route that
+# finalizes .env.local -- offline skeleton, reuse, and fresh pull alike. A failed
+# pull calls die() and never reaches here, which is correct: there is no env to
+# report on.
+pull_vercel_env() {
+  resolve_web_env
+  report_database_target
 }
 
 missing_keys_csv() {
