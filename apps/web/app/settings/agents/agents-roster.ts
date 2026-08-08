@@ -20,6 +20,14 @@ export type AgentRosterRow = {
   description: string;
   /** Resolved model id, or null when sub-role inherits main. */
   model: string | null;
+  /**
+   * The inference profile this role's model routes through, or null for the
+   * Vercel gateway. The editor recomposes this with `model` (via
+   * `getModelOptionSelectionId`) into the same composite id the Model
+   * picker's own options use, so a profile-bound role's Save round-trips
+   * without silently dropping its own-key routing (#1157).
+   */
+  inferenceProfileId: string | null;
   /** True when the sub-role has no explicit model override (inherits Main). */
   modelInherited: boolean;
   /** True when model comes from a user_default agent row (not preference default). */
@@ -63,6 +71,8 @@ export type AgentRosterRow = {
 export type UserDefaultAgentRowSummary = {
   role: "main" | "explorer" | "executor" | "design";
   modelId: string | null;
+  /** Optional for backward-compatible fixtures; absent means "no profile". */
+  inferenceProfileId?: string | null;
   composioToolkitSlugs: string[];
   composioProfileId: string | null;
   instructions: string | null;
@@ -163,17 +173,20 @@ export function buildAgentRoster({
 
     // ── Model ──────────────────────────────────────────────────────────────
     let model: string | null;
+    let inferenceProfileId: string | null;
     let modelInherited: boolean;
     let modelCustom: boolean;
 
     if (agentRow?.modelId != null) {
       // agent row has an explicit modelId
       model = agentRow.modelId;
+      inferenceProfileId = agentRow.inferenceProfileId ?? null;
       modelInherited = false;
       modelCustom = true;
     } else {
-      // fall back to preference defaults
+      // fall back to preference defaults (no per-role profile routing here)
       model = isMain ? preferences.defaultModelId : (subagentModel ?? null);
+      inferenceProfileId = null;
       modelInherited = !isMain && subagentModelInherited;
       modelCustom = false;
     }
@@ -233,6 +246,7 @@ export function buildAgentRoster({
       name: ROLE_NAMES[key],
       description,
       model,
+      inferenceProfileId,
       modelInherited,
       modelCustom,
       toolsLabel,

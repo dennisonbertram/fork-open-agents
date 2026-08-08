@@ -341,7 +341,7 @@ async function resolveChatModelRuntime(params: {
     mainAgentToolAuthoringEnabled = mainAgent.toolAuthoringEnabled;
     mainAgentId = mainAgent.agentId;
 
-    const toRosterEntry = (
+    const toRosterEntry = async (
       resolved: Awaited<ReturnType<typeof resolveAgentForRole>>,
     ) => {
       // Only include an entry when at least one field was explicitly set by a
@@ -349,40 +349,69 @@ async function resolveChatModelRuntime(params: {
       // produce a roster entry even when modelId is non-null, because the
       // synthetic modelId lacks providerOptionsOverrides and directAnthropic
       // that were resolved for the main subagentModel. Threading a modelId-only
-      // roster entry would cause applyRosterOverrides to call gateway(modelId)
-      // with no second argument, silently dropping those overrides.
+      // roster entry would cause applyRosterOverrides to build a model with no
+      // routing, silently dropping those overrides.
       const hasInstructions = resolved.instructions !== null;
       const hasSlugs = resolved.composioToolkitSlugs.length > 0;
-      // #1155 finding 2: a DB-row modelId can carry a resolved
-      // inferenceProfileId recovered from a "user-profile:<id>:<modelId>"
-      // composite (resolve-agent.ts). SubagentRosterEntry has no field for a
-      // profile id and applyRosterOverrides always calls gateway(modelId)
-      // directly (tracked separately for #1157) — so a profile-bound modelId
-      // must NOT be threaded into the roster: it would silently route through
-      // the Vercel gateway under the wrong provider and key instead of the
-      // user's own profile whenever the bare id happens to collide with a
-      // real gateway catalog id. Drop just the model override for that role;
-      // it still inherits the (working) default subagent model.
-      const needsProfile = resolved.inferenceProfileId !== null;
-      if (needsProfile && resolved.fromDbRow && resolved.modelId !== null) {
-        console.warn(
-          `[chat] subagent roster entry for role "${resolved.role}" needs user inference profile "${resolved.inferenceProfileId}", which the roster cannot carry yet (#1157); falling back to the default subagent model instead of routing "${resolved.modelId}" through the gateway.`,
-        );
-      }
-      // Only include modelId when this resolution came from a real DB row.
-      // Synthetic fallback modelId is already wired via subagentModel and must
-      // not be duplicated in the roster without its full model selection context.
-      const hasModel =
-        resolved.fromDbRow && resolved.modelId !== null && !needsProfile;
+      // Only build a model override when this resolution came from a real DB
+      // row. Synthetic fallback modelId is already wired via subagentModel and
+      // must not be duplicated in the roster without its full model selection
+      // context.
+      const hasModelId = resolved.fromDbRow && resolved.modelId !== null;
 
-      if (!hasModel && !hasInstructions && !hasSlugs) {
+      let modelSelection: AgentModelSelection | undefined;
+      if (hasModelId && resolved.modelId) {
+        const bareId = toProviderModelId(resolved.modelId);
+        if (resolved.inferenceProfileId === null) {
+          // Guard (a): a plain gateway roster id is left completely alone —
+          // never handed to a profile resolver, which would call a custom
+          // endpoint with a model it does not serve.
+          modelSelection = { id: bareId };
+        } else {
+          // Guard (b): this role's OWN inference profile, never the main
+          // model's or another role's — passing the wrong profile would
+          // route a profile-B model at profile-A's endpoint (#1157).
+          try {
+            const { resolveInferenceProfileModelSelection } =
+              await import("@/lib/inference/profile-resolution");
+            modelSelection = await resolveInferenceProfileModelSelection({
+              userId: params.userId,
+              inferenceProfileId: resolved.inferenceProfileId,
+              selection: { id: bareId },
+            });
+          } catch (error) {
+            // A broken roster override (its profile deleted, disabled, or
+            // undecryptable) must not take the whole coordinator turn down —
+            // drop just this role's override and let it inherit the
+            // (working) default subagent model, same philosophy as the
+            // subagentModel fallback below. Recorded via a structured session
+            // event (not a console.warn) so the substitution is visible in
+            // the run's own observability.
+            await emitWorkflowSessionEvent({
+              sessionId: params.sessionId,
+              chatId: params.chatId,
+              userId: params.userId,
+              source: "workflow",
+              actorType: "coordinator",
+              eventName: "workflow.subagent-roster.profile-fallback",
+              status: "info",
+              summary: `Roster override for role "${resolved.role}" could not resolve inference profile "${resolved.inferenceProfileId}"; using the default subagent model instead.`,
+              payload: {
+                role: resolved.role,
+                inferenceProfileId: resolved.inferenceProfileId,
+                reason: error instanceof Error ? error.message : String(error),
+              },
+            });
+          }
+        }
+      }
+
+      if (!modelSelection && !hasInstructions && !hasSlugs) {
         return null;
       }
 
       return {
-        ...(hasModel && resolved.modelId
-          ? { modelId: toProviderModelId(resolved.modelId) }
-          : {}),
+        ...(modelSelection ? { modelSelection } : {}),
         ...(hasInstructions ? { instructions: resolved.instructions } : {}),
         ...(hasSlugs
           ? { composioToolkitSlugs: resolved.composioToolkitSlugs }
@@ -390,9 +419,11 @@ async function resolveChatModelRuntime(params: {
       };
     };
 
-    const explorerEntry = toRosterEntry(explorerAgent);
-    const executorEntry = toRosterEntry(executorAgent);
-    const designEntry = toRosterEntry(designAgent);
+    const [explorerEntry, executorEntry, designEntry] = await Promise.all([
+      toRosterEntry(explorerAgent),
+      toRosterEntry(executorAgent),
+      toRosterEntry(designAgent),
+    ]);
 
     const hasAnyEntry =
       explorerEntry !== null || executorEntry !== null || designEntry !== null;

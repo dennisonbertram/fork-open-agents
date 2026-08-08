@@ -87,6 +87,7 @@ describe("/api/settings/agents", () => {
     expect(Object.keys(agents[0])).toEqual([
       "role",
       "modelId",
+      "inferenceProfileId",
       "composioToolkitSlugs",
       "composioProfileId",
       "instructions",

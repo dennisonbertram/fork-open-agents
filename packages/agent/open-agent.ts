@@ -4,14 +4,11 @@ import { z } from "zod";
 import { addCacheControl } from "./context-management";
 import type { IsolatedWorkspaceProvisioner } from "./isolated-worker-workspace";
 import {
-  type DirectAnthropicConfig,
-  type DirectInferenceConfig,
+  type AgentModelSelection,
   type GatewayModelId,
   gateway,
-  type ProviderOptionsByProvider,
 } from "./models";
-
-import { type ProviderModelId, toProviderModelId } from "./provider-model-id";
+import { toProviderModelId } from "./provider-model-id";
 import type { SkillMetadata } from "./skills/types";
 import type { SubagentRoster } from "./subagents/roster";
 import { buildSystemPrompt } from "./system-prompt";
@@ -45,6 +42,10 @@ import {
   type ManageBackgroundAgentAction,
 } from "./tools/manage-background-agent";
 
+// Re-exported for backward compatibility: this type originated here before
+// moving to ./models (roster.ts needs it and cannot import from open-agent.ts).
+export type { AgentModelSelection } from "./models";
+
 export const OPEN_AGENT_RUNTIME_MODES = ["classic", "managed_runtime"] as const;
 export type OpenAgentRuntimeMode = (typeof OPEN_AGENT_RUNTIME_MODES)[number];
 
@@ -54,19 +55,6 @@ export type ManagedRuntimeAgentContext = {
   profileDisplayName?: string;
   sandboxName?: string;
 };
-
-export interface AgentModelSelection {
-  id: ProviderModelId;
-  directInference?: DirectInferenceConfig;
-  directAnthropic?: DirectAnthropicConfig;
-  providerOptionsOverrides?: ProviderOptionsByProvider;
-  attribution?: {
-    inferenceRoute?: "gateway" | "user";
-    inferenceProfileId?: string;
-    inferenceProfileName?: string;
-    provider?: string;
-  };
-}
 
 export type OpenAgentModelInput = GatewayModelId | AgentModelSelection;
 
@@ -461,6 +449,10 @@ export const openAgent = new ToolLoopAgent({
           providerOptionsOverrides: subagentSelection.providerOptionsOverrides,
         })
       : undefined;
+    // The role's effective default selection before any roster override —
+    // threaded raw (not just the constructed model) so a roster entry with a
+    // plain model id override can still reuse this routing (#1157).
+    const subagentModelSelection = subagentSelection ?? mainSelection;
     const customInstructions = options.customInstructions;
     const modelSystemPrompt = options.modelSystemPrompt;
     const sandbox = options.sandbox;
@@ -516,6 +508,7 @@ export const openAgent = new ToolLoopAgent({
         skills,
         model: callModel,
         subagentModel,
+        subagentModelSelection,
         runtimeMode,
         managedRuntime,
         githubToolAvailable,
