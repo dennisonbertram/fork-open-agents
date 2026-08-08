@@ -17,6 +17,8 @@ export type {
   OpenAgentModelInput,
   OpenAgentRuntimeMode,
 } from "./open-agent";
+export type { ProviderModelId } from "./provider-model-id";
+export { toProviderModelId } from "./provider-model-id";
 export {
   defaultModel,
   defaultModelLabel,
