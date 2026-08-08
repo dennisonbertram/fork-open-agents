@@ -3186,6 +3186,63 @@ describe("runAgentWorkflow", () => {
     });
   });
 
+  // #1155 finding 2 (P1): a DB-row agent whose modelId came from a
+  // "user-profile:<profileId>:<modelId>" composite now carries the resolved
+  // inferenceProfileId (resolve-agent.ts). The subagent roster
+  // (SubagentRosterEntry / applyRosterOverrides) has no field for a profile
+  // id and always calls gateway(modelId) directly — a known gap tracked for
+  // #1157. Threading a profile-bound modelId into the roster as a bare
+  // modelId would silently route it through the Vercel gateway under the
+  // wrong provider and key instead of the user's own profile. The roster
+  // entry must drop the model override for that role rather than emit it
+  // bare.
+  test("regression: BT-ROSTER-REG-002 a profile-bound DB row does not emit a bare modelId into the roster", async () => {
+    resolveAgentForRoleSpy.mockImplementation(
+      async (params: { role: string }) => {
+        if (params.role === "executor") {
+          return {
+            ...makeSyntheticResolvedAgent("executor", "anthropic/claude-opus-4"),
+            fromDbRow: true,
+            inferenceProfileId: "profile-xyz",
+          };
+        }
+        return makeSyntheticResolvedAgent(params.role);
+      },
+    );
+
+    await runAgentWorkflow(makeOptions());
+
+    const opts = agentStreamOptions as Record<string, unknown> | undefined;
+    const roster = opts?.subagentRoster as Record<string, unknown> | undefined;
+    // No other field (instructions/slugs) is set for this role, so once the
+    // modelId override is dropped, no roster entry should be emitted at all.
+    expect(roster?.executor).toBeUndefined();
+  });
+
+  test("regression: BT-ROSTER-REG-003 a profile-bound DB row still threads instructions, just not the bare modelId", async () => {
+    resolveAgentForRoleSpy.mockImplementation(
+      async (params: { role: string }) => {
+        if (params.role === "executor") {
+          return {
+            ...makeSyntheticResolvedAgent("executor", "anthropic/claude-opus-4"),
+            fromDbRow: true,
+            inferenceProfileId: "profile-xyz",
+            instructions: "Be careful with credentials.",
+          };
+        }
+        return makeSyntheticResolvedAgent(params.role);
+      },
+    );
+
+    await runAgentWorkflow(makeOptions());
+
+    const opts = agentStreamOptions as Record<string, unknown> | undefined;
+    const roster = opts?.subagentRoster as Record<string, unknown> | undefined;
+    expect(roster?.executor).toEqual({
+      instructions: "Be careful with credentials.",
+    });
+  });
+
   // #1143 / #1142. The reported incident: a chat turn spent 9 steps and 69.5s
   // re-running a `task` call that failed identically every time, and ended only
   // by exhausting its step budget. Nothing noticed.

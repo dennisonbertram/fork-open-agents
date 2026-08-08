@@ -293,6 +293,31 @@ describe("resolveStepAgentModels", () => {
     ).rejects.toThrow("Selected inference profile is unavailable.");
   });
 
+  // #1155 finding 1 (P2): toProviderModelId() used to be a no-op wrapper, so
+  // this string branch could mint a still-composite id directly — it
+  // "type-checked" as already resolved without ever being parsed. Prove the
+  // opposite directly: resolve() must receive the already-parsed model id,
+  // never the raw composite. Under the pre-fix implementation this fails
+  // because `call.selection.id` is still the full composite string.
+  test("the string branch parses a composite id before resolve() ever sees it", async () => {
+    const resolve = fakeResolver();
+    const resolved = await resolveStepAgentModels({
+      ...BASE,
+      agentOptions: {
+        model: "user-profile:profile-1:gpt-oss-120b",
+      },
+      resolve,
+    });
+
+    const call = resolve.mock.calls[0]?.[0] as {
+      selection: { id: string };
+    };
+    expect(call.selection.id).toBe("gpt-oss-120b");
+    expect((resolved.model as unknown as { id: string }).id).toBe(
+      "gpt-oss-120b",
+    );
+  });
+
   test("accepts a bare string model id", async () => {
     const resolve = fakeResolver();
     const resolved = await resolveStepAgentModels({
