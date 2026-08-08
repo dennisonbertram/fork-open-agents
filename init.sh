@@ -262,6 +262,44 @@ set_env_value() {
   fi
 }
 
+# Prints the database endpoint apps/web/.env.local targets. Only the endpoint
+# host is shown -- never the connection string, which carries credentials.
+# Exists because an existing .env.local is reused unchecked, so "which database
+# am I about to write to?" is otherwise invisible until something goes wrong.
+report_database_target() {
+  local url endpoint
+  url="$(grep -m1 '^POSTGRES_URL=' "$WEB_ENV_FILE" 2>/dev/null || true)"
+  if [[ -z "$url" ]]; then
+    warn "apps/web/.env.local has no POSTGRES_URL"
+    return
+  fi
+  endpoint="$(printf '%s' "$url" | grep -o 'ep-[a-z0-9-]*' | head -1)"
+  if [[ -z "$endpoint" ]]; then
+    info "database target: (non-Neon or unrecognized host)"
+    return
+  fi
+  info "database target: ${endpoint}"
+
+  # PRODUCTION_DB_HOST arms the migration guard in apps/web/lib/db/migrate.ts.
+  # It is present-but-empty in .env.example, so the offline skeleton path
+  # produces a checkout where the guard silently fails open. Say so out loud --
+  # a disarmed guard that nobody knows about is worse than no guard.
+  local guard_host
+  guard_host="$(grep -m1 '^PRODUCTION_DB_HOST=' "$WEB_ENV_FILE" 2>/dev/null | cut -d= -f2- | tr -d '"' || true)"
+  if [[ -z "${guard_host}" ]]; then
+    guard_host="${PRODUCTION_DB_HOST:-}"
+  fi
+
+  if [[ -z "${guard_host}" ]]; then
+    warn "PRODUCTION_DB_HOST is empty -- the migration guard is DISARMED; a production POSTGRES_URL here would not be refused"
+    return
+  fi
+
+  if [[ "${guard_host}" == *"${endpoint%-pooler}"* ]]; then
+    warn "this env targets the PRODUCTION database -- migrations and writes will hit live data"
+  fi
+}
+
 ensure_better_auth_secret() {
   if [[ ! -f "$WEB_ENV_FILE" ]]; then
     return 0
@@ -294,7 +332,12 @@ create_env_skeleton() {
   warn "created $WEB_ENV_FILE from .env.example; fill missing service credentials before running the full app"
 }
 
-pull_vercel_env() {
+# Resolves apps/web/.env.local by whichever route applies. Has three exits
+# (offline skeleton, reuse existing, fresh pull), which is why the reporting
+# lives in the wrapper below rather than in here -- a per-exit call was added to
+# only one of the three and silently skipped the two that actually create the
+# file.
+resolve_web_env() {
   if [[ "$OFFLINE" -eq 1 ]]; then
     create_env_skeleton
     return
@@ -323,6 +366,15 @@ pull_vercel_env() {
     rm -rf "$tmp_dir"
     die "failed to pull Vercel ${ENVIRONMENT} env. Check Vercel auth/linking, or rerun with --offline"
   fi
+}
+
+# Single entry point. Reports the resolved database target on EVERY route that
+# finalizes .env.local -- offline skeleton, reuse, and fresh pull alike. A failed
+# pull calls die() and never reaches here, which is correct: there is no env to
+# report on.
+pull_vercel_env() {
+  resolve_web_env
+  report_database_target
 }
 
 missing_keys_csv() {
