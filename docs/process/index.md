@@ -23,6 +23,9 @@ Start here:
   and #333.
 - [Production Release Runbook](production-release-runbook.md) - merge,
   production smoke, and rollback procedure.
+- [Guard Integrity](guard-integrity.md) - why guards that pass their own tests
+  still do nothing in production, and the checks required before claiming one
+  works.
 - [Behavior TDD](behavior-tdd.md) - behavior-first TDD for user and operator
   paths.
 - [Regression Discipline](regression-discipline.md) - bug-to-regression rules.
