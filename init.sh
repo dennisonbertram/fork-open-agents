@@ -262,6 +262,28 @@ set_env_value() {
   fi
 }
 
+# Prints the database endpoint apps/web/.env.local targets. Only the endpoint
+# host is shown -- never the connection string, which carries credentials.
+# Exists because an existing .env.local is reused unchecked, so "which database
+# am I about to write to?" is otherwise invisible until something goes wrong.
+report_database_target() {
+  local url endpoint
+  url="$(grep -m1 '^POSTGRES_URL=' "$WEB_ENV_FILE" 2>/dev/null || true)"
+  if [[ -z "$url" ]]; then
+    warn "apps/web/.env.local has no POSTGRES_URL"
+    return
+  fi
+  endpoint="$(printf '%s' "$url" | grep -o 'ep-[a-z0-9-]*' | head -1)"
+  if [[ -z "$endpoint" ]]; then
+    info "database target: (non-Neon or unrecognized host)"
+    return
+  fi
+  info "database target: ${endpoint}"
+  if [[ -n "${PRODUCTION_DB_HOST:-}" && "${PRODUCTION_DB_HOST}" == *"${endpoint%-pooler}"* ]]; then
+    warn "this env targets the PRODUCTION database -- migrations and writes will hit live data"
+  fi
+}
+
 ensure_better_auth_secret() {
   if [[ ! -f "$WEB_ENV_FILE" ]]; then
     return 0
@@ -302,6 +324,7 @@ pull_vercel_env() {
 
   if [[ -f "$WEB_ENV_FILE" && "$FORCE_ENV_PULL" -eq 0 ]]; then
     ok "using existing apps/web/.env.local"
+    report_database_target
     ensure_better_auth_secret
     return
   fi

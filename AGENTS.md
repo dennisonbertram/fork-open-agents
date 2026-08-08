@@ -178,10 +178,20 @@ open** when that variable is unset — migrations gate every build, so an
 unconfigured guard must never block a deploy. Override deliberately with
 `ALLOW_PRODUCTION_MIGRATION=1`.
 
-Local development points at the `dev` branch via `POSTGRES_URL`, which is the
-only database variable the app and `drizzle.config.ts` read. The guard above
-still covers the case where a local `POSTGRES_URL` is ever repointed at
-production.
+Local development is *intended* to point at the `dev` branch via
+`POSTGRES_URL`, the only database variable the app and `drizzle.config.ts` read.
+Treat that as the default, not a guarantee: `init.sh` reuses an existing
+`apps/web/.env.local` without checking which database it targets, and it can
+pull Preview configuration on request, so a stale or hand-edited file may point
+somewhere else. **Check the actual target before any database write:**
+
+```bash
+grep '^POSTGRES_URL=' apps/web/.env.local | grep -o 'ep-[a-z0-9-]*' | head -1
+```
+
+Note the guard above **fails open when `PRODUCTION_DB_HOST` is unset**, which is
+the default for a fresh checkout — so it does not protect a local run until that
+variable is set. `apps/web/.env.example` carries it for this reason.
 
 Note that `.env.local` also carries several *unused* variables
 (`DATABASE_URL`, `PGHOST`, `POSTGRES_PRISMA_URL`, and similar) that still hold
