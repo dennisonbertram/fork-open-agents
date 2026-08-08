@@ -312,4 +312,35 @@ describe("/api/sessions/[sessionId]/chats/[chatId]/fork", () => {
       composioSelection: { mainProfileId: "profile-1" },
     });
   });
+
+  // Regression test for issue #1154 — forking a chat whose modelId is already
+  // a composite (an already-bad legacy chat) must not propagate the composite
+  // further. The fork must normalize it, not copy it whole.
+  test("#1154: forking a chat with a composite modelId produces a normalized fork", async () => {
+    ownedSessionChatResult = {
+      ok: true,
+      sessionRecord: { id: "session-1" },
+      chat: {
+        id: "chat-1",
+        sessionId: "session-1",
+        title: "Original chat",
+        modelId: "user-profile:profile-legacy:claude-sonnet-4.5",
+        inferenceProfileId: null,
+        composioSelection: { mainProfileId: "profile-1" },
+        activeStreamId: null,
+      },
+    };
+    const { POST } = await routeModulePromise;
+
+    const response = await POST(
+      createPostRequest({ messageId: "message-2", id: "fork-chat-1" }),
+      createContext(),
+    );
+
+    expect(response.status).toBe(200);
+    expect(forkCalls[0]?.forkedChat).toMatchObject({
+      modelId: "claude-sonnet-4.5",
+      inferenceProfileId: "profile-legacy",
+    });
+  });
 });

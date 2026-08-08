@@ -88,30 +88,35 @@ mock.module("@/lib/random-city", () => ({
   getRandomCityName: () => "Oslo",
 }));
 
-mock.module("@/lib/db/user-preferences", () => ({
-  getUserPreferences: async () => ({
-    defaultModelId: "anthropic/claude-haiku-4.5",
-    defaultSubagentModelId: null,
-    defaultInferenceProfileId: "inference-profile-1",
-    defaultSandboxType: "vercel",
-    defaultManagedRuntimeProfileId: "web-bun-agent-browser",
-    defaultDiffMode: "unified",
-    autoCommitPush: false,
-    autoCreatePr: false,
-    alertsEnabled: true,
-    alertSoundEnabled: true,
-    publicUsageEnabled: false,
-    globalSkillRefs: [{ source: "vercel/ai", skillName: "ai-sdk" }],
-    modelVariants: [],
-    enabledModelIds: [],
-    composioAgentDefaults: {
-      ...defaultComposioAgentDefaults,
-      main: {
-        defaultProfileId: "profile-main",
-        allowChatOverride: true,
-      },
+const DEFAULT_PREFERENCES = {
+  defaultModelId: "anthropic/claude-haiku-4.5",
+  defaultSubagentModelId: null,
+  defaultInferenceProfileId: "inference-profile-1",
+  defaultSandboxType: "vercel",
+  defaultManagedRuntimeProfileId: "web-bun-agent-browser",
+  defaultDiffMode: "unified",
+  autoCommitPush: false,
+  autoCreatePr: false,
+  alertsEnabled: true,
+  alertSoundEnabled: true,
+  publicUsageEnabled: false,
+  globalSkillRefs: [{ source: "vercel/ai", skillName: "ai-sdk" }],
+  modelVariants: [],
+  enabledModelIds: [],
+  composioAgentDefaults: {
+    ...defaultComposioAgentDefaults,
+    main: {
+      defaultProfileId: "profile-main",
+      allowChatOverride: true,
     },
-  }),
+  },
+};
+// Mutable so tests (e.g. #1154 composite-model-id normalization) can swap in
+// a preferences shape without cloning the whole mock.module setup.
+let currentPreferences: Record<string, unknown> = { ...DEFAULT_PREFERENCES };
+
+mock.module("@/lib/db/user-preferences", () => ({
+  getUserPreferences: async () => currentPreferences,
 }));
 
 mock.module("@/lib/db/vercel-project-links", () => ({
@@ -244,6 +249,7 @@ describe("/api/sessions POST vercel project linking", () => {
     prewarmKickCalls.length = 0;
     afterCallbacks.length = 0;
     composioPolicy = { allowed: true, reason: null };
+    currentPreferences = { ...DEFAULT_PREFERENCES };
   });
 
   test("explicit Vercel project is validated against live repo matches before it is persisted", async () => {
@@ -532,6 +538,39 @@ describe("/api/sessions POST vercel project linking", () => {
     expect(body.chat.inferenceProfileId).toBe("inference-profile-1");
   });
 
+  // Regression test for issue #1154 — a preferences row predating #1123's
+  // write-time split (composite defaultModelId + null defaultInferenceProfileId)
+  // must not hand a raw "user-profile:<profileId>:<modelId>" composite to the
+  // initial chat. The route must split it, preserving the user's chosen model.
+  test("#1154: a legacy composite defaultModelId is split into modelId + inferenceProfileId on the initial chat", async () => {
+    currentPreferences = {
+      ...DEFAULT_PREFERENCES,
+      defaultModelId: "user-profile:profile-legacy:claude-sonnet-4.5",
+      defaultInferenceProfileId: null,
+    };
+    const { POST } = await routeModulePromise;
+
+    const response = await POST(
+      createJsonRequest({
+        repoOwner: "vercel",
+        repoName: "open-agents",
+        branch: "main",
+        cloneUrl: "https://github.com/vercel/open-agents",
+      }),
+    );
+    const body = (await response.json()) as {
+      chat: Record<string, unknown>;
+    };
+
+    expect(response.status).toBe(200);
+    expect(initialChatCalls[0]).toMatchObject({
+      modelId: "claude-sonnet-4.5",
+      inferenceProfileId: "profile-legacy",
+    });
+    expect(body.chat.modelId).toBe("claude-sonnet-4.5");
+    expect(body.chat.inferenceProfileId).toBe("profile-legacy");
+  });
+
   // Regression tests for issue #182 — session title from UI
   test("regression #182: a non-empty title in the POST body is used instead of the random-city fallback", async () => {
     const { POST } = await routeModulePromise;
@@ -599,6 +638,7 @@ describe("/api/sessions POST no-repo sandbox-free creation", () => {
     prewarmKickCalls.length = 0;
     afterCallbacks.length = 0;
     composioPolicy = { allowed: true, reason: null };
+    currentPreferences = { ...DEFAULT_PREFERENCES };
   });
 
   // BT-001: No-repo create must NOT enter provisioning lifecycle
@@ -755,6 +795,7 @@ describe("/api/sessions POST activation path (runtimeMode + managedRuntimeProfil
     prewarmKickCalls.length = 0;
     afterCallbacks.length = 0;
     composioPolicy = { allowed: true, reason: null };
+    currentPreferences = { ...DEFAULT_PREFERENCES };
     knownReferenceCalls.length = 0;
     knownReferenceResult = true;
   });
