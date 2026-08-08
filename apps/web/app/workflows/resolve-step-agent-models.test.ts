@@ -70,6 +70,27 @@ describe("resolveStepAgentModels", () => {
     expect(JSON.stringify(resolved)).not.toContain("user-profile:");
   });
 
+  // Production: a user whose `default_model_id` is a `user-profile:` composite
+  // but who has no profile id on the chat, the session, or their preferences.
+  // Every step failed with `Model 'user-profile:…:zai-glm-4.7' not found`,
+  // because resolution was gated on a profile id the app did not have — even
+  // though the resolver recovers the profile from the composite itself
+  // (`params.inferenceProfileId || parsedSelection.inferenceProfileId`, #1123).
+  test("resolves a composite MAIN model even with no profile id anywhere", async () => {
+    const resolve = fakeResolver();
+    const resolved = await resolveStepAgentModels({
+      userId: "user-1",
+      inferenceProfileId: null,
+      agentOptions: { model: { id: "user-profile:profile-a:zai-glm-4.7" } },
+      resolve,
+    });
+
+    expect((resolved.model as unknown as { id: string }).id).toBe(
+      "zai-glm-4.7",
+    );
+    expect(JSON.stringify(resolved)).not.toContain("user-profile:");
+  });
+
   test("leaves options untouched when there is no inference profile", async () => {
     const resolve = fakeResolver();
     const agentOptions = {

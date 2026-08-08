@@ -50,7 +50,21 @@ export async function resolveStepAgentModels<
       ? model
       : ((model as AgentModelSelection).id ?? "");
 
-  const resolveMain = Boolean(inferenceProfileId && agentOptions.model);
+  // Resolve the main model when there is a session profile OR when the id is
+  // itself an internal composite. Gating solely on `inferenceProfileId` meant a
+  // user whose `default_model_id` is a `user-profile:` composite, but who has
+  // no profile id stored on the chat, session, or preferences, sent that
+  // composite straight to the provider — every step failing with
+  // `Model 'user-profile:…' not found`.
+  //
+  // The resolver already recovers the profile from the composite
+  // (`params.inferenceProfileId || parsedSelection.inferenceProfileId`, #1123);
+  // that defence simply was never reached.
+  const resolveMain = Boolean(
+    agentOptions.model &&
+    (inferenceProfileId ||
+      optionId(agentOptions.model).startsWith(USER_INFERENCE_OPTION_PREFIX)),
+  );
 
   // The subagent default is a standalone option id that carries its own profile
   // and must never inherit the main model's (REG-003b / REG-003c in
