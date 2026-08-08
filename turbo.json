@@ -4,6 +4,7 @@
     "build": {
       "dependsOn": ["^build"],
       "env": [
+        "ALLOW_PRODUCTION_MIGRATION",
         "BETTER_AUTH_SECRET",
         "BLOB_READ_WRITE_TOKEN",
         "ENCRYPTION_KEY",
@@ -17,14 +18,28 @@
         "NEXT_PUBLIC_GITHUB_CLIENT_ID",
         "NEXT_PUBLIC_VERCEL_APP_CLIENT_ID",
         "POSTGRES_URL",
+        "PRODUCTION_DB_HOST",
         "REDIS_URL",
-        "VERCEL_APP_CLIENT_SECRET"
+        "VERCEL_APP_CLIENT_SECRET",
+        "VERCEL_ENV"
       ],
       "outputs": ["dist/**"]
     },
-    "dev": { "cache": false, "persistent": true },
-    "typecheck": { "dependsOn": ["^typecheck"], "outputs": [] },
-    "lint": { "dependsOn": ["^lint"], "outputs": [] },
-    "lint:fix": { "dependsOn": ["^lint:fix"], "outputs": [] }
+    "dev": {
+      "cache": false,
+      "persistent": true
+    },
+    "typecheck": {
+      "dependsOn": ["^typecheck"],
+      "outputs": []
+    },
+    "lint": {
+      "dependsOn": ["^lint"],
+      "outputs": []
+    },
+    "lint:fix": {
+      "dependsOn": ["^lint:fix"],
+      "outputs": []
+    }
   }
 }

@@ -2,6 +2,7 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import { readMigrationFiles } from "drizzle-orm/migrator";
 import postgres from "postgres";
+import { decideMigrationTarget } from "./migration-target-guard";
 
 const MIGRATIONS_FOLDER = "./lib/db/migrations";
 const MIGRATIONS_SCHEMA = "drizzle";
@@ -33,6 +34,21 @@ const url = process.env.POSTGRES_URL;
 if (!url) {
   console.log("POSTGRES_URL not set — skipping migrations");
   process.exit(0);
+}
+
+// #1167: never apply migrations to production from a non-production build.
+// Migrations run during every build, so a preview or local build sharing the
+// production POSTGRES_URL applies unreviewed schema changes to live data — which
+// is exactly what happened. Fails open when unconfigured; see the module docs.
+const targetDecision = decideMigrationTarget({
+  databaseUrl: url,
+  productionHost: process.env.PRODUCTION_DB_HOST,
+  vercelEnv: process.env.VERCEL_ENV,
+  allowOverride: process.env.ALLOW_PRODUCTION_MIGRATION === "1",
+});
+if (!targetDecision.allowed) {
+  console.error(`Migration refused: ${targetDecision.reason}`);
+  process.exit(1);
 }
 
 const client = postgres(url, { max: 1 });
