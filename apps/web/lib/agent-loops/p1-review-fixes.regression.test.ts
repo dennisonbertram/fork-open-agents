@@ -335,6 +335,31 @@ mock.module("@open-agents/agent", () => ({
   sanitizeUnattendedToolCalls: (messages: unknown) => messages,
   openAgent: { generate: regOpenAgentMock },
   gateway: mock((m: string) => m),
+  toProviderModelId: (modelId: string) => modelId,
+}));
+
+// #1158: executeAgentStep now resolves the user's own model + inference
+// profile before building agentOptions — reuses resolveStepAgentModels,
+// which is not under test here, so a plain gateway default (no profile, no
+// subagent override) reproduces the previous no-model behavior.
+// "@/lib/background-agents/composio-tools" is not mocked in this file, so it
+// pulls in the real lib/db/composio.ts, which also imports
+// updateUserPreferences from this same module — a getUserPreferences-only
+// mock breaks that import.
+mock.module("@/lib/db/user-preferences", () => ({
+  getUserPreferences: mock(async () => ({
+    defaultModelId: "anthropic/claude-opus-4.6",
+    defaultInferenceProfileId: null,
+    defaultSubagentModelId: null,
+  })),
+  updateUserPreferences: mock(async () => {
+    throw new Error("updateUserPreferences is not used by this test");
+  }),
+}));
+mock.module("@/lib/inference/profile-resolution", () => ({
+  resolveInferenceProfileModelSelection: mock(
+    async (params: { selection: unknown }) => params.selection,
+  ),
 }));
 
 mock.module("@/lib/github/commit-intent", () => ({

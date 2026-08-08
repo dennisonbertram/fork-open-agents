@@ -353,6 +353,11 @@ mock.module("./composio-tools", () => ({
   resolveComposioToolsForBgRun,
 }));
 
+// #1158: runBackgroundAgent now reads default_subagent_model_id.
+mock.module("@/lib/db/user-preferences", () => ({
+  getUserPreferences: mock(async () => ({ defaultSubagentModelId: null })),
+}));
+
 type NormalizedSandboxBuilderInput = Parameters<
   typeof normalizedRuntime.buildNormalizedBackgroundSandboxInput
 >[0];

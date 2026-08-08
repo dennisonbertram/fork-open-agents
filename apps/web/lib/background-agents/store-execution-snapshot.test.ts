@@ -74,6 +74,12 @@ mock.module("@/lib/db/inference-profiles", () => ({
     return inferenceProfile;
   },
 }));
+// #1158 follow-up: createRunForTrigger must freeze default_subagent_model_id
+// with the run at creation time, not read it live at execution.
+let defaultSubagentModelId: string | null = null;
+mock.module("@/lib/db/user-preferences", () => ({
+  getUserPreferences: async () => ({ defaultSubagentModelId }),
+}));
 mock.module("nanoid", () => ({ nanoid: () => "run-snapshot-1" }));
 
 const { createRunForTrigger, recordBackgroundAgentEvent } =
@@ -141,6 +147,7 @@ beforeEach(() => {
   inferenceProfile = null;
   inferenceProfileLookupCount = 0;
   recordedEvents.length = 0;
+  defaultSubagentModelId = null;
 });
 
 describe("createRunForTrigger execution snapshots", () => {
@@ -258,6 +265,42 @@ describe("createRunForTrigger execution snapshots", () => {
       }),
     ).rejects.toThrow("unavailable");
     expect(persistedRun).toBeNull();
+  });
+
+  test("#1158 follow-up: freezes the subagent model preference in the execution snapshot at creation", async () => {
+    defaultSubagentModelId = "zai/glm-4.7";
+
+    const result = await createRunForTrigger({
+      agent: buildAgent(),
+      trigger,
+      event,
+    });
+
+    expect(result.created).toBe(true);
+    expect(insertedRunValues).toMatchObject({
+      executionSnapshot: {
+        subagentInference: {
+          route: "gateway",
+          modelId: "zai/glm-4.7",
+        },
+      },
+    });
+  });
+
+  test("#1158 follow-up: omits subagentInference when no subagent model preference is set", async () => {
+    defaultSubagentModelId = null;
+
+    await createRunForTrigger({
+      agent: buildAgent(),
+      trigger,
+      event,
+    });
+
+    const snapshot = insertedRunValues?.executionSnapshot as Record<
+      string,
+      unknown
+    >;
+    expect(snapshot.subagentInference).toBeUndefined();
   });
 
   test("rolls back the winning Run when frozen evidence cannot be inserted", async () => {
