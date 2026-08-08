@@ -15,6 +15,7 @@ import {
 } from "@/lib/db/vercel-project-links";
 import { isComposioProfileAllowedForRepository } from "@/lib/db/composio";
 import { getUserPreferences } from "@/lib/db/user-preferences";
+import { splitModelSelection } from "@/lib/inference/model-option-id";
 import { resolveRepoDefaults } from "@/lib/repo-settings/resolve-repo-defaults";
 import {
   isValidGitHubRepoName,
@@ -519,8 +520,10 @@ export async function POST(req: Request) {
       initialChat: {
         id: nanoid(),
         title: "New chat",
-        modelId: preferences.defaultModelId,
-        inferenceProfileId: preferences.defaultInferenceProfileId,
+        ...splitModelSelection(
+          preferences.defaultModelId,
+          preferences.defaultInferenceProfileId,
+        ),
         composioSelection: {
           mainProfileId:
             defaultComposioProfileId && composioPolicy.allowed
