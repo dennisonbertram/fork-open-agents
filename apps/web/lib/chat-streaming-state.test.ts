@@ -2,7 +2,8 @@ import { describe, expect, mock, test } from "bun:test";
 
 mock.module("ai", () => ({
   isToolUIPart: (part: { type?: unknown }) =>
-    typeof part.type === "string" && part.type.startsWith("tool-"),
+    typeof part.type === "string" &&
+    (part.type.startsWith("tool-") || part.type === "dynamic-tool"),
   isReasoningUIPart: (part: { type?: unknown }) => part.type === "reasoning",
 }));
 

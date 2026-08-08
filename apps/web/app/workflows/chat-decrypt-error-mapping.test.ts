@@ -106,7 +106,8 @@ mock.module("ai", () => ({
   convertToModelMessages: async (msgs: Array<Record<string, unknown>>) =>
     msgs.map((m) => ({ role: m.role, content: [] })),
   generateId: () => "gen-id-decrypt",
-  isToolUIPart: () => false,
+  isToolUIPart: (part: { type: string }) =>
+    part.type.startsWith("tool-") || part.type === "dynamic-tool",
   pruneMessages: ({ messages }: { messages: Array<Record<string, unknown>> }) =>
     messages,
 }));
