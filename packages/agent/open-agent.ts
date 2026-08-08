@@ -420,6 +420,22 @@ export const openAgent = new ToolLoopAgent({
       ? normalizeAgentModelSelection(options.subagentModel, defaultModelLabel)
       : undefined;
 
+    // Runtime backstop (#1156). `.id` is typed `ProviderModelId`, but that
+    // brand is compile-time only — normalizeAgentModelSelection only mints
+    // through toProviderModelId() (#1161) when the caller passes a plain
+    // string; a caller-constructed AgentModelSelection *object* (the shape
+    // every resolved chat/background-agent/agent-loop selection actually
+    // takes, often round-tripped through DB/workflow-state JSON) skips that
+    // branch entirely. Re-mint here, at the last moment before either model
+    // reaches gateway(), so a still-composite id throws a diagnosable,
+    // named error instead of being handed to a provider. This does NOT
+    // cover packages/agent/subagents/roster.ts, which builds its own model
+    // downstream of prepareCall (#1157).
+    toProviderModelId(mainSelection.id);
+    if (subagentSelection) {
+      toProviderModelId(subagentSelection.id);
+    }
+
     const callModel = gateway(mainSelection.id, {
       directInference:
         mainSelection.directInference ?? mainSelection.directAnthropic,
