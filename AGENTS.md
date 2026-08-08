@@ -178,9 +178,15 @@ open** when that variable is unset — migrations gate every build, so an
 unconfigured guard must never block a deploy. Override deliberately with
 `ALLOW_PRODUCTION_MIGRATION=1`.
 
-Local development is covered by the same guard: `apps/web/.env.local` may still
-point at production (#1162), so a local `bun run build` is refused rather than
-silently migrating live data.
+Local development points at the `dev` branch via `POSTGRES_URL`, which is the
+only database variable the app and `drizzle.config.ts` read. The guard above
+still covers the case where a local `POSTGRES_URL` is ever repointed at
+production.
+
+Note that `.env.local` also carries several *unused* variables
+(`DATABASE_URL`, `PGHOST`, `POSTGRES_PRISMA_URL`, and similar) that still hold
+production credentials. Nothing reads them today, but a future script reaching
+for `DATABASE_URL` by convention would silently get production (#1162).
 
 ## Commands
 
