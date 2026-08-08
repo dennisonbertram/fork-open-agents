@@ -644,9 +644,7 @@ async function assertLiveBackgroundExecution(params: {
     // block execution of a run that may never delegate.
     try {
       legacySubagentInference =
-        await resolveBackgroundAgentSubagentInferenceSnapshot(
-          row.run.userId,
-        );
+        await resolveBackgroundAgentSubagentInferenceSnapshot(row.run.userId);
     } catch (error) {
       console.error(
         `[background-agents] failed to resolve subagent model preference for user "${row.run.userId}" (non-fatal, delegated workers will use the main model):`,

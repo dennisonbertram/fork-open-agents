@@ -1216,8 +1216,7 @@ export async function executeAgentStep(
             inferenceRoute:
               resolvedAgentModels.model.attribution?.inferenceRoute ?? null,
             inferenceProfileId:
-              resolvedAgentModels.model.attribution?.inferenceProfileId ??
-              null,
+              resolvedAgentModels.model.attribution?.inferenceProfileId ?? null,
           },
           workflowRunId,
         });
