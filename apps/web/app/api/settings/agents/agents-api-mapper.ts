@@ -38,18 +38,24 @@ export type AgentPatchInput = z.infer<typeof agentPatchSchema>;
  * composite (`buildModelOptions`), so this is the write-boundary counterpart
  * to `resolve-agent.ts`'s read-side parsing.
  *
+ * Also drops `role`: the input is a full validated PATCH body (`role` +
+ * fields to change), but the result is a DB patch object — `upsertUserDefaultAgent`
+ * already takes `role` as its own positional argument, and `UserDefaultAgentPatch`
+ * has no `role` field. Keeping it in the result would silently pass an extra
+ * `role` key through to the DB layer on every PATCH.
+ *
  * `modelId` is only present in the result when it was present in `input` —
  * omitted stays omitted so a patch that doesn't touch the model field doesn't
  * accidentally reset it (see `UserDefaultAgentPatch`'s `?? null` defaults).
  */
 export function splitAgentPatchModel(input: AgentPatchInput): Omit<
   AgentPatchInput,
-  "modelId"
+  "modelId" | "role"
 > & {
   modelId?: string | null;
   inferenceProfileId?: string | null;
 } {
-  const { modelId, ...rest } = input;
+  const { modelId, role: _role, ...rest } = input;
   if (modelId === undefined) {
     return rest;
   }

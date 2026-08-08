@@ -205,6 +205,18 @@ describe("splitAgentPatchModel", () => {
     expect("inferenceProfileId" in result).toBe(false);
   });
 
+  // Regression: the result is a DB patch object (upsertUserDefaultAgent takes
+  // role as its own positional argument; UserDefaultAgentPatch has no role
+  // field), so role must never survive into it — otherwise every PATCH sends
+  // an extra unrecognized "role" key through to the DB layer.
+  it("BT-M-014f: role is dropped from the result, not passed through", () => {
+    const result = splitAgentPatchModel({
+      role: "executor",
+      instructions: "Be careful.",
+    });
+    expect("role" in result).toBe(false);
+  });
+
   it("BT-M-014e: other patch fields pass through unchanged", () => {
     const result = splitAgentPatchModel({
       role: "main",
