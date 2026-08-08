@@ -21,7 +21,7 @@ import { getSubagentRoster } from "../tools/utils";
 describe("REG-P4-001: Model override stays isolated to configured role", () => {
   test("executor model override does not affect explorer or design", () => {
     const roster: SubagentRoster = {
-      executor: { modelId: toProviderModelId("openai/gpt-4o") },
+      executor: { modelSelection: { id: toProviderModelId("openai/gpt-4o") } },
     };
     const explorerBase = {
       model: { modelId: "anthropic/claude-haiku-4.5" },
@@ -172,11 +172,11 @@ describe("REG-P4-006: All three roles can be configured in one roster", () => {
   test("each role receives its own unique config when all three have entries", () => {
     const roster: SubagentRoster = {
       explorer: {
-        modelId: toProviderModelId("openai/gpt-4o"),
+        modelSelection: { id: toProviderModelId("openai/gpt-4o") },
         instructions: "Explore only.",
       },
       executor: {
-        modelId: toProviderModelId("openai/gpt-4.5"),
+        modelSelection: { id: toProviderModelId("openai/gpt-4.5") },
         composioToolkitSlugs: ["linear"],
       },
       design: {

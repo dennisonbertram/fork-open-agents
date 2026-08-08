@@ -31,6 +31,14 @@ mock.module("ai", () => {
   return {
     tool: <T extends Record<string, unknown>>(definition: T) => definition,
     gateway,
+    // packages/agent/models.ts's own gateway() (used by the roster's
+    // applyRosterOverrides, transitively loaded from ./task) builds on these
+    // — the mock above only stood in for the AI SDK's default gateway.
+    createGateway: (_settings?: Record<string, unknown>) => gateway,
+    wrapLanguageModel: ({ model }: { model: unknown }) => model,
+    defaultSettingsMiddleware: (_settings: unknown) => ({
+      kind: "default-settings-middleware",
+    }),
     stepCountIs: (count: number) => ({ count }),
     ToolLoopAgent: MockToolLoopAgent,
     getToolName: (part: { toolName?: string; type?: string }) => {

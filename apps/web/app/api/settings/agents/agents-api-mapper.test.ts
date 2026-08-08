@@ -7,7 +7,11 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { agentPatchSchema, type AgentPatchInput } from "./agents-api-mapper";
+import {
+  agentPatchSchema,
+  splitAgentPatchModel,
+  type AgentPatchInput,
+} from "./agents-api-mapper";
 
 // BT-M-001: valid patch with all optional fields
 describe("agentPatchSchema", () => {
@@ -161,5 +165,62 @@ describe("agentPatchSchema", () => {
       toolAuthoringEnabled: "yes",
     });
     expect(result.success).toBe(false);
+  });
+});
+
+// #1157 (write path): the Settings -> Agents "User model" picker can emit a
+// "user-profile:<profileId>:<modelId>" composite id (buildModelOptions splits
+// a saved AI SDK model id from a real inference profile). That composite must
+// never land in agents.model_id while inference_profile_id stays null — the
+// same normalization already applied to updateUserPreferences and the three
+// chat-creation routes (#1154 / #1160).
+describe("splitAgentPatchModel", () => {
+  it("BT-M-014a: splits a composite modelId into its bare model id + profile id", () => {
+    const result = splitAgentPatchModel({
+      role: "executor",
+      modelId: "user-profile:profile-abc:anthropic/claude-opus-4",
+    });
+    expect(result.modelId).toBe("anthropic/claude-opus-4");
+    expect(result.inferenceProfileId).toBe("profile-abc");
+  });
+
+  it("BT-M-014b: leaves a plain gateway modelId untouched with a null profile id", () => {
+    const result = splitAgentPatchModel({
+      role: "executor",
+      modelId: "openai/gpt-4o",
+    });
+    expect(result.modelId).toBe("openai/gpt-4o");
+    expect(result.inferenceProfileId).toBeNull();
+  });
+
+  it("BT-M-014c: a null modelId (reset to inherit) stays null with a null profile id", () => {
+    const result = splitAgentPatchModel({ role: "executor", modelId: null });
+    expect(result.modelId).toBeNull();
+    expect(result.inferenceProfileId).toBeNull();
+  });
+
+  it("BT-M-014d: an absent modelId (field not in the patch) is omitted from the result", () => {
+    const result = splitAgentPatchModel({ role: "executor" });
+    expect("modelId" in result).toBe(false);
+    expect("inferenceProfileId" in result).toBe(false);
+  });
+
+  it("BT-M-014e: other patch fields pass through unchanged", () => {
+    const result = splitAgentPatchModel({
+      role: "main",
+      modelId: "user-profile:profile-xyz:openai/gpt-5",
+      instructions: "Be concise.",
+      composioToolkitSlugs: ["github"],
+      githubToolsEnabled: true,
+      toolAuthoringEnabled: true,
+      managedRuntimeProfileId: "web-bun-agent-browser",
+    });
+    expect(result).toMatchObject({
+      instructions: "Be concise.",
+      composioToolkitSlugs: ["github"],
+      githubToolsEnabled: true,
+      toolAuthoringEnabled: true,
+      managedRuntimeProfileId: "web-bun-agent-browser",
+    });
   });
 });

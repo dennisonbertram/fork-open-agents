@@ -51,6 +51,7 @@ mock.module("@/lib/db/schema", () => ({
     id: "id_col",
     name: "name_col",
     modelId: "model_id_col",
+    inferenceProfileId: "inference_profile_id_col",
     composioToolkitSlugs: "composio_toolkit_slugs_col",
     instructions: "instructions_col",
     managedRuntimeProfileId: "managed_runtime_profile_id_col",
@@ -235,5 +236,56 @@ describe("upsertUserDefaultAgent — githubToolsEnabled field (BT-A-004)", () =>
     expect(inserted.githubToolsEnabled).toBe(false);
     const opts = lastOnConflictOpts as { set?: Record<string, unknown> } | null;
     expect(opts?.set?.githubToolsEnabled).toBe(false);
+  });
+});
+
+// BT-A-005 (#1157): inferenceProfileId threading. agents.inference_profile_id
+// already has an FK (schema.ts) but upsertUserDefaultAgent never wrote it —
+// the Settings -> Agents write path silently dropped a profile-bound roster
+// override's profile id.
+describe("upsertUserDefaultAgent — inferenceProfileId field (BT-A-005)", () => {
+  it("BT-A-005a: patch { inferenceProfileId: 'profile-1' } inserts a row carrying it", async () => {
+    await upsertUserDefaultAgent("u1", "executor", {
+      modelId: "anthropic/claude-opus-4",
+      inferenceProfileId: "profile-1",
+    });
+    const inserted = lastInsertValues as Record<string, unknown>;
+    expect(inserted.inferenceProfileId).toBe("profile-1");
+  });
+
+  it("BT-A-005b: an omitted inferenceProfileId defaults to null in the inserted row", async () => {
+    await upsertUserDefaultAgent("u1", "executor", {
+      modelId: "openai/gpt-4o",
+    });
+    const inserted = lastInsertValues as Record<string, unknown>;
+    expect(inserted.inferenceProfileId).toBeNull();
+  });
+
+  it("BT-A-005c: onConflictDoUpdate.set includes inferenceProfileId", async () => {
+    await upsertUserDefaultAgent("u1", "executor", {
+      inferenceProfileId: "profile-2",
+    });
+    const opts = lastOnConflictOpts as {
+      set?: Record<string, unknown>;
+    } | null;
+    expect(opts?.set).toHaveProperty("inferenceProfileId");
+    expect(opts?.set?.inferenceProfileId).toBe("profile-2");
+  });
+
+  it("BT-A-005d: a save omitting inferenceProfileId resets it to null (full-row-replace contract, mirrors BT-A-004e)", async () => {
+    await upsertUserDefaultAgent("u1", "executor", {
+      inferenceProfileId: "profile-3",
+    });
+    expect(
+      (lastInsertValues as Record<string, unknown>).inferenceProfileId,
+    ).toBe("profile-3");
+
+    await upsertUserDefaultAgent("u1", "executor", {
+      modelId: "anthropic/claude-haiku-4.5",
+    });
+    const inserted = lastInsertValues as Record<string, unknown>;
+    expect(inserted.inferenceProfileId).toBeNull();
+    const opts = lastOnConflictOpts as { set?: Record<string, unknown> } | null;
+    expect(opts?.set?.inferenceProfileId).toBeNull();
   });
 });
