@@ -215,6 +215,24 @@ mock.module("@open-agents/agent", () => ({
     })),
   },
   gateway: mock((m: string) => m),
+  toProviderModelId: (modelId: string) => modelId,
+}));
+
+// #1158: executeAgentStep now resolves the user's own model + inference
+// profile before building agentOptions — reuses resolveStepAgentModels,
+// which is not under test here, so a plain gateway default (no profile, no
+// subagent override) reproduces the previous no-model behavior.
+mock.module("@/lib/db/user-preferences", () => ({
+  getUserPreferences: mock(async () => ({
+    defaultModelId: "anthropic/claude-opus-4.6",
+    defaultInferenceProfileId: null,
+    defaultSubagentModelId: null,
+  })),
+}));
+mock.module("@/lib/inference/profile-resolution", () => ({
+  resolveInferenceProfileModelSelection: mock(
+    async (params: { selection: unknown }) => params.selection,
+  ),
 }));
 
 let buildCommitIntentResult: {

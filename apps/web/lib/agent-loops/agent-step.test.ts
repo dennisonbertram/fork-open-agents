@@ -399,7 +399,9 @@ let userPreferencesResult: {
   defaultInferenceProfileId: null,
   defaultSubagentModelId: null,
 };
-const getUserPreferencesMock = mock(async (_userId: string) => userPreferencesResult);
+const getUserPreferencesMock = mock(
+  async (_userId: string) => userPreferencesResult,
+);
 
 mock.module("@/lib/db/user-preferences", () => ({
   getUserPreferences: getUserPreferencesMock,
@@ -426,7 +428,8 @@ const resolveInferenceProfileModelSelectionMock = mock(
 );
 
 mock.module("@/lib/inference/profile-resolution", () => ({
-  resolveInferenceProfileModelSelection: resolveInferenceProfileModelSelectionMock,
+  resolveInferenceProfileModelSelection:
+    resolveInferenceProfileModelSelectionMock,
 }));
 
 // ── Commit mocks ──────────────────────────────────────────────────────────────

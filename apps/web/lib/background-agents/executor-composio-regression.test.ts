@@ -316,6 +316,11 @@ mock.module("@/lib/inference/profile-resolution", () => ({
   ),
 }));
 
+// #1158: runBackgroundAgent now reads default_subagent_model_id.
+mock.module("@/lib/db/user-preferences", () => ({
+  getUserPreferences: mock(async () => ({ defaultSubagentModelId: null })),
+}));
+
 const fakeComposioTools: Record<string, unknown> = {
   github_create_issue: { description: "Create a GitHub issue" },
 };
