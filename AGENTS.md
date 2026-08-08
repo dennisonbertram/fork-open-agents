@@ -152,7 +152,35 @@ Migrations run automatically during `bun run build` (via `lib/db/migrate.ts`), s
 
 ### Environment isolation
 
-Neon database branching is enabled in the Vercel project settings. Every preview deployment automatically gets its own isolated database branch forked from production. This means preview deployments never read or write production data. Production deployments use the main Neon database.
+Each Vercel environment points at its own Neon branch via an environment-scoped
+`POSTGRES_URL`:
+
+| environment | Neon branch |
+| --- | --- |
+| Production | `main` |
+| Preview | `preview` |
+| Development | `dev` |
+
+`POSTGRES_URL` is the only database variable the app reads, so it is the only
+one that has to differ per environment.
+
+**This was not true until #1167.** Preview and Production shared one
+`POSTGRES_URL`, and because `apps/web/package.json` runs `db:migrate:apply` in
+every build, PR preview builds applied unmerged migrations to the production
+database and preview traffic read and wrote production rows. If you are reading
+an older copy of this file that claims previews were always isolated, it was
+wrong.
+
+`lib/db/migrate.ts` now refuses to migrate the production database from a
+non-production build. It compares the target against `PRODUCTION_DB_HOST`
+(pooled and direct Neon hosts are treated as the same database) and **fails
+open** when that variable is unset — migrations gate every build, so an
+unconfigured guard must never block a deploy. Override deliberately with
+`ALLOW_PRODUCTION_MIGRATION=1`.
+
+Local development is covered by the same guard: `apps/web/.env.local` may still
+point at production (#1162), so a local `bun run build` is refused rather than
+silently migrating live data.
 
 ## Commands
 
