@@ -9,7 +9,10 @@ mock.module("ai", () => {
     }
   }
 
-  const createGateway = () => (modelId: string) => ({ modelId });
+  const createGateway = () => (modelId: string) => ({
+    modelId,
+    provider: modelId.split("/")[0] ?? "",
+  });
 
   return {
     createGateway,
@@ -52,8 +55,16 @@ const {
   MANAGED_RUNTIME_COORDINATOR_TOOL_NAMES,
   CHAT_ONLY_TOOL_NAMES,
   OPEN_AGENT_TOOL_NAMES,
+  openAgent,
 } = await import("./open-agent");
 const { buildSystemPrompt } = await import("./system-prompt");
+
+// prepareCall is stored as-is on the mocked ToolLoopAgent's `config`.
+const prepareCall = (
+  openAgent as unknown as {
+    config: { prepareCall: (args: unknown) => unknown };
+  }
+).config.prepareCall;
 
 describe("openAgent runtime tool policy", () => {
   test("keeps the full direct toolset in classic mode", () => {
@@ -603,5 +614,53 @@ describe("GitHub tool-preference steer (githubToolAvailable)", () => {
 
     expect(prompt).toContain("api.github.com");
     expect(prompt).not.toContain("github_list_issues");
+  });
+});
+
+// #1156: prepareCall is the choke point every subsystem (chat, background
+// agents, agent loops) funnels through to build provider models. #1161 made
+// toProviderModelId() throw on a still-composite id, but that mint is only
+// applied by normalizeAgentModelSelection when the caller passes a plain
+// string. A caller-constructed AgentModelSelection *object* (the shape every
+// resolved selection actually takes downstream of the DB) skips that branch
+// entirely, so a composite id on `.id` reached gateway() unvalidated. This
+// does NOT cover packages/agent/subagents/roster.ts, which builds its own
+// model downstream of prepareCall (see #1157).
+describe("prepareCall composite model id guard (#1156)", () => {
+  test("throws a diagnosable error naming the id when the main model selection carries an unresolved composite id", () => {
+    expect(() =>
+      prepareCall({
+        options: {
+          sandbox: {},
+          model: { id: "user-profile:profile-1:anthropic/claude-opus-4.6" },
+        },
+      }),
+    ).toThrow(/user-profile:profile-1:anthropic\/claude-opus-4\.6/);
+  });
+
+  test("throws a diagnosable error naming the id when the subagent model selection carries an unresolved composite id", () => {
+    expect(() =>
+      prepareCall({
+        options: {
+          sandbox: {},
+          model: { id: "anthropic/claude-opus-4.6" },
+          subagentModel: {
+            id: "user-profile:profile-1:anthropic/claude-haiku-4.5",
+          },
+        },
+      }),
+    ).toThrow(/user-profile:profile-1:anthropic\/claude-haiku-4\.5/);
+  });
+
+  test("does not throw for a normal, already-resolved model selection object", () => {
+    expect(() =>
+      prepareCall({
+        options: {
+          sandbox: {},
+          model: { id: "anthropic/claude-opus-4.6" },
+          subagentModel: { id: "anthropic/claude-haiku-4.5" },
+        },
+      }),
+    ).not.toThrow();
   });
 });
