@@ -1,6 +1,7 @@
 import type { SandboxState } from "@open-agents/sandbox";
 import type { LanguageModel } from "ai";
 import { z } from "zod";
+import type { AgentModelSelection } from "./models";
 import type { AgentSandboxContext } from "./open-agent";
 import type { SkillMetadata } from "./skills/types";
 import type { SubagentRoster } from "./subagents/roster";
@@ -38,6 +39,15 @@ export interface AgentContext {
   skills?: SkillMetadata[];
   model: LanguageModel;
   subagentModel?: LanguageModel;
+  /**
+   * The resolved selection (id + directInference + providerOptionsOverrides)
+   * that built `subagentModel` (or `model`, when there is no dedicated
+   * subagent model) — the role's effective default routing before any roster
+   * override. Threaded so a roster entry with a plain (non-profile) model id
+   * override can still ride the same BYOK/direct-inference channel instead of
+   * silently falling back to the Vercel gateway (#1157).
+   */
+  subagentModelSelection?: AgentModelSelection;
   runtimeMode?: "classic" | "managed_runtime";
   managedRuntime?: {
     profileId?: string;

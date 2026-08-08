@@ -85,7 +85,9 @@ describe("Guard 1: plain gateway roster override preserves base directInference"
         // Plain gateway id override -- carries no profile/directInference
         // of its own.
         explorer: {
-          modelSelection: { id: toProviderModelId("anthropic/claude-haiku-4.5") },
+          modelSelection: {
+            id: toProviderModelId("anthropic/claude-haiku-4.5"),
+          },
         },
       },
       base: {

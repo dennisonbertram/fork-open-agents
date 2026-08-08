@@ -6,6 +6,7 @@
  */
 
 import { z } from "zod";
+import { splitModelSelection } from "@/lib/inference/model-option-id";
 
 const agentRoleSchema = z.enum(["main", "explorer", "executor", "design"]);
 
@@ -28,6 +29,40 @@ export const agentPatchSchema = z
   .strict();
 
 export type AgentPatchInput = z.infer<typeof agentPatchSchema>;
+
+/**
+ * Splits a validated PATCH body's `modelId` into its bare model id and
+ * inference profile id, so an internal "user-profile:<profileId>:<modelId>"
+ * composite never reaches storage while its `inferenceProfileId` column stays
+ * null (#1157). The Settings -> Agents "User model" picker emits exactly this
+ * composite (`buildModelOptions`), so this is the write-boundary counterpart
+ * to `resolve-agent.ts`'s read-side parsing.
+ *
+ * `modelId` is only present in the result when it was present in `input` —
+ * omitted stays omitted so a patch that doesn't touch the model field doesn't
+ * accidentally reset it (see `UserDefaultAgentPatch`'s `?? null` defaults).
+ */
+export function splitAgentPatchModel(input: AgentPatchInput): Omit<
+  AgentPatchInput,
+  "modelId"
+> & {
+  modelId?: string | null;
+  inferenceProfileId?: string | null;
+} {
+  const { modelId, ...rest } = input;
+  if (modelId === undefined) {
+    return rest;
+  }
+  if (modelId === null) {
+    return { ...rest, modelId: null, inferenceProfileId: null };
+  }
+  const split = splitModelSelection(modelId, null);
+  return {
+    ...rest,
+    modelId: split.modelId,
+    inferenceProfileId: split.inferenceProfileId,
+  };
+}
 
 /**
  * Schema for validating a DELETE body to /api/settings/agents.
