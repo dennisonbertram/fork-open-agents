@@ -34,7 +34,10 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { buildAgentRoster } from "./agents-roster";
-import { agentPatchSchema, splitAgentPatchModel } from "@/app/api/settings/agents/agents-api-mapper";
+import {
+  agentPatchSchema,
+  splitAgentPatchModel,
+} from "@/app/api/settings/agents/agents-api-mapper";
 import { getModelOptionSelectionId } from "@/lib/inference/model-option-id";
 import type { ComposioAgentDefaults } from "@/lib/composio/types";
 import type { ManagedRuntimeProfile } from "@open-agents/sandbox/managed-runtime-profiles";
@@ -96,14 +99,16 @@ describe("buildAgentRoster threads inferenceProfileId (#1157)", () => {
       ],
     });
 
-    expect(rows.find((r) => r.key === "executor")?.inferenceProfileId).toBeNull();
+    expect(
+      rows.find((r) => r.key === "executor")?.inferenceProfileId,
+    ).toBeNull();
   });
 });
 
 describe("Settings -> Agents editor round-trip: GET -> editor -> PATCH (#1157)", () => {
   test("BT-RT-003: saving a profile-bound role WITHOUT touching the model field must NOT null out inferenceProfileId", () => {
     // 1. GET: a profile-bound row, as buildAgentRoster produces it today.
-    const [row] = buildAgentRoster({
+    const row = buildAgentRoster({
       preferences: basePrefs,
       composioDefaults: noComposioDefaults,
       runtimeProfiles,
@@ -118,7 +123,10 @@ describe("Settings -> Agents editor round-trip: GET -> editor -> PATCH (#1157)",
           managedRuntimeProfileId: null,
         },
       ],
-    }).filter((r) => r.key === "explorer");
+    }).find((r) => r.key === "explorer");
+    if (!row) {
+      throw new Error("explorer row missing");
+    }
 
     // 2. Editor: AgentEditor must initialize its Model <Select> state with
     // this exact composite -- the same helper buildModelOptions uses to
@@ -129,7 +137,7 @@ describe("Settings -> Agents editor round-trip: GET -> editor -> PATCH (#1157)",
       row.inferenceProfileId,
     );
     expect(editorInitialModelId).toBe(
-      "user-profile:profile-abc:anthropic/claude-opus-4",
+      "user-profile:profile-abc:anthropic%2Fclaude-opus-4",
     );
 
     // 3. Save WITHOUT touching the model field: AgentEditor sends

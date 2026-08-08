@@ -8,8 +8,8 @@
  */
 
 import type { LanguageModel } from "ai";
-import type { AgentModelSelection } from "../models";
-import { gateway } from "../models";
+import type { AgentModelSelection, DirectInferenceConfig } from "../models";
+import { gateway, toAnthropicDirectModelId } from "../models";
 
 /**
  * The per-role override record that the web layer resolves and the agent
@@ -63,6 +63,39 @@ export type ApplyRosterOverridesResult = {
 };
 
 /**
+ * Derive a direct-inference config for `overrideModelId` from the base
+ * selection's direct config, WITHOUT reusing the base's provider-side
+ * modelId (#1157, bug: the base's directInference object carries the base
+ * model's provider-side id, and gateway() builds the provider call from that
+ * id, not from the roster entry's own model — silently running the base
+ * model, or the wrong provider entirely on a cross-provider override).
+ *
+ * Only the key/endpoint (apiKey, baseURL, provider) are reused — the
+ * modelId is always re-derived for the role's own model:
+ * - anthropic: mapped via toAnthropicDirectModelId, the same catalog-id
+ *   mapping resolve-inference-profile-model-selection.ts uses. Returns
+ *   undefined when the override isn't an "anthropic/…" catalog id (a
+ *   cross-provider override) — direct routing can't be derived, so the
+ *   caller falls back to the plain Vercel gateway with the role's own id
+ *   rather than silently substituting the base model.
+ * - openai-compatible: the provider model id is sent verbatim (mirrors
+ *   profile-resolution.ts's non-anthropic path), so the override's id is
+ *   used directly.
+ */
+function deriveFallbackDirectConfig(
+  baseDirect: DirectInferenceConfig,
+  overrideModelId: string,
+): DirectInferenceConfig | undefined {
+  if (baseDirect.provider === "anthropic") {
+    const directModelId = toAnthropicDirectModelId(overrideModelId);
+    return directModelId
+      ? { ...baseDirect, modelId: directModelId }
+      : undefined;
+  }
+  return { ...baseDirect, modelId: overrideModelId };
+}
+
+/**
  * Apply the roster entry for `role` on top of the base subagent options.
  *
  * Rules:
@@ -70,8 +103,13 @@ export type ApplyRosterOverridesResult = {
  * - entry.modelSelection present and non-null → replace model with
  *   packages/agent/models.ts's gateway(), so directInference and
  *   providerOptionsOverrides always reach a provider call. The entry's own
- *   routing wins when present; otherwise `base.selection`'s routing is
- *   reused (never discarded, never mixed across roles).
+ *   routing wins when present; otherwise direct routing is DERIVED for the
+ *   entry's own model from `base.selection`'s key/endpoint (never a bare
+ *   reuse of the base's provider-side modelId — see
+ *   `deriveFallbackDirectConfig`). When derivation isn't possible (a
+ *   cross-provider override), the entry routes through the plain Vercel
+ *   gateway with its own model id instead of silently running the base
+ *   model.
  * - entry.instructions present and non-null → append to base instructions
  * - entry.composioToolkitSlugs non-empty → return them for tool assembly
  *
@@ -95,18 +133,26 @@ export function applyRosterOverrides({
   }
 
   // Model override
-  const model = entry.modelSelection
-    ? gateway(entry.modelSelection.id, {
-        directInference:
-          entry.modelSelection.directInference ??
-          entry.modelSelection.directAnthropic ??
-          base.selection?.directInference ??
-          base.selection?.directAnthropic,
-        providerOptionsOverrides:
-          entry.modelSelection.providerOptionsOverrides ??
-          base.selection?.providerOptionsOverrides,
-      })
-    : base.model;
+  let model = base.model;
+  if (entry.modelSelection) {
+    const ownDirect =
+      entry.modelSelection.directInference ??
+      entry.modelSelection.directAnthropic;
+    const baseDirect =
+      base.selection?.directInference ?? base.selection?.directAnthropic;
+    const directInference =
+      ownDirect ??
+      (baseDirect
+        ? deriveFallbackDirectConfig(baseDirect, entry.modelSelection.id)
+        : undefined);
+
+    model = gateway(entry.modelSelection.id, {
+      directInference,
+      providerOptionsOverrides:
+        entry.modelSelection.providerOptionsOverrides ??
+        base.selection?.providerOptionsOverrides,
+    });
+  }
 
   // Instructions override — append to base
   const instructions =
