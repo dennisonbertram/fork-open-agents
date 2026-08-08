@@ -346,6 +346,12 @@ mock.module("@/lib/inference/profile-resolution", () => ({
   ),
 }));
 
+// #1158: runBackgroundAgent now reads default_subagent_model_id. No profile
+// is under test here, so a static unset preference is enough.
+mock.module("@/lib/db/user-preferences", () => ({
+  getUserPreferences: mock(async () => ({ defaultSubagentModelId: null })),
+}));
+
 // ---------------------------------------------------------------------------
 // Composio mocks
 // ---------------------------------------------------------------------------
