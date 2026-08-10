@@ -181,7 +181,9 @@ describe("runCreateRepoWorkflow", () => {
       ),
     ).toBe(true);
     // the remote URL must not embed credentials
-    const remoteAdd = execCalls.find((c) => c.startsWith("git remote add origin"));
+    const remoteAdd = execCalls.find((c) =>
+      c.startsWith("git remote add origin"),
+    );
     expect(remoteAdd).toBeDefined();
     expect(remoteAdd).toContain("https://github.com/octocat/repo-1.git");
     expect(remoteAdd).not.toContain("user-token-123");

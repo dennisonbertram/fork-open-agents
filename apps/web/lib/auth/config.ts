@@ -106,6 +106,10 @@ export const auth = betterAuth({
     github: {
       clientId: process.env.NEXT_PUBLIC_GITHUB_CLIENT_ID ?? "",
       clientSecret: process.env.GITHUB_CLIENT_SECRET ?? "",
+      // "repo" is required for creating repositories and pushing from
+      // sandboxes (POST /api/github/create-repo). Tokens linked before this
+      // scope was added get the github_scope_required reconnect path.
+      scope: ["read:user", "user:email", "repo"],
       mapProfileToUser: mapGitHubProfileToUser,
     },
   },

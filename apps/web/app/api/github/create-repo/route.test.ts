@@ -30,7 +30,11 @@ let githubProfile: { username: string; externalUserId: string } | null = {
   externalUserId: "1234",
 };
 let rateLimitedResponse: Response | null = null;
-const sandboxHandle = { workingDirectory: "/work", exec: mock(async () => ({})) };
+let repoTokenValue: string | null = "user-token-123";
+const sandboxHandle = {
+  workingDirectory: "/work",
+  exec: mock(async () => ({})),
+};
 
 mock.module("@/lib/session/get-server-session", () => ({
   getServerSession: async () => authSession,
@@ -55,6 +59,10 @@ mock.module("@/lib/rate-limit", () => ({
 
 mock.module("@/lib/github/client", () => ({
   getUserOctokit: async (_userId: string) => octokitInstance,
+}));
+
+mock.module("@/lib/github/token", () => ({
+  getUserGitHubToken: async (_userId: string) => repoTokenValue,
 }));
 
 mock.module("@/lib/github/users", () => ({
@@ -119,6 +127,7 @@ describe("/api/github/create-repo", () => {
     octokitInstance = { rest: {} };
     githubProfile = { username: "octocat", externalUserId: "1234" };
     rateLimitedResponse = null;
+    repoTokenValue = "user-token-123";
   });
 
   test("returns 401 when unauthenticated", async () => {
@@ -241,6 +250,7 @@ describe("/api/github/create-repo", () => {
 
   test("returns 401 with reconnect signal when GitHub token is unavailable", async () => {
     octokitInstance = null;
+    repoTokenValue = null;
     const { POST } = await routeModulePromise;
 
     const response = await POST(createRequest(validBody()));
@@ -254,7 +264,10 @@ describe("/api/github/create-repo", () => {
     workflowResult = {
       ok: false,
       response: Response.json(
-        { error: "Repository name is already taken", errorKind: "repo_name_taken" },
+        {
+          error: "Repository name is already taken",
+          errorKind: "repo_name_taken",
+        },
         { status: 409 },
       ),
     };
