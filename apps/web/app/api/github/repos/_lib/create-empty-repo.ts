@@ -41,7 +41,14 @@ export type CreateEmptyRepoResult =
       repoUrl: string | undefined;
       cloneUrl: string;
     }
-  | { ok: false; error: string; errorKind: string; status: number };
+  | {
+      ok: false;
+      error: string;
+      errorKind: string;
+      status: number;
+      /** GitHub's own error message, for server-side diagnostics only. */
+      upstreamMessage?: string;
+    };
 
 function githubStatus(error: unknown): number | undefined {
   if (typeof error === "object" && error !== null && "status" in error) {
@@ -88,6 +95,7 @@ export async function createEmptyGitHubRepo({
     repoData = response.data;
   } catch (error) {
     const status = githubStatus(error);
+    const upstreamMessage = githubMessage(error, "Unknown GitHub error");
     if (status === 422) {
       return {
         ok: false,
@@ -96,15 +104,17 @@ export async function createEmptyGitHubRepo({
           : `A repository named "${repoName}" already exists.`,
         errorKind: "repo_name_taken",
         status: 409,
+        upstreamMessage,
       };
     }
     if (status === 403 || status === 404) {
       return {
         ok: false,
         error:
-          "GitHub rejected the request. Reconnect GitHub to grant repository creation access, then try again.",
+          "GitHub rejected the request. Reconnect GitHub to grant repository creation access, then try again. If reconnecting offers no new permission, the GitHub App needs repository Administration access enabled by an administrator.",
         errorKind: "github_scope_required",
         status: 403,
+        upstreamMessage,
       };
     }
     return {
@@ -112,6 +122,7 @@ export async function createEmptyGitHubRepo({
       error: githubMessage(error, "Failed to create repository"),
       errorKind: "github_error",
       status: 502,
+      upstreamMessage,
     };
   }
 
