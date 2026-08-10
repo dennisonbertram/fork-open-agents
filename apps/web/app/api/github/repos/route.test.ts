@@ -308,7 +308,7 @@ describe("/api/github/repos", () => {
         { status: 403 },
       );
     };
-    const logSpy = mock(() => {});
+    const logSpy = mock((..._args: unknown[]) => {});
     const originalLog = console.log;
     console.log = logSpy;
     try {

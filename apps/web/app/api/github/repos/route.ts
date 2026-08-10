@@ -127,6 +127,7 @@ export async function POST(req: Request) {
         owner: owner ?? null,
         errorKind: result.errorKind,
         status: result.status,
+        upstreamMessage: result.upstreamMessage ?? null,
       },
     );
     return errorJson(result.error, result.errorKind, result.status);
