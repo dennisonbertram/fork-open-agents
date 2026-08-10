@@ -32,6 +32,8 @@ import { useGitHubConnectionStatus } from "@/hooks/use-github-connection-status"
 import { useSession } from "@/hooks/use-session";
 import { buildGitHubReconnectUrl } from "@/lib/github/urls";
 import { cn } from "@/lib/utils";
+import { CreateRepositoryDialog } from "@/components/create-repository-dialog";
+import type { CreatedRepository } from "@/components/create-repository-submit";
 import {
   FRIENDLY_REPOS_ERROR_COPY,
   isScopedEmpty,
@@ -172,6 +174,7 @@ export function RepoSelectorCompact({
   const [debouncedRepoSearch, setDebouncedRepoSearch] = useState("");
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState<string | null>(null);
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
 
   const hasAutoSelectedRef = useRef(false);
 
@@ -276,6 +279,11 @@ export function RepoSelectorCompact({
 
   const handleRepoSelect = (repo: InstallationRepo) => {
     onSelect(currentOwner, repo.name);
+  };
+
+  const handleRepoCreated = (result: CreatedRepository) => {
+    onSelect(result.owner, result.repoName);
+    void refreshRepos();
   };
 
   const handleDeselect = () => {
@@ -591,9 +599,18 @@ export function RepoSelectorCompact({
         )}
       </div>
 
-      {/* Footer: manage access + refresh */}
+      {/* Footer: new repository + manage access + refresh */}
       <div className="mt-1.5 flex items-center justify-between px-1 text-xs">
         <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setCreateDialogOpen(true)}
+            disabled={!currentOwner}
+            className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+          >
+            <Plus className="size-3" />
+            New repository
+          </button>
           {currentInstallation?.installationUrl && (
             <Link
               href={currentInstallation.installationUrl}
@@ -619,6 +636,15 @@ export function RepoSelectorCompact({
           {isRefreshing ? "Refreshing..." : "Refresh"}
         </button>
       </div>
+
+      <CreateRepositoryDialog
+        open={createDialogOpen}
+        onOpenChange={setCreateDialogOpen}
+        owner={currentOwner}
+        repositorySelection={currentInstallation?.repositorySelection ?? "all"}
+        installationUrl={currentInstallation?.installationUrl ?? null}
+        onCreated={handleRepoCreated}
+      />
     </div>
   );
 }
