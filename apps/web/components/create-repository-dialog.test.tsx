@@ -89,7 +89,9 @@ describe("CreateRepositoryDialog", () => {
     );
 
     expect(html).toContain('role="alert"');
-    expect(html).toContain("Reconnect GitHub to grant repository creation access");
+    expect(html).toContain(
+      "Reconnect GitHub to grant repository creation access",
+    );
   });
 
   test("BT-CRD-003: success renders repo link without App-access warning for selection 'all'", async () => {

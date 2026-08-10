@@ -106,6 +106,10 @@ export const auth = betterAuth({
     github: {
       clientId: process.env.NEXT_PUBLIC_GITHUB_CLIENT_ID ?? "",
       clientSecret: process.env.GITHUB_CLIENT_SECRET ?? "",
+      // "repo" is required to create repositories on behalf of the user.
+      // Only affects new consents; existing tokens get the typed
+      // github_scope_required error until they reconnect.
+      scope: ["read:user", "user:email", "repo"],
       mapProfileToUser: mapGitHubProfileToUser,
     },
   },

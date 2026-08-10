@@ -196,7 +196,8 @@ describe("/api/github/repos", () => {
 
     expect(response.status).toBe(401);
     expect(await response.json()).toEqual({
-      error: "GitHub not connected. Connect GitHub before creating a repository.",
+      error:
+        "GitHub not connected. Connect GitHub before creating a repository.",
       errorKind: "github_not_connected",
     });
     expect(createForAuthenticatedUserSpy).not.toHaveBeenCalled();
@@ -281,9 +282,12 @@ describe("/api/github/repos", () => {
 
   test("maps GitHub 403 to 403 github_scope_required", async () => {
     createForAuthenticatedUserImpl = async () => {
-      throw Object.assign(new Error("Resource not accessible by personal access token"), {
-        status: 403,
-      });
+      throw Object.assign(
+        new Error("Resource not accessible by personal access token"),
+        {
+          status: 403,
+        },
+      );
     };
     const { POST } = await routeModulePromise;
 
