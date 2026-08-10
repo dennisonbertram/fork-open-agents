@@ -280,7 +280,7 @@ describe("/api/github/repos", () => {
     });
   });
 
-  test("maps GitHub 403 to 403 github_scope_required", async () => {
+  test("maps GitHub 403 to 403 github_scope_required with both remedies in the copy", async () => {
     createForAuthenticatedUserImpl = async () => {
       throw Object.assign(
         new Error("Resource not accessible by personal access token"),
@@ -296,9 +296,44 @@ describe("/api/github/repos", () => {
     expect(response.status).toBe(403);
     expect(await response.json()).toEqual({
       error:
-        "GitHub rejected the request. Reconnect GitHub to grant repository creation access, then try again.",
+        "GitHub rejected the request. Reconnect GitHub to grant repository creation access, then try again. If reconnecting offers no new permission, the GitHub App needs repository Administration access enabled by an administrator.",
       errorKind: "github_scope_required",
     });
+  });
+
+  test("logs the upstream GitHub message on refusal (#1180)", async () => {
+    createForAuthenticatedUserImpl = async () => {
+      throw Object.assign(
+        new Error("Resource not accessible by personal access token"),
+        { status: 403 },
+      );
+    };
+    const logSpy = mock((..._args: unknown[]) => {});
+    const originalLog = console.log;
+    console.log = logSpy;
+    try {
+      const { POST } = await routeModulePromise;
+      const response = await POST(createRequest({ repoName: "my-repo" }));
+      expect(response.status).toBe(403);
+    } finally {
+      console.log = originalLog;
+    }
+
+    const events = logSpy.mock.calls.map((call) => {
+      try {
+        return JSON.parse(String(call[0])) as Record<string, unknown>;
+      } catch {
+        return null;
+      }
+    });
+    const refused = events.find(
+      (event) => event?.event === "create-empty-repo.refused",
+    );
+    expect(refused).toBeDefined();
+    expect(refused?.errorKind).toBe("github_scope_required");
+    expect(refused?.upstreamMessage).toBe(
+      "Resource not accessible by personal access token",
+    );
   });
 
   test("maps GitHub 404 to 403 github_scope_required", async () => {
