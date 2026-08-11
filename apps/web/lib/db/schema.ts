@@ -3256,3 +3256,83 @@ export type AgentLoopEvent = typeof agentLoopEvents.$inferSelect;
 export type NewAgentLoopEvent = typeof agentLoopEvents.$inferInsert;
 export type AgentLoopWatchdogRun = typeof agentLoopWatchdogRuns.$inferSelect;
 export type NewAgentLoopWatchdogRun = typeof agentLoopWatchdogRuns.$inferInsert;
+
+// ── MCP OAuth (better-auth `mcp` plugin) ─────────────────────────────────────
+// Table shapes match apps/web/node_modules/better-auth/dist/plugins/mcp/index.d.mts
+// (the plugin's `schema` field) exactly — column names and nullability are
+// dictated by better-auth, not chosen here. Registered in the drizzleAdapter
+// schema map in apps/web/lib/auth/config.ts as oauthApplication /
+// oauthAccessToken / oauthConsent.
+
+export const oauthApplications = pgTable(
+  "oauth_applications",
+  {
+    id: text("id").primaryKey(),
+    name: text("name").notNull(),
+    icon: text("icon"),
+    metadata: text("metadata"),
+    clientId: text("client_id").notNull().unique(),
+    clientSecret: text("client_secret"),
+    redirectUrls: text("redirect_urls").notNull(),
+    type: text("type").notNull(),
+    disabled: boolean("disabled").notNull().default(false),
+    userId: text("user_id").references(() => users.id, {
+      onDelete: "cascade",
+    }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [index("oauth_applications_user_idx").on(table.userId)],
+);
+
+export const oauthAccessTokens = pgTable(
+  "oauth_access_tokens",
+  {
+    id: text("id").primaryKey(),
+    accessToken: text("access_token").notNull().unique(),
+    refreshToken: text("refresh_token").notNull().unique(),
+    accessTokenExpiresAt: timestamp("access_token_expires_at").notNull(),
+    refreshTokenExpiresAt: timestamp("refresh_token_expires_at").notNull(),
+    clientId: text("client_id")
+      .notNull()
+      .references(() => oauthApplications.clientId, { onDelete: "cascade" }),
+    userId: text("user_id").references(() => users.id, {
+      onDelete: "cascade",
+    }),
+    scopes: text("scopes").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("oauth_access_tokens_client_idx").on(table.clientId),
+    index("oauth_access_tokens_user_idx").on(table.userId),
+  ],
+);
+
+export const oauthConsents = pgTable(
+  "oauth_consents",
+  {
+    id: text("id").primaryKey(),
+    clientId: text("client_id")
+      .notNull()
+      .references(() => oauthApplications.clientId, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    scopes: text("scopes").notNull(),
+    consentGiven: boolean("consent_given").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("oauth_consents_client_idx").on(table.clientId),
+    index("oauth_consents_user_idx").on(table.userId),
+  ],
+);
+
+export type OauthApplication = typeof oauthApplications.$inferSelect;
+export type NewOauthApplication = typeof oauthApplications.$inferInsert;
+export type OauthAccessToken = typeof oauthAccessTokens.$inferSelect;
+export type NewOauthAccessToken = typeof oauthAccessTokens.$inferInsert;
+export type OauthConsent = typeof oauthConsents.$inferSelect;
+export type NewOauthConsent = typeof oauthConsents.$inferInsert;

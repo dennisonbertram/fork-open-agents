@@ -2,11 +2,18 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 
 mock.module("server-only", () => ({}));
 
-const getSessionsWithUnreadByUserId = mock(async () => [] as unknown[]);
+const getSessionsWithUnreadByUserId = mock(
+  async (
+    _userId: string,
+    _options?: { status?: string; limit?: number; offset?: number },
+  ) => [] as unknown[],
+);
 const getSessionById = mock(async () => undefined as unknown);
 const getChatById = mock(async () => undefined as unknown);
 const getChatsBySessionId = mock(async () => [] as unknown[]);
-const getChatSummariesBySessionId = mock(async () => [] as unknown[]);
+const getChatSummariesBySessionId = mock(
+  async (_sessionId: string, _userId: string) => [] as unknown[],
+);
 const getChatMessages = mock(async () => [] as unknown[]);
 
 mock.module("@/lib/db/sessions", () => ({

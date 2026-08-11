@@ -8,7 +8,9 @@ mock.module("server-only", () => ({}));
 // `auth.api.getMcpSession` to resolve the caller's session — mocking just
 // that call keeps this test off the database and off the network while
 // still exercising the real OAuth-boundary logic.
-const getMcpSession = mock(async (): Promise<Record<string, unknown> | null> => null);
+const getMcpSession = mock(
+  async (): Promise<Record<string, unknown> | null> => null,
+);
 
 mock.module("@/lib/auth/config", () => ({
   auth: {
