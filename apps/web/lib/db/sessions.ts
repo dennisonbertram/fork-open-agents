@@ -1,5 +1,15 @@
 import type { SandboxState } from "@open-agents/sandbox";
-import { and, desc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
+import {
+  and,
+  desc,
+  eq,
+  getTableColumns,
+  inArray,
+  isNull,
+  ne,
+  or,
+  sql,
+} from "drizzle-orm";
 import { db } from "./client";
 import { sanitizeJsonbValue } from "./jsonb-safe";
 import {
@@ -119,6 +129,44 @@ export async function getSessionById(sessionId: string) {
   });
 
   return session ? normalizeSessionRecord(session) : session;
+}
+
+// All session columns except `cachedDiff` / `cachedDiffUpdatedAt`, which can
+// hold megabytes of diff body JSON. Ownership/metadata callers (get_session,
+// get_messages) never read those fields, so they shouldn't pay to load them.
+const {
+  cachedDiff: _cachedDiff,
+  cachedDiffUpdatedAt: _cachedDiffUpdatedAt,
+  ...sessionMetadataColumns
+} = getTableColumns(sessions);
+
+export async function getSessionMetadataById(sessionId: string) {
+  const [session] = await db
+    .select(sessionMetadataColumns)
+    .from(sessions)
+    .where(eq(sessions.id, sessionId))
+    .limit(1);
+
+  return session ? normalizeSessionRecord(session) : session;
+}
+
+/**
+ * Diff-specific projection for the one tool (get_diff_summary) that actually
+ * needs `cachedDiff`. Keeps this the only path that pays for the diff body.
+ */
+export async function getSessionDiffById(sessionId: string) {
+  const [session] = await db
+    .select({
+      id: sessions.id,
+      userId: sessions.userId,
+      cachedDiff: sessions.cachedDiff,
+      cachedDiffUpdatedAt: sessions.cachedDiffUpdatedAt,
+    })
+    .from(sessions)
+    .where(eq(sessions.id, sessionId))
+    .limit(1);
+
+  return session;
 }
 
 export async function getShareById(shareId: string) {
@@ -778,6 +826,37 @@ export async function getChatMessages(chatId: string) {
     where: eq(chatMessages.chatId, chatId),
     orderBy: [chatMessages.createdAt, chatMessages.id],
   });
+}
+
+/**
+ * Returns only the newest `limit` messages for a chat, oldest-to-newest.
+ * Queries the page in the database (desc, then reversed) instead of loading
+ * every row to slice client-side — avoids transferring/deserializing a whole
+ * transcript's `parts` JSON to return a handful of rows.
+ *
+ * Known ceiling: this still selects the entire `parts` value for each row it
+ * returns, so the payload is bounded by the row cap rather than by what the
+ * caller renders. A single message carrying a multi-megabyte tool result can
+ * still dominate the request. If that shows up in practice, project the
+ * preview in SQL instead of selecting the whole column.
+ */
+export async function getRecentChatMessages(chatId: string, limit: number) {
+  const rows = await db.query.chatMessages.findMany({
+    where: eq(chatMessages.chatId, chatId),
+    orderBy: [desc(chatMessages.createdAt), desc(chatMessages.id)],
+    limit,
+  });
+
+  return rows.toReversed();
+}
+
+export async function countChatMessages(chatId: string): Promise<number> {
+  const [result] = await db
+    .select({ count: sql<number>`COUNT(*)::int` })
+    .from(chatMessages)
+    .where(eq(chatMessages.chatId, chatId));
+
+  return result?.count ?? 0;
 }
 
 /**

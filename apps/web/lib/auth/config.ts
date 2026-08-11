@@ -1,5 +1,7 @@
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import { createAuthMiddleware } from "better-auth/api";
+import { mcp } from "better-auth/plugins";
 import type {
   GithubProfile,
   VercelProfile,
@@ -9,9 +11,11 @@ import {
   getAllowedAuthHosts,
   getAuthBaseURLFallback,
 } from "@/lib/auth/base-url";
+import { forceMcpConsentPrompt } from "@/lib/auth/mcp-consent-hook";
 import { deriveAuthUsername } from "@/lib/auth/username";
 import { db } from "@/lib/db/client";
 import * as schema from "@/lib/db/schema";
+import { MCP_SCOPES } from "@/lib/mcp-server/context";
 
 function mapVercelProfileToUser(profile: VercelProfile): { username: string } {
   return {
@@ -55,6 +59,9 @@ export const auth = betterAuth({
       auth_sessions: schema.authSessions,
       account: schema.accounts,
       verification: schema.verification,
+      oauthApplication: schema.oauthApplications,
+      oauthAccessToken: schema.oauthAccessTokens,
+      oauthConsent: schema.oauthConsents,
     },
   }),
 
@@ -119,4 +126,63 @@ export const auth = betterAuth({
       generateId: () => nanoid(),
     },
   },
+
+  hooks: {
+    before: createAuthMiddleware(async (ctx) => forceMcpConsentPrompt(ctx)),
+  },
+
+  rateLimit: {
+    // better-auth resolves `enabled: options.rateLimit?.enabled ?? isProduction`
+    // (dist/context/create-context.mjs), so leaving this unset would make the
+    // rule below inert everywhere except production — including preview, where
+    // the same public endpoint is reachable.
+    enabled: true,
+    // Counters live in a module-level Map in better-auth's default rate
+    // limiter, so on Vercel the cap is per warm instance rather than global.
+    // Switch to `storage: "database"` (needs a rateLimit table + migration) if
+    // a global bound is ever required.
+    customRules: {
+      // /mcp/register is unauthenticated by design (RFC 7591 dynamic client
+      // registration) and each call inserts a row into oauth_applications
+      // with no other bound — cap it per IP so it can't be used to flood
+      // the table.
+      "/mcp/register": { window: 60, max: 10 },
+    },
+  },
+
+  plugins: [
+    mcp({
+      loginPage: "/mcp/login",
+      oidcConfig: {
+        loginPage: "/mcp/login",
+        consentPage: "/mcp/consent",
+        scopes: [...MCP_SCOPES],
+        defaultScope: "sessions:read",
+        // Defence in depth against a malicious dynamically-registered client
+        // supplying its own code_verifier: require PKCE on every authorize
+        // request and disallow the weak "plain" challenge method (the mcp
+        // plugin otherwise defaults requirePKCE to falsy/unset and
+        // allowPlainCodeChallengeMethod to true).
+        requirePKCE: true,
+        allowPlainCodeChallengeMethod: false,
+        // better-auth's discovery documents default scopes_supported to the
+        // OIDC-only set (openid/profile/email/offline_access), so a
+        // spec-following MCP client that requests the advertised scopes gets
+        // zero MCP scopes and sees no tools. Advertise the real MCP scopes
+        // too. Read by getMCPProtectedResourceMetadata directly, and by the
+        // hand-built AS discovery route (getMCPProviderMetadata's issuer
+        // check is broken for our dynamic baseURL config, see
+        // app/.well-known/oauth-authorization-server/route.ts).
+        metadata: {
+          scopes_supported: [
+            ...MCP_SCOPES,
+            "openid",
+            "profile",
+            "email",
+            "offline_access",
+          ],
+        },
+      },
+    }),
+  ],
 });
