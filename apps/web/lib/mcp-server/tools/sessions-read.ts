@@ -1,10 +1,12 @@
 import { z } from "zod";
 import {
+  countChatMessages,
   getChatById,
-  getChatMessages,
   getChatSummariesBySessionId,
   getChatsBySessionId,
-  getSessionById,
+  getRecentChatMessages,
+  getSessionDiffById,
+  getSessionMetadataById,
   getSessionsWithUnreadByUserId,
 } from "@/lib/db/sessions";
 import { isSandboxActive } from "@/lib/sandbox/utils";
@@ -185,14 +187,19 @@ export type GetDiffSummaryResult = {
 
 // Types derived from the real db helpers so we never duplicate (and drift
 // from) their row shapes, and never resort to `any`.
-type SessionRecord = NonNullable<Awaited<ReturnType<typeof getSessionById>>>;
+type SessionMetadataRecord = NonNullable<
+  Awaited<ReturnType<typeof getSessionMetadataById>>
+>;
+type SessionDiffRecord = NonNullable<
+  Awaited<ReturnType<typeof getSessionDiffById>>
+>;
 type SessionWithUnreadRow = Awaited<
   ReturnType<typeof getSessionsWithUnreadByUserId>
 >[number];
 type ChatSummaryRow = Awaited<
   ReturnType<typeof getChatSummariesBySessionId>
 >[number];
-type ChatMessageRow = Awaited<ReturnType<typeof getChatMessages>>[number];
+type ChatMessageRow = Awaited<ReturnType<typeof getRecentChatMessages>>[number];
 
 function toRepo(
   repoOwner: string | null,
@@ -273,11 +280,22 @@ function toChatSummary(
   };
 }
 
-async function requireOwnedSession(
+async function requireOwnedSessionMetadata(
   ctx: { userId: string },
   sessionId: string,
-): Promise<SessionRecord> {
-  const record = await getSessionById(sessionId);
+): Promise<SessionMetadataRecord> {
+  const record = await getSessionMetadataById(sessionId);
+  if (!record || record.userId !== ctx.userId) {
+    throw new McpToolError("not_found", `Session ${sessionId} was not found.`);
+  }
+  return record;
+}
+
+async function requireOwnedSessionDiff(
+  ctx: { userId: string },
+  sessionId: string,
+): Promise<SessionDiffRecord> {
+  const record = await getSessionDiffById(sessionId);
   if (!record || record.userId !== ctx.userId) {
     throw new McpToolError("not_found", `Session ${sessionId} was not found.`);
   }
@@ -426,7 +444,7 @@ export async function getSession(
   ctx: ToolCallerContext,
   input: GetSessionInput,
 ): Promise<McpSessionDetail> {
-  const record = await requireOwnedSession(ctx, input.sessionId);
+  const record = await requireOwnedSessionMetadata(ctx, input.sessionId);
   const chatRows = await getChatSummariesBySessionId(record.id, ctx.userId);
   const chats = chatRows.map((chat) => toChatSummary(record.id, chat));
 
@@ -459,7 +477,7 @@ export async function getMessages(
   ctx: ToolCallerContext,
   input: GetMessagesInput,
 ): Promise<GetMessagesResult> {
-  const record = await requireOwnedSession(ctx, input.sessionId);
+  const record = await requireOwnedSessionMetadata(ctx, input.sessionId);
 
   let chatId: string;
   if (input.chatId) {
@@ -480,10 +498,15 @@ export async function getMessages(
     chatId = mostRecent.id;
   }
 
-  const rows = await getChatMessages(chatId);
-  const total = rows.length;
-  const windowRows = rows.slice(-input.limit);
-  const messages = windowRows.map(toMessageSummary);
+  // Two reads on separate connections, so a message committed between them can
+  // make `total` disagree with the returned window by one while a turn is
+  // streaming. Accepted: this is a read-only reporting tool and the alternative
+  // (one transaction) costs a connection round trip on every call.
+  const [rows, total] = await Promise.all([
+    getRecentChatMessages(chatId, input.limit),
+    countChatMessages(chatId),
+  ]);
+  const messages = rows.map(toMessageSummary);
 
   return {
     sessionId: record.id,
@@ -499,7 +522,7 @@ export async function getDiffSummary(
   ctx: ToolCallerContext,
   input: GetDiffSummaryInput,
 ): Promise<GetDiffSummaryResult> {
-  const record = await requireOwnedSession(ctx, input.sessionId);
+  const record = await requireOwnedSessionDiff(ctx, input.sessionId);
   const url = buildSessionUrl(record.id);
   const cached: unknown = record.cachedDiff;
 

@@ -24,7 +24,13 @@ const getChatById = mock(async () => undefined);
 const getChatsBySessionId = mock(async () => []);
 const getChatSummariesBySessionId = mock(async () => []);
 const getChatMessages = mock(async () => []);
+const getSessionMetadataById = mock(async () => undefined);
+const getSessionDiffById = mock(async () => undefined);
+const getRecentChatMessages = mock(async () => []);
+const countChatMessages = mock(async () => 0);
 
+// A module mock must export EVERY symbol the module under test imports from
+// it, or the import fails at load time with "Export named 'x' not found".
 mock.module("@/lib/db/sessions", () => ({
   getSessionsWithUnreadByUserId,
   getSessionById,
@@ -32,6 +38,10 @@ mock.module("@/lib/db/sessions", () => ({
   getChatsBySessionId,
   getChatSummariesBySessionId,
   getChatMessages,
+  getSessionMetadataById,
+  getSessionDiffById,
+  getRecentChatMessages,
+  countChatMessages,
 }));
 
 const modPromise = import("./registry");

@@ -15,6 +15,19 @@ const getChatSummariesBySessionId = mock(
   async (_sessionId: string, _userId: string) => [] as unknown[],
 );
 const getChatMessages = mock(async () => [] as unknown[]);
+// F2 fix contract: lightweight ownership/metadata projection (no cachedDiff)
+// used by get_session and get_messages instead of the full-row getSessionById.
+const getSessionMetadataById = mock(async () => undefined as unknown);
+// F2 fix contract: diff-specific projection (includes cachedDiff) used only
+// by get_diff_summary instead of the full-row getSessionById.
+const getSessionDiffById = mock(async () => undefined as unknown);
+// F1 fix contract: paginated query for the newest `limit` messages, already
+// ordered oldest-to-newest, replacing the unbounded getChatMessages call.
+const getRecentChatMessages = mock(
+  async (_chatId: string, _limit: number) => [] as unknown[],
+);
+// F1 fix contract: total message count for the chat, independent of the page.
+const countChatMessages = mock(async (_chatId: string) => 0);
 
 mock.module("@/lib/db/sessions", () => ({
   getSessionsWithUnreadByUserId,
@@ -23,6 +36,10 @@ mock.module("@/lib/db/sessions", () => ({
   getChatsBySessionId,
   getChatSummariesBySessionId,
   getChatMessages,
+  getSessionMetadataById,
+  getSessionDiffById,
+  getRecentChatMessages,
+  countChatMessages,
 }));
 
 const isSandboxActive = mock(() => false);
@@ -72,6 +89,28 @@ function buildSessionRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
+// F2: buildSessionRow minus the cachedDiff fields — the shape the lightweight
+// ownership/metadata projection is expected to select.
+function buildSessionMetadataRow(overrides: Record<string, unknown> = {}) {
+  const {
+    cachedDiff: _cachedDiff,
+    cachedDiffUpdatedAt: _cachedDiffUpdatedAt,
+    ...row
+  } = buildSessionRow(overrides) as Record<string, unknown>;
+  return row;
+}
+
+// F2: the minimal diff-specific projection get_diff_summary is expected to use.
+function buildSessionDiffRow(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "session-1",
+    userId: "user-1",
+    cachedDiff: null,
+    cachedDiffUpdatedAt: null,
+    ...overrides,
+  };
+}
+
 const TOOL_NAMES = [
   "whoami",
   "list_sessions",
@@ -80,12 +119,42 @@ const TOOL_NAMES = [
   "get_diff_summary",
 ];
 
+/**
+ * Seed the session row every ownership path reads.
+ *
+ * The tools deliberately no longer call the full-row `getSessionById` — they
+ * use the narrow projections so a metadata-only call never transfers a diff
+ * body. A test that seeds only `getSessionById` therefore exercises nothing:
+ * the projection returns undefined and the tool takes the "missing" branch, so
+ * an ownership assertion would pass even with the ownership check deleted.
+ * Seed all three so the row the test describes is the row the tool sees.
+ */
+function seedSession(row: unknown): void {
+  getSessionById.mockImplementation(async () => row);
+  getSessionMetadataById.mockImplementation(async () => row);
+  getSessionDiffById.mockImplementation(async () => row);
+}
+
+/**
+ * Seed a chat transcript across the paginated helpers. `getRecentChatMessages`
+ * returns the newest `limit` rows oldest-to-newest (what the real query does
+ * after its reverse) and `countChatMessages` reports the full total, so tests
+ * keep asserting real windowing behavior rather than a pre-sliced array.
+ */
+function seedMessages(rows: unknown[]): void {
+  getChatMessages.mockImplementation(async () => rows);
+  getRecentChatMessages.mockImplementation(
+    async (_chatId: string, limit: number) => rows.slice(-limit),
+  );
+  countChatMessages.mockImplementation(async () => rows.length);
+}
+
 beforeEach(() => {
   process.env.BETTER_AUTH_URL = "https://mcp.test";
   getSessionsWithUnreadByUserId.mockClear();
   getSessionsWithUnreadByUserId.mockImplementation(async () => []);
   getSessionById.mockClear();
-  getSessionById.mockImplementation(async () => undefined);
+  seedSession(undefined);
   getChatById.mockClear();
   getChatById.mockImplementation(async () => undefined);
   getChatsBySessionId.mockClear();
@@ -93,7 +162,15 @@ beforeEach(() => {
   getChatSummariesBySessionId.mockClear();
   getChatSummariesBySessionId.mockImplementation(async () => []);
   getChatMessages.mockClear();
-  getChatMessages.mockImplementation(async () => []);
+  seedMessages([]);
+  getSessionMetadataById.mockClear();
+  getSessionMetadataById.mockImplementation(async () => undefined);
+  getSessionDiffById.mockClear();
+  getSessionDiffById.mockImplementation(async () => undefined);
+  getRecentChatMessages.mockClear();
+  getRecentChatMessages.mockImplementation(async () => []);
+  countChatMessages.mockClear();
+  countChatMessages.mockImplementation(async () => 0);
   isSandboxActive.mockClear();
 });
 
@@ -340,7 +417,7 @@ describe("getSession ownership", () => {
     const { McpToolError } = await contextModulePromise;
     const ctx = makeCtx({ userId: "user-1" });
 
-    getSessionById.mockImplementation(async () => undefined);
+    seedSession(undefined);
     let missingError: unknown;
     try {
       await getSession(ctx, { sessionId: "session-x" });
@@ -348,9 +425,7 @@ describe("getSession ownership", () => {
       missingError = error;
     }
 
-    getSessionById.mockImplementation(async () =>
-      buildSessionRow({ id: "session-x", userId: "someone-else" }),
-    );
+    seedSession(buildSessionRow({ id: "session-x", userId: "someone-else" }));
     let foreignError: unknown;
     try {
       await getSession(ctx, { sessionId: "session-x" });
@@ -375,7 +450,7 @@ describe("getSession ownership", () => {
 
   test("returns the full session detail, including chats, for the owning user", async () => {
     const { getSession } = await toolsModulePromise;
-    getSessionById.mockImplementation(async () =>
+    seedSession(
       buildSessionRow({ sandboxState: { type: "vercel", expiresAt: 0 } }),
     );
     getChatSummariesBySessionId.mockImplementation(
@@ -417,12 +492,12 @@ describe("getSession ownership", () => {
 describe("getMessages", () => {
   test("returns the newest `limit` messages, oldest-to-newest, plus the full total", async () => {
     const { getMessages } = await toolsModulePromise;
-    getSessionById.mockImplementation(async () => buildSessionRow());
+    seedSession(buildSessionRow());
     getChatById.mockImplementation(async () => ({
       id: "chat-1",
       sessionId: "session-1",
     }));
-    getChatMessages.mockImplementation(async () => [
+    seedMessages([
       {
         id: "m1",
         role: "user",
@@ -459,12 +534,12 @@ describe("getMessages", () => {
 
   test("falls back to the most recently active chat when chatId is omitted", async () => {
     const { getMessages } = await toolsModulePromise;
-    getSessionById.mockImplementation(async () => buildSessionRow());
+    seedSession(buildSessionRow());
     getChatsBySessionId.mockImplementation(async () => [
       { id: "chat-most-recent", sessionId: "session-1" },
       { id: "chat-older", sessionId: "session-1" },
     ]);
-    getChatMessages.mockImplementation(async () => []);
+    seedMessages([]);
 
     const result = await getMessages(makeCtx({}), {
       sessionId: "session-1",
@@ -476,13 +551,13 @@ describe("getMessages", () => {
 
   test("truncates each preview to MESSAGE_PREVIEW_CHARS and flags tool calls", async () => {
     const { getMessages, MESSAGE_PREVIEW_CHARS } = await toolsModulePromise;
-    getSessionById.mockImplementation(async () => buildSessionRow());
+    seedSession(buildSessionRow());
     getChatById.mockImplementation(async () => ({
       id: "chat-1",
       sessionId: "session-1",
     }));
     const longText = "x".repeat(MESSAGE_PREVIEW_CHARS + 50);
-    getChatMessages.mockImplementation(async () => [
+    seedMessages([
       {
         id: "m1",
         role: "assistant",
@@ -523,9 +598,21 @@ describe("getMessages", () => {
   test("throws not_found when the session does not belong to the caller", async () => {
     const { getMessages } = await toolsModulePromise;
     const { McpToolError } = await contextModulePromise;
-    getSessionById.mockImplementation(async () =>
-      buildSessionRow({ userId: "someone-else" }),
-    );
+    seedSession(buildSessionRow({ userId: "someone-else" }));
+    // Seed a readable chat and transcript too. Without this the tool would
+    // fall through to "session has no chats" — also a not_found — and the
+    // assertions below would pass even with the ownership check deleted.
+    getChatsBySessionId.mockImplementation(async () => [
+      { id: "chat-1", sessionId: "session-1", title: "Chat one" },
+    ]);
+    seedMessages([
+      {
+        id: "message-1",
+        role: "user",
+        createdAt: new Date("2026-01-01T00:00:00Z"),
+        parts: [{ type: "text", text: "hello" }],
+      },
+    ]);
 
     let caught: unknown;
     try {
@@ -547,7 +634,7 @@ describe("getMessages", () => {
   test("throws not_found when the requested chatId does not belong to the session", async () => {
     const { getMessages } = await toolsModulePromise;
     const { McpToolError } = await contextModulePromise;
-    getSessionById.mockImplementation(async () => buildSessionRow());
+    seedSession(buildSessionRow());
     getChatById.mockImplementation(async () => ({
       id: "chat-other",
       sessionId: "some-other-session",
@@ -574,7 +661,7 @@ describe("getMessages", () => {
   test("throws not_found when the session has no chats and chatId was omitted", async () => {
     const { getMessages } = await toolsModulePromise;
     const { McpToolError } = await contextModulePromise;
-    getSessionById.mockImplementation(async () => buildSessionRow());
+    seedSession(buildSessionRow());
     getChatsBySessionId.mockImplementation(async () => []);
 
     let caught: unknown;
@@ -595,9 +682,7 @@ describe("getDiffSummary", () => {
   test("throws not_found for a session owned by a different user", async () => {
     const { getDiffSummary } = await toolsModulePromise;
     const { McpToolError } = await contextModulePromise;
-    getSessionById.mockImplementation(async () =>
-      buildSessionRow({ userId: "someone-else" }),
-    );
+    seedSession(buildSessionRow({ userId: "someone-else" }));
 
     let caught: unknown;
     try {
@@ -616,7 +701,7 @@ describe("getDiffSummary", () => {
 
   test("returns hasCachedDiff:false with zeroed totals when there is no cached diff", async () => {
     const { getDiffSummary } = await toolsModulePromise;
-    getSessionById.mockImplementation(async () =>
+    seedSession(
       buildSessionRow({ cachedDiff: null, cachedDiffUpdatedAt: null }),
     );
 
@@ -647,7 +732,7 @@ describe("getDiffSummary", () => {
       deletions: 0,
       diff: "should never be returned by the tool",
     }));
-    getSessionById.mockImplementation(async () =>
+    seedSession(
       buildSessionRow({
         cachedDiff: {
           files,
@@ -684,5 +769,127 @@ describe("getDiffSummary", () => {
     expect(
       result.files.some((f) => "diff" in (f as Record<string, unknown>)),
     ).toBe(false);
+  });
+});
+
+// --- F1: get_messages must not load the whole transcript to return a page ---
+describe("getMessages pagination (perf fix F1)", () => {
+  test("queries only the newest `limit` rows via getRecentChatMessages, not the unbounded getChatMessages", async () => {
+    const { getMessages } = await toolsModulePromise;
+    // Seeded so today's implementation (still on getSessionById) reaches the
+    // message-fetching code instead of failing early on ownership.
+    seedSession(buildSessionRow());
+    getSessionMetadataById.mockImplementation(async () =>
+      buildSessionMetadataRow(),
+    );
+    getChatById.mockImplementation(async () => ({
+      id: "chat-1",
+      sessionId: "session-1",
+    }));
+    // Contract: getRecentChatMessages returns its page already oldest-to-newest.
+    getRecentChatMessages.mockImplementation(async () => [
+      {
+        id: "m2",
+        role: "assistant",
+        createdAt: new Date("2026-01-01T00:01:00Z"),
+        parts: [{ type: "text", text: "two" }],
+      },
+      {
+        id: "m3",
+        role: "user",
+        createdAt: new Date("2026-01-01T00:02:00Z"),
+        parts: [{ type: "text", text: "three" }],
+      },
+    ]);
+    // Full chat has 3 messages; only the newest 2 are requested.
+    countChatMessages.mockImplementation(async () => 3);
+
+    const result = await getMessages(makeCtx({}), {
+      sessionId: "session-1",
+      chatId: "chat-1",
+      limit: 2,
+    });
+
+    expect(getRecentChatMessages).toHaveBeenCalledWith("chat-1", 2);
+    expect(getChatMessages).not.toHaveBeenCalled();
+    expect(countChatMessages).toHaveBeenCalledWith("chat-1");
+    // total comes from the count query, not from the returned page length.
+    expect(result.total).toBe(3);
+    expect(result.returned).toBe(2);
+    expect(result.messages.map((m) => m.id)).toEqual(["m2", "m3"]);
+  });
+});
+
+// --- F2: ownership/metadata path must not load the cached diff ---
+describe("ownership projection avoids loading cached diff bodies (perf fix F2)", () => {
+  test("get_session uses the lightweight metadata projection, never the full-row/cached-diff helper", async () => {
+    const { getSession } = await toolsModulePromise;
+    // Seeded so today's implementation (still on getSessionById) reaches the
+    // rest of the handler instead of failing early on ownership.
+    seedSession(
+      buildSessionRow({ sandboxState: { type: "vercel", expiresAt: 0 } }),
+    );
+    getSessionMetadataById.mockImplementation(async () =>
+      buildSessionMetadataRow({
+        sandboxState: { type: "vercel", expiresAt: 0 },
+      }),
+    );
+    getChatSummariesBySessionId.mockImplementation(async () => []);
+
+    const result = await getSession(makeCtx({}), { sessionId: "session-1" });
+
+    expect(getSessionMetadataById).toHaveBeenCalledWith("session-1");
+    expect(getSessionById).not.toHaveBeenCalled();
+    expect(result.id).toBe("session-1");
+  });
+
+  test("get_messages uses the lightweight metadata projection for ownership, never the full-row/cached-diff helper", async () => {
+    const { getMessages } = await toolsModulePromise;
+    // Seeded so today's implementation (still on getSessionById) reaches the
+    // rest of the handler instead of failing early on ownership.
+    seedSession(buildSessionRow());
+    getSessionMetadataById.mockImplementation(async () =>
+      buildSessionMetadataRow(),
+    );
+    getChatById.mockImplementation(async () => ({
+      id: "chat-1",
+      sessionId: "session-1",
+    }));
+    getRecentChatMessages.mockImplementation(async () => []);
+    countChatMessages.mockImplementation(async () => 0);
+
+    await getMessages(makeCtx({}), {
+      sessionId: "session-1",
+      chatId: "chat-1",
+      limit: 20,
+    });
+
+    expect(getSessionMetadataById).toHaveBeenCalledWith("session-1");
+    expect(getSessionById).not.toHaveBeenCalled();
+  });
+
+  test("get_diff_summary uses the diff-specific projection, never the lightweight metadata projection", async () => {
+    const { getDiffSummary } = await toolsModulePromise;
+    const cachedDiff = {
+      files: [],
+      baseRef: "origin/main",
+      summary: { totalFiles: 0, totalAdditions: 0, totalDeletions: 0 },
+    };
+    const cachedDiffUpdatedAt = new Date("2026-01-03T00:00:00Z");
+    // Seeded so today's implementation (still on getSessionById) reaches the
+    // rest of the handler instead of failing early on ownership.
+    seedSession(buildSessionRow({ cachedDiff, cachedDiffUpdatedAt }));
+    getSessionDiffById.mockImplementation(async () =>
+      buildSessionDiffRow({ cachedDiff, cachedDiffUpdatedAt }),
+    );
+
+    const result = await getDiffSummary(makeCtx({}), {
+      sessionId: "session-1",
+    });
+
+    expect(getSessionDiffById).toHaveBeenCalledWith("session-1");
+    expect(getSessionMetadataById).not.toHaveBeenCalled();
+    expect(getSessionById).not.toHaveBeenCalled();
+    expect(result.hasCachedDiff).toBe(true);
   });
 });
