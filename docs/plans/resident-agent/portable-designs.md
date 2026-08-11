@@ -836,9 +836,14 @@ exploration, tools `read`/`grep`/`glob`/`bash`-read-only), `executor`
 tool set, own `stepCountIs(SUBAGENT_STEP_LIMIT)` — `explorer.ts:78-117`
 shows the shape: hard-coded default model
 `gateway("anthropic/claude-haiku-4.5")`, a fixed tool object
-(`{ read, grep, glob, bash }`, no `write`/`edit` — enforced by omission, not
-prompt instruction, mirroring §5's structural judgment/mechanics split), and
-a `callOptionsSchema` requiring `task`, `instructions`, `sandbox`, `model`.
+(`{ read, grep, glob, bash }`, no `write`/`edit`), and a `callOptionsSchema`
+requiring `task`, `instructions`, `sandbox`, `model`. Note the isolation is
+only *partially* structural: `write`/`edit` are absent by omission, but the
+explorer holds the ordinary `bashTool` (`explorer.ts:5`), whose executor
+accepts arbitrary shell — its read-only discipline is prompt text
+(`explorer.ts:48,59-61`), so a disobedient `echo ... > file` can mutate the
+shared workspace without the writer lease or drift checks (explorer is not
+in `WRITE_CAPABLE_SUBAGENTS`, `task.ts:126`).
 
 Workspace policy is a three-value declaration, resolved to a two-value
 execution mode (`delegated-workspace.ts:9-39`):
@@ -898,9 +903,13 @@ prior model-failure diagnostic unreachable (`task.ts:72-79`).
 - Every terminal outcome (success, blocked, failed, cancelled) produces the
   same typed completion-packet shape with evidence refs — a caller doesn't
   need to special-case "how do I know what happened" per failure mode.
-- Read-only vs. write-capable is enforced by which tools a subagent type is
-  literally given (`explorer` has no `write`/`edit` in its tool object at
-  all), the same structural-not-prompted discipline as §5.
+- Write-capable roles are separated by tool grant (`executor`/`design` get
+  `write`/`edit`; `explorer` does not) — but see the caveat above: the
+  explorer's unrestricted `bash` makes its read-only property prompt-enforced,
+  not structural. A resident-agent rebuild should not copy this as-is:
+  either give explorer-equivalents a genuinely restricted exec (command
+  allowlist or read-only sandbox user) or subject every bash-holding
+  delegate to the writer-lease/drift-check protocol.
 
 **What I would change:**
 - The roster/override mechanism (`roster.ts`) is described as "no new
