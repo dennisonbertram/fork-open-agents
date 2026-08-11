@@ -1,0 +1,823 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Resident Agent Service — Cloudflare Architecture</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 32px 16px;
+        background: #fafaf9;
+        font-family:
+          system-ui,
+          -apple-system,
+          sans-serif;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+      svg {
+        max-width: 1280px;
+        width: 100%;
+        height: auto;
+      }
+      .caption {
+        color: #64748b;
+        font-size: 13px;
+        margin-top: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <svg
+      viewBox="0 0 1280 990"
+      font-family="system-ui, -apple-system, sans-serif"
+    >
+      <defs>
+        <marker
+          id="arrow"
+          viewBox="0 0 10 10"
+          refX="9"
+          refY="5"
+          markerWidth="7"
+          markerHeight="7"
+          orient="auto-start-reverse"
+        >
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="#475569" />
+        </marker>
+      </defs>
+
+      <!-- Title -->
+      <text
+        x="640"
+        y="40"
+        text-anchor="middle"
+        font-size="22"
+        font-weight="700"
+        fill="#0f172a"
+      >
+        Resident Agent Service — Cloudflare architecture
+      </text>
+      <text x="640" y="66" text-anchor="middle" font-size="14" fill="#64748b">
+        any client → resident worker → pluggable brain · the client cannot tell
+        which brain the worker has
+      </text>
+
+      <!-- External clients -->
+      <rect
+        x="30"
+        y="110"
+        width="240"
+        height="240"
+        rx="12"
+        fill="#eef2ff"
+        stroke="#6366f1"
+        stroke-width="1.5"
+      />
+      <text
+        x="150"
+        y="136"
+        text-anchor="middle"
+        font-size="14"
+        font-weight="700"
+        fill="#3730a3"
+      >
+        External clients
+      </text>
+      <text
+        x="150"
+        y="154"
+        text-anchor="middle"
+        font-size="11.5"
+        fill="#6366f1"
+      >
+        your desktop · anywhere
+      </text>
+      <rect
+        x="50"
+        y="166"
+        width="200"
+        height="34"
+        rx="8"
+        fill="#ffffff"
+        stroke="#6366f1"
+      />
+      <text x="150" y="188" text-anchor="middle" font-size="13" fill="#1e293b">
+        Claude Code
+      </text>
+      <rect
+        x="50"
+        y="206"
+        width="200"
+        height="34"
+        rx="8"
+        fill="#ffffff"
+        stroke="#6366f1"
+      />
+      <text x="150" y="228" text-anchor="middle" font-size="13" fill="#1e293b">
+        Codex
+      </text>
+      <rect
+        x="50"
+        y="246"
+        width="200"
+        height="34"
+        rx="8"
+        fill="#ffffff"
+        stroke="#6366f1"
+      />
+      <text x="150" y="268" text-anchor="middle" font-size="13" fill="#1e293b">
+        Devin
+      </text>
+      <rect
+        x="50"
+        y="286"
+        width="200"
+        height="34"
+        rx="8"
+        fill="#ffffff"
+        stroke="#6366f1"
+      />
+      <text x="150" y="308" text-anchor="middle" font-size="13" fill="#1e293b">
+        ChatGPT · future agents
+      </text>
+
+      <!-- Arrow clients -> MCP door -->
+      <line
+        x1="270"
+        y1="230"
+        x2="386"
+        y2="200"
+        stroke="#475569"
+        stroke-width="1.5"
+        marker-end="url(#arrow)"
+      />
+      <text x="280" y="178" font-size="12" font-weight="600" fill="#475569">
+        MCP + OAuth
+      </text>
+
+      <!-- MCP front door -->
+      <rect
+        x="390"
+        y="110"
+        width="450"
+        height="150"
+        rx="12"
+        fill="#ffffff"
+        stroke="#0ea5e9"
+        stroke-width="2"
+      />
+      <text
+        x="615"
+        y="140"
+        text-anchor="middle"
+        font-size="14.5"
+        font-weight="700"
+        fill="#0369a1"
+      >
+        MCP Front Door — Cloudflare Worker
+      </text>
+      <text
+        x="615"
+        y="164"
+        text-anchor="middle"
+        font-size="12.5"
+        fill="#1e293b"
+      >
+        create_worker · task_worker · ask_worker · get_state · stop
+      </text>
+      <text
+        x="615"
+        y="186"
+        text-anchor="middle"
+        font-size="12.5"
+        fill="#1e293b"
+      >
+        OAuth 2.1 · dynamic client registration
+      </text>
+      <text
+        x="615"
+        y="208"
+        text-anchor="middle"
+        font-size="12.5"
+        fill="#1e293b"
+      >
+        any conforming agent attaches to your account
+      </text>
+      <text
+        x="615"
+        y="232"
+        text-anchor="middle"
+        font-size="11.5"
+        font-style="italic"
+        fill="#64748b"
+      >
+        stateless — routes by worker name
+      </text>
+
+      <!-- Recursion annotation -->
+      <rect
+        x="880"
+        y="110"
+        width="350"
+        height="150"
+        rx="12"
+        fill="#fffbeb"
+        stroke="#d97706"
+        stroke-width="1.5"
+      />
+      <text
+        x="1055"
+        y="136"
+        text-anchor="middle"
+        font-size="13.5"
+        font-weight="700"
+        fill="#92400e"
+      >
+        The recursion
+      </text>
+      <text x="896" y="160" font-size="12" fill="#78350f">
+        Clients treat the worker the way the
+      </text>
+      <text x="896" y="180" font-size="12" fill="#78350f">
+        worker treats the inner agent:
+      </text>
+      <text x="896" y="200" font-size="12" fill="#78350f">
+        owner keeps the context · visitors are
+      </text>
+      <text x="896" y="220" font-size="12" fill="#78350f">
+        stateless · artifacts are the handoff —
+      </text>
+      <text x="896" y="240" font-size="12" fill="#78350f">
+        same pattern at every level
+      </text>
+
+      <!-- D1 -->
+      <rect
+        x="880"
+        y="290"
+        width="350"
+        height="58"
+        rx="10"
+        fill="#f8fafc"
+        stroke="#94a3b8"
+        stroke-width="1.5"
+      />
+      <text
+        x="1055"
+        y="314"
+        text-anchor="middle"
+        font-size="13"
+        font-weight="700"
+        fill="#334155"
+      >
+        D1 — global registry
+      </text>
+      <text x="1055" y="336" text-anchor="middle" font-size="12" fill="#475569">
+        accounts · workers · grants · audit
+      </text>
+      <line
+        x1="840"
+        y1="200"
+        x2="1000"
+        y2="288"
+        stroke="#94a3b8"
+        stroke-width="1.2"
+        stroke-dasharray="4 3"
+      />
+
+      <!-- Arrow door -> DO -->
+      <line
+        x1="615"
+        y1="260"
+        x2="615"
+        y2="404"
+        stroke="#475569"
+        stroke-width="1.5"
+        marker-end="url(#arrow)"
+      />
+      <text x="632" y="330" font-size="12" font-weight="600" fill="#475569">
+        route by worker name
+      </text>
+
+      <!-- Worker DO -->
+      <rect
+        x="300"
+        y="410"
+        width="640"
+        height="270"
+        rx="14"
+        fill="#f5f3ff"
+        stroke="#8b5cf6"
+        stroke-width="2"
+      />
+      <text
+        x="620"
+        y="440"
+        text-anchor="middle"
+        font-size="15"
+        font-weight="700"
+        fill="#5b21b6"
+      >
+        Worker Durable Object — one per task (“fix-issue-42”)
+      </text>
+      <text
+        x="620"
+        y="462"
+        text-anchor="middle"
+        font-size="11.5"
+        fill="#7c3aed"
+      >
+        durable identity · hibernates when idle · alarm wakes · single-threaded
+        attention
+      </text>
+
+      <!-- Owner model -->
+      <rect
+        x="322"
+        y="486"
+        width="196"
+        height="130"
+        rx="10"
+        fill="#dcfce7"
+        stroke="#16a34a"
+        stroke-width="1.5"
+      />
+      <text
+        x="420"
+        y="510"
+        text-anchor="middle"
+        font-size="13"
+        font-weight="700"
+        fill="#14532d"
+      >
+        Owner model (LLM)
+      </text>
+      <text
+        x="420"
+        y="534"
+        text-anchor="middle"
+        font-size="11.5"
+        fill="#1e293b"
+      >
+        plans · delegates
+      </text>
+      <text
+        x="420"
+        y="554"
+        text-anchor="middle"
+        font-size="11.5"
+        fill="#1e293b"
+      >
+        answers follow-ups
+      </text>
+      <text
+        x="420"
+        y="574"
+        text-anchor="middle"
+        font-size="11.5"
+        fill="#1e293b"
+      >
+        verifies, doesn’t trust
+      </text>
+      <text
+        x="420"
+        y="596"
+        text-anchor="middle"
+        font-size="11"
+        font-style="italic"
+        fill="#15803d"
+      >
+        model is swappable
+      </text>
+
+      <!-- SQLite memory -->
+      <rect
+        x="530"
+        y="486"
+        width="196"
+        height="130"
+        rx="10"
+        fill="#ede9fe"
+        stroke="#7c3aed"
+        stroke-width="1.5"
+      />
+      <text
+        x="628"
+        y="510"
+        text-anchor="middle"
+        font-size="13"
+        font-weight="700"
+        fill="#4c1d95"
+      >
+        SQLite memory
+      </text>
+      <text
+        x="628"
+        y="534"
+        text-anchor="middle"
+        font-size="11.5"
+        fill="#1e293b"
+      >
+        plan · decision log
+      </text>
+      <text
+        x="628"
+        y="554"
+        text-anchor="middle"
+        font-size="11.5"
+        fill="#1e293b"
+      >
+        task graph · summaries
+      </text>
+      <text
+        x="628"
+        y="574"
+        text-anchor="middle"
+        font-size="11.5"
+        fill="#1e293b"
+      >
+        survives model swaps
+      </text>
+      <text
+        x="628"
+        y="596"
+        text-anchor="middle"
+        font-size="11"
+        font-style="italic"
+        fill="#6d28d9"
+      >
+        is the worker
+      </text>
+
+      <!-- Deterministic tools -->
+      <rect
+        x="738"
+        y="486"
+        width="196"
+        height="130"
+        rx="10"
+        fill="#ffedd5"
+        stroke="#ea580c"
+        stroke-width="1.5"
+      />
+      <text
+        x="836"
+        y="510"
+        text-anchor="middle"
+        font-size="13"
+        font-weight="700"
+        fill="#7c2d12"
+      >
+        Deterministic tools
+      </text>
+      <text
+        x="836"
+        y="534"
+        text-anchor="middle"
+        font-size="11.5"
+        fill="#1e293b"
+      >
+        clone · branch · diff
+      </text>
+      <text
+        x="836"
+        y="554"
+        text-anchor="middle"
+        font-size="11.5"
+        fill="#1e293b"
+      >
+        test · push · create_pr
+      </text>
+      <text
+        x="836"
+        y="574"
+        text-anchor="middle"
+        font-size="11.5"
+        fill="#1e293b"
+      >
+        no LLM inside — code
+      </text>
+      <text
+        x="836"
+        y="596"
+        text-anchor="middle"
+        font-size="11"
+        font-style="italic"
+        fill="#c2410c"
+      >
+        only holder of repo keys
+      </text>
+
+      <text x="620" y="654" text-anchor="middle" font-size="12" fill="#64748b">
+        judgment lives in the model · mechanics live in code · memory lives in
+        the DO
+      </text>
+
+      <!-- Arrow DO -> Workflow -->
+      <line
+        x1="420"
+        y1="680"
+        x2="246"
+        y2="716"
+        stroke="#475569"
+        stroke-width="1.5"
+        marker-end="url(#arrow)"
+      />
+      <text x="272" y="694" font-size="12" font-weight="600" fill="#475569">
+        starts turn
+      </text>
+
+      <!-- Workflow -->
+      <rect
+        x="40"
+        y="720"
+        width="320"
+        height="150"
+        rx="12"
+        fill="#ecfeff"
+        stroke="#06b6d4"
+        stroke-width="1.5"
+      />
+      <text
+        x="200"
+        y="748"
+        text-anchor="middle"
+        font-size="14"
+        font-weight="700"
+        fill="#155e75"
+      >
+        Turn = Workflow instance
+      </text>
+      <text x="200" y="774" text-anchor="middle" font-size="12" fill="#1e293b">
+        durable execution of one run
+      </text>
+      <text x="200" y="794" text-anchor="middle" font-size="12" fill="#1e293b">
+        survives hibernation &amp; deploys
+      </text>
+      <text x="200" y="814" text-anchor="middle" font-size="12" fill="#1e293b">
+        model calls + sandbox ops as steps
+      </text>
+      <text
+        x="200"
+        y="840"
+        text-anchor="middle"
+        font-size="11"
+        font-style="italic"
+        fill="#0e7490"
+      >
+        DO CPU limits never touch the loop
+      </text>
+
+      <!-- Arrow DO -> Sandbox -->
+      <line
+        x1="640"
+        y1="680"
+        x2="640"
+        y2="714"
+        stroke="#475569"
+        stroke-width="1.5"
+        marker-end="url(#arrow)"
+      />
+      <text x="656" y="704" font-size="12" font-weight="600" fill="#475569">
+        brief · supervise · verify
+      </text>
+
+      <!-- Sandbox -->
+      <rect
+        x="430"
+        y="720"
+        width="520"
+        height="200"
+        rx="14"
+        fill="#f8fafc"
+        stroke="#64748b"
+        stroke-width="1.5"
+        stroke-dasharray="7 4"
+      />
+      <text
+        x="690"
+        y="746"
+        text-anchor="middle"
+        font-size="14"
+        font-weight="700"
+        fill="#334155"
+      >
+        Sandbox container — ephemeral cattle
+      </text>
+
+      <!-- Inner agent -->
+      <rect
+        x="452"
+        y="764"
+        width="230"
+        height="130"
+        rx="10"
+        fill="#dcfce7"
+        stroke="#16a34a"
+        stroke-width="1.5"
+      />
+      <text
+        x="567"
+        y="788"
+        text-anchor="middle"
+        font-size="13"
+        font-weight="700"
+        fill="#14532d"
+      >
+        Inner agent (the brain)
+      </text>
+      <text
+        x="567"
+        y="812"
+        text-anchor="middle"
+        font-size="11.5"
+        fill="#1e293b"
+      >
+        Pi · Claude Code · …
+      </text>
+      <text
+        x="567"
+        y="832"
+        text-anchor="middle"
+        font-size="11.5"
+        fill="#1e293b"
+      >
+        boots fresh each task
+      </text>
+      <text
+        x="567"
+        y="852"
+        text-anchor="middle"
+        font-size="11.5"
+        fill="#1e293b"
+      >
+        reads PLAN.md as its brief
+      </text>
+      <text
+        x="567"
+        y="874"
+        text-anchor="middle"
+        font-size="11"
+        font-style="italic"
+        fill="#15803d"
+      >
+        no repo keys
+      </text>
+
+      <!-- Workspace -->
+      <rect
+        x="700"
+        y="764"
+        width="228"
+        height="130"
+        rx="10"
+        fill="#ffffff"
+        stroke="#94a3b8"
+        stroke-width="1.5"
+      />
+      <text
+        x="814"
+        y="788"
+        text-anchor="middle"
+        font-size="13"
+        font-weight="700"
+        fill="#334155"
+      >
+        workspace/
+      </text>
+      <text
+        x="814"
+        y="812"
+        text-anchor="middle"
+        font-size="11.5"
+        fill="#1e293b"
+      >
+        git repo checkout
+      </text>
+      <text
+        x="814"
+        y="832"
+        text-anchor="middle"
+        font-size="11.5"
+        fill="#1e293b"
+      >
+        PLAN.md · DECISIONS.md
+      </text>
+      <text
+        x="814"
+        y="852"
+        text-anchor="middle"
+        font-size="11.5"
+        fill="#1e293b"
+      >
+        artifacts = the handoff
+      </text>
+
+      <!-- Arrow workspace <-> R2 -->
+      <line
+        x1="928"
+        y1="830"
+        x2="994"
+        y2="830"
+        stroke="#475569"
+        stroke-width="1.5"
+        marker-start="url(#arrow)"
+        marker-end="url(#arrow)"
+      />
+      <text
+        x="961"
+        y="818"
+        text-anchor="middle"
+        font-size="11.5"
+        font-weight="600"
+        fill="#475569"
+      >
+        mounted
+      </text>
+
+      <!-- R2 -->
+      <rect
+        x="1000"
+        y="764"
+        width="230"
+        height="130"
+        rx="10"
+        fill="#fefce8"
+        stroke="#ca8a04"
+        stroke-width="1.5"
+      />
+      <text
+        x="1115"
+        y="788"
+        text-anchor="middle"
+        font-size="13"
+        font-weight="700"
+        fill="#713f12"
+      >
+        R2 bucket
+      </text>
+      <text
+        x="1115"
+        y="812"
+        text-anchor="middle"
+        font-size="11.5"
+        fill="#1e293b"
+      >
+        workspace mount
+      </text>
+      <text
+        x="1115"
+        y="832"
+        text-anchor="middle"
+        font-size="11.5"
+        fill="#1e293b"
+      >
+        files = ground truth
+      </text>
+      <text
+        x="1115"
+        y="852"
+        text-anchor="middle"
+        font-size="11"
+        font-style="italic"
+        fill="#a16207"
+      >
+        checkpoints are free
+      </text>
+
+      <!-- Legend -->
+      <circle cx="60" cy="956" r="6" fill="#16a34a" />
+      <text x="74" y="960" font-size="12" fill="#334155">
+        judgment (model work)
+      </text>
+      <circle cx="250" cy="956" r="6" fill="#ea580c" />
+      <text x="264" y="960" font-size="12" fill="#334155">
+        mechanics (deterministic code)
+      </text>
+      <circle cx="500" cy="956" r="6" fill="#7c3aed" />
+      <text x="514" y="960" font-size="12" fill="#334155">
+        durable memory / identity
+      </text>
+      <rect
+        x="730"
+        y="950"
+        width="12"
+        height="12"
+        fill="#f8fafc"
+        stroke="#64748b"
+        stroke-dasharray="3 2"
+      />
+      <text x="750" y="960" font-size="12" fill="#334155">ephemeral</text>
+      <circle cx="850" cy="956" r="6" fill="#0ea5e9" />
+      <text x="864" y="960" font-size="12" fill="#334155">
+        platform service
+      </text>
+    </svg>
+    <p class="caption">
+      Sketch — resident agent service on Cloudflare. Companion to
+      docs/plans/resident-agent-service.md.
+    </p>
+  </body>
+</html>
