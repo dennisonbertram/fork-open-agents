@@ -348,10 +348,12 @@ dev/preview/prod resources, proven by deployed fingerprints, not config
 files. No cross-owner existence disclosure. Jurisdiction: TBD before M1
 (decider: founder; DO placement is permanent).
 
-**Cost visibility.** Per turn: DO, Workflow, Sandbox, R2, model usage with
-provenance `observed`/`derived`/`unknown` — `unknown` never rendered as
-zero. Go/no-go cost threshold: TBD before M5 (decider: founder). "Sane" is
-not a criterion.
+**Cost visibility.** Per turn: DO, Workflow, Sandbox, R2 **storage**,
+**egress**, and model usage with provenance
+`observed`/`derived`/`unknown` — `unknown` never rendered as zero.
+**Cost is go-gating at M5; the model-swap study is evidence only.**
+Go/no-go cost threshold: TBD before M5 (decider: founder). "Sane" is not
+a criterion.
 
 **Change control.** Exact versions pinned in lockfile and ledger; M0
 generates the authoritative dependency manifest from registries (prose

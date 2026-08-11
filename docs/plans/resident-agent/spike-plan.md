@@ -44,6 +44,10 @@ provisioning delay is recorded, not fatal.)
   method. One fixture, one brain, two gate clients. Breadth is the enemy.
 - **Evidence over narration**: a milestone passes when the independent
   evaluator says so from ledger evidence, never when an agent reports done.
+- **Operational ceiling before fan-out**: the `[env.test]` Worker carries a
+  hard concurrency/spend ceiling (values set at P0 by the founder,
+  configured as environment vars on the test Worker) before any autonomous
+  fan-out runs. An ops guard, not a product feature or test target.
 
 ## Milestones
 
@@ -69,9 +73,10 @@ Deliverables, all proven by running them:
    deployed resource identities — config files are not proof.
 2. **Core evidence ledger** (schema versioned): correlation ids, sequenced
    status transitions, command argv/exit codes, before/after digests,
-   redaction + secret-canary scan. App-level `run_id` threads Worker → DO →
-   Workflow instance → container env → AI Gateway metadata (no first-party
-   propagation exists — the ledger *is* the correlation).
+   redaction + secret-canary scan. App-level `run_id` (= the Workflow
+   instance id, prd.md §7.1) threads Worker → DO → Workflow instance →
+   container env — and AI Gateway metadata on provider-backed turns only
+   (no first-party propagation exists — the ledger *is* the correlation).
 3. **Independent evaluator**: deterministic, in a protected path
    implementing agents cannot edit, verdicts only from ledger evidence.
    Prove it by handing it a deliberately corrupted bundle.
@@ -186,11 +191,13 @@ second client). **Evidence for the decision review, not a go-gate.**
 
 ### M5 — Cost, then swap (target: days 18–21)
 
-Cost attribution first: DO/Workflow/Sandbox/R2/model usage from real
-provider evidence with provenance; BYOK `default`-alias proven before
-capture (silent Unified-Billing fallback invalidates the comparison; the
-2026-08-07 `env.AI` unification is days old — re-verify call shape). Then
-the model swap with the **frozen rubric**: two swap points; memory-only
+Cost attribution first: DO / Workflow / Sandbox / R2 storage / egress /
+model usage from real provider evidence with provenance (`unknown` with a
+reason where unattributable — never zero); BYOK `default`-alias proven
+before capture (silent Unified-Billing fallback invalidates the
+comparison; the 2026-08-07 `env.AI` unification is days old — re-verify
+call shape). **Cost is go-gating; the model-swap study is evidence, not
+gate.** Then the model swap with the **frozen rubric**: two swap points; memory-only
 (workspace access structurally denied) vs memory+workspace; scored on
 repeated/contradicted work vs the task graph, respect for a seeded
 non-obvious recorded decision, time-to-first-productive-action. Thresholds
