@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { loadRegisteredMcpClient } from "@/lib/auth/mcp-consent-record";
 import { SignInButton } from "@/components/auth/sign-in-button";
 import {
   Card,
@@ -59,14 +60,38 @@ export default async function McpLoginPage({
 
   const authorizeUrl = `/api/auth/mcp/authorize?${queryString}`;
 
+  // Never echo `client_id` back to the page. At this point it is unverified
+  // text from the URL, so rendering it verbatim would let a crafted link put
+  // arbitrary words on our own domain. Resolve it against the registered
+  // client instead, and fall back to neutral copy when it does not resolve.
+  const client = await loadRegisteredMcpClient(clientId);
+
   return (
     <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-background p-8 text-foreground">
       <Card className="w-full max-w-sm">
         <CardHeader>
           <CardTitle>Connect an MCP client</CardTitle>
           <CardDescription>
-            <span className="font-medium text-foreground">{clientId}</span> is
-            requesting access to your Open Agents sessions over MCP.
+            {client ? (
+              <>
+                <span className="font-medium text-foreground">
+                  {client.clientName}
+                </span>
+                {client.redirectHosts.length > 0 ? (
+                  <span> ({client.redirectHosts.join(", ")})</span>
+                ) : null}
+                <span>
+                  {" "}
+                  is requesting access to your Open Agents sessions over MCP.
+                </span>
+              </>
+            ) : (
+              <span>
+                An MCP client is requesting access to your Open Agents sessions.
+                You will be asked to approve exactly what it can read after you
+                sign in.
+              </span>
+            )}
           </CardDescription>
         </CardHeader>
         <CardContent>
