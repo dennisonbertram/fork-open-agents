@@ -91,3 +91,46 @@ export async function loadPendingMcpConsent(
     scopes: Array.isArray(value.scope) ? value.scope : [],
   };
 }
+
+export type RegisteredMcpClient = {
+  clientName: string;
+  redirectHosts: string[];
+};
+
+/**
+ * Look up a registered MCP client by the `client_id` in an authorize URL.
+ *
+ * The sign-in page reached at the start of the OAuth flow has no session yet,
+ * so it cannot use `loadPendingMcpConsent`. It still must not echo the raw
+ * query string: `client_id` is arbitrary attacker-chosen text at that point,
+ * and rendering it verbatim on our own domain is a phishing surface
+ * ("?client_id=Your+session+expired"). Resolve it against the registered row
+ * instead and return null when it does not exist, so the caller can fall back
+ * to neutral copy rather than repeating the URL back to the user.
+ */
+export async function loadRegisteredMcpClient(
+  clientId: string,
+): Promise<RegisteredMcpClient | null> {
+  if (!clientId) {
+    return null;
+  }
+
+  const client = await db.query.oauthApplications.findFirst({
+    where: eq(oauthApplications.clientId, clientId),
+  });
+
+  if (!client || client.disabled) {
+    return null;
+  }
+
+  const redirectHosts = (client.redirectUrls ?? "")
+    .split(",")
+    .map((url) => url.trim())
+    .filter(Boolean)
+    .map(hostOf);
+
+  return {
+    clientName: client.name || client.clientId,
+    redirectHosts: [...new Set(redirectHosts)],
+  };
+}
