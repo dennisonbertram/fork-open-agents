@@ -38,10 +38,21 @@ type OwnedSessionRecord = NonNullable<
 async function requireOwnedSession(
   userId: string,
   sessionId: string,
+  options: { rejectArchived?: boolean } = {},
 ): Promise<OwnedSessionRecord> {
   const record = await getSessionMetadataById(sessionId);
   if (!record || record.userId !== userId) {
     throw new McpToolError("not_found", `Session ${sessionId} was not found.`);
+  }
+  // The browser route refuses a turn on an archived session (its sandbox is
+  // torn down), so an MCP token must not be a way around that — otherwise a
+  // run bills for work against a workspace that no longer exists. Cancelling
+  // an archived session's run stays allowed: stopping is always safe.
+  if (options.rejectArchived && record.status === "archived") {
+    throw new McpToolError(
+      "invalid_request",
+      `Session ${sessionId} is archived.`,
+    );
   }
   return record;
 }
@@ -173,11 +184,13 @@ export async function startSession(
   // Deferring the import into the handler body keeps those unrelated tests'
   // mocks untouched, since they never call these handlers.
   const [
-    { createChat, createSession },
+    { getUserIdentity },
+    { createSessionCore },
     { startChatRun },
     { checkRateLimit, rateLimitKey },
   ] = await Promise.all([
-    import("@/lib/db/sessions"),
+    import("@/lib/db/users"),
+    import("@/lib/sessions/create-session"),
     import("@/lib/chat/start-run"),
     import("@/lib/rate-limit"),
   ]);
@@ -194,22 +207,33 @@ export async function startSession(
     );
   }
 
-  const session = await createSession({
-    id: nanoid(),
+  // Go through createSessionCore rather than inserting a session and a chat
+  // directly. It is the same path the browser uses, so an MCP-started session
+  // picks up the user's default model and inference profile (otherwise the run
+  // silently executes on the schema default and bills through the platform
+  // gateway instead of the user's own key), their repo defaults for branch and
+  // auto-commit behavior, and their Composio selection — and it creates the
+  // session and its first chat in one transaction rather than two inserts that
+  // can leave an orphaned session behind.
+  const identity = await getUserIdentity(ctx.userId);
+  if (!identity) {
+    throw new McpToolError("not_found", "This account was not found.");
+  }
+
+  const { session, chat } = await createSessionCore({
     userId: ctx.userId,
+    username: identity.username,
+    name: identity.name ?? undefined,
     title: deriveTitle(input.prompt),
     repoOwner: input.repoOwner,
     repoName: input.repoName,
     branch: input.branch,
-    runtimeMode: input.runtimeMode ?? "classic",
-    sandboxState: { type: "vercel" },
-    lifecycleState: "provisioning",
-  });
-
-  const chat = await createChat({
-    id: nanoid(),
-    sessionId: session.id,
-    title: "New chat",
+    runtimeMode: input.runtimeMode,
+    // No next/server `after` outside a request, so run the prewarm kick
+    // inline. It is already fire-and-forget internally.
+    scheduleBackgroundWork: (callback) => {
+      void callback();
+    },
   });
 
   const result = await startChatRun({
@@ -257,7 +281,9 @@ export async function sendMessage(
     import("@/lib/chat/messages-from-db"),
   ]);
 
-  const record = await requireOwnedSession(ctx.userId, input.sessionId);
+  const record = await requireOwnedSession(ctx.userId, input.sessionId, {
+    rejectArchived: true,
+  });
   const chatId = await resolveChatForSend(record.id, input.chatId);
   const userMessage = buildUserMessage(input.prompt);
   const messages = await buildMessagesFromDb(chatId, userMessage);

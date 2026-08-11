@@ -5,20 +5,30 @@ mock.module("server-only", () => ({}));
 // Contract this test file establishes for the not-yet-written
 // `sessions-write.ts` (see AGENTS.md task for module 2):
 //
-//   - `createSession` / `createChat` (existing db/sessions.ts helpers) do the
-//     session+chat provisioning for start_session.
+//   - `createSessionCore` (lib/sessions/create-session.ts) does the
+//     session+chat provisioning for start_session. It is the same path the
+//     browser route uses, so an MCP-started session inherits the user's
+//     default model, inference profile, and repo defaults; hand-rolling the
+//     two inserts here silently dropped all of that.
+//   - `getUserIdentity` supplies the username createSessionCore needs to
+//     generate a branch name, since a token-authenticated caller has no
+//     auth session to read it from.
 //   - `getSessionMetadataById` (the SAME lightweight ownership projection the
 //     read tools use — see sessions-read.ts) is the ownership check for
 //     send_message and stop_run.
 //   - `getChatById` validates an explicit chatId belongs to the session.
 //   - `getChatsBySessionId` (already ordered most-recent-activity-first, see
 //     lib/db/sessions.ts) is the fallback when chatId is omitted.
-const createSession = mock(
-  async (_data: unknown) => ({ id: "session-1", userId: "user-1" }) as unknown,
+const createSessionCore = mock(
+  async (_input: unknown) =>
+    ({
+      session: { id: "session-1", userId: "user-1" },
+      chat: { id: "chat-1", sessionId: "session-1" },
+    }) as unknown,
 );
-const createChat = mock(
-  async (_data: unknown) =>
-    ({ id: "chat-1", sessionId: "session-1" }) as unknown,
+const getUserIdentity = mock(
+  async (_userId: string) =>
+    ({ username: "dennison", name: "Dennison" }) as unknown,
 );
 const getSessionMetadataById = mock(
   async (_id: string) => undefined as unknown,
@@ -49,9 +59,15 @@ const getSessionsWithUnreadByUserId = mock(
   async (_userId: string, _opts: unknown) => [] as unknown[],
 );
 
+mock.module("@/lib/sessions/create-session", () => ({
+  createSessionCore,
+}));
+
+mock.module("@/lib/db/users", () => ({
+  getUserIdentity,
+}));
+
 mock.module("@/lib/db/sessions", () => ({
-  createSession,
-  createChat,
   getSessionMetadataById,
   getChatById,
   getChatsBySessionId,
@@ -129,8 +145,7 @@ function seedSession(row: unknown): void {
 const TOOL_NAMES = ["start_session", "send_message", "stop_run"];
 
 function expectNoWriteIo(): void {
-  expect(createSession).not.toHaveBeenCalled();
-  expect(createChat).not.toHaveBeenCalled();
+  expect(createSessionCore).not.toHaveBeenCalled();
   expect(getSessionMetadataById).not.toHaveBeenCalled();
   expect(getChatById).not.toHaveBeenCalled();
   expect(getChatsBySessionId).not.toHaveBeenCalled();
@@ -141,13 +156,18 @@ function expectNoWriteIo(): void {
 
 beforeEach(() => {
   process.env.BETTER_AUTH_URL = "https://mcp.test";
-  createSession.mockClear();
-  createSession.mockImplementation(
-    async () => ({ id: "session-1", userId: "user-1" }) as unknown,
-  );
-  createChat.mockClear();
-  createChat.mockImplementation(
-    async () => ({ id: "chat-1", sessionId: "session-1" }) as unknown,
+  createSessionCore.mockClear();
+  getUserIdentity.mockClear();
+  getUserIdentity.mockImplementation(async () => ({
+    username: "dennison",
+    name: "Dennison",
+  }));
+  createSessionCore.mockImplementation(
+    async () =>
+      ({
+        session: { id: "session-1", userId: "user-1" },
+        chat: { id: "chat-1", sessionId: "session-1" },
+      }) as unknown,
   );
   getSessionMetadataById.mockClear();
   seedSession(undefined);
@@ -207,13 +227,16 @@ describe("scope enforcement via runMcpTool", () => {
 describe("startSession", () => {
   test("creates the session + chat, starts the workflow, and returns without consuming a stream", async () => {
     const { startSession } = await toolsModulePromise;
-    createSession.mockImplementation(async (data) => {
-      expect((data as Record<string, unknown>).userId).toBe("user-1");
-      return { id: "session-new", userId: "user-1" };
-    });
-    createChat.mockImplementation(async (data) => {
-      expect((data as Record<string, unknown>).sessionId).toBe("session-new");
-      return { id: "chat-new", sessionId: "session-new" };
+    createSessionCore.mockImplementation(async (input) => {
+      const data = input as Record<string, unknown>;
+      expect(data.userId).toBe("user-1");
+      // The username must reach createSessionCore, or a generated branch name
+      // silently differs from what the browser would produce.
+      expect(data.username).toBe("dennison");
+      return {
+        session: { id: "session-new", userId: "user-1" },
+        chat: { id: "chat-new", sessionId: "session-new" },
+      };
     });
     startChatRun.mockImplementation(async (input) => {
       expect((input as Record<string, unknown>).sessionId).toBe("session-new");
@@ -267,8 +290,7 @@ describe("startSession", () => {
       limit: 10,
       windowMs: 60_000,
     });
-    expect(createSession).not.toHaveBeenCalled();
-    expect(createChat).not.toHaveBeenCalled();
+    expect(createSessionCore).not.toHaveBeenCalled();
     expect(startChatRun).not.toHaveBeenCalled();
   });
 });
@@ -311,6 +333,26 @@ describe("sendMessage ownership", () => {
 });
 
 describe("sendMessage", () => {
+  test("refuses an archived session, so a token cannot start a run the browser blocks", async () => {
+    // The browser route rejects a turn on an archived session because its
+    // sandbox is torn down. Without the same guard here, an MCP token starts a
+    // billable run against a workspace that no longer exists.
+    const { sendMessage } = await toolsModulePromise;
+    const { McpToolError } = await contextModulePromise;
+    seedSession(buildSessionRow({ status: "archived" }));
+
+    const promise = sendMessage(makeCtx({}), {
+      sessionId: "session-1",
+      prompt: "keep going",
+    });
+
+    await expect(promise).rejects.toBeInstanceOf(McpToolError);
+    await expect(promise).rejects.toMatchObject({
+      errorKind: "invalid_request",
+    });
+    expect(startChatRun).not.toHaveBeenCalled();
+  });
+
   test("throws conflict with the running workflowRunId when a run is already live", async () => {
     const { sendMessage } = await toolsModulePromise;
     const { McpToolError } = await contextModulePromise;
