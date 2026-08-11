@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   countChatMessages,
+  countSessionsByUserId,
   getChatById,
   getChatSummariesBySessionId,
   getChatsBySessionId,
@@ -133,7 +134,10 @@ export type ListSessionsInput = z.infer<typeof listSessionsInputSchema>;
 
 export type ListSessionsResult = {
   sessions: McpSessionSummary[];
-  count: number;
+  /** Rows on this page. */
+  returned: number;
+  /** Sessions matching the same status filter across the whole account. */
+  total: number;
   limit: number;
   offset: number;
 };
@@ -432,9 +436,21 @@ export async function listSessions(
 
   const sessions = rows.map(toSessionSummary);
 
+  // The total rides along on the page query as COUNT(*) OVER (), so page and
+  // total always describe one snapshot. Issuing a separate COUNT would let the
+  // two observe different states — the count running before an insert and the
+  // page after it — and a client told to stop at offset + returned >= total
+  // would silently skip the new session. An empty page carries no window
+  // value, so that one case falls back to a count query; a caller already at
+  // or past the end cannot skip anything with a slightly stale total.
+  const total =
+    rows[0]?.totalCount ??
+    (await countSessionsByUserId(ctx.userId, { status: input.status }));
+
   return {
     sessions,
-    count: sessions.length,
+    returned: sessions.length,
+    total,
     limit: input.limit,
     offset: input.offset,
   };
@@ -576,7 +592,7 @@ export const sessionReadTools: readonly AnyMcpToolDefinition[] = [
   defineTool({
     name: "list_sessions",
     description:
-      "List the caller's agent sessions with lightweight status, repo, and PR summary fields.",
+      "List the caller's agent sessions with lightweight status, repo, and PR summary fields. Returns `returned` (rows on this page) and `total` (all sessions matching the same status filter), so page until offset + returned reaches total.",
     scope: SESSION_READ_SCOPE,
     inputSchema: listSessionsInputSchema,
     handler: listSessions,

@@ -208,11 +208,34 @@ export async function getSessionsByUserId(userId: string) {
   return records.map((session) => normalizeSessionRecord(session));
 }
 
-export async function countSessionsByUserId(userId: string): Promise<number> {
+/**
+ * Total sessions for a user, optionally narrowed by the same status filter
+ * `getSessionsWithUnreadByUserId` applies, so a paged caller can report a
+ * total that describes the same set as the page it just fetched.
+ *
+ * The status predicate must stay identical to that query's: "active" means
+ * everything not archived, not `status = "running"`.
+ */
+export async function countSessionsByUserId(
+  userId: string,
+  options: { status?: "all" | "active" | "archived" } = {},
+): Promise<number> {
+  const status = options.status ?? "all";
+  const statusFilter =
+    status === "active"
+      ? ne(sessions.status, "archived")
+      : status === "archived"
+        ? eq(sessions.status, "archived")
+        : undefined;
+
   const [result] = await db
     .select({ count: sql<number>`COUNT(*)::int` })
     .from(sessions)
-    .where(eq(sessions.userId, userId));
+    .where(
+      statusFilter
+        ? and(eq(sessions.userId, userId), statusFilter)
+        : eq(sessions.userId, userId),
+    );
 
   return result?.count ?? 0;
 }
@@ -250,6 +273,18 @@ export type SessionWithUnread = SessionSidebarFields & {
   hasStreaming: boolean;
   latestChatId: string | null;
   lastActivityAt: Date;
+  /**
+   * Sessions matching this query's filter, ignoring limit/offset.
+   *
+   * Window functions run after GROUP BY but before LIMIT/OFFSET, so this is
+   * the full match count computed in the SAME statement as the page. A
+   * separate COUNT query could observe a different snapshot: the count runs
+   * before an insert while the page runs after it, and a caller told to stop
+   * at `offset + returned >= total` then skips the new row. Identical to
+   * `sessions.length` when the page is empty, so callers that need a total
+   * for an empty page must count separately.
+   */
+  totalCount: number;
 };
 
 type GetSessionsWithUnreadByUserIdOptions = {
@@ -304,6 +339,7 @@ export async function getSessionsWithUnreadByUserId(
         ARRAY_AGG(${chats.id} ORDER BY ${chats.updatedAt} DESC, ${chats.createdAt} DESC)
         FILTER (WHERE ${chats.id} IS NOT NULL)
       )[1]`,
+      totalCount: sql<number>`COUNT(*) OVER ()::int`,
     })
     .from(sessions)
     .leftJoin(chats, eq(chats.sessionId, sessions.id))
