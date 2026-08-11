@@ -2,6 +2,7 @@ import type { z } from "zod";
 import { McpToolError, requireScope } from "./context";
 import type { McpScope, McpToolContext } from "./context";
 import { sessionReadTools } from "./tools/sessions-read";
+import { sessionWriteTools } from "./tools/sessions-write";
 
 export type McpToolDefinition<
   TSchema extends z.ZodTypeAny = z.ZodTypeAny,
@@ -28,6 +29,7 @@ export function defineMcpTool<TSchema extends z.ZodTypeAny, TOutput>(
 
 export const mcpToolRegistry: readonly AnyMcpToolDefinition[] = [
   ...sessionReadTools,
+  ...sessionWriteTools,
 ];
 
 export function getMcpTool(name: string): AnyMcpToolDefinition | undefined {
