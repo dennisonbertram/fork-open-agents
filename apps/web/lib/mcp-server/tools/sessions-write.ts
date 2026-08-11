@@ -81,6 +81,39 @@ function requestOrigin(): string {
 }
 
 /**
+ * Defers background work until after the response is sent.
+ *
+ * The prewarm kick this schedules provisions a real sandbox, which takes
+ * minutes. Running it inline holds the MCP response open for that whole time —
+ * observed in production as a start_session call that never returned, even
+ * though the session had already been created and the run started. The browser
+ * route avoids this by passing next/server's `after`; do the same.
+ *
+ * Imported dynamically so this module stays importable outside a request (its
+ * unit tests, and any other non-request caller). If there is no request scope
+ * to defer into, SKIP the prewarm rather than falling back to running it
+ * inline: prewarming is only a latency optimization, and the workflow
+ * provisions the sandbox on demand regardless.
+ */
+function scheduleAfterResponse(callback: () => Promise<void>): void {
+  void (async () => {
+    try {
+      const { after } = await import("next/server");
+      after(() => callback());
+    } catch (error) {
+      console.warn(
+        "[mcp-server] skipped sandbox prewarm: no request scope to defer into",
+        JSON.stringify({
+          service: "mcp-server",
+          event: "mcp.prewarm.skipped",
+          message: error instanceof Error ? error.message : String(error),
+        }),
+      );
+    }
+  })();
+}
+
+/**
  * `startChatRun`'s "resumed" and "conflict" outcomes both mean a run is
  * already live on this chat — a caller sending a new message can't safely
  * layer it on top. Only "started" is a clean result for a write tool.
@@ -254,11 +287,7 @@ export async function startSession(
     cloneUrl: `https://github.com/${input.repoOwner}/${input.repoName}`,
     branch: input.branch,
     runtimeMode: input.runtimeMode,
-    // No next/server `after` outside a request, so run the prewarm kick
-    // inline. It is already fire-and-forget internally.
-    scheduleBackgroundWork: (callback) => {
-      void callback();
-    },
+    scheduleBackgroundWork: scheduleAfterResponse,
   });
 
   const result = await startChatRun({
