@@ -24,8 +24,15 @@ behalf ([original-vision.md](original-vision.md), framing stories).
 
 ## Documents
 
+**Binding spec: [prd.md](prd.md)** — where any other document in this
+package disagrees with it, the PRD wins. [spike-plan.md](spike-plan.md) is
+its execution companion. Everything else is research input or historical
+record.
+
 | Doc | Contents |
 | --- | --- |
+| [prd.md](prd.md) | **The binding PRD** — stories with acceptance criteria, tool/resource surface, lifecycles, memory contract, authority split, testing requirements, milestones P0–M5 |
+| [reviews/](reviews/README.md) | Tri-model consensus record (Codex / Fable / Kimi rounds); subordinate to prd.md |
 | [original-vision.md](original-vision.md) | The founding conversation, near-verbatim — what we're building and why |
 | [stories.md](stories.md) | Scope lock: the stories this product commits to, and its non-stories |
 | [research/agents-sdk-and-mcp.md](research/agents-sdk-and-mcp.md) | Agents SDK `Agent` class, MCP hosting (`createMcpHandler`), MCP client support, OAuth 2.1 / dynamic client registration, Project Think |

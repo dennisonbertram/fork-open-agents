@@ -1,203 +1,216 @@
 # Resident Agent Service — Spike Plan
 
-Time-boxed validation of the riskiest assumptions from the
-[research package](README.md). The spike is not a product skeleton — it is a
-set of experiments with pass/fail criteria, thin enough to throw away. Every
-milestone records the numbers the build-vs-fork decision needs.
+Execution plan for the validation spike. **Subordinate to [prd.md](prd.md)**
+— where they disagree, the PRD wins. The spike is a set of experiments with
+pass/fail criteria, thin enough to throw away. Every milestone records the
+numbers the build-vs-fork decision needs.
 
-**Timebox: ~2 weeks.** If M1–M3 aren't done by end of week one, stop and
-reassess — the platform is fighting us and the fork path gets stronger.
+**Timebox: ~3 weeks after P0 completes.** Kill criterion: if M0 + M1 are not
+done by end of week 1 — with M4a *attempted* and any blocker recorded as
+evidence — stop and reassess. (M4a depends on human-provisioned items; a
+provisioning delay is recorded, not fatal.)
 
 ## What the spike must answer
 
 | # | Question | Milestone |
 | --- | --- | --- |
+| 0 | Can we prove what the system did — deployed harness, core ledger, independent evaluator, fault injection | M0 |
 | 1 | End-to-end cold-start latency: hibernated worker + sleeping sandbox → answer | M1, M3 |
-| 2 | Persistence choreography: backup/restore with a real git repo | M3 |
-| 3 | A third-party brain (Claude Code or Pi) runs headless in a container and does real repo work | M2 |
-| 4 | A real external MCP client (Claude Code, ChatGPT) self-registers via OAuth and tasks a worker | M4 |
-| 5 | Cost per task, measured not modeled | M5 |
+| 2 | Persistence choreography: backup/restore with a real git repo, manifest-complete | M3 |
+| 3 | A third-party Brain runs headless in a container, does real repo work, without write authority | M2a |
+| 4 | Recovery: faults at named barriers produce safe outcomes without duplicate effects | M2b |
+| 5 | Real external clients connect through OAuth and static-token front doors | M4a |
+| 6 | The product shape works thin: fan-out, roll-up, blocked→resolve (evidence, not gate) | M4b |
+| 7 | Cost per task, measured; owner-model swap with memory intact | M5 |
 
 ## Ground rules
 
-- **Raw primitives only**: Agents SDK `Agent` class, Cloudflare Workflows,
-  Sandbox SDK (`@next` 1.0-preview track — the API Cloudflare recommends for
-  new projects). No `@cloudflare/computer` (preview, churning; revisit after).
-- **Pin every version** in `package.json` and record them in the spike README;
-  the platform ships breaking changes weekly.
-- **No persistent DO→sandbox connections.** Per-operation RPC only — outbound
-  connections block hibernation and bill up to 15 min each.
-- **Numbers go in the spike README as we get them**, not at the end.
-- One repo fixture (a small real repo with a test suite), one brain, one
-  external client. Breadth is the enemy.
-- **Start from the inventoried examples, not from scratch.**
+- **Raw primitives**: Agents SDK `Agent`, Cloudflare Workflows, Sandbox SDK
+  (track decided at M0 per current vendor recommendation). No
+  `@cloudflare/computer`.
+- **Versions**: M0 generates the authoritative dependency manifest from
+  registries at kickoff; pin everything; re-resolve at midpoint. Prose
+  versions in research docs do not drive the build.
+- **No persistent DO→sandbox connections** — per-operation RPC only
+  (outbound connections block hibernation and bill up to 15 min).
+- **Every MCP tool returns fast** (Codex CLI 60 s default budget): `task`
+  starts a turn and returns ids; progress is read, never awaited. Long
+  calls emit progress notifications inside the 5-minute idle window.
+- **Start from the inventoried examples** —
   [research/examples-and-boilerplates.md](research/examples-and-boilerplates.md)
-  (2026-08-11) maps each milestone to a verified starting repo and names the
-  traps: the obvious-looking templates on the deprecated `McpAgent` pattern,
-  stale version pins, and the gaps no example covers.
-- **Every MCP tool returns fast.** Client tool-call budgets differ wildly —
-  Codex CLI defaults to 60 s per tool call; Claude Code auto-backgrounds calls
-  at 2 min ([research/mcp-client-landscape.md](research/mcp-client-landscape.md)).
-  `task` starts a turn and returns ids immediately; progress is read or
-  polled, never awaited inside the tool call.
+  maps milestones to verified starting repos and flags the traps
+  (deprecated `McpAgent` templates, stale pins).
+- **Numbers land in the spike README as measured**, per the M0 benchmark
+  method. One fixture, one brain, two gate clients. Breadth is the enemy.
+- **Evidence over narration**: a milestone passes when the independent
+  evaluator says so from ledger evidence, never when an agent reports done.
+- **Operational ceiling before fan-out**: the `[env.test]` Worker carries a
+  hard concurrency/spend ceiling (values set at P0 by the founder,
+  configured as environment vars on the test Worker) before any autonomous
+  fan-out runs. An ops guard, not a product feature or test target.
 
 ## Milestones
 
-### M1 — Hello worker (target: day 1–2)
+### P0 — Provisioning (human; before the clock starts)
 
-An `Agent` (DO) named by task slug, with a SQLite memory schema, one `echo`
-MCP tool behind stateless `createMcpHandler`, and tool→named-DO routing.
+The founder provides, per [prd.md §10/§11](prd.md): Workers Paid account +
+payment method (Containers require paid; R2 may demand a card despite
+marketing — verify by live probe), least-privilege API token
+(Workers Scripts / R2 / Containers / Workers AI / AI Gateway / Logs scopes)
++ `CLOUDFLARE_ACCOUNT_ID`, domain/DNS decision (before any client
+registration), IdP choice for `/authorize`, GitHub App installed on a
+disposable fixture repo (App over PAT: installation tokens mint
+unattended), Anthropic key or AI Gateway BYOK under the `default` alias,
+Claude Code + Codex CLI client access, and budget ceilings. Full manifest:
+[research/testing-and-observability.md](research/testing-and-observability.md).
 
-- Memory schema: the two-truth-tables shape from
-  [research/memory-architectures.md](research/memory-architectures.md) — a
-  typed task graph (`issues` + typed `issue_deps`, beads-style) and an
-  append-only event/decision log (FTS5-indexed, OpenHands-style), plus a
-  narrative plan file that is explicitly interpretation, never truth.
-- Start from `cloudflare/agents/examples/mcp-worker` and
-  `examples/mcp-rpc-transport`. Do **not** build on `examples/mcp` — its own
-  README marks the `McpAgent` pattern deprecated and feature-frozen.
-- Routing: try the SDK's RPC-transport primitive
-  (`addMcpServer(name, env.Worker, ...)`) before hand-rolling the router —
-  the brief assumed custom code; the SDK has a first-class version.
-- Verify: DO wake from hibernation — **measure and record wake latency**
-  (no published numbers exist; re-confirmed 2026-08-11; this is risk #1's
-  first half).
-- Verify: alarm wake works (schedule a self-ping, hibernate, observe).
-- Pass criteria: worker answers an MCP call after 24 h idle; wake latency
-  recorded.
+### M0 — Harness first (target: days 1–3)
 
-### M2 — Brain in a box (target: day 3–5)
+Deliverables, all proven by running them:
 
-Worker gets `task` tool: start a Workflow instance (`workerId-turn-N`), which
-provisions a Sandbox SDK container, clones the fixture repo, and runs a
-coding-agent CLI headless against a small task ("add a failing test for X").
+1. **Isolated deployed env** (`[env.test]` Worker set: own DO namespaces,
+   R2 bucket, KV, Workflow bindings), fingerprinted by listing actual
+   deployed resource identities — config files are not proof.
+2. **Core evidence ledger** (schema versioned): correlation ids, sequenced
+   status transitions, command argv/exit codes, before/after digests,
+   redaction + secret-canary scan. App-level `run_id` (= the Workflow
+   instance id, prd.md §7.1) threads Worker → DO → Workflow instance →
+   container env — and AI Gateway metadata on provider-backed turns only
+   (no first-party propagation exists — the ledger *is* the correlation).
+3. **Independent evaluator**: deterministic, in a protected path
+   implementing agents cannot edit, verdicts only from ledger evidence.
+   Prove it by handing it a deliberately corrupted bundle.
+4. **Deterministic fake Brain** (testagent-style) with the named barriers
+   from [prd.md §9.3](prd.md); one fault injected end-to-end.
+5. **Two test tiers wired**: vitest-pool-workers (DO SQLite/alarms/eviction
+   helpers; Workflow introspection with mocked events/sleeps) and deployed
+   e2e (containers, OAuth, hibernation — everything local emulation cannot
+   reach, per
+   [research/testing-and-observability.md](research/testing-and-observability.md)).
+6. **Probes before reliance**: container stdout→observability (workers-sdk
+   #12998 closed without a named mechanism), HTTPS-interception local/prod
+   parity, R2 free-tier card requirement.
+7. **Written artifacts**: benchmark method (phases, sample count, region,
+   cache state), dependency manifest, static-token design
+   (issuance/scoping/rotation/revocation), ADRs for registry store and
+   Worker-vs-Sandbox DO topology.
 
-- Use the pre-baked image variant (OpenCode image or a custom image with the
-  brain CLI installed) — cold `npm install` of the brain per task is a known
-  ~30 s path; measure both once, then use the pre-baked path.
-- GitHub access via `outboundByHost` credential injection — **prove the
-  container never sees the token** (attempt `git push` with a token-less
-  remote from inside; expect refusal; check env for leaks).
-- Workflow steps: memoized `step.do` per model/sandbox op; verify a kill
-  mid-turn resumes from the last completed step.
-- Start from `cloudflare/agents/examples/sandbox-coding-agent` (a
-  near-complete prebuild: per-task facet DO + sandbox + `outboundByHost`
-  interception routed through AI Gateway) and
-  `sandbox-sdk/examples/authentication` (Anthropic + GitHub + R2 injection
-  organized in one place).
-- Two gaps no example covers (budget design time, not just wiring time):
-  no official example wires raw Workflows around sandbox provisioning; and
-  **kill-mid-turn resume is unsolved upstream** — `sandbox-coding-agent`'s
-  own README says mid-turn eviction orphans the `claude -p` process and
-  resume is between turns only (open issue cloudflare/agents#1829). Our
-  memoized-step design is ahead of the references here, not copying one.
-- Pass criteria: brain completes the repo task; diff lands in the workspace;
-  worker verifies by running tests itself (not trusting the brain's report);
-  turn survives an intentional mid-run kill.
+Pass: prd.md §10 M0 row.
 
-### M3 — Persistence (target: day 6–8)
+### M1 — Thin worker spine (target: days 4–5)
 
-Sleep wipes the container filesystem, so: implement backup/restore (squashfs
-image → R2) around the workspace.
+One service endpoint; opaque `workerId`; minimal account registry row;
+minimal event ledger; named-DO routing (try the SDK RPC-transport primitive
+before hand-rolling); idempotent `create_worker` (repeat key → same
+result); alarm smoke; **launch the 24-hour soak immediately**. Measure DO
+wake latency per the M0 method (no published numbers exist). Start from
+`cloudflare/agents/examples/mcp-worker` + `mcp-rpc-transport`; do not build
+on deprecated `examples/mcp`.
 
-- Start from `sandbox-sdk/examples/time-machine` (runnable backup/restore
-  demo with a `localBucket` mode for local dev).
-- Measure: restore latency (**~2 s claimed**) vs. cold boot+clone (**~30 s
-  claimed**). Record both. Both numbers are Cloudflare's own one-scenario
-  benchmark (clone axios + `npm install`, GA blog) — treat as marketing
-  until re-measured on the spike fixture.
-- Backup TTL (default 3 days) is enforced only at restore time; expired
-  backups linger in R2 until deleted. Note the GC design this implies.
-- Exercise: task the worker, let everything sleep, come back next day,
-  `ask` a follow-up that requires workspace context. Measure end-to-end
-  cold-answer latency — **this is the product-feel number**.
-- Separately, probe git-on-s3fs directly (mount workspace, run `git status` /
-  `commit` / `gc` under repo-scale I/O) to know whether the live-mount path is
-  ever viable — 30 minutes, informational only.
-- Pass criteria: next-day follow-up answered correctly from restored state;
-  cold-answer latency recorded.
+### M4a — Front door early (target: days 6–8)
 
-### M4 — Front door with a real client (target: day 9–11)
+`@cloudflare/workers-oauth-provider` (CIMD + DCR per the pinned 2026-07-28
+revision) in front of the MCP handler; consent page; static-token mode.
 
-Wire `@cloudflare/workers-oauth-provider` (OAuth 2.1, PKCE, RFC 7591 DCR) in
-front of the MCP handler; register Claude Code as a client and task the
-worker from a desktop session.
+- **Gate client 1: Claude Code** (native OAuth; PKCE always; CIMD selected
+  when metadata advertises it). No `mcp-remote`.
+- **Gate client 2: Codex CLI** via Owner-issued static bearer
+  (`--bearer-token-env-var`) — performs an allowed Worker operation
+  (`create_worker` → `get_worker_status`) and passes the applicable refusal
+  matrix (expired token, denied scope, foreign worker, revoked token), so
+  the decided second auth mode is fully exercised, not an inert guard.
+- ChatGPT Developer Mode (web) and ChatGPT mobile read-only: canaries,
+  recorded if accounts are provisioned, non-gating.
+- Refusal matrix through the deployed entry point: expired, denied scope,
+  foreign worker (`not_found`), revoked (measured-window), plus allow
+  paths. Record Nth-worker consent behavior (does one client registration
+  cover new workers under RFC 8707 resource scoping?).
+- Start from `examples/mcp-worker-authenticated`; port GitHub-OAuth handler
+  logic if needed; do **not** start from `remote-mcp-github-oauth`
+  (deprecated `McpAgent`, stale pin). Reuse the oauth-provider
+  `conformance/` harness (createTestHarness + synthetic consent) and layer
+  `@modelcontextprotocol/conformance --suite auth` on top.
 
-Client research ([research/mcp-client-landscape.md](research/mcp-client-landscape.md),
-2026-08-11) settled most of this milestone's unknowns in advance:
+### M2a — Brain in a box (target: days 9–11)
 
-- **First client: Claude Code** — the lowest-risk pairing. Native remote MCP
-  with PKCE always sent, DCR and CIMD out of the box, and ~28 h default tool
-  timeout with auto-backgrounding. No `mcp-remote` proxy needed.
-- **Second client: a ChatGPT Developer Mode connector.** Register it on
-  ChatGPT web (mobile cannot enable Developer Mode or register connectors),
-  then run the phone test: read-only status tools from the ChatGPT mobile
-  app. Mobile write-gating is community-reported only — this test settles
-  the "status from my phone" story with evidence.
-- Start from `cloudflare/agents/examples/mcp-worker-authenticated`. Do
-  **not** start from `cloudflare/ai/demos/remote-mcp-github-oauth` — it is
-  still on the deprecated `McpAgent` pattern and pins
-  `workers-oauth-provider` 0.8.1 against a current 0.10.x.
-- **The headless gap is settled, not open**: no surveyed client or server
-  ships a pure machine-to-machine `client_credentials` path, and Anthropic's
-  connector docs explicitly forbid one — every connection includes a
-  one-time human consent. Record the design decision this forces: whether
-  the front door also offers a static-bearer-token mode for headless
-  clients (Codex CLI's `--bearer-token-env-var` is the cleanest client-side
-  counterpart), alongside OAuth.
-- Codex Cloud does not read the CLI's MCP config and its custom-MCP support
-  is unconfirmed — Codex CLI is the Codex-side client; Codex Cloud is out
-  of scope.
-- Also record: whether the Nth worker requires a fresh OAuth consent or one
-  client registration covers all workers (RFC 8707 resource-indicator
-  scoping) — this decides whether the backlog fan-out story (stories.md #19)
-  can complete unattended.
-- Pass criteria: two different external clients task and question the same
-  worker; second client asks "what has happened so far?" and gets the worker's
-  account — not a raw transcript.
+Workflow provisions a Sandbox container, acquires the **pinned fixture**
+([prd.md §9.4](prd.md) — named repo, pinned commit, expected patch,
+expected test outcome, final digest, oracle-green-before-change) via a
+read-only injected credential, runs the pinned Brain CLI headless
+(pre-baked image; measure the cold `npm install` path once), Worker
+verifies independently (tests + digests), **no external writes**. Prove the
+container never sees a raw token and cannot push through the injected path
+(the authority split, prd.md §7.8). Start from
+`cloudflare/agents/examples/sandbox-coding-agent` +
+`sandbox-sdk/examples/authentication`. The Workflow-wraps-sandbox glue has
+no official example — write it; memoized `step.do` per operation.
 
-### M5 — The model swap + cost capture (target: day 12–14)
+### M3 — Persistence (target: days 12–14)
 
-- Swap the worker's owner model (e.g. Workers AI GLM-5.2 → Anthropic via AI
-  Gateway BYOK). The 2026-08-07 Workers AI / AI Gateway unification routes
-  both legs through one `env.AI` binding (model string + optional gateway
-  param), so the swap may be a model-string change — re-verify at
-  implementation time; the change is days old.
-- **BYOK trap**: `env.AI.run()` consults only the `default` key alias. If it
-  is missing, the call silently succeeds on Cloudflare Unified Billing —
-  which would invalidate the cost comparison. Confirm the default-alias key
-  exists before capturing numbers.
-- The anti-lobotomy test, upgraded per
-  [research/memory-architectures.md](research/memory-architectures.md) so a
-  capable model cannot pass it by re-reading the repo instead of using
-  memory: run two variants — *memory-only* (the swapped model may read the
-  worker's structured state but not the workspace until it produces its
-  first narrative and next action) and *memory+workspace* (the realistic
-  condition). Score against named failure modes: repeated or contradicted
-  work vs. the task graph (the "50 First Dates" check), respect for a
-  seeded non-obvious recorded decision (trace-sufficiency check), and
-  time-to-first-productive-action. Swap at two different points in the
-  task, not once at the end.
-- Assemble cost per task from measured usage: DO duration/rows, Workflow
-  steps, sandbox memory/CPU/egress, model tokens. Compare against the
-  2026-08-10 Workflows step pricing. Record cost/task.
-- Write the spike retrospective: numbers table, what broke, what surprised us.
+Backup manifest names everything continuation needs: `.git`, untracked
+files, Brain session state/dotfiles, dependency caches, permission
+metadata. squashfs → R2; restore; digests match before/after sleep;
+next-day follow-up answered from restored state; phase latencies per the
+M0 method (vendor 2 s/30 s numbers are baselines to re-measure).
+Corrupt/missing backup → typed blocked/failed. **Backup GC**: R2 lifecycle
+rule or sweeper proven (expired objects must not accumulate — TTL is only
+checked at restore). **`mksquashfs` permission test**: 0600/0700 dotfiles
+round-trip. Start from `sandbox-sdk/examples/time-machine`.
+
+**Then, with M2a + M3 both green: the full-chain latency benchmark** —
+hibernated worker + sleeping sandbox → real question → final answer, per
+the M0 method (samples, region, cache state). M1's wake number and M3's
+restore number are phases; only this end-to-end number can satisfy the
+< ~15 s decision-gate target (prd.md §8).
+
+### M2b — Recovery (target: days 15–16)
+
+Fault injection at every named barrier (§9.3) across Workflow, Worker DO,
+Sandbox DO, container, and CLI process — each kill mechanism distinct and
+scripted (no flaky manual kills). **The during-execution kill must restart
+idempotently and complete without duplicate effects** — a
+`reconciliation_required`/`failed`/`blocked` outcome on that barrier fails
+the unattended gate (prd.md §10 M2b). Unrecoverable injected faults (e.g.
+corrupt backup) may land typed terminal states. Never duplicate external
+effects, unbounded leases, or unrecorded orphan processes. (The upstream
+reference orphans `claude -p`; cloudflare/agents#1829 — we are ahead of
+the references here, by design.)
+
+Plus the **external-write reconciliation test**: one disposable
+Worker-side GitHub write (comment or PR on the fixture repo), fault
+injected after provider success and before ledger acknowledgement;
+reconciliation must find and return the same provider object id with no
+second effect. This is the auto-return-to-fork condition ("unrecoverable
+duplicate effects") exercised, not assumed.
+
+### M4b — Product shape, thin (target: day 17)
+
+Client-looped fan-out (≥3 workers from one session), account roll-up with
+zero model wakes, blocked→cross-client resolve (`resolve_block` from a
+second client). **Evidence for the decision review, not a go-gate.**
+
+### M5 — Cost, then swap (target: days 18–21)
+
+Cost attribution first: DO / Workflow / Sandbox / R2 storage / egress /
+model usage from real provider evidence with provenance (`unknown` with a
+reason where unattributable — never zero); BYOK `default`-alias proven
+before capture (silent Unified-Billing fallback invalidates the
+comparison; the 2026-08-07 `env.AI` unification is days old — re-verify
+call shape). **Cost is go-gating; the model-swap study is evidence, not
+gate.** Then the model swap with the **frozen rubric**: two swap points; memory-only
+(workspace access structurally denied) vs memory+workspace; scored on
+repeated/contradicted work vs the task graph, respect for a seeded
+non-obvious recorded decision, time-to-first-productive-action. Thresholds
+approved before the run; cost threshold: founder, before M5.
 
 ## Decision gates
 
-After M5, review against the fork path:
-
-- **Go (Cloudflare)** if: cold-answer latency is acceptable (< ~15 s for a
-  sleeping worker, or a mitigation like warm pools doesn't destroy the cost
-  story), persistence choreography works, real clients connected, and
-  cost/task is sane.
-- **Back to fork** if: any of cold-start, persistence, or MCP-client auth is
-  a platform-level blocker rather than an engineering problem.
-- **Hybrid** (fork for production now, Cloudflare as the v2 substrate) is a
-  legitimate outcome, not a failure.
+Per [prd.md §10](prd.md): **substrate-gated go** (M0, M1, M4a, M2a, M3,
+M2b + latency + cost), M4b informs. Auto-return-to-fork conditions are
+listed in the PRD and are absolute. Hybrid remains a legitimate outcome.
 
 ## Explicit non-goals
 
-- No UI. No multi-worker registry beyond a name lookup. No worker-to-worker
-  delegation (the SDK supports it; the spike doesn't need it). No production
-  hardening, rate limiting, or billing. No second brain (fast-follow).
+No UI beyond consent page + recovery CLI. No worker-to-worker delegation.
+No second Brain. No batch-create API. No warm pools. No retention
+machinery. No production hardening beyond what the pass criteria name.
