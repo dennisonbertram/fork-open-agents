@@ -109,11 +109,11 @@ narrative form.
 | 13 | S | Backup/restore preserves the declared workspace manifest with exact before/after digests across sandbox sleep. Missing/corrupt backup → typed blocked/failed state. |
 | 14 | D | Worker-to-worker tasking uses the same service contract with delegated identity and grant narrowing. Not built in spike/v1. |
 | 15 | partial | Registry lists all root Workers in v1. Ancestry and spend roll-up deferred with 14. |
-| 16 | S | List, stop, archive/destroy, audit. Destruction follows the retention contract and cannot silently erase required audit evidence. |
+| 16 | S(split) | Spike: list, stop, audit — stop reconciles active work and preserves inspectable state. v1: archive/destroy under the retention contract, which cannot silently erase required audit evidence. |
 | 17 | S | Grants are per worker, per action: `deny`/`allow` exercised in spike; `require_approval` reserved in the schema, flow deferred to v1. Default deny. The Brain cannot widen grants. |
 | 18 | S | Status includes attributable DO, Workflow, Sandbox, storage, egress, model usage — plus `unknown` with a reason where unattributable. Never zero-filled. |
 | 19 | S | Fan-out = the client loops `create_worker` with per-item idempotency keys. N accepted items create N Workers that survive client disconnection and report independently. No batch API. |
-| 20 | S | Exceeding a configured concurrency/queue/spend limit returns a typed `quota_exceeded` with retry guidance. Limits TBD (decider: founder, from account capacity + budget). |
+| 20 | v1 | Quota/limit policy with typed `quota_exceeded` + retry guidance is a v1 story (limits TBD; decider: founder). The spike environment still carries a hard concurrency/spend ceiling as an operational guard against runaway autonomous fan-out — an ops setting, not a product feature. |
 | 21 | S | One model-free account query returns authorized Workers: status, timestamps, blockers, output links, source/freshness metadata, cost. No Worker model wakes. |
 | 22 | S | Blocked state records typed reason, provenance, evidence, requested resolution, entry time, retry safety (§7.10). Blocked is never presented as idle. |
 | 23 | S | A differently authenticated Visitor inspects a blocked Worker and submits instructions/resolution **through the Worker**; it cannot mutate the sandbox directly or bypass grants. |
@@ -144,6 +144,10 @@ narrative form.
   unified class; ADR before M1.
 - **Workflow instance-id convention (pinned):** `${workerId}-turn-${seq}`,
   ≤100 chars; duplicate-live-id-throws is the turn idempotency mechanism.
+- **Correlation identity (pinned):** `run_id` **is** the Workflow instance
+  id string above — one turn, one run_id; not a separate identifier.
+  `requestId` (per MCP request) is distinct and maps N:1 onto turns. AI
+  Gateway custom metadata carries the run_id only on provider-backed turns.
 
 ### 7.2 OAuth, scopes, auth modes
 
@@ -181,17 +185,32 @@ All mutations return promptly with ids — never awaiting a coding turn
 (client budgets: Codex CLI defaults to 60 s per tool call). Every result
 carries `requestId`, status, and typed errors.
 
-**Spike tools (10):** `whoami`, `create_worker`, `task_worker`,
-`ask_worker`, `get_worker_status`, `get_account_status`, `get_turn`,
-`cancel_turn`, `resolve_block`, `stop_worker`.
+**Spike tools (10):**
 
-**v1 additions:** `destroy_worker`, `set_worker_grants`, `list_clients`,
-`revoke_client`, `approve_action`. (No `create_workers` — see §4.)
+| Tool | Minimum scope | Contract |
+|---|---|---|
+| `whoami` | authenticated | Owner/account id, client id, scopes, auth mode, grant summary. |
+| `create_worker` | `workers:write` | Create one Worker + initial turn from repo, instructions, grants, profile, idempotency key. Repeat key → same result. |
+| `task_worker` | `workers:write` | Submit instructions as a new turn; returns `turnId`. |
+| `ask_worker` | `workers:write` | Start an owner-model narrative/query turn; returns `turnId`. |
+| `get_worker_status` | `workers:read` | Deterministic read-model status; no model wake. |
+| `get_account_status` | `account:read` | Deterministic account roll-up; paginated/filterable; no model wake. |
+| `get_turn` | `workers:read` | Turn state, progress, output references, errors, ledger URI. |
+| `cancel_turn` | `workers:write` | Request cancellation; reports cancelled, reconciling, or terminal no-op. |
+| `resolve_block` | `workers:write` | Attach a decision, grant change, or secret reference; optionally start a retry turn; appends, never overwrites the blocker. |
+| `stop_worker` | `workers:write` | Prevent new turns; reconcile active work; preserve inspectable state. |
 
-Scope mapping and per-tool contracts as in the round-1 PRD table
-(reviews/codex-round1.md §7.3) minus `create_workers`; read tools and
-resources call the same core query functions so authorization and
-projections cannot drift.
+**v1 additions:** `destroy_worker` (`workers:admin`; executes the declared
+retention contract, confirmed + idempotent), `set_worker_grants`
+(`workers:admin`; replaces a versioned grant set after validation, no
+silent defaults), `list_clients` / `revoke_client` (`workers:admin`;
+revocation proven at the front door within the measured window),
+`approve_action` (`actions:approve`; approves/denies an exact proposed
+external action). No `create_workers` — see §4.
+
+Read tools and resources call the same core query functions so
+authorization and projections cannot drift. This table is complete and
+binding; no other document defines the tool surface.
 
 ### 7.4 MCP resources
 
@@ -402,9 +421,9 @@ appears in evidence, or an external action cannot be reconciled.
   objects must not accumulate) and the `mksquashfs` permission test
   (0600/0700 dotfiles included in manifest round-trip).
 - M4a: revocation as measured-window (§7.2).
-- M2/M3: container stdout→observability probe before reliance (issue
-  #12998 closed without a named mechanism); HTTPS-interception local/prod
-  parity probe.
+- M0: container stdout→observability probe (issue #12998 closed without a
+  named mechanism) and HTTPS-interception local/prod parity probe — both
+  run in M0, before any later milestone relies on them.
 - M5: BYOK `default`-alias check before cost capture (silent Unified
   Billing fallback would invalidate the comparison).
 
@@ -418,13 +437,13 @@ after P0.
 | **P0 — Provisioning (human)** | Founder provides: Workers Paid account + payment method, least-privilege API token + account id, domain/DNS decision, IdP choice, GitHub App on a disposable fixture repo, Anthropic key (or AI Gateway BYOK), client accounts (Claude Code; Codex CLI), budgets/ceilings. Each item has the founder as named decider. Nothing else starts until P0 completes. |
 | **M0 — Harness** | Isolated deployed env fingerprinted; deterministic Brain runs; named fault injected; core ledger completeness and redaction machine-checked; independent evaluator demonstrably catches a deliberately corrupted evidence item; benchmark method + dependency manifest versioned; static-token design written. |
 | **M1 — Thin worker spine** | One MCP call routes to the correct named DO; duplicate create idempotent; minimal event state survives wake; alarm fires; 24-h soak launched. Wake p50/p95 recorded per M0 method. |
-| **M4a — Front door** | Claude Code completes OAuth (CIMD/DCR) and tasks a Worker; Codex CLI connects via static token; expiry/denied-scope/foreign-worker refusals + allow paths proven deployed; revocation measured-window recorded; Nth-worker consent behavior recorded. |
+| **M4a — Front door** | Claude Code completes OAuth (CIMD/DCR) and tasks a Worker; Codex CLI via static token **performs an allowed Worker operation** and passes the applicable refusal matrix (expiry, denied scope, foreign worker, revoked token) — both auth modes fully exercised; allow paths proven deployed; revocation measured-window recorded; Nth-worker consent behavior recorded. |
 | **M2a — Brain in a box** | Pinned real Brain completes the pinned fixture (§9.4); Worker verifies independently; zero credential leakage (canary scan); no external writes. |
-| **M3 — Persistence** | Manifest + digests round-trip sleep/restore; next-day follow-up correct; phase latencies recorded; corrupt/missing-backup → typed state; backup-GC + permission tests pass. |
-| **M2b — Recovery** | Faults at named barriers (§9.3) → safe completion, safe retry, or typed terminal state; no duplicate effects; no orphaned process unrecorded. |
+| **M3 — Persistence** | Manifest + digests round-trip sleep/restore; next-day follow-up correct; corrupt/missing-backup → typed state; backup-GC + permission tests pass. **After M2a+M3: the full hibernated-worker→final-answer latency benchmark** runs per the M0 method (M1 wake and M3 restore phases alone cannot satisfy §8) — this number feeds the decision gate. |
+| **M2b — Recovery** | Faults at named barriers (§9.3): the **during-execution kill must restart idempotently and complete without duplicate effects** — `reconciliation_required`/`failed`/`blocked` on that barrier fails the unattended gate. Unrecoverable injected faults (e.g. corrupt backup) may land typed terminal states. Includes **one disposable Worker-side GitHub write** (comment or PR on the fixture repo) with a fault injected after provider success and before ledger acknowledgement — reconciliation must return the same provider object id with no second effect. No orphaned process unrecorded. |
 | **M4b — Product shape (evidence, not gate)** | Client-looped fan-out (≥3 workers), account roll-up without model wake, blocked→cross-client resolve — all recorded as evidence for the decision review. |
-| **M5 — Cost, then swap** | Usage categories captured from real provider evidence; BYOK alias proven; cost vs founder threshold; model-swap study only with the frozen rubric (memory-only structurally denies workspace access; two swap points). |
-| **Cloudflare go** | **Substrate-gated:** M0, M1, M4a, M2a, M3, M2b pass; latency target met or mitigation costed; M5 cost under the founder threshold; no security, duplicate-effect, restore-integrity, or evidence-completeness blocker. M4b informs, does not gate. |
+| **M5 — Cost, then swap** | **Cost is go-gating:** usage categories (including storage and egress, or `unknown` with provenance) captured from real provider evidence; BYOK alias proven; cost vs founder threshold. **The model-swap study is evidence, not gate** (memory design is not a platform property): frozen rubric, memory-only structurally denies workspace access, two swap points. |
+| **Cloudflare go** | **Substrate-gated:** M0, M1, M4a, M2a, M3, M2b pass; the full-chain latency target met or mitigation costed; M5 cost under the founder threshold; no security, duplicate-effect, restore-integrity, or evidence-completeness blocker. M4b and the swap study inform, do not gate. |
 | **Fork/hybrid** | Auto-return-to-fork on any platform-level inability to: enforce the credential/authority boundary, avoid duplicate external effects, restore exact workspace state, support real client auth, or produce independent evidence. Latency/cost misses may yield hybrid if mitigation is measurable. |
 
 ## 11. Founder-input register

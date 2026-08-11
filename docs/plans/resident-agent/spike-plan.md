@@ -110,8 +110,10 @@ revision) in front of the MCP handler; consent page; static-token mode.
 - **Gate client 1: Claude Code** (native OAuth; PKCE always; CIMD selected
   when metadata advertises it). No `mcp-remote`.
 - **Gate client 2: Codex CLI** via Owner-issued static bearer
-  (`--bearer-token-env-var`) — exercises the decided second auth mode so it
-  cannot ship as an inert guard.
+  (`--bearer-token-env-var`) — performs an allowed Worker operation
+  (`create_worker` → `get_worker_status`) and passes the applicable refusal
+  matrix (expired token, denied scope, foreign worker, revoked token), so
+  the decided second auth mode is fully exercised, not an inert guard.
 - ChatGPT Developer Mode (web) and ChatGPT mobile read-only: canaries,
   recorded if accounts are provisioned, non-gating.
 - Refusal matrix through the deployed entry point: expired, denied scope,
@@ -150,15 +152,31 @@ rule or sweeper proven (expired objects must not accumulate — TTL is only
 checked at restore). **`mksquashfs` permission test**: 0600/0700 dotfiles
 round-trip. Start from `sandbox-sdk/examples/time-machine`.
 
+**Then, with M2a + M3 both green: the full-chain latency benchmark** —
+hibernated worker + sleeping sandbox → real question → final answer, per
+the M0 method (samples, region, cache state). M1's wake number and M3's
+restore number are phases; only this end-to-end number can satisfy the
+< ~15 s decision-gate target (prd.md §8).
+
 ### M2b — Recovery (target: days 15–16)
 
 Fault injection at every named barrier (§9.3) across Workflow, Worker DO,
 Sandbox DO, container, and CLI process — each kill mechanism distinct and
-scripted (no flaky manual kills). Outcomes: safe completion, safe retry, or
-typed terminal state; never duplicate external effects, unbounded leases,
-or unrecorded orphan processes. Mid-turn kill = idempotent restart (the
-upstream reference orphans `claude -p`; cloudflare/agents#1829 — we are
-ahead of the references here, by design).
+scripted (no flaky manual kills). **The during-execution kill must restart
+idempotently and complete without duplicate effects** — a
+`reconciliation_required`/`failed`/`blocked` outcome on that barrier fails
+the unattended gate (prd.md §10 M2b). Unrecoverable injected faults (e.g.
+corrupt backup) may land typed terminal states. Never duplicate external
+effects, unbounded leases, or unrecorded orphan processes. (The upstream
+reference orphans `claude -p`; cloudflare/agents#1829 — we are ahead of
+the references here, by design.)
+
+Plus the **external-write reconciliation test**: one disposable
+Worker-side GitHub write (comment or PR on the fixture repo), fault
+injected after provider success and before ledger acknowledgement;
+reconciliation must find and return the same provider object id with no
+second effect. This is the auto-return-to-fork condition ("unrecoverable
+duplicate effects") exercised, not assumed.
 
 ### M4b — Product shape, thin (target: day 17)
 
