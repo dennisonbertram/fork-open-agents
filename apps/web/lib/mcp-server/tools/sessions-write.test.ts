@@ -17,11 +17,37 @@ const createSession = mock(
   async (_data: unknown) => ({ id: "session-1", userId: "user-1" }) as unknown,
 );
 const createChat = mock(
-  async (_data: unknown) => ({ id: "chat-1", sessionId: "session-1" }) as unknown,
+  async (_data: unknown) =>
+    ({ id: "chat-1", sessionId: "session-1" }) as unknown,
 );
-const getSessionMetadataById = mock(async (_id: string) => undefined as unknown);
+const getSessionMetadataById = mock(
+  async (_id: string) => undefined as unknown,
+);
 const getChatById = mock(async (_id: string) => undefined as unknown);
 const getChatsBySessionId = mock(async (_sessionId: string) => [] as unknown[]);
+
+// The rest of these are not exercised by sessions-write.ts itself, but
+// registry.ts also loads sessions-read.ts (and sessions-write.ts loads
+// messages-from-db.ts) transitively from this same module path — Bun's
+// mock.module replaces the WHOLE module, so every symbol any of them import
+// from "@/lib/db/sessions" must be exported here too, or the import fails at
+// load time (see AGENTS.md's "BUN MOCK GOTCHA").
+const countChatMessages = mock(async (_chatId: string) => 0);
+const countSessionsByUserId = mock(
+  async (_userId: string, _opts: unknown) => 0,
+);
+const getChatSummariesBySessionId = mock(
+  async (_sessionId: string, _userId: string) => [] as unknown[],
+);
+const getRecentChatMessages = mock(
+  async (_chatId: string, _limit?: number) => [] as unknown[],
+);
+const getSessionDiffById = mock(
+  async (_sessionId: string) => undefined as unknown,
+);
+const getSessionsWithUnreadByUserId = mock(
+  async (_userId: string, _opts: unknown) => [] as unknown[],
+);
 
 mock.module("@/lib/db/sessions", () => ({
   createSession,
@@ -29,6 +55,12 @@ mock.module("@/lib/db/sessions", () => ({
   getSessionMetadataById,
   getChatById,
   getChatsBySessionId,
+  countChatMessages,
+  countSessionsByUserId,
+  getChatSummariesBySessionId,
+  getRecentChatMessages,
+  getSessionDiffById,
+  getSessionsWithUnreadByUserId,
 }));
 
 // Rate limiting for start_session must use the SAME key/ceiling shape as the
@@ -50,8 +82,7 @@ mock.module("@/lib/rate-limit", () => ({
 // (startChatRun, module 1) plus a sibling stopChatRun helper from the same
 // module, both operating on a chatId.
 const startChatRun = mock(
-  async (_input: unknown) =>
-    ({ status: "started", runId: "run-1" }) as unknown,
+  async (_input: unknown) => ({ status: "started", runId: "run-1" }) as unknown,
 );
 const stopChatRun = mock(
   async (_input: unknown) =>

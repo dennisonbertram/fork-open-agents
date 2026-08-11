@@ -6,9 +6,15 @@ mock.module("server-only", () => ({}));
 // --- workflow/api (start-run.ts imports `getRun` lazily via
 // `await import("workflow/api")`, mirroring route.ts; `start` is a normal
 // static import) ---
+// `start()` returns a run handle, and the started result must carry that
+// handle's readable through to the caller — the chat route streams from it
+// instead of re-deriving one with getRun(), which can fail independently.
 const startWorkflow = mock(
   async (_workflow: unknown, _args: unknown[]) =>
-    ({ runId: "run-new" }) as { runId: string },
+    ({
+      runId: "run-new",
+      getReadable: () => new ReadableStream(),
+    }) as { runId: string; getReadable: () => ReadableStream },
 );
 
 const runStatusByRunId = new Map<string, string>();
@@ -42,8 +48,17 @@ const createChatMessageIfNotExists = mock(
 );
 const touchChat = mock(async () => {});
 const isFirstChatMessage = mock(async () => false);
-const updateChat = mock(async () => {});
-const compareAndSetChatActiveStreamId = mock(async () => true);
+// Declare the mocks with their real signatures. A zero-arg factory fixes the
+// inferred mock type, so a later `.mockImplementation` that reads arguments —
+// which several of these tests need in order to assert on them — fails to
+// typecheck against it.
+const updateChat = mock(
+  async (_chatId: string, _patch: { title: string }) => undefined,
+);
+const compareAndSetChatActiveStreamId = mock(
+  async (_chatId: string, _expected: string | null, _next: string | null) =>
+    true,
+);
 const claimChatActiveStreamId = mock(async () => true);
 
 mock.module("@/lib/db/sessions", () => ({
@@ -58,10 +73,7 @@ mock.module("@/lib/db/sessions", () => ({
 
 const moduleUnderTestPromise = import("./start-run");
 
-function userMessage(
-  text: string,
-  id = "msg-1",
-): WebAgentUIMessage {
+function userMessage(text: string, id = "msg-1"): WebAgentUIMessage {
   return {
     id,
     role: "user",
@@ -80,7 +92,9 @@ type StartChatRunInput = {
   maxSteps?: number;
 };
 
-function baseInput(overrides: Partial<StartChatRunInput> = {}): StartChatRunInput {
+function baseInput(
+  overrides: Partial<StartChatRunInput> = {},
+): StartChatRunInput {
   return {
     chatId: "chat-1",
     sessionId: "session-1",
@@ -95,7 +109,10 @@ function baseInput(overrides: Partial<StartChatRunInput> = {}): StartChatRunInpu
 
 beforeEach(() => {
   startWorkflow.mockClear();
-  startWorkflow.mockImplementation(async () => ({ runId: "run-new" }));
+  startWorkflow.mockImplementation(async () => ({
+    runId: "run-new",
+    getReadable: () => new ReadableStream(),
+  }));
   runStatusByRunId.clear();
   getRun.mockClear();
   cancelSpy.mockClear();
@@ -173,7 +190,10 @@ describe("startChatRun: existing active stream", () => {
       null,
     );
     expect(startWorkflow).toHaveBeenCalledTimes(1);
-    expect(result).toEqual({ status: "started", runId: "run-new" });
+    expect(result).toMatchObject({ status: "started", runId: "run-new" });
+    // The started result must carry the readable from the handle `start()`
+    // returned, so a streaming caller never re-derives it with getRun().
+    expect(typeof (result as { readable?: unknown }).readable).toBe("function");
   });
 
   test("a terminal (non-running) run also clears the slot and starts a new run", async () => {
@@ -190,7 +210,10 @@ describe("startChatRun: existing active stream", () => {
 
     const result = await startChatRun(baseInput());
 
-    expect(result).toEqual({ status: "started", runId: "run-new" });
+    expect(result).toMatchObject({ status: "started", runId: "run-new" });
+    // The started result must carry the readable from the handle `start()`
+    // returned, so a streaming caller never re-derives it with getRun().
+    expect(typeof (result as { readable?: unknown }).readable).toBe("function");
   });
 
   test("compare-and-set losing repeatedly against a still-held slot returns conflict after bounded retries, with no new run started", async () => {
@@ -224,7 +247,10 @@ describe("startChatRun: happy path with no active stream", () => {
       baseInput({ messages: [message], maxSteps: 250 }),
     );
 
-    expect(result).toEqual({ status: "started", runId: "run-new" });
+    expect(result).toMatchObject({ status: "started", runId: "run-new" });
+    // The started result must carry the readable from the handle `start()`
+    // returned, so a streaming caller never re-derives it with getRun().
+    expect(typeof (result as { readable?: unknown }).readable).toBe("function");
 
     expect(createChatMessageIfNotExists).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -255,15 +281,50 @@ describe("startChatRun: happy path with no active stream", () => {
     expect(claimChatActiveStreamId).toHaveBeenCalledWith("chat-1", "run-new");
   });
 
-  test("the claim losing the race cancels the just-started run and returns conflict", async () => {
+  test("the claim losing the race cancels the just-started run and reports the LIVE run, not the cancelled one", async () => {
     const { startChatRun } = await moduleUnderTestPromise;
     runStatusByRunId.set("run-new", "running");
     claimChatActiveStreamId.mockImplementation(async () => false);
+    // The slot starts empty (so we start a run), and by the time the claim
+    // fails another writer owns it — that winner is what a caller must be
+    // told about. Reporting our own cancelled id would point them at a dead
+    // run.
+    let chatReads = 0;
+    getChatById.mockImplementation(async () => {
+      chatReads += 1;
+      return {
+        id: "chat-1",
+        activeStreamId: chatReads === 1 ? null : "run-winner",
+      };
+    });
 
     const result = await startChatRun(baseInput());
 
-    expect(result).toEqual({ status: "conflict", runId: "run-new" });
+    expect(result).toEqual({
+      status: "conflict",
+      runId: "run-winner",
+      cancelledRunId: "run-new",
+    });
     expect(getRun).toHaveBeenCalledWith("run-new");
+    expect(cancelSpy).toHaveBeenCalledTimes(1);
+  });
+
+  test("a lost claim still reports our own run id when the slot cannot be re-read", async () => {
+    const { startChatRun } = await moduleUnderTestPromise;
+    runStatusByRunId.set("run-new", "running");
+    claimChatActiveStreamId.mockImplementation(async () => false);
+    let chatReads = 0;
+    getChatById.mockImplementation(async () => {
+      chatReads += 1;
+      if (chatReads === 1) {
+        return { id: "chat-1", activeStreamId: null };
+      }
+      throw new Error("db down");
+    });
+
+    const result = await startChatRun(baseInput());
+
+    expect(result).toMatchObject({ status: "conflict", runId: "run-new" });
     expect(cancelSpy).toHaveBeenCalledTimes(1);
   });
 
@@ -277,7 +338,7 @@ describe("startChatRun: happy path with no active stream", () => {
     );
 
     expect(updateChat).toHaveBeenCalledTimes(1);
-    const [, patch] = updateChat.mock.calls[0] as [string, { title: string }];
+    const [, patch] = updateChat.mock.calls[0];
     expect(patch.title).toBe(`${"x".repeat(80)}...`);
     expect(patch.title.length).toBe(83);
   });
@@ -293,6 +354,9 @@ describe("startChatRun: happy path with no active stream", () => {
     expect(isFirstChatMessage).not.toHaveBeenCalled();
     expect(updateChat).not.toHaveBeenCalled();
     expect(startWorkflow).toHaveBeenCalledTimes(1);
-    expect(result).toEqual({ status: "started", runId: "run-new" });
+    expect(result).toMatchObject({ status: "started", runId: "run-new" });
+    // The started result must carry the readable from the handle `start()`
+    // returned, so a streaming caller never re-derives it with getRun().
+    expect(typeof (result as { readable?: unknown }).readable).toBe("function");
   });
 });
