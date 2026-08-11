@@ -301,13 +301,23 @@ async function resolveChatModelRuntime(params: {
       );
     }
 
+    // Compare the BARE model id. A legacy chat can still carry a composite
+    // "user-profile:<profileId>:<modelId>" here, and a profile's own model
+    // list holds bare ids — comparing the composite matches nothing and
+    // `toAnthropicDirectModelId` rejects the prefix too, so the composite
+    // would be refused as "not available on this profile" before
+    // resolveStepAgentModels ever gets to resolve it.
+    const mainModelIdForProfileCheck = parseModelOptionSelection(
+      String(mainModelSelection.id),
+    ).modelId;
+
     // Valid when the model is served by this profile's endpoint: a model
     // discovered from its /v1/models listing (e.g. ZAI's "glm-5.2"), or — for
     // profiles without discovered models yet — an Anthropic catalog id.
     const servedByProfile =
       (profile.models ?? []).some(
-        (model) => model.id === mainModelSelection.id,
-      ) || Boolean(toAnthropicDirectModelId(mainModelSelection.id));
+        (model) => model.id === mainModelIdForProfileCheck,
+      ) || Boolean(toAnthropicDirectModelId(mainModelIdForProfileCheck));
     if (!servedByProfile) {
       const { InferenceProfileResolutionError } =
         await import("@/lib/inference/profile-resolution");

@@ -90,3 +90,49 @@ describe("inference attribution for a composite chat model id", () => {
     ).toBe("profile-pref");
   });
 });
+
+/**
+ * The profile availability check compares against a profile's own model list,
+ * which holds BARE ids. A legacy chat can still carry a composite here, and a
+ * composite matches nothing in that list — `toAnthropicDirectModelId` rejects
+ * the prefix too — so the run was refused as "not available on this profile"
+ * before `resolveStepAgentModels` could resolve it. Recovering the profile for
+ * attribution is not enough on its own: it moves the failure rather than
+ * removing it.
+ */
+function isServedByProfile(input: {
+  selectionId: string;
+  profileModelIds: string[];
+}): boolean {
+  const bare = parseModelOptionSelection(input.selectionId).modelId;
+  return input.profileModelIds.includes(bare);
+}
+
+describe("profile availability check for a composite selection", () => {
+  test("matches a composite selection against the profile's bare model ids", () => {
+    expect(
+      isServedByProfile({
+        selectionId: "user-profile:profile-1:gemma-4-31b",
+        profileModelIds: ["gemma-4-31b", "zai-glm-4.7"],
+      }),
+    ).toBe(true);
+  });
+
+  test("still refuses a model the profile does not serve", () => {
+    expect(
+      isServedByProfile({
+        selectionId: "user-profile:profile-1:not-served",
+        profileModelIds: ["gemma-4-31b"],
+      }),
+    ).toBe(false);
+  });
+
+  test("a plain id is compared unchanged", () => {
+    expect(
+      isServedByProfile({
+        selectionId: "gemma-4-31b",
+        profileModelIds: ["gemma-4-31b"],
+      }),
+    ).toBe(true);
+  });
+});
