@@ -8,6 +8,10 @@ import {
   getSessionMetadataById,
 } from "@/lib/db/sessions";
 import { getAuthBaseURLFallback } from "@/lib/auth/base-url";
+import {
+  isValidGitHubRepoName,
+  isValidGitHubRepoOwner,
+} from "@/lib/github/urls";
 import { buildChatUrl, McpToolError } from "../context";
 import type { McpScope } from "../context";
 // Type-only import to avoid an ESM circular value dependency with registry.ts
@@ -215,6 +219,20 @@ export async function startSession(
   // auto-commit behavior, and their Composio selection — and it creates the
   // session and its first chat in one transaction rather than two inserts that
   // can leave an orphaned session behind.
+  // These strings end up inside a clone URL, so validate them the same way the
+  // browser route does before they reach the sandbox.
+  if (
+    !(
+      isValidGitHubRepoOwner(input.repoOwner) &&
+      isValidGitHubRepoName(input.repoName)
+    )
+  ) {
+    throw new McpToolError(
+      "invalid_request",
+      `"${input.repoOwner}/${input.repoName}" is not a valid GitHub repository.`,
+    );
+  }
+
   const identity = await getUserIdentity(ctx.userId);
   if (!identity) {
     throw new McpToolError("not_found", "This account was not found.");
@@ -227,6 +245,13 @@ export async function startSession(
     title: deriveTitle(input.prompt),
     repoOwner: input.repoOwner,
     repoName: input.repoName,
+    // Without a cloneUrl the sandbox never clones anything: the runtime treats
+    // the session as having no repo at all, skips repo-access verification and
+    // the installation token, and initializes an empty git repo instead. The
+    // run would bill against a sandbox containing none of the code the prompt
+    // refers to, while this tool reported success. The browser always sends
+    // this for a repo-backed session.
+    cloneUrl: `https://github.com/${input.repoOwner}/${input.repoName}`,
     branch: input.branch,
     runtimeMode: input.runtimeMode,
     // No next/server `after` outside a request, so run the prewarm kick

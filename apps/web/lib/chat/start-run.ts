@@ -256,9 +256,22 @@ export async function startChatRun(
     // Another request or workflow run owns the slot — cancel our duplicate.
     try {
       const { getRun } = await import("workflow/api");
-      getRun(run.runId).cancel();
-    } catch {
-      // Best-effort cleanup.
+      // Awaited deliberately: an un-awaited cancel that rejects asynchronously
+      // escapes this try/catch, and the duplicate run keeps executing and
+      // billing with nothing retrying it. Log the runId so an orphaned run is
+      // findable if the cancel itself fails.
+      await getRun(run.runId).cancel();
+    } catch (error) {
+      console.warn(
+        "[chat] failed to cancel a duplicate run after losing the claim",
+        JSON.stringify({
+          service: "chat",
+          event: "chat.run.duplicate_cancel_failed",
+          chatId: input.chatId,
+          runId: run.runId,
+          message: error instanceof Error ? error.message : String(error),
+        }),
+      );
     }
 
     // Report the run that actually holds the slot, not the one we just

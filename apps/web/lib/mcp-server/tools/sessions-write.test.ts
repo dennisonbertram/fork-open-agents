@@ -263,6 +263,47 @@ describe("startSession", () => {
     expect(startChatRun).toHaveBeenCalledTimes(1);
   });
 
+  test("passes a cloneUrl, without which the sandbox clones nothing and the run bills against empty code", async () => {
+    // A session created with repoOwner/repoName but no cloneUrl is treated by
+    // the runtime as having no repo at all: no clone, no repo-access check, no
+    // installation token — it initializes an empty git repo instead. The tool
+    // would report success while the agent worked on nothing.
+    const { startSession } = await toolsModulePromise;
+    const received: Record<string, unknown>[] = [];
+    createSessionCore.mockImplementation(async (input) => {
+      received.push(input as Record<string, unknown>);
+      return {
+        session: { id: "session-new", userId: "user-1" },
+        chat: { id: "chat-new", sessionId: "session-new" },
+      };
+    });
+
+    await startSession(makeCtx({}), {
+      repoOwner: "acme",
+      repoName: "widgets",
+      prompt: "fix the login bug",
+    });
+
+    expect(received[0]?.cloneUrl).toBe("https://github.com/acme/widgets");
+  });
+
+  test("rejects a repo owner or name that is not a valid GitHub identifier", async () => {
+    const { startSession } = await toolsModulePromise;
+    const { McpToolError } = await contextModulePromise;
+
+    const promise = startSession(makeCtx({}), {
+      repoOwner: "acme/../evil",
+      repoName: "widgets",
+      prompt: "do the thing",
+    });
+
+    await expect(promise).rejects.toBeInstanceOf(McpToolError);
+    await expect(promise).rejects.toMatchObject({
+      errorKind: "invalid_request",
+    });
+    expect(createSessionCore).not.toHaveBeenCalled();
+  });
+
   test("surfaces the rate limit as errorKind rate_limited, using the same key/ceiling as the browser session-create path", async () => {
     const { startSession } = await toolsModulePromise;
     const { McpToolError } = await contextModulePromise;
