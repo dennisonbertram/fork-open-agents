@@ -287,6 +287,36 @@ describe("startSession", () => {
     expect(received[0]?.cloneUrl).toBe("https://github.com/acme/widgets");
   });
 
+  test("never runs the prewarm kick inline, which would hold the response open for the whole sandbox provisioning", async () => {
+    // Observed in production: start_session created the session and started the
+    // run, then never returned, because the scheduler invoked the prewarm
+    // callback inline and sandbox provisioning takes minutes.
+    const { startSession } = await toolsModulePromise;
+    let invokedInline = false;
+    createSessionCore.mockImplementation(async (input) => {
+      const schedule = (input as Record<string, unknown>)
+        .scheduleBackgroundWork as
+        | ((cb: () => Promise<void>) => void)
+        | undefined;
+      expect(typeof schedule).toBe("function");
+      schedule?.(async () => {
+        invokedInline = true;
+      });
+      return {
+        session: { id: "session-new", userId: "user-1" },
+        chat: { id: "chat-new", sessionId: "session-new" },
+      };
+    });
+
+    await startSession(makeCtx({}), {
+      repoOwner: "acme",
+      repoName: "widgets",
+      prompt: "go",
+    });
+
+    expect(invokedInline).toBe(false);
+  });
+
   test("rejects a repo owner or name that is not a valid GitHub identifier", async () => {
     const { startSession } = await toolsModulePromise;
     const { McpToolError } = await contextModulePromise;
