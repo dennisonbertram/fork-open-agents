@@ -208,11 +208,34 @@ export async function getSessionsByUserId(userId: string) {
   return records.map((session) => normalizeSessionRecord(session));
 }
 
-export async function countSessionsByUserId(userId: string): Promise<number> {
+/**
+ * Total sessions for a user, optionally narrowed by the same status filter
+ * `getSessionsWithUnreadByUserId` applies, so a paged caller can report a
+ * total that describes the same set as the page it just fetched.
+ *
+ * The status predicate must stay identical to that query's: "active" means
+ * everything not archived, not `status = "running"`.
+ */
+export async function countSessionsByUserId(
+  userId: string,
+  options: { status?: "all" | "active" | "archived" } = {},
+): Promise<number> {
+  const status = options.status ?? "all";
+  const statusFilter =
+    status === "active"
+      ? ne(sessions.status, "archived")
+      : status === "archived"
+        ? eq(sessions.status, "archived")
+        : undefined;
+
   const [result] = await db
     .select({ count: sql<number>`COUNT(*)::int` })
     .from(sessions)
-    .where(eq(sessions.userId, userId));
+    .where(
+      statusFilter
+        ? and(eq(sessions.userId, userId), statusFilter)
+        : eq(sessions.userId, userId),
+    );
 
   return result?.count ?? 0;
 }

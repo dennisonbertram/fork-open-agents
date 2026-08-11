@@ -28,6 +28,10 @@ const getRecentChatMessages = mock(
 );
 // F1 fix contract: total message count for the chat, independent of the page.
 const countChatMessages = mock(async (_chatId: string) => 0);
+// list_sessions reports an account-wide total, filtered the same way as the page.
+const countSessionsByUserId = mock(
+  async (_userId: string, _options?: { status?: string }) => 0,
+);
 
 mock.module("@/lib/db/sessions", () => ({
   getSessionsWithUnreadByUserId,
@@ -40,6 +44,7 @@ mock.module("@/lib/db/sessions", () => ({
   getSessionDiffById,
   getRecentChatMessages,
   countChatMessages,
+  countSessionsByUserId,
 }));
 
 const isSandboxActive = mock(() => false);
@@ -171,6 +176,8 @@ beforeEach(() => {
   getRecentChatMessages.mockImplementation(async () => []);
   countChatMessages.mockClear();
   countChatMessages.mockImplementation(async () => 0);
+  countSessionsByUserId.mockClear();
+  countSessionsByUserId.mockImplementation(async () => 0);
   isSandboxActive.mockClear();
 });
 
@@ -344,7 +351,7 @@ describe("listSessions", () => {
       offset: 0,
     });
 
-    expect(result.count).toBe(1);
+    expect(result.returned).toBe(1);
     expect(result.limit).toBe(20);
     expect(result.offset).toBe(0);
     expect(result.sessions).toHaveLength(1);
@@ -407,7 +414,67 @@ describe("listSessions", () => {
       offset: 0,
     });
 
-    expect(result).toEqual({ sessions: [], count: 0, limit: 20, offset: 0 });
+    expect(result).toEqual({
+      sessions: [],
+      returned: 0,
+      total: 0,
+      limit: 20,
+      offset: 0,
+    });
+  });
+
+  test("reports the account-wide total alongside the page, so a client knows when to stop paging", async () => {
+    // `count` used to mean "rows on this page", which is indistinguishable
+    // from a total when the page happens to be full — a client paging through
+    // 86 sessions saw count=50 and had no way to know more existed except by
+    // requesting another page. get_messages already returns total + returned;
+    // this makes list_sessions agree.
+    const { listSessions } = await toolsModulePromise;
+    getSessionsWithUnreadByUserId.mockImplementation(async () => [
+      {
+        id: "session-1",
+        title: "Fix bug",
+        status: "running",
+        repoOwner: "acme",
+        repoName: "widgets",
+        branch: "main",
+        linesAdded: 0,
+        linesRemoved: 0,
+        prNumber: null,
+        prStatus: null,
+        createdAt: new Date("2026-01-01T00:00:00Z"),
+        hasUnread: false,
+        hasStreaming: false,
+        latestChatId: null,
+        lastActivityAt: new Date("2026-01-01T00:00:00Z"),
+      },
+    ]);
+    countSessionsByUserId.mockImplementation(async () => 86);
+
+    const result = await listSessions(makeCtx({}), {
+      status: "all",
+      limit: 1,
+      offset: 0,
+    });
+
+    expect(result.returned).toBe(1);
+    expect(result.total).toBe(86);
+    expect(result).not.toHaveProperty("count");
+  });
+
+  test("counts with the same status filter as the page it describes", async () => {
+    const { listSessions } = await toolsModulePromise;
+    countSessionsByUserId.mockImplementation(async () => 19);
+
+    await listSessions(makeCtx({}), {
+      status: "active",
+      limit: 20,
+      offset: 0,
+    });
+
+    expect(countSessionsByUserId).toHaveBeenCalledWith("user-1", {
+      status: "active",
+    });
   });
 });
 

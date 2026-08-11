@@ -10,6 +10,16 @@ export const MCP_SCOPES = [
 
 export type McpScope = (typeof MCP_SCOPES)[number];
 
+/**
+ * Every failure a tool can report.
+ *
+ * Caveat worth knowing before debugging a client: `invalid_request` rarely
+ * reaches the wire. The MCP SDK validates a tool call's arguments against the
+ * registered Zod schema *before* `runMcpTool` dispatches, so a schema violation
+ * comes back as the SDK's own `isError` result ("Input validation error: …")
+ * rather than this envelope. Our `invalid_request` only surfaces for input the
+ * schema accepts but a handler rejects.
+ */
 export const MCP_ERROR_KINDS = [
   "unauthorized",
   "forbidden_scope",

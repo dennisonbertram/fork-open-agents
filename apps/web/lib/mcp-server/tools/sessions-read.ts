@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   countChatMessages,
+  countSessionsByUserId,
   getChatById,
   getChatSummariesBySessionId,
   getChatsBySessionId,
@@ -133,7 +134,10 @@ export type ListSessionsInput = z.infer<typeof listSessionsInputSchema>;
 
 export type ListSessionsResult = {
   sessions: McpSessionSummary[];
-  count: number;
+  /** Rows on this page. */
+  returned: number;
+  /** Sessions matching the same status filter across the whole account. */
+  total: number;
   limit: number;
   offset: number;
 };
@@ -424,17 +428,24 @@ export async function listSessions(
   ctx: ToolCallerContext,
   input: ListSessionsInput,
 ): Promise<ListSessionsResult> {
-  const rows = await getSessionsWithUnreadByUserId(ctx.userId, {
-    status: input.status,
-    limit: input.limit,
-    offset: input.offset,
-  });
+  // The total is counted with the same status filter as the page, so a client
+  // paging through can tell when it has seen everything. Without it, a full
+  // page is indistinguishable from the end of the list.
+  const [rows, total] = await Promise.all([
+    getSessionsWithUnreadByUserId(ctx.userId, {
+      status: input.status,
+      limit: input.limit,
+      offset: input.offset,
+    }),
+    countSessionsByUserId(ctx.userId, { status: input.status }),
+  ]);
 
   const sessions = rows.map(toSessionSummary);
 
   return {
     sessions,
-    count: sessions.length,
+    returned: sessions.length,
+    total,
     limit: input.limit,
     offset: input.offset,
   };
@@ -576,7 +587,7 @@ export const sessionReadTools: readonly AnyMcpToolDefinition[] = [
   defineTool({
     name: "list_sessions",
     description:
-      "List the caller's agent sessions with lightweight status, repo, and PR summary fields.",
+      "List the caller's agent sessions with lightweight status, repo, and PR summary fields. Returns `returned` (rows on this page) and `total` (all sessions matching the same status filter), so page until offset + returned reaches total.",
     scope: SESSION_READ_SCOPE,
     inputSchema: listSessionsInputSchema,
     handler: listSessions,
