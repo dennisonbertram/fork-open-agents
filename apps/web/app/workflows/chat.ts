@@ -75,7 +75,10 @@ import { modelMessagesContainReasoning } from "@/lib/chat/strip-model-message-re
 import { sanitizeInterruptedToolCalls } from "@/lib/chat/sanitize-interrupted-tool-calls";
 import { getAllVariants } from "@/lib/model-variants";
 import { APP_DEFAULT_MODEL_ID } from "@/lib/models";
-import { getModelOptionSelectionId } from "@/lib/inference/model-option-id";
+import {
+  getModelOptionSelectionId,
+  parseModelOptionSelection,
+} from "@/lib/inference/model-option-id";
 import { getModelSystemPromptForSelection } from "@/lib/model-system-prompts";
 import type { InferenceRoute } from "@/lib/inference/types";
 import type { RecordSessionEventInput } from "@/lib/observability/events";
@@ -266,8 +269,18 @@ async function resolveChatModelRuntime(params: {
   const autoCreatePrEnabled =
     autoCommitEnabled &&
     (sessionRecord.autoCreatePrOverride ?? preferences?.autoCreatePr ?? false);
+  // A chat whose `modelId` is still a "user-profile:<profileId>:<modelId>"
+  // composite carries its profile inside that id. Recover it here, or the run
+  // is attributed to the gateway with a null profile while
+  // resolveStepAgentModels goes on to route the call through the user's
+  // endpoint — message metadata, workflow events, and operator cost
+  // diagnostics would all report a BYOK call as a platform one.
+  const embeddedProfileId = parseModelOptionSelection(
+    chat.modelId ?? "",
+  ).inferenceProfileId;
   const inferenceProfileId =
     chat.inferenceProfileId ??
+    embeddedProfileId ??
     sessionRecord.inferenceProfileId ??
     preferences?.defaultInferenceProfileId ??
     null;
