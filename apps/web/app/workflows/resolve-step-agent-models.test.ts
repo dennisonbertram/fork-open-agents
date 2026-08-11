@@ -342,6 +342,34 @@ describe("resolveStepAgentModels", () => {
     );
   });
 
+  // Proves the deferral fix actually lands: resolveChatModelSelection is
+  // meant to hand back an UNMINTED selection object — `{ id: "user-profile:
+  // <profileId>:<modelId>" }`, still bearing the internal prefix — for a BYOK
+  // subagent default, rather than throwing UnresolvedCompositeModelIdError.
+  // `resolveSubagent`'s own gate (`optionId(...).startsWith(
+  // USER_INFERENCE_OPTION_PREFIX)`) must still see that prefix on an
+  // already-selection-shaped object (not just a raw string) and resolve it,
+  // exactly as it does for the `compositeId()` fixtures above.
+  test("picks up an unminted composite selection object as the subagent default", async () => {
+    const resolve = fakeResolver();
+    const resolved = await resolveStepAgentModels({
+      userId: "user-1",
+      inferenceProfileId: null,
+      agentOptions: {
+        model: { id: toProviderModelId("anthropic/claude-haiku-4.5") },
+        subagentModel: {
+          id: compositeId("user-profile:profile-1:gemma-4-31b"),
+        },
+      },
+      resolve,
+    });
+
+    expect((resolved.subagentModel as unknown as { id: string }).id).toBe(
+      "gemma-4-31b",
+    );
+    expect(JSON.stringify(resolved)).not.toContain("user-profile:");
+  });
+
   test("accepts a bare string model id", async () => {
     const resolve = fakeResolver();
     const resolved = await resolveStepAgentModels({
