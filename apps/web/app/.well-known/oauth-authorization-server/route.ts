@@ -24,7 +24,12 @@ export async function GET(request: Request): Promise<Response> {
   });
 
   const origin = protectedResource.resource;
-  const basePath = auth.options.basePath ?? "/api/auth";
+  // `auth.options` is inferred from the literal config object, which never
+  // sets `basePath`, so the property is absent from its type even though
+  // better-auth reads it at runtime. Narrow rather than assume, so this keeps
+  // working if the config ever does set one.
+  const basePath =
+    (auth.options as { basePath?: string }).basePath ?? "/api/auth";
   const authBase = `${origin}${basePath}`;
 
   const metadata = {

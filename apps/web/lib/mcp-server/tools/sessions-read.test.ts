@@ -145,6 +145,97 @@ describe("whoami", () => {
 });
 
 describe("listSessions", () => {
+  test("survives a string lastActivityAt, which is what the driver actually returns", async () => {
+    // getSessionsWithUnreadByUserId declares lastActivityAt as Date, but it is
+    // a raw `sql<Date>\`COALESCE(MAX(chats.updated_at), sessions.created_at)\``
+    // expression (lib/db/sessions.ts) and postgres-js hands back a string for
+    // it. Calling .toISOString() on that threw and turned every real
+    // list_sessions call into internal_error — invisible to a mock that
+    // returns a Date.
+    const { listSessions } = await toolsModulePromise;
+    getSessionsWithUnreadByUserId.mockImplementation(async () => [
+      {
+        id: "session-1",
+        title: "Fix bug",
+        status: "running",
+        repoOwner: "acme",
+        repoName: "widgets",
+        branch: "main",
+        linesAdded: 1,
+        linesRemoved: 2,
+        prNumber: null,
+        prStatus: null,
+        createdAt: new Date("2026-01-01T00:00:00Z"),
+        hasUnread: false,
+        hasStreaming: false,
+        latestChatId: "chat-1",
+        lastActivityAt: "2026-01-01 00:05:00+00" as unknown as Date,
+      },
+    ]);
+
+    const result = await listSessions(makeCtx({}), {
+      status: "active",
+      limit: 20,
+      offset: 0,
+    });
+
+    expect(result.sessions[0]?.lastActivityAt).toBe(
+      new Date("2026-01-01T00:05:00Z").toISOString(),
+    );
+  });
+
+  test("reads a driver timestamp with no timezone as UTC, not as local time", async () => {
+    // `bun test` forces TZ=UTC, which makes local-vs-UTC parsing bugs
+    // structurally invisible here while the dev server (running in the
+    // machine's real zone) shifts the value by the UTC offset. Pin a non-UTC
+    // zone for this assertion so it can actually fail.
+    const originalTz = process.env.TZ;
+    process.env.TZ = "Europe/Prague";
+    try {
+      // The underlying column is `timestamp` (not timestamptz), so the driver
+      // returns "2026-01-01 00:05:00" with no offset. `new Date(...)` on that
+      // string resolves it in the machine's local zone, which shifted
+      // lastActivityAt hours away from createdAt for the same instant. Drizzle's
+      // own PgTimestamp mapper appends "+0000"; match it.
+      const { listSessions } = await toolsModulePromise;
+      getSessionsWithUnreadByUserId.mockImplementation(async () => [
+        {
+          id: "session-1",
+          title: "Fix bug",
+          status: "running",
+          repoOwner: null,
+          repoName: null,
+          branch: null,
+          linesAdded: null,
+          linesRemoved: null,
+          prNumber: null,
+          prStatus: null,
+          createdAt: new Date("2026-01-01T00:05:00Z"),
+          hasUnread: false,
+          hasStreaming: false,
+          latestChatId: null,
+          lastActivityAt: "2026-01-01 00:05:00" as unknown as Date,
+        },
+      ]);
+
+      const result = await listSessions(makeCtx({}), {
+        status: "active",
+        limit: 20,
+        offset: 0,
+      });
+
+      // Same instant expressed two ways must round-trip to the same string.
+      expect(result.sessions[0]?.lastActivityAt).toBe(
+        result.sessions[0]?.createdAt,
+      );
+      expect(result.sessions[0]?.lastActivityAt).toBe(
+        "2026-01-01T00:05:00.000Z",
+      );
+    } finally {
+      process.env.TZ = originalTz ?? "UTC";
+    }
+  });
+
   test("maps rows to the documented summary shape, scoped to the caller, including a web URL", async () => {
     const { listSessions } = await toolsModulePromise;
     getSessionsWithUnreadByUserId.mockImplementation(async (userId) => {

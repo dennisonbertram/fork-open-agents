@@ -201,6 +201,40 @@ function toRepo(
   return repoOwner && repoName ? `${repoOwner}/${repoName}` : null;
 }
 
+/**
+ * Coerce a timestamp that crosses the tool boundary into ISO 8601.
+ *
+ * Not every value typed `Date` in a db helper's return type is one at runtime.
+ * `getSessionsWithUnreadByUserId` declares `lastActivityAt: Date` but computes
+ * it as a raw `sql<Date>` expression, and postgres-js hands those back as
+ * strings — calling `.toISOString()` directly turned every real list_sessions
+ * call into internal_error while mocked tests stayed green. Coerce defensively
+ * at every timestamp instead of trusting the declared type.
+ */
+function toIsoString(
+  value: Date | string | number | null | undefined,
+): string | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value.toISOString();
+  }
+  // The columns behind these values are `timestamp`, not `timestamptz`, so a
+  // raw driver string carries no offset ("2026-01-01 00:05:00") and `new Date`
+  // would resolve it in the server's local zone — shifting it by the UTC
+  // offset. Drizzle's own PgTimestamp mapper appends "+0000" for
+  // non-timezone columns; do the same so both paths agree on the instant.
+  const normalized =
+    // Postgres writes the offset as "+00", "+0000", or "+00:00" depending on
+    // the driver, so all three must count as already-zoned.
+    typeof value === "string" && !/(?:[Zz]|[+-]\d{2}(?::?\d{2})?)$/.test(value)
+      ? `${value.replace(" ", "T")}Z`
+      : value;
+  const date = new Date(normalized);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
 function toSessionSummary(row: SessionWithUnreadRow): McpSessionSummary {
   return {
     id: row.id,
@@ -215,8 +249,9 @@ function toSessionSummary(row: SessionWithUnreadRow): McpSessionSummary {
     hasUnread: row.hasUnread,
     isStreaming: row.hasStreaming,
     latestChatId: row.latestChatId,
-    lastActivityAt: row.lastActivityAt.toISOString(),
-    createdAt: row.createdAt.toISOString(),
+    lastActivityAt:
+      toIsoString(row.lastActivityAt) ?? toIsoString(row.createdAt) ?? "",
+    createdAt: toIsoString(row.createdAt) ?? "",
     url: buildSessionUrl(row.id),
   };
 }
@@ -231,9 +266,9 @@ function toChatSummary(
     isStreaming: chat.isStreaming,
     hasUnread: chat.hasUnread,
     lastAssistantMessageAt: chat.lastAssistantMessageAt
-      ? chat.lastAssistantMessageAt.toISOString()
+      ? toIsoString(chat.lastAssistantMessageAt)
       : null,
-    createdAt: chat.createdAt.toISOString(),
+    createdAt: toIsoString(chat.createdAt) ?? "",
     url: buildChatUrl(sessionId, chat.id),
   };
 }
@@ -298,7 +333,7 @@ function toMessageSummary(row: ChatMessageRow): McpMessageSummary {
   return {
     id: row.id,
     role: row.role,
-    createdAt: row.createdAt.toISOString(),
+    createdAt: toIsoString(row.createdAt) ?? "",
     preview: buildMessagePreview(parts),
     hasToolCalls: hasToolCallParts(parts),
   };
@@ -402,10 +437,10 @@ export async function getSession(
     repo: toRepo(record.repoOwner, record.repoName),
     branch: record.branch,
     url: buildSessionUrl(record.id),
-    createdAt: record.createdAt.toISOString(),
-    updatedAt: record.updatedAt.toISOString(),
+    createdAt: toIsoString(record.createdAt) ?? "",
+    updatedAt: toIsoString(record.updatedAt) ?? "",
     lastActivityAt: record.lastActivityAt
-      ? record.lastActivityAt.toISOString()
+      ? toIsoString(record.lastActivityAt)
       : null,
     linesAdded: record.linesAdded ?? 0,
     linesRemoved: record.linesRemoved ?? 0,
@@ -495,7 +530,7 @@ export async function getDiffSummary(
     url,
     hasCachedDiff: true,
     computedAt: record.cachedDiffUpdatedAt
-      ? record.cachedDiffUpdatedAt.toISOString()
+      ? toIsoString(record.cachedDiffUpdatedAt)
       : null,
     baseRef: cached.baseRef ?? null,
     totalFiles: cached.summary.totalFiles,
