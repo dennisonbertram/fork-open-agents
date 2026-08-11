@@ -15,7 +15,6 @@ import {
   type SubagentRoster,
   toProviderModelId,
 } from "@open-agents/agent";
-import { toAnthropicDirectModelId } from "@open-agents/agent/model-ids";
 import {
   getComposioErrorKind,
   getComposioUserFacingError,
@@ -79,6 +78,7 @@ import {
   getModelOptionSelectionId,
   parseModelOptionSelection,
 } from "@/lib/inference/model-option-id";
+import { isModelServedByProfile } from "@/lib/inference/profile-model-availability";
 import { getModelSystemPromptForSelection } from "@/lib/model-system-prompts";
 import type { InferenceRoute } from "@/lib/inference/types";
 import type { RecordSessionEventInput } from "@/lib/observability/events";
@@ -301,13 +301,10 @@ async function resolveChatModelRuntime(params: {
       );
     }
 
-    // Valid when the model is served by this profile's endpoint: a model
-    // discovered from its /v1/models listing (e.g. ZAI's "glm-5.2"), or — for
-    // profiles without discovered models yet — an Anthropic catalog id.
-    const servedByProfile =
-      (profile.models ?? []).some(
-        (model) => model.id === mainModelSelection.id,
-      ) || Boolean(toAnthropicDirectModelId(mainModelSelection.id));
+    const servedByProfile = isModelServedByProfile({
+      selectionId: String(mainModelSelection.id),
+      profile,
+    });
     if (!servedByProfile) {
       const { InferenceProfileResolutionError } =
         await import("@/lib/inference/profile-resolution");
