@@ -5,7 +5,8 @@ import { Button } from "@/components/ui/button";
 
 const SCOPE_DESCRIPTIONS: Record<string, string> = {
   "sessions:read": "Read your sessions, chat previews, and diff summaries",
-  "sessions:write": "Create and modify your sessions",
+  "sessions:write":
+    "Start and steer agent runs on your behalf. This runs code in a sandbox and consumes credits.",
   "agents:read": "Read your background agents and their runs",
   "agents:write": "Create and modify your background agents",
   "sandbox:exec": "Execute commands in your sandboxes",

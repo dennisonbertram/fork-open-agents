@@ -1,11 +1,10 @@
-import { getRun } from "workflow/api";
 import {
   requireAuthenticatedUser,
   requireOwnedChatById,
 } from "@/app/api/chat/_lib/chat-context";
 import type { WebAgentUIMessage } from "@/app/types";
+import { stopChatRun } from "@/lib/chat/stop-run";
 import {
-  compareAndSetChatActiveStreamId,
   createChatMessageIfNotExists,
   updateChatAssistantActivity,
 } from "@/lib/db/sessions";
@@ -48,32 +47,14 @@ export async function POST(request: Request, context: RouteContext) {
   }
 
   try {
-    const run = getRun(chat.activeStreamId);
-    await run.cancel();
-  } catch (error) {
-    console.error(
-      `[workflow] Failed to cancel workflow run for chat ${chatId}:`,
-      error,
-    );
+    await stopChatRun({ chatId, activeStreamId: chat.activeStreamId });
+  } catch {
+    // stopChatRun already logs the cancel failure.
     return Response.json(
       { error: "Failed to cancel workflow run", errorKind: "internal_error" },
       { status: 500 },
     );
   }
-
-  // Clear activeStreamId immediately so a follow-up prompt does not
-  // reconnect to the cancelled (but not yet terminal) workflow.
-  // Uses CAS to avoid clobbering a newer workflow that raced in.
-  await compareAndSetChatActiveStreamId(
-    chatId,
-    chat.activeStreamId,
-    null,
-  ).catch((err: unknown) => {
-    console.error(
-      `[workflow] Failed to clear activeStreamId for chat ${chatId}:`,
-      err,
-    );
-  });
 
   return Response.json({ success: true });
 }

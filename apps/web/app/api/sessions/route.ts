@@ -1,30 +1,22 @@
-import { nanoid } from "nanoid";
 import { after } from "next/server";
 import { isKnownManagedRuntimeProfileReference } from "@/lib/db/managed-runtime-saved-profiles";
 import { checkBotProtection } from "@/lib/botid";
 import {
-  createSessionWithInitialChat,
   getArchivedSessionCountByUserId,
   getSessionsWithUnreadByUserId,
-  getUsedSessionTitles,
 } from "@/lib/db/sessions";
-import { kickSandboxPrewarmWorkflow } from "@/lib/sandbox/prewarm-kick";
 import {
   getVercelProjectLinkByRepo,
   upsertVercelProjectLink,
 } from "@/lib/db/vercel-project-links";
-import { isComposioProfileAllowedForRepository } from "@/lib/db/composio";
-import { getUserPreferences } from "@/lib/db/user-preferences";
-import { splitModelSelection } from "@/lib/inference/model-option-id";
-import { resolveRepoDefaults } from "@/lib/repo-settings/resolve-repo-defaults";
 import {
   isValidGitHubRepoName,
   isValidGitHubRepoOwner,
   parseGitHubHttpsUrl,
 } from "@/lib/github/urls";
 import { checkRateLimit, rateLimitKey } from "@/lib/rate-limit";
-import { getRandomCityName } from "@/lib/random-city";
 import { getServerSession } from "@/lib/session/get-server-session";
+import { createSessionCore } from "@/lib/sessions/create-session";
 import {
   isVercelInvalidTokenError,
   listMatchingVercelProjects,
@@ -49,33 +41,6 @@ interface CreateSessionRequest {
   autoCommitPush?: boolean;
   autoCreatePr?: boolean;
   vercelProject?: VercelProjectSelection | null;
-}
-
-function generateBranchName(username: string, name?: string | null): string {
-  let initials = "nb";
-  if (name) {
-    initials =
-      name
-        .split(" ")
-        .map((n) => n[0]?.toLowerCase() ?? "")
-        .join("")
-        .slice(0, 2) || "nb";
-  } else if (username) {
-    initials = username.slice(0, 2).toLowerCase();
-  }
-  const randomSuffix = crypto.randomUUID().replace(/-/g, "").slice(0, 8);
-  return `${initials}/${randomSuffix}`;
-}
-
-async function resolveSessionTitle(
-  input: CreateSessionRequest,
-  userId: string,
-): Promise<string> {
-  if (input.title && input.title.trim()) {
-    return input.title.trim();
-  }
-  const usedNames = await getUsedSessionTitles(userId);
-  return getRandomCityName(usedNames);
 }
 
 const DEFAULT_ARCHIVED_SESSIONS_LIMIT = 50;
@@ -371,15 +336,6 @@ export async function POST(req: Request) {
   const hasRepo = Boolean(repoOwner && repoName);
 
   try {
-    const titlePromise = resolveSessionTitle(body, session.user.id);
-    const preferencesPromise = getUserPreferences(session.user.id);
-
-    // For repo-backed sessions, resolve per-repo defaults in parallel with prefs.
-    const repoDefaultsPromise =
-      hasRepo && repoOwner && repoName
-        ? resolveRepoDefaults({ userId: session.user.id, repoOwner, repoName })
-        : null;
-
     let resolvedVercelProject: VercelProjectSelection | null = null;
     if (hasRepo && repoOwner && repoName) {
       if (explicitVercelProject) {
@@ -430,116 +386,25 @@ export async function POST(req: Request) {
       }
     }
 
-    const [title, preferences, repoDefaults] = await Promise.all([
-      titlePromise,
-      preferencesPromise,
-      repoDefaultsPromise,
-    ]);
-
-    // Precedence: request body > repo defaults > user preferences > system default.
-    // For repo-backed sessions, repoDefaults is non-null and provides the
-    // second layer. For no-repo sessions, repoDefaults is null and we fall
-    // straight through to user preferences.
-    const effectiveAutoCommitPush =
-      autoCommitPush ??
-      repoDefaults?.autoCommitPush ??
-      preferences.autoCommitPush;
-
-    const effectiveAutoCreatePr =
-      autoCreatePr ?? repoDefaults?.autoCreatePr ?? preferences.autoCreatePr;
-
-    // Effective isNewBranch: body > repo defaults > false
-    const effectiveIsNewBranch =
-      bodyIsNewBranch ?? repoDefaults?.isNewBranch ?? false;
-
-    // Branch: if effectiveIsNewBranch, generate a new branch name;
-    // otherwise use the explicit body branch or resolved default branch.
-    let finalBranch: string | undefined;
-    if (effectiveIsNewBranch) {
-      finalBranch = generateBranchName(
-        session.user.username,
-        session.user.name,
-      );
-    } else {
-      finalBranch = branch ?? repoDefaults?.defaultBranch ?? undefined;
-    }
-
-    // runtimeMode precedence: body (explicit New-Chat picker choice) > repo
-    // defaults > system "classic". A default-profile preference change never
-    // auto-flips existing sessions — this only affects sessions created here.
-    const effectiveRuntimeMode =
-      bodyRuntimeMode ?? repoDefaults?.runtimeMode ?? "classic";
-
-    // managedRuntimeProfileId: body > repo defaults > user prefs
-    const effectiveManagedRuntimeProfileId =
-      managedRuntimeProfileId ??
-      repoDefaults?.managedRuntimeProfileId ??
-      preferences.defaultManagedRuntimeProfileId;
-
-    const defaultComposioProfileId =
-      preferences.composioAgentDefaults.main.defaultProfileId;
-    const composioPolicy = defaultComposioProfileId
-      ? await isComposioProfileAllowedForRepository({
-          userId: session.user.id,
-          profileId: defaultComposioProfileId,
-          repoOwner,
-          repoName,
-        })
-      : { allowed: true };
-    const result = await createSessionWithInitialChat({
-      session: {
-        id: nanoid(),
-        userId: session.user.id,
-        title,
-        status: "running",
-        repoOwner,
-        repoName,
-        branch: finalBranch,
-        cloneUrl,
-        vercelProjectId: resolvedVercelProject?.projectId ?? null,
-        vercelProjectName: resolvedVercelProject?.projectName ?? null,
-        vercelTeamId: resolvedVercelProject?.teamId ?? null,
-        vercelTeamSlug: resolvedVercelProject?.teamSlug ?? null,
-        isNewBranch: effectiveIsNewBranch,
-        // Full clone only applies to repo-backed sessions.
-        fullClone: hasRepo ? (fullClone ?? false) : false,
-        autoCommitPushOverride: effectiveAutoCommitPush,
-        autoCreatePrOverride: effectiveAutoCommitPush
-          ? effectiveAutoCreatePr
-          : false,
-        managedRuntimeProfileId: effectiveManagedRuntimeProfileId,
-        runtimeMode: effectiveRuntimeMode,
-        inferenceProfileId: preferences.defaultInferenceProfileId,
-        globalSkillRefs: preferences.globalSkillRefs,
-        // No-repo (New Chat) sessions skip sandbox provisioning entirely.
-        // Repo-backed sessions still enter the provisioning lifecycle.
-        sandboxState: hasRepo ? { type: sandboxType } : null,
-        lifecycleState: hasRepo ? "provisioning" : null,
-        lifecycleVersion: 0,
-      },
-      initialChat: {
-        id: nanoid(),
-        title: "New chat",
-        ...splitModelSelection(
-          preferences.defaultModelId,
-          preferences.defaultInferenceProfileId,
-        ),
-        composioSelection: {
-          mainProfileId:
-            defaultComposioProfileId && composioPolicy.allowed
-              ? defaultComposioProfileId
-              : null,
-        },
-      },
+    const result = await createSessionCore({
+      userId: session.user.id,
+      username: session.user.username,
+      name: session.user.name,
+      title: body.title,
+      repoOwner,
+      repoName,
+      branch,
+      cloneUrl,
+      isNewBranch: bodyIsNewBranch,
+      fullClone,
+      sandboxType,
+      runtimeMode: bodyRuntimeMode,
+      managedRuntimeProfileId,
+      autoCommitPush,
+      autoCreatePr,
+      resolvedVercelProject,
+      scheduleBackgroundWork: after,
     });
-
-    if (hasRepo) {
-      kickSandboxPrewarmWorkflow({
-        sessionId: result.session.id,
-        userId: session.user.id,
-        scheduleBackgroundWork: after,
-      });
-    }
 
     return Response.json(result);
   } catch (error) {
