@@ -15,7 +15,6 @@ import {
   type SubagentRoster,
   toProviderModelId,
 } from "@open-agents/agent";
-import { toAnthropicDirectModelId } from "@open-agents/agent/model-ids";
 import {
   getComposioErrorKind,
   getComposioUserFacingError,
@@ -75,7 +74,11 @@ import { modelMessagesContainReasoning } from "@/lib/chat/strip-model-message-re
 import { sanitizeInterruptedToolCalls } from "@/lib/chat/sanitize-interrupted-tool-calls";
 import { getAllVariants } from "@/lib/model-variants";
 import { APP_DEFAULT_MODEL_ID } from "@/lib/models";
-import { getModelOptionSelectionId } from "@/lib/inference/model-option-id";
+import {
+  getModelOptionSelectionId,
+  parseModelOptionSelection,
+} from "@/lib/inference/model-option-id";
+import { isModelServedByProfile } from "@/lib/inference/profile-model-availability";
 import { getModelSystemPromptForSelection } from "@/lib/model-system-prompts";
 import type { InferenceRoute } from "@/lib/inference/types";
 import type { RecordSessionEventInput } from "@/lib/observability/events";
@@ -266,8 +269,18 @@ async function resolveChatModelRuntime(params: {
   const autoCreatePrEnabled =
     autoCommitEnabled &&
     (sessionRecord.autoCreatePrOverride ?? preferences?.autoCreatePr ?? false);
+  // A chat whose `modelId` is still a "user-profile:<profileId>:<modelId>"
+  // composite carries its profile inside that id. Recover it here, or the run
+  // is attributed to the gateway with a null profile while
+  // resolveStepAgentModels goes on to route the call through the user's
+  // endpoint — message metadata, workflow events, and operator cost
+  // diagnostics would all report a BYOK call as a platform one.
+  const embeddedProfileId = parseModelOptionSelection(
+    chat.modelId ?? "",
+  ).inferenceProfileId;
   const inferenceProfileId =
     chat.inferenceProfileId ??
+    embeddedProfileId ??
     sessionRecord.inferenceProfileId ??
     preferences?.defaultInferenceProfileId ??
     null;
@@ -288,13 +301,10 @@ async function resolveChatModelRuntime(params: {
       );
     }
 
-    // Valid when the model is served by this profile's endpoint: a model
-    // discovered from its /v1/models listing (e.g. ZAI's "glm-5.2"), or — for
-    // profiles without discovered models yet — an Anthropic catalog id.
-    const servedByProfile =
-      (profile.models ?? []).some(
-        (model) => model.id === mainModelSelection.id,
-      ) || Boolean(toAnthropicDirectModelId(mainModelSelection.id));
+    const servedByProfile = isModelServedByProfile({
+      selectionId: String(mainModelSelection.id),
+      profile,
+    });
     if (!servedByProfile) {
       const { InferenceProfileResolutionError } =
         await import("@/lib/inference/profile-resolution");
