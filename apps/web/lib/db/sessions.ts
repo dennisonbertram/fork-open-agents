@@ -273,6 +273,18 @@ export type SessionWithUnread = SessionSidebarFields & {
   hasStreaming: boolean;
   latestChatId: string | null;
   lastActivityAt: Date;
+  /**
+   * Sessions matching this query's filter, ignoring limit/offset.
+   *
+   * Window functions run after GROUP BY but before LIMIT/OFFSET, so this is
+   * the full match count computed in the SAME statement as the page. A
+   * separate COUNT query could observe a different snapshot: the count runs
+   * before an insert while the page runs after it, and a caller told to stop
+   * at `offset + returned >= total` then skips the new row. Identical to
+   * `sessions.length` when the page is empty, so callers that need a total
+   * for an empty page must count separately.
+   */
+  totalCount: number;
 };
 
 type GetSessionsWithUnreadByUserIdOptions = {
@@ -327,6 +339,7 @@ export async function getSessionsWithUnreadByUserId(
         ARRAY_AGG(${chats.id} ORDER BY ${chats.updatedAt} DESC, ${chats.createdAt} DESC)
         FILTER (WHERE ${chats.id} IS NOT NULL)
       )[1]`,
+      totalCount: sql<number>`COUNT(*) OVER ()::int`,
     })
     .from(sessions)
     .leftJoin(chats, eq(chats.sessionId, sessions.id))

@@ -428,19 +428,24 @@ export async function listSessions(
   ctx: ToolCallerContext,
   input: ListSessionsInput,
 ): Promise<ListSessionsResult> {
-  // The total is counted with the same status filter as the page, so a client
-  // paging through can tell when it has seen everything. Without it, a full
-  // page is indistinguishable from the end of the list.
-  const [rows, total] = await Promise.all([
-    getSessionsWithUnreadByUserId(ctx.userId, {
-      status: input.status,
-      limit: input.limit,
-      offset: input.offset,
-    }),
-    countSessionsByUserId(ctx.userId, { status: input.status }),
-  ]);
+  const rows = await getSessionsWithUnreadByUserId(ctx.userId, {
+    status: input.status,
+    limit: input.limit,
+    offset: input.offset,
+  });
 
   const sessions = rows.map(toSessionSummary);
+
+  // The total rides along on the page query as COUNT(*) OVER (), so page and
+  // total always describe one snapshot. Issuing a separate COUNT would let the
+  // two observe different states — the count running before an insert and the
+  // page after it — and a client told to stop at offset + returned >= total
+  // would silently skip the new session. An empty page carries no window
+  // value, so that one case falls back to a count query; a caller already at
+  // or past the end cannot skip anything with a slightly stale total.
+  const total =
+    rows[0]?.totalCount ??
+    (await countSessionsByUserId(ctx.userId, { status: input.status }));
 
   return {
     sessions,

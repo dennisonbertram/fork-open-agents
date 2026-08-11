@@ -423,6 +423,61 @@ describe("listSessions", () => {
     });
   });
 
+  test("takes the total from the page query itself, so page and total share one snapshot", async () => {
+    // Two independent queries can observe different snapshots: the count can
+    // run before an insert while the page runs after it, and a client told to
+    // stop at offset + returned >= total then skips the new session. The page
+    // query carries COUNT(*) OVER() so both come from one statement.
+    const { listSessions } = await toolsModulePromise;
+    getSessionsWithUnreadByUserId.mockImplementation(async () => [
+      {
+        id: "session-1",
+        title: "Fix bug",
+        status: "running",
+        repoOwner: null,
+        repoName: null,
+        branch: null,
+        linesAdded: 0,
+        linesRemoved: 0,
+        prNumber: null,
+        prStatus: null,
+        createdAt: new Date("2026-01-01T00:00:00Z"),
+        hasUnread: false,
+        hasStreaming: false,
+        latestChatId: null,
+        lastActivityAt: new Date("2026-01-01T00:00:00Z"),
+        totalCount: 86,
+      },
+    ]);
+
+    const result = await listSessions(makeCtx({}), {
+      status: "all",
+      limit: 1,
+      offset: 0,
+    });
+
+    expect(result.returned).toBe(1);
+    expect(result.total).toBe(86);
+    expect(countSessionsByUserId).not.toHaveBeenCalled();
+  });
+
+  test("falls back to a count query only when the page is empty and carries no window total", async () => {
+    const { listSessions } = await toolsModulePromise;
+    countSessionsByUserId.mockImplementation(async () => 86);
+
+    const result = await listSessions(makeCtx({}), {
+      status: "all",
+      limit: 20,
+      offset: 500,
+    });
+
+    expect(result.returned).toBe(0);
+    expect(result.total).toBe(86);
+    expect(countSessionsByUserId).toHaveBeenCalledWith("user-1", {
+      status: "all",
+    });
+  });
+
   test("reports the account-wide total alongside the page, so a client knows when to stop paging", async () => {
     // `count` used to mean "rows on this page", which is indistinguishable
     // from a total when the page happens to be full — a client paging through
@@ -447,9 +502,9 @@ describe("listSessions", () => {
         hasStreaming: false,
         latestChatId: null,
         lastActivityAt: new Date("2026-01-01T00:00:00Z"),
+        totalCount: 86,
       },
     ]);
-    countSessionsByUserId.mockImplementation(async () => 86);
 
     const result = await listSessions(makeCtx({}), {
       status: "all",
