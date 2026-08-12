@@ -97,7 +97,9 @@ describe("toWorkspaceState", () => {
       toWorkspaceState({
         lifecycleState: "provisioning",
         sandboxExpiresAt: null,
-        lifecycleUpdatedAt: new Date(NOW - WORKSPACE_SETUP_STALL_MS - MINUTE_MS),
+        lifecycleUpdatedAt: new Date(
+          NOW - WORKSPACE_SETUP_STALL_MS - MINUTE_MS,
+        ),
         now: NOW,
       }),
     ).toBe("failed");
@@ -108,7 +110,9 @@ describe("toWorkspaceState", () => {
       toWorkspaceState({
         lifecycleState: "restoring",
         sandboxExpiresAt: null,
-        lifecycleUpdatedAt: new Date(NOW - WORKSPACE_SETUP_STALL_MS - MINUTE_MS),
+        lifecycleUpdatedAt: new Date(
+          NOW - WORKSPACE_SETUP_STALL_MS - MINUTE_MS,
+        ),
         now: NOW,
       }),
     ).toBe("failed");

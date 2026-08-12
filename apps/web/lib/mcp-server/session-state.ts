@@ -97,7 +97,9 @@ export function toWorkspaceState(input: {
 
   switch (input.lifecycleState) {
     case "active":
-      return isSandboxLive(input.sandboxExpiresAt, now) ? "ready" : "hibernated";
+      return isSandboxLive(input.sandboxExpiresAt, now)
+        ? "ready"
+        : "hibernated";
     case "provisioning":
       return hasStalled(input.lifecycleUpdatedAt, now)
         ? "failed"
