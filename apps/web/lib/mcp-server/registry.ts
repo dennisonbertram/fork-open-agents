@@ -4,14 +4,25 @@ import type { McpScope, McpToolContext } from "./context";
 import { sessionReadTools } from "./tools/sessions-read";
 import { sessionWriteTools } from "./tools/sessions-write";
 
+export type McpToolAnnotations = {
+  readOnlyHint: boolean;
+  destructiveHint?: boolean;
+  idempotentHint?: boolean;
+  openWorldHint?: boolean;
+  title?: string;
+};
+
 export type McpToolDefinition<
   TSchema extends z.ZodTypeAny = z.ZodTypeAny,
   TOutput = unknown,
 > = {
   name: string;
+  title: string;
   description: string;
   scope: McpScope;
   inputSchema: TSchema;
+  outputSchema: z.ZodTypeAny;
+  annotations: McpToolAnnotations;
   // Method-shorthand (not an arrow-typed property) so TypeScript checks
   // `handler` bivariantly: a tool with a concrete TSchema/TOutput must be
   // assignable to `AnyMcpToolDefinition`'s erased `(ctx, input: unknown) =>

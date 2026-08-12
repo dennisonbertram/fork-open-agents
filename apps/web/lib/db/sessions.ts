@@ -258,6 +258,9 @@ type SessionSidebarFields = Pick<
   | "id"
   | "title"
   | "status"
+  | "lifecycleState"
+  | "sandboxExpiresAt"
+  | "updatedAt"
   | "repoOwner"
   | "repoName"
   | "branch"
@@ -317,6 +320,14 @@ export async function getSessionsWithUnreadByUserId(
       id: sessions.id,
       title: sessions.title,
       status: sessions.status,
+      lifecycleState: sessions.lifecycleState,
+      // Two cheap timestamp columns (not the heavyweight `sandboxState` JSON):
+      // `lifecycleState` alone cannot say whether a sandbox is live — it reads
+      // "active" for sandboxes that expired days ago — and cannot say whether a
+      // transitional state has been stuck for weeks. See lib/mcp-server/
+      // session-state.ts.
+      sandboxExpiresAt: sessions.sandboxExpiresAt,
+      updatedAt: sessions.updatedAt,
       repoOwner: sessions.repoOwner,
       repoName: sessions.repoName,
       branch: sessions.branch,

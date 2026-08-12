@@ -98,6 +98,22 @@ describe("every registered tool carries the metadata an agent reads before actin
     }
   });
 
+  test("no tool downgrades the spec's destructive default", async () => {
+    const { mcpToolRegistry } = await registryPromise;
+    for (const def of mcpToolRegistry) {
+      if (def.annotations?.readOnlyHint) {
+        continue;
+      }
+      // `destructiveHint` defaults to TRUE in the spec, so writing `false` is
+      // an affirmative claim that the tool cannot destroy anything — and it is
+      // the claim a client checks before auto-approving without confirmation.
+      // Every write tool here ends in an agent run that inherits the user's
+      // auto-commit/auto-PR settings and can delete files and push a branch,
+      // so `false` would be a lie that unlocks unattended destructive work.
+      expect(def.annotations?.destructiveHint).toBe(true);
+    }
+  });
+
   test("a tool that can mutate declares whether repeating it is safe", async () => {
     const { mcpToolRegistry } = await registryPromise;
     for (const def of mcpToolRegistry) {
@@ -124,27 +140,57 @@ describe("every registered tool carries the metadata an agent reads before actin
  * must exist in some tool's output schema, so documentation cannot drift from
  * the payload it describes.
  */
+/**
+ * Collect every field name and every enum value a schema can produce, walking
+ * through arrays, optionals and nested objects.
+ *
+ * Values matter as much as names here: a description promising a `stalled`
+ * workspace, or telling a caller to poll until `ready`, is just as unactionable
+ * when the enum does not offer it as a field name that does not exist.
+ */
+function collectSchemaVocabulary(
+  schema: unknown,
+  into: Set<string>,
+  depth = 0,
+): void {
+  if (!schema || typeof schema !== "object" || depth > 8) {
+    return;
+  }
+  const node = schema as {
+    shape?: Record<string, unknown>;
+    options?: unknown;
+    element?: unknown;
+    unwrap?: () => unknown;
+  };
+
+  if (Array.isArray(node.options)) {
+    for (const option of node.options) {
+      if (typeof option === "string") {
+        into.add(option);
+      }
+    }
+  }
+  for (const [key, child] of Object.entries(node.shape ?? {})) {
+    into.add(key);
+    collectSchemaVocabulary(child, into, depth + 1);
+  }
+  if (node.element) {
+    collectSchemaVocabulary(node.element, into, depth + 1);
+  }
+  if (typeof node.unwrap === "function") {
+    collectSchemaVocabulary(node.unwrap(), into, depth + 1);
+  }
+}
+
 describe("descriptions only reference fields that exist", () => {
   test("every backticked identifier in a description is a real output field", async () => {
     const { mcpToolRegistry } = await registryPromise;
 
     const knownFields = new Set<string>();
     for (const def of mcpToolRegistry) {
-      const shape = (
-        def.outputSchema as unknown as {
-          shape?: Record<string, unknown>;
-        } | null
-      )?.shape;
-      for (const key of Object.keys(shape ?? {})) {
-        knownFields.add(key);
-      }
+      collectSchemaVocabulary(def.outputSchema, knownFields);
       // Input fields are legitimate to reference too ("omit `chatId` to…").
-      const inputShape = (
-        def.inputSchema as unknown as { shape?: Record<string, unknown> }
-      )?.shape;
-      for (const key of Object.keys(inputShape ?? {})) {
-        knownFields.add(key);
-      }
+      collectSchemaVocabulary(def.inputSchema, knownFields);
     }
     // Tool names are also legitimate backticked references.
     for (const def of mcpToolRegistry) {

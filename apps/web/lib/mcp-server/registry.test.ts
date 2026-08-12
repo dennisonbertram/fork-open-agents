@@ -3,11 +3,11 @@ import { beforeEach, describe, expect, mock, test } from "bun:test";
 mock.module("server-only", () => ({}));
 
 const SLICE_ONE_TOOL_NAMES = [
-  "whoami",
-  "list_sessions",
-  "get_session",
-  "get_messages",
-  "get_diff_summary",
+  "open_agents_whoami",
+  "open_agents_list_sessions",
+  "open_agents_get_session",
+  "open_agents_get_messages",
+  "open_agents_get_diff_summary",
 ] as const;
 
 const ALLOWED_SCOPES = [
@@ -129,17 +129,17 @@ describe("mcpToolRegistry contract", () => {
 describe("getMcpTool", () => {
   test("finds a registered tool by exact name", async () => {
     const { getMcpTool } = await modPromise;
-    const def = getMcpTool("whoami");
+    const def = getMcpTool("open_agents_whoami");
 
     expect(def).toBeDefined();
-    expect(def?.name).toBe("whoami");
+    expect(def?.name).toBe("open_agents_whoami");
   });
 
   test("returns undefined for an unknown name and does not case-fold", async () => {
     const { getMcpTool } = await modPromise;
 
     expect(getMcpTool("does_not_exist")).toBeUndefined();
-    expect(getMcpTool("WHOAMI")).toBeUndefined();
+    expect(getMcpTool("OPEN_AGENTS_WHOAMI")).toBeUndefined();
   });
 });
 
@@ -192,7 +192,9 @@ describe("runMcpTool dispatch order", () => {
     const ctx = makeCtx({ scopes: [] });
 
     try {
-      await runMcpTool("list_sessions", ctx, { limit: "not-a-number" });
+      await runMcpTool("open_agents_list_sessions", ctx, {
+        limit: "not-a-number",
+      });
       throw new Error("expected runMcpTool to reject");
     } catch (error) {
       expect(error).toBeInstanceOf(McpToolError);
@@ -211,7 +213,9 @@ describe("runMcpTool dispatch order", () => {
     const ctx = makeCtx({ scopes: ["sessions:read"] });
 
     try {
-      await runMcpTool("list_sessions", ctx, { limit: "not-a-number" });
+      await runMcpTool("open_agents_list_sessions", ctx, {
+        limit: "not-a-number",
+      });
       throw new Error("expected runMcpTool to reject");
     } catch (error) {
       expect(error).toBeInstanceOf(McpToolError);
@@ -227,7 +231,7 @@ describe("runMcpTool dispatch order", () => {
     const { runMcpTool } = await modPromise;
     const ctx = makeCtx({ userId: "user-42", scopes: ["sessions:read"] });
 
-    const result = await runMcpTool("whoami", ctx, {});
+    const result = await runMcpTool("open_agents_whoami", ctx, {});
 
     expect(result).toEqual({
       userId: "user-42",
@@ -247,7 +251,7 @@ describe("runMcpTool dispatch order", () => {
     const ctx = makeCtx({ scopes: ["sessions:read"] });
 
     try {
-      await runMcpTool("list_sessions", ctx, {});
+      await runMcpTool("open_agents_list_sessions", ctx, {});
       throw new Error("expected runMcpTool to reject");
     } catch (error) {
       expect(error).toBeInstanceOf(McpToolError);
