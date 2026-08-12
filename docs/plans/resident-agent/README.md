@@ -1,5 +1,11 @@
 # Resident Agent Service — Cloudflare Research Package
 
+> **Operative copy notice (2026-08-12):** the build lives in
+> `dennisonbertram/resident-agents`, which carries the operative copy of
+> this package (plus stories-e2e, implementation plan, and post-consensus
+> review fixes). This fork-side copy is the historical record as of PR
+> #1204 and is not kept in sync. Where they differ, the build repo wins.
+
 Research compiled 2026-08-11 from live Cloudflare docs, GitHub repos, and npm
 registry data, deepened the same day by a second wave (client landscape,
 competition, memory architectures, example inventory, fork design study).
