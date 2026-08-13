@@ -78,6 +78,37 @@ Personas:
 18. As the Owner, I can see cost per worker and per task, measured from real
     usage. **[spike: M5]**
 
+## The canonical flows (added 2026-08-11)
+
+From the framing stories in
+[original-vision.md](original-vision.md#the-framing-stories-added-2026-08-11).
+These compose the stories above into the demos the product must make true.
+
+19. As the Owner, I tell my local agent (Claude Code with the service's
+    skill installed) to work my issue backlog. It reviews each issue and
+    tasks one worker per issue over MCP — clone, work, open a PR. I close my
+    laptop; the workers keep working. (Composes 4 + 11; adds fan-out.)
+20. As a Visitor, when I create many workers in one session, the service
+    tells me my concurrency and quota limits legibly instead of failing
+    opaquely. (Derived from 19; quota *mechanics* are ops scope, not v1 UI.)
+21. As a Visitor on any device — ChatGPT on the Owner's phone counts — I can
+    ask one account-level question, "what's the status of my PRs / issues /
+    workers?", and get a roll-up across all workers: each worker's status,
+    its recorded outputs (PR links), and any blocked state — without waking
+    any worker's model. (Extends 9 from worker-level to account-level.)
+22. As a Worker, when I am blocked — a decision I need, a credential I lack,
+    CI I cannot fix — I record a structured blocked state with the reason,
+    so roll-ups and Visitors see it immediately instead of mistaking me for
+    idle.
+23. As the Owner, I can point a *different* agent (Codex) at a stuck worker.
+    It reads the worker's structured state, applies its own knowledge, and
+    gets the task unstuck through the worker. (The cross-brain repair story;
+    extends 8, 10, 12.)
+24. As the Owner, I install the service's client packaging — a skill for
+    Claude Code, a connector for ChatGPT, config for Codex — so each of my
+    agents can reach and drive my account without bespoke setup. Client
+    packaging is part of the product.
+
 ## Explicit non-stories (out of scope)
 
 - No human-facing web UI in v1 — the MCP surface is the product. (A minimal
