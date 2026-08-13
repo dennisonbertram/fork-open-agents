@@ -5,21 +5,49 @@
 
 import { isHobbyResourceProfile } from "@/lib/deployment/resource-profile";
 
+/** Read a positive-integer override, falling back on anything invalid. */
+function resolvePositiveIntEnv(raw: string | undefined, fallback: number) {
+  if (raw === undefined) {
+    return fallback;
+  }
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
 /** SDK safety buffer reserved for sandbox before-stop hooks (30 seconds) */
 const VERCEL_SANDBOX_TIMEOUT_BUFFER_MS = 30 * 1000;
 
-/** Standard timeout for new cloud sandboxes (5 hours minus hook buffer) */
+/**
+ * Standard ceiling for new cloud sandboxes (90 minutes minus hook buffer).
+ *
+ * This is a backstop, not the control. Idle sandboxes are meant to be stopped
+ * by hibernation after `SANDBOX_INACTIVITY_TIMEOUT_MS` (30 minutes), and a
+ * session resumes from its snapshot on the next message.
+ *
+ * It was 5 hours, and the Vercel sandbox inventory shows what that cost when
+ * hibernation did not run: of 168 sandboxes at 4 vCPU / 8192 MB, the median
+ * life was exactly 300.0 minutes — the ceiling — against 2.38 median
+ * CPU-minutes, and 133 of them ran the full timeout. Provisioned memory is
+ * billed on wall-clock life, so that single configuration cost $119.97.
+ *
+ * 90 minutes is 3x the idle window, so a session that hibernates normally
+ * never reaches it, while a session whose lifecycle run fails leaks 90 minutes
+ * instead of 300. Override with SANDBOX_TIMEOUT_MS.
+ */
 const STANDARD_SANDBOX_TIMEOUT_MS =
-  5 * 60 * 60 * 1000 - VERCEL_SANDBOX_TIMEOUT_BUFFER_MS;
+  90 * 60 * 1000 - VERCEL_SANDBOX_TIMEOUT_BUFFER_MS;
 
 /** Hobby-compatible timeout for new cloud sandboxes (40 minutes minus hook buffer) */
 const HOBBY_SANDBOX_TIMEOUT_MS =
   40 * 60 * 1000 - VERCEL_SANDBOX_TIMEOUT_BUFFER_MS;
 
 /** Default timeout for new cloud sandboxes */
-export const DEFAULT_SANDBOX_TIMEOUT_MS = isHobbyResourceProfile()
-  ? HOBBY_SANDBOX_TIMEOUT_MS
-  : STANDARD_SANDBOX_TIMEOUT_MS;
+export const DEFAULT_SANDBOX_TIMEOUT_MS = resolvePositiveIntEnv(
+  process.env.SANDBOX_TIMEOUT_MS,
+  isHobbyResourceProfile()
+    ? HOBBY_SANDBOX_TIMEOUT_MS
+    : STANDARD_SANDBOX_TIMEOUT_MS,
+);
 
 /** Default vCPU count for new cloud sandboxes */
 export const DEFAULT_SANDBOX_VCPUS = isHobbyResourceProfile() ? 1 : 4;
@@ -48,14 +76,6 @@ export const DEFAULT_SANDBOX_VCPUS = isHobbyResourceProfile() ? 1 : 4;
  * 6.6x the worst case ever observed. Both values are env-overridable because a
  * repo that needs more should not need a deploy to get it.
  */
-function resolvePositiveIntEnv(raw: string | undefined, fallback: number) {
-  if (raw === undefined) {
-    return fallback;
-  }
-  const parsed = Number(raw);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
-}
-
 /**
  * Vercel allocates sandbox CPU in fixed tiers, and refuses anything else.
  * Mirrors ALLOWED_VCPU_VALUES, which the repository-settings form already
