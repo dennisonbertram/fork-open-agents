@@ -32,3 +32,19 @@ describe("resolveBackgroundAgentVcpus", () => {
     }
   });
 });
+
+/**
+ * #1210 defect 3 — snapshot retention.
+ *
+ * Stopping a `persistent` sandbox writes a snapshot so it can resume, and
+ * nothing expired them: 156 snapshots / 105.1 GB accumulated before 116 were
+ * deleted by hand, growing 4-11 per day. `snapshotExpiration` is the SDK's own
+ * retention control and was plumbed end-to-end through packages/sandbox with
+ * no caller setting it.
+ */
+describe("SANDBOX_SNAPSHOT_EXPIRATION_MS", () => {
+  test("defaults to a bounded window rather than forever", async () => {
+    const { SANDBOX_SNAPSHOT_EXPIRATION_MS } = await import("./config");
+    expect(SANDBOX_SNAPSHOT_EXPIRATION_MS).toBe(7 * 24 * 60 * 60 * 1000);
+  });
+});

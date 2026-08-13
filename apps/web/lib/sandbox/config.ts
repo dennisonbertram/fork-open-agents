@@ -99,6 +99,29 @@ export const BACKGROUND_AGENT_SANDBOX_TIMEOUT_MS = Math.min(
   DEFAULT_SANDBOX_TIMEOUT_MS,
 );
 
+/**
+ * How long a sandbox's auto-created snapshot survives.
+ *
+ * Stopping a `persistent` sandbox writes a snapshot so it can resume, and
+ * nothing expires them: the project accumulated 156 snapshots / 105.1 GB at
+ * $0.0687 per GB-month before 116 were deleted by hand, and it creates 4-11
+ * more each day. `snapshotExpiration` is the SDK's own retention control, so
+ * setting it makes Vercel do the reaping instead of a cron we would have to
+ * write, monitor, and trust not to delete a snapshot something still resumes
+ * from.
+ *
+ * 7 days is chosen to sit well past the hibernation window a session actually
+ * resumes across (30 minutes idle) while still bounding growth. A session
+ * whose snapshot has expired is not lost — it reprovisions from the base
+ * snapshot on the next message.
+ *
+ * Override with SANDBOX_SNAPSHOT_EXPIRATION_MS.
+ */
+export const SANDBOX_SNAPSHOT_EXPIRATION_MS = resolvePositiveIntEnv(
+  process.env.SANDBOX_SNAPSHOT_EXPIRATION_MS,
+  7 * 24 * 60 * 60 * 1000,
+);
+
 /** Manual extension duration for explicit fallback flows (20 minutes) */
 export const EXTEND_TIMEOUT_DURATION_MS = 20 * 60 * 1000;
 

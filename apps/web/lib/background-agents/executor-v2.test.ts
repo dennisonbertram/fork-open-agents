@@ -237,6 +237,7 @@ mock.module("@/lib/sandbox/config", () => ({
   DEFAULT_SANDBOX_VCPUS: 4,
   BACKGROUND_AGENT_SANDBOX_TIMEOUT_MS: 1_800_000,
   BACKGROUND_AGENT_SANDBOX_VCPUS: 2,
+  SANDBOX_SNAPSHOT_EXPIRATION_MS: 604_800_000,
 }));
 
 const verifyRepoAccess = mock(
@@ -2377,10 +2378,17 @@ describe("#1210 background-agent sandbox disposal", () => {
 
     const options = (
       connectSandbox.mock.calls[0]?.[0] as {
-        options?: { vcpus?: number; timeout?: number };
+        options?: {
+          vcpus?: number;
+          timeout?: number;
+          snapshotExpiration?: number;
+        };
       }
     )?.options;
     expect(options?.vcpus).toBe(2);
     expect(options?.timeout).toBe(1_800_000);
+    // Without an expiry, the snapshot Vercel writes when this sandbox stops
+    // lives forever — the storage grew to 105.1 GB that way.
+    expect(options?.snapshotExpiration).toBe(604_800_000);
   });
 });
