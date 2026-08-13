@@ -24,6 +24,57 @@ export const DEFAULT_SANDBOX_TIMEOUT_MS = isHobbyResourceProfile()
 /** Default vCPU count for new cloud sandboxes */
 export const DEFAULT_SANDBOX_VCPUS = isHobbyResourceProfile() ? 1 : 4;
 
+/**
+ * Sizing for an unattended background-agent run.
+ *
+ * Deliberately separate from the interactive defaults above. A chat session is
+ * a person waiting on a prompt: it gets the larger box and stays alive between
+ * turns until hibernation stops it. A background-agent run is a batch job that
+ * nobody is watching, and `executeBackgroundAgentRun` now releases its sandbox
+ * as soon as the step ends.
+ *
+ * Measured over 12.52 days before that existed: background sandboxes ran at 4
+ * vCPUs — the Vercel SDK allocates 2048 MB per vCPU, so 8192 MB — with a median
+ * life of exactly the 300-minute ceiling for 2.37 median CPU-minutes of work.
+ * Provisioned memory is billed on wall-clock life, so an idle box costs what a
+ * busy one does (#1210).
+ *
+ * The timeout below is a runaway backstop, not a schedule. Note what actually
+ * bounds a run: `DEFAULT_AGENT_TIMEOUT_MS` is a PER-TURN cap, and the turn loop
+ * is unbounded unless `BACKGROUND_AGENT_MAX_TURNS` is set — the real stop
+ * conditions are the stale-turn and token fuses in
+ * `lib/background-agents/config.ts`. Production evidence for the value: across
+ * 135 recorded runs the longest span is 4.43 minutes, so 30 minutes is roughly
+ * 6.6x the worst case ever observed. Both values are env-overridable because a
+ * repo that needs more should not need a deploy to get it.
+ */
+function resolvePositiveIntEnv(raw: string | undefined, fallback: number) {
+  if (raw === undefined) {
+    return fallback;
+  }
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+/** vCPUs for a background-agent sandbox; override with BACKGROUND_AGENT_SANDBOX_VCPUS. */
+export const BACKGROUND_AGENT_SANDBOX_VCPUS = resolvePositiveIntEnv(
+  process.env.BACKGROUND_AGENT_SANDBOX_VCPUS,
+  isHobbyResourceProfile() ? 1 : 2,
+);
+
+/**
+ * Runaway backstop for a background-agent run (30 minutes minus hook buffer).
+ * Override with BACKGROUND_AGENT_SANDBOX_TIMEOUT_MS. Clamped by the platform
+ * ceiling so a hobby deployment cannot ask for more than it is allowed.
+ */
+export const BACKGROUND_AGENT_SANDBOX_TIMEOUT_MS = Math.min(
+  resolvePositiveIntEnv(
+    process.env.BACKGROUND_AGENT_SANDBOX_TIMEOUT_MS,
+    30 * 60 * 1000 - VERCEL_SANDBOX_TIMEOUT_BUFFER_MS,
+  ),
+  DEFAULT_SANDBOX_TIMEOUT_MS,
+);
+
 /** Manual extension duration for explicit fallback flows (20 minutes) */
 export const EXTEND_TIMEOUT_DURATION_MS = 20 * 60 * 1000;
 
