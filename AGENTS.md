@@ -294,6 +294,17 @@ running background-agent runs with `background-agent.run.swept_stale` evidence.
 - **Branch sync preference:** When bringing in `origin/develop`, prefer a
   normal merge (`git fetch origin develop` then `git merge origin/develop`)
   instead of rebasing, unless explicitly requested otherwise.
+- **Backmerge immediately after every release.** Merging a release PR creates a
+  merge commit on `main` only, so `develop` is instantly behind and the next
+  release PR reports `BEHIND` before any work starts. Open the
+  `main` → `develop` backmerge PR as the last step of releasing, not when it
+  blocks something. A release is not finished until it is merged.
+- **Nothing merges directly to `main` except a release PR.** Docs, chores, and
+  hotfixes land on `develop` first. Direct-to-`main` commits are the biggest
+  source of drift. If a hotfix truly cannot wait, backmerge in the same sitting.
+- See [Release Merge Train](docs/process/release-merge-train.md) for the cause,
+  the backmerge commands, and how to read `BEHIND` / `BLOCKED` / `UNSTABLE`
+  (a `BLOCKED` PR with green checks is usually an unresolved review thread).
 
 **Quote paths with special characters**: File paths containing brackets (like Next.js dynamic routes `[id]`, `[slug]`) are interpreted as glob patterns by zsh. Always quote these paths in git commands:
 

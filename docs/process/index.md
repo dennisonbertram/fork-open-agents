@@ -13,6 +13,8 @@ Start here:
   PR-sized work.
 - [GitHub Build Process](github-build-process.md) - issue, branch, PR, CI, and
   deploy structure.
+- [Release Merge Train](release-merge-train.md) - why a release leaves `develop`
+  behind, the backmerge rule that prevents it, and how to read a blocked PR.
 - [Agent Browser Preview Review](agent-browser-preview-review.md) - how to
   inspect Vercel Preview deployments before production.
 - [Background Agents Live Proof](background-agents-live-proof.md) - hosted
