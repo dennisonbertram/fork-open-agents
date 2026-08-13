@@ -172,6 +172,7 @@ mock.module("@/app/workflows/chat-sandbox-runtime", () => ({
 }));
 
 mock.module("@/lib/sandbox/config", () => ({
+  SANDBOX_SNAPSHOT_EXPIRATION_MS: 604_800_000,
   DEFAULT_SANDBOX_BASE_SNAPSHOT_ID: null,
   DEFAULT_SANDBOX_PORTS: [3000],
   DEFAULT_SANDBOX_TIMEOUT_MS: 300_000,

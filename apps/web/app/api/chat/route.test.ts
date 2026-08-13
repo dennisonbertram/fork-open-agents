@@ -253,6 +253,7 @@ mock.module("@/lib/github/token", () => ({
 }));
 
 mock.module("@/lib/sandbox/config", () => ({
+  SANDBOX_SNAPSHOT_EXPIRATION_MS: 604_800_000,
   DEFAULT_SANDBOX_PORTS: [],
 }));
 
