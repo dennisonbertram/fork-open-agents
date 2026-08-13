@@ -24,6 +24,30 @@ export const DEFAULT_SANDBOX_TIMEOUT_MS = isHobbyResourceProfile()
 /** Default vCPU count for new cloud sandboxes */
 export const DEFAULT_SANDBOX_VCPUS = isHobbyResourceProfile() ? 1 : 4;
 
+/**
+ * Sizing for an unattended background-agent run.
+ *
+ * These are deliberately separate from the interactive defaults above. A chat
+ * session is a person waiting on a prompt, so it gets the larger box and stays
+ * alive between turns until hibernation stops it. A background-agent run is a
+ * batch job: its agent is capped at 10 minutes (`DEFAULT_AGENT_TIMEOUT_MS`),
+ * its check commands at 2 minutes, and nothing waits on it interactively.
+ *
+ * Measured over 12.52 days before these existed: 73 background sandboxes ran
+ * at 4 vCPUs — the Vercel SDK allocates 2048 MB per vCPU, so 8192 MB — with a
+ * median life of exactly the 300-minute ceiling and 2.37 median CPU-minutes of
+ * work. Provisioned memory is billed on wall-clock life, so that was $43.86 of
+ * a $59.73 total. The timeout below is a runaway backstop, not a schedule; the
+ * `finally` in the executor is what actually ends a run's sandbox.
+ */
+export const BACKGROUND_AGENT_SANDBOX_VCPUS = isHobbyResourceProfile() ? 1 : 2;
+
+/** Runaway backstop for a background-agent run (30 minutes minus hook buffer) */
+export const BACKGROUND_AGENT_SANDBOX_TIMEOUT_MS = Math.min(
+  30 * 60 * 1000 - VERCEL_SANDBOX_TIMEOUT_BUFFER_MS,
+  DEFAULT_SANDBOX_TIMEOUT_MS,
+);
+
 /** Manual extension duration for explicit fallback flows (20 minutes) */
 export const EXTEND_TIMEOUT_DURATION_MS = 20 * 60 * 1000;
 

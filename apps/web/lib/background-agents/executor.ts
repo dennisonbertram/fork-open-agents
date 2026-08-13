@@ -17,8 +17,8 @@ import type { ModelMessage } from "ai";
 import {
   DEFAULT_SANDBOX_BASE_SNAPSHOT_ID,
   DEFAULT_SANDBOX_PORTS,
-  DEFAULT_SANDBOX_TIMEOUT_MS,
-  DEFAULT_SANDBOX_VCPUS,
+  BACKGROUND_AGENT_SANDBOX_TIMEOUT_MS,
+  BACKGROUND_AGENT_SANDBOX_VCPUS,
 } from "@/lib/sandbox/config";
 import {
   verifyRepoAccess,
@@ -1944,12 +1944,115 @@ async function executeLearningsAgentRun(params: {
   });
 }
 
+/**
+ * What the run body publishes so the wrapper can dispose of the sandbox and
+ * describe what it disposed of. Populated at the creation site; every field
+ * stays null when a run ends before a sandbox exists.
+ */
+type SandboxDisposal = {
+  sandbox: Sandbox | null;
+  sandboxName: string | null;
+  agentId: string | null;
+  userId: string | null;
+  requestId: string | null;
+  vcpus: number | null;
+  startedAtMs: number | null;
+};
+
+/**
+ * Release a background-agent run's sandbox.
+ *
+ * Best effort by construction: a failure here must never change the run's own
+ * outcome, or a hiccup at teardown would turn a completed run into a failed
+ * one. It is also the only thing that ends these sandboxes — before this
+ * existed, the 300-minute timeout did, and Vercel bills provisioned memory for
+ * wall-clock life whether the box is working or idle (#1210).
+ */
+async function disposeRunSandbox(
+  disposal: SandboxDisposal,
+  params: { runId: string; workflowRunId: string },
+  stopReason: "step_returned" | "step_threw",
+): Promise<void> {
+  const { sandbox } = disposal;
+  if (!sandbox) {
+    return;
+  }
+
+  let stopped = true;
+  try {
+    await sandbox.stop();
+  } catch (error) {
+    stopped = false;
+    console.error(
+      `[background-agent] Failed to stop sandbox for run ${params.runId}:`,
+      error,
+    );
+  }
+
+  // Operator signal: a run with no stopped event is a run the timeout ended,
+  // which is how this defect becomes visible again if it regresses.
+  try {
+    await recordBackgroundAgentEvent({
+      runId: params.runId,
+      agentId: disposal.agentId,
+      userId: disposal.userId ?? "",
+      eventName: "background-agent.sandbox.stopped",
+      status: stopped ? "succeeded" : "failed",
+      summary: stopped
+        ? "Background agent sandbox stopped."
+        : "Background agent sandbox stop failed; the timeout will reclaim it.",
+      workflowRunId: params.workflowRunId,
+      requestId: disposal.requestId,
+      sandboxName: disposal.sandboxName,
+      payload: {
+        vcpus: disposal.vcpus,
+        wallClockMs: disposal.startedAtMs
+          ? Date.now() - disposal.startedAtMs
+          : null,
+        stopReason,
+        stopped,
+      },
+    });
+  } catch (eventError) {
+    console.error(
+      `[background-agent] Failed to record sandbox stop for run ${params.runId}:`,
+      eventError,
+    );
+  }
+}
+
 export async function executeBackgroundAgentRun(params: {
   runId: string;
   workflowRunId: string;
 }) {
   "use step";
 
+  const disposal: SandboxDisposal = {
+    sandbox: null,
+    sandboxName: null,
+    agentId: null,
+    userId: null,
+    requestId: null,
+    vcpus: null,
+    startedAtMs: null,
+  };
+
+  try {
+    await runBackgroundAgentExecution(params, disposal);
+  } catch (error) {
+    await disposeRunSandbox(disposal, params, "step_threw");
+    throw error;
+  }
+  await disposeRunSandbox(disposal, params, "step_returned");
+}
+
+async function runBackgroundAgentExecution(
+  params: {
+    runId: string;
+    workflowRunId: string;
+  },
+  disposal: SandboxDisposal,
+) {
   const row = await getBackgroundAgentRunWithAgent(params.runId);
   if (!row) {
     return;
@@ -2380,8 +2483,8 @@ export async function executeBackgroundAgentRun(params: {
       options: {
         githubToken: setupToken.token,
         gitUser: await getGitUser(run.userId),
-        timeout: DEFAULT_SANDBOX_TIMEOUT_MS,
-        vcpus: DEFAULT_SANDBOX_VCPUS,
+        timeout: BACKGROUND_AGENT_SANDBOX_TIMEOUT_MS,
+        vcpus: BACKGROUND_AGENT_SANDBOX_VCPUS,
         ports: DEFAULT_SANDBOX_PORTS,
         baseSnapshotId: DEFAULT_SANDBOX_BASE_SNAPSHOT_ID,
         persistent: sandboxInput.workspace.policy === "persistent_resume",
@@ -2389,6 +2492,15 @@ export async function executeBackgroundAgentRun(params: {
         createIfMissing: sandboxInput.workspace.createIfMissing,
       },
     });
+    // Publish the handle the moment it exists, so the wrapper's disposal
+    // covers every exit below — including the ~14 early returns.
+    disposal.sandbox = sandbox;
+    disposal.sandboxName = sandboxName;
+    disposal.agentId = run.agentId;
+    disposal.userId = run.userId;
+    disposal.requestId = run.requestId;
+    disposal.vcpus = BACKGROUND_AGENT_SANDBOX_VCPUS;
+    disposal.startedAtMs = Date.now();
   } catch (error) {
     const freshRow = await getBackgroundAgentRunWithAgent(run.id);
     await recordFailure({
