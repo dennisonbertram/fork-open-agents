@@ -9,5 +9,6 @@
       "path": "/api/agent-loops/sweep",
       "schedule": "*/5 * * * *"
     }
-  ]
+  ],
+  "ignoreCommand": "node ../../scripts/vercel-ignore-build.mjs"
 }
