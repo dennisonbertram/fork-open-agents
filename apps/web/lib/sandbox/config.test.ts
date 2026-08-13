@@ -48,3 +48,32 @@ describe("SANDBOX_SNAPSHOT_EXPIRATION_MS", () => {
     expect(SANDBOX_SNAPSHOT_EXPIRATION_MS).toBe(7 * 24 * 60 * 60 * 1000);
   });
 });
+
+/**
+ * #1210 defect 1 — the sandbox ceiling.
+ *
+ * Measured from the Vercel sandbox inventory: 168 sandboxes at 4 vCPU / 8192 MB
+ * with a median life of exactly 300.0 minutes — the old ceiling — against 2.38
+ * median CPU-minutes; 133 of the 168 ran the full timeout. Provisioned memory
+ * is billed on wall-clock life, so that configuration alone cost $119.97.
+ *
+ * The ceiling is a backstop: hibernation at 30 minutes idle is the real
+ * control. Keeping it at 3x the idle window means a healthy session never
+ * reaches it, while a session whose lifecycle run fails leaks 90 minutes
+ * instead of 300.
+ */
+describe("DEFAULT_SANDBOX_TIMEOUT_MS", () => {
+  test("sits well above the hibernation window but far below five hours", async () => {
+    const { DEFAULT_SANDBOX_TIMEOUT_MS, SANDBOX_INACTIVITY_TIMEOUT_MS } =
+      await import("./config");
+
+    // Must outlast the idle window so hibernation, not the ceiling, is what
+    // stops an idle sandbox. The hobby profile's own 40-minute ceiling is the
+    // tighter of the two, so the assertion is against the idle window itself
+    // rather than a multiple of it.
+    expect(DEFAULT_SANDBOX_TIMEOUT_MS).toBeGreaterThan(
+      SANDBOX_INACTIVITY_TIMEOUT_MS,
+    );
+    expect(DEFAULT_SANDBOX_TIMEOUT_MS).toBeLessThanOrEqual(90 * 60 * 1000);
+  });
+});
