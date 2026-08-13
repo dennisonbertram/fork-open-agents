@@ -458,6 +458,7 @@ describe("listSessions", () => {
         hasStreaming: true,
         latestChatId: "chat-1",
         lastActivityAt: new Date(Date.now() - 60 * 24 * 60 * 60 * 1000),
+        activeRunSlotAt: new Date(Date.now() - 60 * 24 * 60 * 60 * 1000),
       },
     ]);
 
@@ -471,6 +472,49 @@ describe("listSessions", () => {
     // The raw column is still reported as-is under its own name, so the
     // bounded claim and the unbounded fact stay separable.
     expect(result.sessions[0]?.isStreaming).toBe(true);
+  });
+
+  test("bounds staleness by the chat that holds the run slot, not by the session's newest chat", async () => {
+    // `hasStreaming` is BOOL_OR(active_stream_id IS NOT NULL) across all of a
+    // session's chats, while `lastActivityAt` is MAX(chats.updated_at) — two
+    // independent aggregates. A session with a stale slot on one chat and a
+    // fresh message on another therefore pairs "a run is claimed" with a
+    // timestamp belonging to a different chat, and the staleness bound never
+    // fires. The timestamp has to come from the chat holding the slot.
+    const { listSessions } = await toolsModulePromise;
+    getSessionsWithUnreadByUserId.mockImplementation(async () => [
+      {
+        id: "session-1",
+        title: "Fix bug",
+        status: "running",
+        lifecycleState: "hibernated",
+        sandboxExpiresAt: null,
+        updatedAt: new Date(Date.now() - 60 * 1000),
+        repoOwner: "acme",
+        repoName: "widgets",
+        branch: "main",
+        linesAdded: 0,
+        linesRemoved: 0,
+        prNumber: null,
+        prStatus: null,
+        createdAt: new Date("2026-01-01T00:00:00Z"),
+        hasUnread: false,
+        hasStreaming: true,
+        latestChatId: "chat-2",
+        // Newest chat activity: a minute ago, on a chat with no run slot.
+        lastActivityAt: new Date(Date.now() - 60 * 1000),
+        // The chat that actually holds the slot was last touched 60 days ago.
+        activeRunSlotAt: new Date(Date.now() - 60 * 24 * 60 * 60 * 1000),
+      },
+    ]);
+
+    const result = await listSessions(makeCtx({}), {
+      status: "active",
+      limit: 20,
+      offset: 0,
+    });
+
+    expect(result.sessions[0]?.activity).toBe("idle");
   });
 
   test("reports a workspace stuck in provisioning as failed, so a poll loop terminates", async () => {
@@ -1268,5 +1312,39 @@ describe("ownership projection avoids loading cached diff bodies (perf fix F2)",
     expect(getSessionMetadataById).not.toHaveBeenCalled();
     expect(getSessionById).not.toHaveBeenCalled();
     expect(result.hasCachedDiff).toBe(true);
+  });
+});
+
+/**
+ * Prose is the only part of a tool that a model reads before deciding whether
+ * to call it, and it is not typechecked. These pin the two claims that have
+ * already drifted from the code once.
+ */
+describe("session-state descriptions match what the fields actually do", () => {
+  test("resumability is described as filing, not as a workspace value", async () => {
+    const { sessionReadTools } = await toolsModulePromise;
+    const described = sessionReadTools.filter((tool) =>
+      tool.description.includes("resumable"),
+    );
+    expect(described.length).toBeGreaterThan(0);
+
+    for (const tool of described) {
+      // `resumable` is `isResumable(state)` — true for every non-archived
+      // session, including ready, provisioning, restoring and failed
+      // workspaces. Prose tying it to hibernation tells an agent that a ready
+      // session cannot be continued, which is the opposite of the truth.
+      expect(tool.description).not.toContain("exactly when");
+      expect(tool.description).toContain("non-archived");
+    }
+  });
+
+  test("a ready workspace is described as a claim about right now", async () => {
+    const { sessionReadTools } = await toolsModulePromise;
+    for (const tool of sessionReadTools) {
+      if (!tool.description.includes("`workspace`")) {
+        continue;
+      }
+      expect(tool.description).toContain("right now");
+    }
   });
 });

@@ -274,6 +274,8 @@ type SessionSidebarFields = Pick<
 export type SessionWithUnread = SessionSidebarFields & {
   hasUnread: boolean;
   hasStreaming: boolean;
+  /** Newest `chats.updated_at` among chats holding a run slot; null when none. */
+  activeRunSlotAt: Date | null;
   latestChatId: string | null;
   lastActivityAt: Date;
   /**
@@ -346,6 +348,11 @@ export async function getSessionsWithUnreadByUserId(
         END
       ), false)`,
       hasStreaming: sql<boolean>`COALESCE(BOOL_OR(${chats.activeStreamId} IS NOT NULL), false)`,
+      // The freshest activity on a chat that actually holds a run slot.
+      // `lastActivityAt` above is MAX over ALL chats, so pairing it with
+      // `hasStreaming` would bound a stale slot on one chat by a recent
+      // message on a different one, and the staleness check would never fire.
+      activeRunSlotAt: sql<Date | null>`MAX(${chats.updatedAt}) FILTER (WHERE ${chats.activeStreamId} IS NOT NULL)`,
       latestChatId: sql<string | null>`(
         ARRAY_AGG(${chats.id} ORDER BY ${chats.updatedAt} DESC, ${chats.createdAt} DESC)
         FILTER (WHERE ${chats.id} IS NOT NULL)

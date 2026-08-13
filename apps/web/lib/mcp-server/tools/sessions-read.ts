@@ -263,7 +263,10 @@ function toSessionSummary(row: SessionWithUnreadRow): McpSessionSummary {
     resumable: isResumable(state),
     activity: toActivityState({
       hasActiveRunSlot: row.hasStreaming,
-      lastActivityAt: row.lastActivityAt,
+      // Deliberately not `lastActivityAt`: that is the newest activity across
+      // every chat in the session, which would mask a stale slot on one chat
+      // behind a fresh message on another.
+      lastActivityAt: row.activeRunSlotAt,
     }),
     repo: toRepo(row.repoOwner, row.repoName),
     branch: row.branch,
@@ -743,7 +746,7 @@ export const sessionReadTools: readonly AnyMcpToolDefinition[] = [
     name: "open_agents_list_sessions",
     title: "List Open Agents Sessions",
     description:
-      "List the caller's coding sessions in Open Agents — this MCP server's own sessions, not the calling client's own session — with lightweight `state`, `workspace`, `resumable`, and `activity` fields plus repo and PR summaries. `state` (active/archived) is filing and matches the `status` input filter; `workspace` is the sandbox's own status (ready, hibernated, provisioning, restoring, failed, or none) — hibernated is a normal resting state a session resumes from automatically on the next message, not a dead session; `resumable` is true exactly when `workspace` is hibernated. Returns `returned` (rows on this page) and `total` (all sessions matching the same status filter), so page until offset + returned reaches total.",
+      "List the caller's coding sessions in Open Agents — this MCP server's own sessions, not the calling client's own session — with lightweight `state`, `workspace`, `resumable`, and `activity` fields plus repo and PR summaries. `state` (active/archived) is filing and matches the `status` input filter. `workspace` is the sandbox's own status (ready, hibernated, provisioning, restoring, failed, or none): only ready means a sandbox is live right now, and hibernated is the normal resting state — the sandbox is parked to stop billing and is restored automatically on the next message. `resumable` is true for every non-archived session, whatever its `workspace` says, because accepting new work is gated on filing alone; a hibernated or failed workspace is rebuilt on demand. `activity` is working only while a run is genuinely live. Returns `returned` (rows on this page) and `total` (all sessions matching the same status filter), so page until offset + returned reaches total.",
     scope: SESSION_READ_SCOPE,
     inputSchema: listSessionsInputSchema,
     outputSchema: listSessionsOutputSchema,
@@ -754,7 +757,7 @@ export const sessionReadTools: readonly AnyMcpToolDefinition[] = [
     name: "open_agents_get_session",
     title: "Get Open Agents Session",
     description:
-      "Get full detail for one Open Agents coding session (Open Agents' own session record, not the caller's MCP session) that the caller owns, including its `chats`, `state`, `workspace`, `resumable`, and `activity`, without transcripts or diff bodies. A hibernated `workspace` is a normal resting state a session resumes from automatically, not a dead session.",
+      "Get full detail for one Open Agents coding session (Open Agents' own session record, not the caller's MCP session) that the caller owns, including its `chats`, `state`, `workspace`, `resumable`, and `activity`, without transcripts or diff bodies. `workspace` reports ready only while a sandbox is live right now; hibernated is the normal resting state and is restored automatically on the next message. `resumable` is true for every non-archived session, whatever its `workspace` says, and `activity` is working only while a run is genuinely live.",
     scope: SESSION_READ_SCOPE,
     inputSchema: getSessionInputSchema,
     outputSchema: getSessionOutputSchema,
