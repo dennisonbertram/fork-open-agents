@@ -196,6 +196,10 @@ mock.module("@open-agents/sandbox", () => ({
 }));
 
 mock.module("@/lib/sandbox/config", () => ({
+  // mock.module replaces the WHOLE module, so a background-agent run
+  // resolving its own sizing needs these present here too.
+  BACKGROUND_AGENT_SANDBOX_TIMEOUT_MS: 1_800_000,
+  BACKGROUND_AGENT_SANDBOX_VCPUS: 2,
   DEFAULT_SANDBOX_BASE_SNAPSHOT_ID: "snapshot-test",
   DEFAULT_SANDBOX_PORTS: [3000],
   DEFAULT_SANDBOX_TIMEOUT_MS: 300_000,
