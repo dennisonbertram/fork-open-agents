@@ -23,6 +23,7 @@ import {
 import { kickSandboxLifecycleWorkflow } from "@/lib/sandbox/lifecycle-kick";
 import {
   DEFAULT_SANDBOX_BASE_SNAPSHOT_ID,
+  SANDBOX_SNAPSHOT_EXPIRATION_MS,
   DEFAULT_SANDBOX_PORTS,
   DEFAULT_SANDBOX_TIMEOUT_MS,
   DEFAULT_SANDBOX_VCPUS,
@@ -153,6 +154,7 @@ export async function prewarmSessionSandbox(params: {
           vcpus: DEFAULT_SANDBOX_VCPUS,
           ports: DEFAULT_SANDBOX_PORTS,
           baseSnapshotId: DEFAULT_SANDBOX_BASE_SNAPSHOT_ID,
+          snapshotExpiration: SANDBOX_SNAPSHOT_EXPIRATION_MS,
           persistent: true,
           resume: true,
           createIfMissing: true,

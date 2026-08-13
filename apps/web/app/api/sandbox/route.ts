@@ -21,6 +21,7 @@ import {
 } from "@/lib/github/app";
 import {
   DEFAULT_SANDBOX_BASE_SNAPSHOT_ID,
+  SANDBOX_SNAPSHOT_EXPIRATION_MS,
   DEFAULT_SANDBOX_PORTS,
   DEFAULT_SANDBOX_TIMEOUT_MS,
   DEFAULT_SANDBOX_VCPUS,
@@ -371,6 +372,7 @@ export async function POST(req: Request) {
         vcpus: DEFAULT_SANDBOX_VCPUS,
         ports: DEFAULT_SANDBOX_PORTS,
         baseSnapshotId: DEFAULT_SANDBOX_BASE_SNAPSHOT_ID,
+        snapshotExpiration: SANDBOX_SNAPSHOT_EXPIRATION_MS,
         persistent: !!sandboxName,
         resume: !!sandboxName,
         createIfMissing: !!sandboxName,

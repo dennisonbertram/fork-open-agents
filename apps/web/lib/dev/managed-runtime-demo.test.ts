@@ -129,6 +129,7 @@ mock.module("@/lib/sandbox/lifecycle", () => ({
 }));
 
 mock.module("@/lib/sandbox/config", () => ({
+  SANDBOX_SNAPSHOT_EXPIRATION_MS: 604_800_000,
   DEFAULT_SANDBOX_BASE_SNAPSHOT_ID: "snapshot-id",
   DEFAULT_SANDBOX_PORTS: [3000],
   DEFAULT_SANDBOX_TIMEOUT_MS: 60_000,

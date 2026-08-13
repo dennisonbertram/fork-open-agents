@@ -187,6 +187,7 @@ mock.module("@open-agents/sandbox", () => ({
   stageAll: mock(async () => undefined),
 }));
 mock.module("@/lib/sandbox/config", () => ({
+  SANDBOX_SNAPSHOT_EXPIRATION_MS: 604_800_000,
   // mock.module replaces the WHOLE module, so a background-agent run
   // resolving its own sizing needs these present here too.
   BACKGROUND_AGENT_SANDBOX_TIMEOUT_MS: 1_800_000,

@@ -88,6 +88,7 @@ import { buildCoAuthor, createCommit } from "@/lib/github/commit";
 import { resolveInferenceProfileModelSelection } from "@/lib/inference/profile-resolution";
 import {
   DEFAULT_SANDBOX_BASE_SNAPSHOT_ID,
+  SANDBOX_SNAPSHOT_EXPIRATION_MS,
   DEFAULT_SANDBOX_PORTS,
   DEFAULT_SANDBOX_TIMEOUT_MS,
   DEFAULT_SANDBOX_VCPUS,
@@ -920,6 +921,7 @@ export async function executeAgentStep(
           vcpus: DEFAULT_SANDBOX_VCPUS,
           ports: DEFAULT_SANDBOX_PORTS,
           baseSnapshotId: DEFAULT_SANDBOX_BASE_SNAPSHOT_ID,
+          snapshotExpiration: SANDBOX_SNAPSHOT_EXPIRATION_MS,
           persistent: normalizedInput?.workspace.persistent ?? false,
           resume: normalizedInput?.workspace.resume ?? false,
           createIfMissing: true,

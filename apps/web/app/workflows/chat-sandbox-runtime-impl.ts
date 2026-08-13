@@ -42,6 +42,7 @@ import {
 import { kickSandboxLifecycleWorkflow } from "@/lib/sandbox/lifecycle-kick";
 import {
   DEFAULT_SANDBOX_BASE_SNAPSHOT_ID,
+  SANDBOX_SNAPSHOT_EXPIRATION_MS,
   DEFAULT_SANDBOX_PORTS,
   DEFAULT_SANDBOX_TIMEOUT_MS,
   DEFAULT_SANDBOX_VCPUS,
@@ -1151,6 +1152,7 @@ export async function resolveChatSandboxRuntime(params: {
     vcpus: DEFAULT_SANDBOX_VCPUS,
     ports: sandboxPorts,
     baseSnapshotId: DEFAULT_SANDBOX_BASE_SNAPSHOT_ID,
+    snapshotExpiration: SANDBOX_SNAPSHOT_EXPIRATION_MS,
     persistent: true,
     resume: true,
     // Default shallow clone; opt into full git history per session.

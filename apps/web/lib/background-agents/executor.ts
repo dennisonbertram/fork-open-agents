@@ -16,6 +16,7 @@ import {
 import type { ModelMessage } from "ai";
 import {
   DEFAULT_SANDBOX_BASE_SNAPSHOT_ID,
+  SANDBOX_SNAPSHOT_EXPIRATION_MS,
   DEFAULT_SANDBOX_PORTS,
   BACKGROUND_AGENT_SANDBOX_TIMEOUT_MS,
   BACKGROUND_AGENT_SANDBOX_VCPUS,
@@ -2493,6 +2494,7 @@ async function runBackgroundAgentExecution(
         vcpus: BACKGROUND_AGENT_SANDBOX_VCPUS,
         ports: DEFAULT_SANDBOX_PORTS,
         baseSnapshotId: DEFAULT_SANDBOX_BASE_SNAPSHOT_ID,
+        snapshotExpiration: SANDBOX_SNAPSHOT_EXPIRATION_MS,
         persistent: sandboxInput.workspace.policy === "persistent_resume",
         resume: sandboxInput.workspace.resume,
         createIfMissing: sandboxInput.workspace.createIfMissing,
