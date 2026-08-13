@@ -118,6 +118,10 @@ async function connectNamedSandbox(
       remainingTimeout,
       ports: options?.ports,
       resume: options?.resume,
+      // Carried through the resume path too: it is only applied at creation
+      // otherwise, so every reconnect would leave the snapshot this sandbox
+      // writes on stop unbounded.
+      snapshotExpiration: options?.snapshotExpiration,
     });
   } catch (error) {
     if (!options?.createIfMissing || !isSandboxNotFoundError(error)) {

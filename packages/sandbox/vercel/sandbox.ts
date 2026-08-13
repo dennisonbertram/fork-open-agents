@@ -694,12 +694,33 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
       ports?: number[];
       /** Whether to explicitly resume a stopped sandbox */
       resume?: boolean;
+      /**
+       * Retention for the snapshot this sandbox writes when it stops.
+       *
+       * Only settable at creation through the create config, so a resumed
+       * sandbox needs it applied explicitly — and the resume path is where
+       * most stops happen, since background-agent reconnects and hibernated
+       * sessions both arrive here.
+       */
+      snapshotExpiration?: number;
     } = {},
   ): Promise<VercelSandbox> {
     const sdk = await VercelSandboxSDK.get({
       name: sandboxName,
       resume: options.resume ?? false,
     });
+    if (options.snapshotExpiration !== undefined) {
+      // Best effort: an unbounded snapshot costs storage, but failing the
+      // reconnect over it would cost the user their session.
+      await sdk
+        .update({ snapshotExpiration: options.snapshotExpiration })
+        .catch((error: unknown) => {
+          console.warn(
+            `[sandbox] Failed to set snapshot expiration on ${sandboxName}:`,
+            error,
+          );
+        });
+    }
     if (options.githubToken) {
       await clearGitHubCredentialBrokering(sdk);
     }
