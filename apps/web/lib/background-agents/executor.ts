@@ -2037,13 +2037,15 @@ export async function executeBackgroundAgentRun(params: {
     startedAtMs: null,
   };
 
+  let stopReason: "step_returned" | "step_threw" = "step_returned";
   try {
     await runBackgroundAgentExecution(params, disposal);
   } catch (error) {
-    await disposeRunSandbox(disposal, params, "step_threw");
+    stopReason = "step_threw";
     throw error;
+  } finally {
+    await disposeRunSandbox(disposal, params, stopReason);
   }
-  await disposeRunSandbox(disposal, params, "step_returned");
 }
 
 async function runBackgroundAgentExecution(
@@ -2464,6 +2466,10 @@ async function runBackgroundAgentExecution(
   if (!(await ensureLiveAuthorization())) return;
   let setupToken: ScopedInstallationToken | undefined;
   let sandbox: Sandbox | undefined;
+  // Before the call, not after: Vercel bills from microVM creation, and the
+  // clone plus setup command run inside `connectSandbox`. Timing from its
+  // return would under-report the billed life by the whole cold start.
+  const sandboxStartedAtMs = Date.now();
   try {
     setupToken = await mintInstallationToken({
       installationId: access.installationId,
@@ -2500,7 +2506,7 @@ async function runBackgroundAgentExecution(
     disposal.userId = run.userId;
     disposal.requestId = run.requestId;
     disposal.vcpus = BACKGROUND_AGENT_SANDBOX_VCPUS;
-    disposal.startedAtMs = Date.now();
+    disposal.startedAtMs = sandboxStartedAtMs;
   } catch (error) {
     const freshRow = await getBackgroundAgentRunWithAgent(run.id);
     await recordFailure({

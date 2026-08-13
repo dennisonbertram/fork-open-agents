@@ -668,6 +668,10 @@ beforeEach(() => {
 
   getBackgroundAgentRunWithAgent.mockClear();
   recordBackgroundAgentEvent.mockClear();
+  recordBackgroundAgentEvent.mockImplementation(async (input: EventInput) => {
+    await afterEventRecorded?.(input);
+    return input;
+  });
   recordBackgroundAgentOutput.mockClear();
   listBackgroundAgentOutputsMock.mockClear();
   updateBackgroundAgentRunStatus.mockClear();
@@ -2292,18 +2296,31 @@ describe("#1210 background-agent sandbox disposal", () => {
     expect(sandboxStop).toHaveBeenCalledTimes(1);
   });
 
-  test("stops the sandbox when the run throws", async () => {
-    // The agent call rejecting is the shape of an unexpected failure: whatever
-    // the step does with the error, the microVM must not outlive it.
-    generate.mockImplementationOnce(async () => {
-      throw new Error("model call exploded");
+  test("stops the sandbox when the step throws, and still rethrows", async () => {
+    // Must throw from something the executor does NOT catch itself. A failing
+    // `generate` is caught internally and turned into a recorded failure, so a
+    // test built on it exercises the ordinary return path and leaves the
+    // catch/rethrow branch inert — verified by deleting that branch and
+    // watching every test stay green.
+    //
+    // Event recording is genuinely uncaught here: `recordBackgroundAgentEvent`
+    // for `background-agent.sandbox.started` sits outside any try, and it
+    // throws after its sequence-conflict retries are exhausted.
+    recordBackgroundAgentEvent.mockImplementation(async (event: EventInput) => {
+      if (event.eventName === "background-agent.sandbox.started") {
+        throw new Error("event store unavailable");
+      }
+      await afterEventRecorded?.(event);
+      return event;
     });
     const { executeBackgroundAgentRun } = await executorModulePromise;
 
-    await executeBackgroundAgentRun({
-      runId: currentRun.id,
-      workflowRunId: "wf-dispose-throw",
-    }).catch(() => undefined);
+    await expect(
+      executeBackgroundAgentRun({
+        runId: currentRun.id,
+        workflowRunId: "wf-dispose-throw",
+      }),
+    ).rejects.toThrow("event store unavailable");
 
     expect(connectSandbox).toHaveBeenCalledTimes(1);
     expect(sandboxStop).toHaveBeenCalledTimes(1);
