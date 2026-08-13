@@ -105,9 +105,22 @@ const stopChatRun = mock(
     ({ stopped: false, workflowRunId: null }) as unknown,
 );
 
+// `chats.active_stream_id` cannot be trusted raw — start-run.ts documents that
+// a stale-but-clearable id reads non-null right up until reconciliation clears
+// it, and production holds one such id that is 60 days old. stop_run resolves
+// the slot through this instead of reading the column.
+const reconcileChatRunSlot = mock(
+  async (_chatId: string) =>
+    ({ action: "ready", runId: null }) as {
+      action: "resume" | "ready" | "conflict";
+      runId: string | null;
+    },
+);
+
 mock.module("@/lib/chat/start-run", () => ({
   startChatRun,
   stopChatRun,
+  reconcileChatRunSlot,
 }));
 
 const toolsModulePromise = import("./sessions-write");
@@ -142,7 +155,11 @@ function seedSession(row: unknown): void {
   getSessionMetadataById.mockImplementation(async () => row);
 }
 
-const TOOL_NAMES = ["start_session", "send_message", "stop_run"];
+const TOOL_NAMES = [
+  "open_agents_start_session",
+  "open_agents_send_message",
+  "open_agents_stop_run",
+];
 
 function expectNoWriteIo(): void {
   expect(createSessionCore).not.toHaveBeenCalled();
@@ -186,6 +203,11 @@ beforeEach(() => {
   stopChatRun.mockImplementation(
     async () => ({ stopped: false, workflowRunId: null }) as unknown,
   );
+  reconcileChatRunSlot.mockClear();
+  reconcileChatRunSlot.mockImplementation(async () => ({
+    action: "ready",
+    runId: null,
+  }));
 });
 
 afterEach(() => {
@@ -520,6 +542,63 @@ describe("stopRun", () => {
       stopped: false,
       workflowRunId: null,
     });
+  });
+
+  test("hands the chat's own run slot to stopChatRun rather than pre-judging it", async () => {
+    // Classification belongs in stopChatRun, which can tell a run the runtime
+    // no longer has (stale — cleared, nothing to stop) from a failure it
+    // cannot classify (propagated). Deciding here via reconcileChatRunSlot
+    // would clear the slot and report "nothing was running" on any transient
+    // lookup error, while the billed run kept going.
+    const { stopRun } = await toolsModulePromise;
+    seedSession(buildSessionRow());
+    getChatById.mockImplementation(async () => ({
+      id: "chat-1",
+      sessionId: "session-1",
+      activeStreamId: "run-from-60-days-ago",
+    }));
+    stopChatRun.mockImplementation(async () => ({
+      stopped: false,
+      workflowRunId: null,
+    }));
+
+    const result = await stopRun(makeCtx({}), {
+      sessionId: "session-1",
+      chatId: "chat-1",
+    });
+
+    expect(reconcileChatRunSlot).not.toHaveBeenCalled();
+    expect(stopChatRun).toHaveBeenCalledWith({
+      chatId: "chat-1",
+      activeStreamId: "run-from-60-days-ago",
+    });
+    expect(result.stopped).toBe(false);
+    expect(result.workflowRunId).toBeNull();
+  });
+
+  test("a live run is cancelled with the slot the chat holds", async () => {
+    const { stopRun } = await toolsModulePromise;
+    seedSession(buildSessionRow());
+    getChatById.mockImplementation(async () => ({
+      id: "chat-1",
+      sessionId: "session-1",
+      activeStreamId: "run-live",
+    }));
+    stopChatRun.mockImplementation(async () => ({
+      stopped: true,
+      workflowRunId: "run-live",
+    }));
+
+    const result = await stopRun(makeCtx({}), {
+      sessionId: "session-1",
+      chatId: "chat-1",
+    });
+
+    expect(stopChatRun).toHaveBeenCalledWith({
+      chatId: "chat-1",
+      activeStreamId: "run-live",
+    });
+    expect(result.stopped).toBe(true);
   });
 
   test("throws not_found for a session owned by a different user", async () => {

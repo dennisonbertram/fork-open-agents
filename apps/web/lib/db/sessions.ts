@@ -258,6 +258,9 @@ type SessionSidebarFields = Pick<
   | "id"
   | "title"
   | "status"
+  | "lifecycleState"
+  | "sandboxExpiresAt"
+  | "updatedAt"
   | "repoOwner"
   | "repoName"
   | "branch"
@@ -271,6 +274,8 @@ type SessionSidebarFields = Pick<
 export type SessionWithUnread = SessionSidebarFields & {
   hasUnread: boolean;
   hasStreaming: boolean;
+  /** Newest `chats.updated_at` among chats holding a run slot; null when none. */
+  activeRunSlotAt: Date | null;
   latestChatId: string | null;
   lastActivityAt: Date;
   /**
@@ -317,6 +322,14 @@ export async function getSessionsWithUnreadByUserId(
       id: sessions.id,
       title: sessions.title,
       status: sessions.status,
+      lifecycleState: sessions.lifecycleState,
+      // Two cheap timestamp columns (not the heavyweight `sandboxState` JSON):
+      // `lifecycleState` alone cannot say whether a sandbox is live — it reads
+      // "active" for sandboxes that expired days ago — and cannot say whether a
+      // transitional state has been stuck for weeks. See lib/mcp-server/
+      // session-state.ts.
+      sandboxExpiresAt: sessions.sandboxExpiresAt,
+      updatedAt: sessions.updatedAt,
       repoOwner: sessions.repoOwner,
       repoName: sessions.repoName,
       branch: sessions.branch,
@@ -335,6 +348,11 @@ export async function getSessionsWithUnreadByUserId(
         END
       ), false)`,
       hasStreaming: sql<boolean>`COALESCE(BOOL_OR(${chats.activeStreamId} IS NOT NULL), false)`,
+      // The freshest activity on a chat that actually holds a run slot.
+      // `lastActivityAt` above is MAX over ALL chats, so pairing it with
+      // `hasStreaming` would bound a stale slot on one chat by a recent
+      // message on a different one, and the staleness check would never fire.
+      activeRunSlotAt: sql<Date | null>`MAX(${chats.updatedAt}) FILTER (WHERE ${chats.activeStreamId} IS NOT NULL)`,
       latestChatId: sql<string | null>`(
         ARRAY_AGG(${chats.id} ORDER BY ${chats.updatedAt} DESC, ${chats.createdAt} DESC)
         FILTER (WHERE ${chats.id} IS NOT NULL)

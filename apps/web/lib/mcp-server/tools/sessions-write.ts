@@ -166,16 +166,27 @@ async function resolveChatForSend(
  * chatId from ever cancelling a run it doesn't own, without stop_run needing
  * its own separate ownership-violation error shape.
  */
+/**
+ * Resolve which chat to stop, and the run slot it currently holds.
+ *
+ * The slot is read as-is and handed to `stopChatRun`, which distinguishes a
+ * run the runtime no longer has (stale slot — cleared, reported as nothing to
+ * stop) from a failure it cannot classify (propagated). Reconciling here
+ * instead would be wrong in the dangerous direction:
+ * `reconcileChatRunSlot` treats ANY status-lookup rejection as staleness and
+ * clears the slot, so one transient error would make a live, billed run look
+ * like nothing to stop — and drop its tracking slot on the way out.
+ */
 async function resolveChatForStop(
   sessionId: string,
   chatId: string | undefined,
 ): Promise<{ chatId: string; activeStreamId: string | null }> {
   if (chatId) {
     const chat = await getChatById(chatId);
-    if (chat && chat.sessionId === sessionId) {
-      return { chatId: chat.id, activeStreamId: chat.activeStreamId ?? null };
+    if (!chat || chat.sessionId !== sessionId) {
+      return { chatId, activeStreamId: null };
     }
-    return { chatId, activeStreamId: null };
+    return { chatId: chat.id, activeStreamId: chat.activeStreamId ?? null };
   }
 
   const chats = await getChatsBySessionId(sessionId);
@@ -189,13 +200,15 @@ async function resolveChatForStop(
   };
 }
 
-const startSessionInputSchema = z.object({
-  repoOwner: z.string().min(1),
-  repoName: z.string().min(1),
-  branch: z.string().min(1).optional(),
-  prompt: z.string().min(1),
-  runtimeMode: z.enum(["classic", "managed_runtime"]).optional(),
-});
+const startSessionInputSchema = z
+  .object({
+    repoOwner: z.string().min(1),
+    repoName: z.string().min(1),
+    branch: z.string().min(1).optional(),
+    prompt: z.string().min(1),
+    runtimeMode: z.enum(["classic", "managed_runtime"]).optional(),
+  })
+  .strict();
 
 export type StartSessionInput = z.infer<typeof startSessionInputSchema>;
 
@@ -206,6 +219,14 @@ export type StartSessionResult = {
   url: string;
   sandboxProvisioning: true;
 };
+
+const startSessionOutputSchema = z.object({
+  sessionId: z.string(),
+  chatId: z.string(),
+  workflowRunId: z.string(),
+  url: z.string(),
+  sandboxProvisioning: z.literal(true),
+});
 
 export async function startSession(
   ctx: ToolCallerContext,
@@ -310,11 +331,13 @@ export async function startSession(
   };
 }
 
-const sendMessageInputSchema = z.object({
-  sessionId: z.string().min(1),
-  chatId: z.string().min(1).optional(),
-  prompt: z.string().min(1),
-});
+const sendMessageInputSchema = z
+  .object({
+    sessionId: z.string().min(1),
+    chatId: z.string().min(1).optional(),
+    prompt: z.string().min(1),
+  })
+  .strict();
 
 export type SendMessageInput = z.infer<typeof sendMessageInputSchema>;
 
@@ -324,6 +347,13 @@ export type SendMessageResult = {
   workflowRunId: string;
   url: string;
 };
+
+const sendMessageOutputSchema = z.object({
+  sessionId: z.string(),
+  chatId: z.string(),
+  workflowRunId: z.string(),
+  url: z.string(),
+});
 
 export async function sendMessage(
   ctx: ToolCallerContext,
@@ -361,10 +391,12 @@ export async function sendMessage(
   };
 }
 
-const stopRunInputSchema = z.object({
-  sessionId: z.string().min(1),
-  chatId: z.string().min(1).optional(),
-});
+const stopRunInputSchema = z
+  .object({
+    sessionId: z.string().min(1),
+    chatId: z.string().min(1).optional(),
+  })
+  .strict();
 
 export type StopRunInput = z.infer<typeof stopRunInputSchema>;
 
@@ -374,6 +406,13 @@ export type StopRunResult = {
   stopped: boolean;
   workflowRunId: string | null;
 };
+
+const stopRunOutputSchema = z.object({
+  sessionId: z.string(),
+  chatId: z.string(),
+  stopped: z.boolean(),
+  workflowRunId: z.string().nullable(),
+});
 
 export async function stopRun(
   ctx: ToolCallerContext,
@@ -400,27 +439,59 @@ export async function stopRun(
 
 export const sessionWriteTools: readonly AnyMcpToolDefinition[] = [
   defineTool({
-    name: "start_session",
+    name: "open_agents_start_session",
+    title: "Start Open Agents Session",
     description:
-      "Create a new session against a repo and start an agent run with the given prompt. Returns immediately without waiting for the sandbox — sandboxProvisioning is always true, so poll get_session until it reports ready before assuming the sandbox is usable.",
+      "Open Agents: create a new Open Agents session against a GitHub repo — provisions a fresh cloud sandbox and starts a billed agent run with the given prompt. Not idempotent: every call spins up a new sandbox and a new run, even with identical inputs. Returns immediately, before the sandbox finishes provisioning; poll `open_agents_get_session` until its `workspace` field reports ready before assuming the sandbox is usable.",
     scope: SESSION_WRITE_SCOPE,
     inputSchema: startSessionInputSchema,
+    outputSchema: startSessionOutputSchema,
+    annotations: {
+      readOnlyHint: false,
+      // The spec's default is destructive, and that default is correct here:
+      // the run this launches inherits the user's auto-commit/auto-PR
+      // settings, so it can delete files, rewrite a branch, and push. Claiming
+      // otherwise is what lets a client auto-approve it without asking.
+      destructiveHint: true,
+      idempotentHint: false,
+      openWorldHint: true,
+    },
     handler: startSession,
   }),
   defineTool({
-    name: "send_message",
+    name: "open_agents_send_message",
+    title: "Send Message to Open Agents Session",
     description:
-      "Send a message to an existing session's chat and start an agent run. Fails with a conflict error (carrying the live workflowRunId) if a run is already active on that chat.",
+      "open_agents_send_message sends a prompt into an existing Open Agents cloud coding session's chat and starts a new billed agent run — it is not a chat, email, or Slack message to a person. Omit `chatId` to target the session's most recently active chat; the result's `chatId` field always reports which chat the run actually used. Fails with a conflict error (carrying the live `workflowRunId`) if a run is already active on that chat.",
     scope: SESSION_WRITE_SCOPE,
     inputSchema: sendMessageInputSchema,
+    outputSchema: sendMessageOutputSchema,
+    annotations: {
+      readOnlyHint: false,
+      // The spec's default is destructive, and that default is correct here:
+      // the run this launches inherits the user's auto-commit/auto-PR
+      // settings, so it can delete files, rewrite a branch, and push. Claiming
+      // otherwise is what lets a client auto-approve it without asking.
+      destructiveHint: true,
+      idempotentHint: false,
+      openWorldHint: true,
+    },
     handler: sendMessage,
   }),
   defineTool({
-    name: "stop_run",
+    name: "open_agents_stop_run",
+    title: "Stop Open Agents Run",
     description:
-      "Cancel the active agent run on a session's chat. Idempotent — stopped:false with no error means nothing was running.",
+      "Open Agents: cancel the active agent run on an Open Agents session's chat. Idempotent — calling it twice, or calling it when nothing is running, is safe: it resolves with `stopped` false and `workflowRunId` null rather than an error. Omit `chatId` to target the session's most recently active chat; the result's `chatId` field reports which chat was targeted.",
     scope: SESSION_WRITE_SCOPE,
     inputSchema: stopRunInputSchema,
+    outputSchema: stopRunOutputSchema,
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
     handler: stopRun,
   }),
 ];

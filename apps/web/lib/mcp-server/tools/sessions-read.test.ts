@@ -85,6 +85,10 @@ function buildSessionRow(overrides: Record<string, unknown> = {}) {
     runtimeMode: "classic",
     lifecycleState: "active",
     sandboxState: null,
+    // A row whose lifecycle column says "active" but which holds no live
+    // sandbox expiry — the shape 7 of 7 non-archived production sessions were
+    // in, all of them reported as a ready workspace by the first cut.
+    sandboxExpiresAt: null,
     cachedDiff: null,
     cachedDiffUpdatedAt: null,
     createdAt: new Date("2026-01-01T00:00:00Z"),
@@ -117,11 +121,11 @@ function buildSessionDiffRow(overrides: Record<string, unknown> = {}) {
 }
 
 const TOOL_NAMES = [
-  "whoami",
-  "list_sessions",
-  "get_session",
-  "get_messages",
-  "get_diff_summary",
+  "open_agents_whoami",
+  "open_agents_list_sessions",
+  "open_agents_get_session",
+  "open_agents_get_messages",
+  "open_agents_get_diff_summary",
 ];
 
 /**
@@ -322,6 +326,11 @@ describe("listSessions", () => {
 
   test("maps rows to the documented summary shape, scoped to the caller, including a web URL", async () => {
     const { listSessions } = await toolsModulePromise;
+    // "ready" and "working" are claims about right now, so this row has to be
+    // live right now: a sandbox expiring in an hour and a run slot claimed a
+    // minute ago.
+    const liveUntil = new Date(Date.now() + 60 * 60 * 1000);
+    const justNow = new Date(Date.now() - 60 * 1000);
     getSessionsWithUnreadByUserId.mockImplementation(async (userId) => {
       expect(userId).toBe("user-1");
       return [
@@ -329,6 +338,9 @@ describe("listSessions", () => {
           id: "session-1",
           title: "Fix bug",
           status: "running",
+          lifecycleState: "active",
+          sandboxExpiresAt: liveUntil,
+          updatedAt: justNow,
           repoOwner: "acme",
           repoName: "widgets",
           branch: "main",
@@ -340,7 +352,7 @@ describe("listSessions", () => {
           hasUnread: true,
           hasStreaming: true,
           latestChatId: "chat-1",
-          lastActivityAt: new Date("2026-01-02T00:00:00Z"),
+          lastActivityAt: justNow,
         },
       ];
     });
@@ -358,7 +370,14 @@ describe("listSessions", () => {
     expect(result.sessions[0]).toEqual({
       id: "session-1",
       title: "Fix bug",
-      status: "running",
+      // status "running" + lifecycleState "active" + a live sandbox expiry is
+      // a filed-active session whose workspace really is usable right now.
+      state: "active",
+      workspace: "ready",
+      // Every non-archived session accepts a message — that is the only gate
+      // the write path enforces — so `resumable` tracks filing, not workspace.
+      resumable: true,
+      activity: "working",
       repo: "acme/widgets",
       branch: "main",
       linesAdded: 0,
@@ -368,10 +387,246 @@ describe("listSessions", () => {
       hasUnread: true,
       isStreaming: true,
       latestChatId: "chat-1",
-      lastActivityAt: "2026-01-02T00:00:00.000Z",
+      lastActivityAt: justNow.toISOString(),
       createdAt: "2026-01-01T00:00:00.000Z",
       url: "https://mcp.test/sessions/session-1",
     });
+  });
+
+  test("does not report a workspace as ready once its sandbox expiry has passed", async () => {
+    // The production shape: lifecycle_state 'active', sandbox_expires_at 226
+    // hours in the past. "ready" is documented as "live and usable right now",
+    // so an agent that reads it skips any warm-up and acts against a sandbox
+    // that died nine days ago.
+    const { listSessions } = await toolsModulePromise;
+    getSessionsWithUnreadByUserId.mockImplementation(async () => [
+      {
+        id: "session-1",
+        title: "Fix bug",
+        status: "running",
+        lifecycleState: "active",
+        sandboxExpiresAt: new Date(Date.now() - 226 * 60 * 60 * 1000),
+        updatedAt: new Date(Date.now() - 226 * 60 * 60 * 1000),
+        repoOwner: "acme",
+        repoName: "widgets",
+        branch: "main",
+        linesAdded: 0,
+        linesRemoved: 0,
+        prNumber: null,
+        prStatus: null,
+        createdAt: new Date("2026-01-01T00:00:00Z"),
+        hasUnread: false,
+        hasStreaming: false,
+        latestChatId: null,
+        lastActivityAt: new Date("2026-01-01T00:00:00Z"),
+      },
+    ]);
+
+    const result = await listSessions(makeCtx({}), {
+      status: "active",
+      limit: 20,
+      offset: 0,
+    });
+
+    expect(result.sessions[0]?.workspace).toBe("hibernated");
+    expect(result.sessions[0]?.resumable).toBe(true);
+  });
+
+  test("does not report a run-slot older than any possible run as working", async () => {
+    // Exactly one production chat holds a non-null active_stream_id, last
+    // touched 60 days ago. `hasStreaming` reads it raw, and the codebase
+    // documents that column as untrustworthy without reconciliation, so the
+    // claim has to be bounded by time here.
+    const { listSessions } = await toolsModulePromise;
+    getSessionsWithUnreadByUserId.mockImplementation(async () => [
+      {
+        id: "session-1",
+        title: "Fix bug",
+        status: "running",
+        lifecycleState: "hibernated",
+        sandboxExpiresAt: null,
+        updatedAt: new Date(Date.now() - 60 * 24 * 60 * 60 * 1000),
+        repoOwner: "acme",
+        repoName: "widgets",
+        branch: "main",
+        linesAdded: 0,
+        linesRemoved: 0,
+        prNumber: null,
+        prStatus: null,
+        createdAt: new Date("2026-01-01T00:00:00Z"),
+        hasUnread: false,
+        hasStreaming: true,
+        latestChatId: "chat-1",
+        lastActivityAt: new Date(Date.now() - 60 * 24 * 60 * 60 * 1000),
+        activeRunSlotAt: new Date(Date.now() - 60 * 24 * 60 * 60 * 1000),
+      },
+    ]);
+
+    const result = await listSessions(makeCtx({}), {
+      status: "active",
+      limit: 20,
+      offset: 0,
+    });
+
+    expect(result.sessions[0]?.activity).toBe("idle");
+    // The raw column is still reported as-is under its own name, so the
+    // bounded claim and the unbounded fact stay separable.
+    expect(result.sessions[0]?.isStreaming).toBe(true);
+  });
+
+  test("bounds staleness by the chat that holds the run slot, not by the session's newest chat", async () => {
+    // `hasStreaming` is BOOL_OR(active_stream_id IS NOT NULL) across all of a
+    // session's chats, while `lastActivityAt` is MAX(chats.updated_at) — two
+    // independent aggregates. A session with a stale slot on one chat and a
+    // fresh message on another therefore pairs "a run is claimed" with a
+    // timestamp belonging to a different chat, and the staleness bound never
+    // fires. The timestamp has to come from the chat holding the slot.
+    const { listSessions } = await toolsModulePromise;
+    getSessionsWithUnreadByUserId.mockImplementation(async () => [
+      {
+        id: "session-1",
+        title: "Fix bug",
+        status: "running",
+        lifecycleState: "hibernated",
+        sandboxExpiresAt: null,
+        updatedAt: new Date(Date.now() - 60 * 1000),
+        repoOwner: "acme",
+        repoName: "widgets",
+        branch: "main",
+        linesAdded: 0,
+        linesRemoved: 0,
+        prNumber: null,
+        prStatus: null,
+        createdAt: new Date("2026-01-01T00:00:00Z"),
+        hasUnread: false,
+        hasStreaming: true,
+        latestChatId: "chat-2",
+        // Newest chat activity: a minute ago, on a chat with no run slot.
+        lastActivityAt: new Date(Date.now() - 60 * 1000),
+        // The chat that actually holds the slot was last touched 60 days ago.
+        activeRunSlotAt: new Date(Date.now() - 60 * 24 * 60 * 60 * 1000),
+      },
+    ]);
+
+    const result = await listSessions(makeCtx({}), {
+      status: "active",
+      limit: 20,
+      offset: 0,
+    });
+
+    expect(result.sessions[0]?.activity).toBe("idle");
+  });
+
+  test("reports a workspace stuck in provisioning as failed, so a poll loop terminates", async () => {
+    // Seven production sessions have sat in 'provisioning' for between 19
+    // hours and 81 days with nothing sweeping them. start_session tells the
+    // caller to poll until the workspace reports ready.
+    const { listSessions } = await toolsModulePromise;
+    getSessionsWithUnreadByUserId.mockImplementation(async () => [
+      {
+        id: "session-1",
+        title: "Fix bug",
+        status: "running",
+        lifecycleState: "provisioning",
+        sandboxExpiresAt: null,
+        updatedAt: new Date(Date.now() - 19 * 60 * 60 * 1000),
+        repoOwner: "acme",
+        repoName: "widgets",
+        branch: "main",
+        linesAdded: 0,
+        linesRemoved: 0,
+        prNumber: null,
+        prStatus: null,
+        createdAt: new Date("2026-01-01T00:00:00Z"),
+        hasUnread: false,
+        hasStreaming: false,
+        latestChatId: null,
+        lastActivityAt: new Date("2026-01-01T00:00:00Z"),
+      },
+    ]);
+
+    const result = await listSessions(makeCtx({}), {
+      status: "active",
+      limit: 20,
+      offset: 0,
+    });
+
+    expect(result.sessions[0]?.workspace).toBe("failed");
+    expect(result.sessions[0]?.resumable).toBe(true);
+  });
+
+  test("reports a hibernated workspace as resumable and idle, not as a dead session", async () => {
+    // Production reality this state model exists to describe honestly: a
+    // session filed as "running" whose sandbox is hibernated (parked, no live
+    // run) — the previous `status` field called this "running", which reads
+    // as active work in progress. It is neither.
+    const { listSessions } = await toolsModulePromise;
+    getSessionsWithUnreadByUserId.mockImplementation(async () => [
+      {
+        id: "session-1",
+        title: "Fix bug",
+        status: "running",
+        lifecycleState: "hibernated",
+        repoOwner: null,
+        repoName: null,
+        branch: null,
+        linesAdded: 0,
+        linesRemoved: 0,
+        prNumber: null,
+        prStatus: null,
+        createdAt: new Date("2026-01-01T00:00:00Z"),
+        hasUnread: false,
+        hasStreaming: false,
+        latestChatId: null,
+        lastActivityAt: new Date("2026-01-01T00:00:00Z"),
+      },
+    ]);
+
+    const result = await listSessions(makeCtx({}), {
+      status: "active",
+      limit: 20,
+      offset: 0,
+    });
+
+    expect(result.sessions[0]?.state).toBe("active");
+    expect(result.sessions[0]?.workspace).toBe("hibernated");
+    expect(result.sessions[0]?.resumable).toBe(true);
+    expect(result.sessions[0]?.activity).toBe("idle");
+  });
+
+  test("reports an archived session with no workspace as state archived, workspace none", async () => {
+    const { listSessions } = await toolsModulePromise;
+    getSessionsWithUnreadByUserId.mockImplementation(async () => [
+      {
+        id: "session-1",
+        title: "Fix bug",
+        status: "archived",
+        lifecycleState: "archived",
+        repoOwner: null,
+        repoName: null,
+        branch: null,
+        linesAdded: 0,
+        linesRemoved: 0,
+        prNumber: null,
+        prStatus: null,
+        createdAt: new Date("2026-01-01T00:00:00Z"),
+        hasUnread: false,
+        hasStreaming: false,
+        latestChatId: null,
+        lastActivityAt: new Date("2026-01-01T00:00:00Z"),
+      },
+    ]);
+
+    const result = await listSessions(makeCtx({}), {
+      status: "archived",
+      limit: 20,
+      offset: 0,
+    });
+
+    expect(result.sessions[0]?.state).toBe("archived");
+    expect(result.sessions[0]?.workspace).toBe("none");
+    expect(result.sessions[0]?.resumable).toBe(false);
+    expect(result.sessions[0]?.activity).toBe("idle");
   });
 
   test("returns null repo when either repoOwner or repoName is missing", async () => {
@@ -598,6 +853,16 @@ describe("getSession ownership", () => {
     expect(result.url).toBe("https://mcp.test/sessions/session-1");
     expect(result.hasUnread).toBe(true);
     expect(result.isStreaming).toBe(false);
+    // buildSessionRow is filed active with lifecycleState "active" but no live
+    // sandbox expiry, so its workspace is parked, not ready. `workspace` is
+    // now the single answer to "is there a live sandbox" — the old separate
+    // `sandboxActive` field is gone, because two fields answering the same
+    // question is how they came to contradict each other.
+    expect(result.state).toBe("active");
+    expect(result.workspace).toBe("hibernated");
+    expect(result.resumable).toBe(true);
+    expect(result.activity).toBe("idle");
+    expect("sandboxActive" in result).toBe(false);
     expect(result.chats).toHaveLength(1);
     expect(result.chats[0]).toEqual({
       id: "chat-1",
@@ -608,6 +873,40 @@ describe("getSession ownership", () => {
       createdAt: "2026-01-01T00:00:00.000Z",
       url: "https://mcp.test/sessions/session-1/chats/chat-1",
     });
+  });
+
+  test("reports a ready workspace only while the sandbox expiry is still ahead", async () => {
+    const { getSession } = await toolsModulePromise;
+    seedSession(
+      buildSessionRow({
+        sandboxExpiresAt: new Date(Date.now() + 60 * 60 * 1000),
+      }),
+    );
+
+    const result = await getSession(makeCtx({}), { sessionId: "session-1" });
+
+    expect(result.workspace).toBe("ready");
+  });
+
+  test("does not report a 60-day-old run slot as working", async () => {
+    const { getSession } = await toolsModulePromise;
+    seedSession(buildSessionRow());
+    getChatSummariesBySessionId.mockImplementation(async () => [
+      {
+        id: "chat-1",
+        title: "Chat one",
+        hasUnread: false,
+        isStreaming: true,
+        lastAssistantMessageAt: null,
+        createdAt: new Date("2026-01-01T00:00:00Z"),
+        updatedAt: new Date(Date.now() - 60 * 24 * 60 * 60 * 1000),
+      },
+    ]);
+
+    const result = await getSession(makeCtx({}), { sessionId: "session-1" });
+
+    expect(result.activity).toBe("idle");
+    expect(result.isStreaming).toBe(true);
   });
 });
 
@@ -1013,5 +1312,39 @@ describe("ownership projection avoids loading cached diff bodies (perf fix F2)",
     expect(getSessionMetadataById).not.toHaveBeenCalled();
     expect(getSessionById).not.toHaveBeenCalled();
     expect(result.hasCachedDiff).toBe(true);
+  });
+});
+
+/**
+ * Prose is the only part of a tool that a model reads before deciding whether
+ * to call it, and it is not typechecked. These pin the two claims that have
+ * already drifted from the code once.
+ */
+describe("session-state descriptions match what the fields actually do", () => {
+  test("resumability is described as filing, not as a workspace value", async () => {
+    const { sessionReadTools } = await toolsModulePromise;
+    const described = sessionReadTools.filter((tool) =>
+      tool.description.includes("resumable"),
+    );
+    expect(described.length).toBeGreaterThan(0);
+
+    for (const tool of described) {
+      // `resumable` is `isResumable(state)` — true for every non-archived
+      // session, including ready, provisioning, restoring and failed
+      // workspaces. Prose tying it to hibernation tells an agent that a ready
+      // session cannot be continued, which is the opposite of the truth.
+      expect(tool.description).not.toContain("exactly when");
+      expect(tool.description).toContain("non-archived");
+    }
+  });
+
+  test("a ready workspace is described as a claim about right now", async () => {
+    const { sessionReadTools } = await toolsModulePromise;
+    for (const tool of sessionReadTools) {
+      if (!tool.description.includes("`workspace`")) {
+        continue;
+      }
+      expect(tool.description).toContain("right now");
+    }
   });
 });

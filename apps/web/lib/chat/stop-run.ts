@@ -12,6 +12,28 @@ export type StopChatRunResult = {
 };
 
 /**
+ * Whether a cancel failure means the run does not exist, as opposed to the
+ * runtime being briefly unreachable.
+ *
+ * `cancelRun` in @workflow/core wraps the underlying failure in a plain Error
+ * with the original on `cause`, and `WorkflowRunNotFoundError.is()` matches on
+ * `name` without walking that chain — so the chain is walked here. Anything
+ * this cannot positively identify as not-found is treated as live, which is
+ * the safe direction: the caller gets an error rather than a false "nothing
+ * was running".
+ */
+function isRunNotFoundError(error: unknown): boolean {
+  let current: unknown = error;
+  for (let depth = 0; current instanceof Error && depth < 5; depth++) {
+    if (current.name === "WorkflowRunNotFoundError") {
+      return true;
+    }
+    current = current.cause;
+  }
+  return false;
+}
+
+/**
  * Cancels a chat's live workflow run, then clears `active_stream_id` via
  * compare-and-set so a newer racing run's slot isn't clobbered.
  *
@@ -33,11 +55,30 @@ export async function stopChatRun(
     const run = getRun(activeStreamId);
     await run.cancel();
   } catch (error) {
-    console.error(
-      `[workflow] Failed to cancel workflow run for chat ${chatId}:`,
-      error,
+    if (!isRunNotFoundError(error)) {
+      console.error(
+        `[workflow] Failed to cancel workflow run for chat ${chatId}:`,
+        error,
+      );
+      throw error;
+    }
+    // The runtime has no such run: the slot is stale, not live. Clear it so
+    // the next turn is not blocked by it, and report the honest result.
+    // Everything else — including a transient lookup failure — must keep
+    // propagating: answering "nothing was running" while a billed agent keeps
+    // working is how a caller ends up starting a second one alongside it.
+    console.warn(
+      `[workflow] Cleared a stale active_stream_id for chat ${chatId}: the workflow run no longer exists`,
     );
-    throw error;
+    await compareAndSetChatActiveStreamId(chatId, activeStreamId, null).catch(
+      (err: unknown) => {
+        console.error(
+          `[workflow] Failed to clear stale activeStreamId for chat ${chatId}:`,
+          err,
+        );
+      },
+    );
+    return { stopped: false, workflowRunId: null };
   }
 
   // Clear activeStreamId immediately so a follow-up prompt does not
