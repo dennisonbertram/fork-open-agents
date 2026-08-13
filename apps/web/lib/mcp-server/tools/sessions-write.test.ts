@@ -544,12 +544,12 @@ describe("stopRun", () => {
     });
   });
 
-  test("a stale run slot resolves as nothing-to-stop instead of cancelling a long-dead run", async () => {
-    // The one real production case: a chat whose active_stream_id was last
-    // touched 60 days ago. Reading the column raw either cancels a run that
-    // ended two months ago and reports stopped:true, or throws when the run
-    // record is gone — both contradict the tool's documented contract that
-    // stopping when nothing is running is safe.
+  test("hands the chat's own run slot to stopChatRun rather than pre-judging it", async () => {
+    // Classification belongs in stopChatRun, which can tell a run the runtime
+    // no longer has (stale — cleared, nothing to stop) from a failure it
+    // cannot classify (propagated). Deciding here via reconcileChatRunSlot
+    // would clear the slot and report "nothing was running" on any transient
+    // lookup error, while the billed run kept going.
     const { stopRun } = await toolsModulePromise;
     seedSession(buildSessionRow());
     getChatById.mockImplementation(async () => ({
@@ -557,9 +557,9 @@ describe("stopRun", () => {
       sessionId: "session-1",
       activeStreamId: "run-from-60-days-ago",
     }));
-    reconcileChatRunSlot.mockImplementation(async () => ({
-      action: "ready",
-      runId: null,
+    stopChatRun.mockImplementation(async () => ({
+      stopped: false,
+      workflowRunId: null,
     }));
 
     const result = await stopRun(makeCtx({}), {
@@ -567,26 +567,22 @@ describe("stopRun", () => {
       chatId: "chat-1",
     });
 
-    expect(reconcileChatRunSlot).toHaveBeenCalledWith("chat-1");
+    expect(reconcileChatRunSlot).not.toHaveBeenCalled();
     expect(stopChatRun).toHaveBeenCalledWith({
       chatId: "chat-1",
-      activeStreamId: null,
+      activeStreamId: "run-from-60-days-ago",
     });
     expect(result.stopped).toBe(false);
     expect(result.workflowRunId).toBeNull();
   });
 
-  test("a genuinely live run is still cancelled, using the reconciled run id", async () => {
+  test("a live run is cancelled with the slot the chat holds", async () => {
     const { stopRun } = await toolsModulePromise;
     seedSession(buildSessionRow());
     getChatById.mockImplementation(async () => ({
       id: "chat-1",
       sessionId: "session-1",
       activeStreamId: "run-live",
-    }));
-    reconcileChatRunSlot.mockImplementation(async () => ({
-      action: "resume",
-      runId: "run-live",
     }));
     stopChatRun.mockImplementation(async () => ({
       stopped: true,

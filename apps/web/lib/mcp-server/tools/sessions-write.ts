@@ -167,16 +167,15 @@ async function resolveChatForSend(
  * its own separate ownership-violation error shape.
  */
 /**
- * Resolve which chat to stop, and whether anything is actually running in it.
+ * Resolve which chat to stop, and the run slot it currently holds.
  *
- * The run id comes from `reconcileChatRunSlot`, never from
- * `chats.active_stream_id` directly: start-run.ts documents that a
- * stale-but-clearable id reads non-null on the raw column right up until
- * reconciliation clears it, and production holds exactly one such id, last
- * touched 60 days ago. Cancelling on the raw value either reports
- * `stopped: true` for a run that ended two months ago or throws when the run
- * record is gone — both break this tool's documented promise that stopping
- * when nothing is running is safe.
+ * The slot is read as-is and handed to `stopChatRun`, which distinguishes a
+ * run the runtime no longer has (stale slot — cleared, reported as nothing to
+ * stop) from a failure it cannot classify (propagated). Reconciling here
+ * instead would be wrong in the dangerous direction:
+ * `reconcileChatRunSlot` treats ANY status-lookup rejection as staleness and
+ * clears the slot, so one transient error would make a live, billed run look
+ * like nothing to stop — and drop its tracking slot on the way out.
  */
 async function resolveChatForStop(
   sessionId: string,
@@ -187,7 +186,7 @@ async function resolveChatForStop(
     if (!chat || chat.sessionId !== sessionId) {
       return { chatId, activeStreamId: null };
     }
-    return { chatId: chat.id, activeStreamId: await liveRunId(chat.id) };
+    return { chatId: chat.id, activeStreamId: chat.activeStreamId ?? null };
   }
 
   const chats = await getChatsBySessionId(sessionId);
@@ -197,17 +196,8 @@ async function resolveChatForStop(
   }
   return {
     chatId: mostRecent.id,
-    activeStreamId: await liveRunId(mostRecent.id),
+    activeStreamId: mostRecent.activeStreamId ?? null,
   };
-}
-
-async function liveRunId(chatId: string): Promise<string | null> {
-  // Dynamic for the same reason as the other start-run imports below: a
-  // top-level import would pull the workflow runtime into every module that
-  // loads the registry.
-  const { reconcileChatRunSlot } = await import("@/lib/chat/start-run");
-  const slot = await reconcileChatRunSlot(chatId);
-  return slot.action === "ready" ? null : slot.runId;
 }
 
 const startSessionInputSchema = z
