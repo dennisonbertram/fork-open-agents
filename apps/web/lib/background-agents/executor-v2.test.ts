@@ -200,12 +200,14 @@ mock.module("@/lib/db/usage", () => ({
 const sandboxExec = mock(
   async (_command: string): Promise<ExecResult> => successfulCommand,
 );
+const sandboxStop = mock(async (): Promise<void> => undefined);
 const fakeSandbox = {
   workingDirectory: "/workspace/widgets",
   currentBranch: "main",
   environmentDetails: "Vercel Sandbox test runtime",
   host: "sandbox.example",
   exec: sandboxExec,
+  stop: sandboxStop,
   getState: () => ({
     type: "vercel",
     sandboxName: `background_agent_${currentRun.id}`,
@@ -228,8 +230,13 @@ mock.module("@open-agents/sandbox", () => ({
 mock.module("@/lib/sandbox/config", () => ({
   DEFAULT_SANDBOX_BASE_SNAPSHOT_ID: "snapshot-test",
   DEFAULT_SANDBOX_PORTS: [3000],
+  // Deliberately distinct values: a background-agent run must request its own
+  // sizing, not the interactive-session defaults, and an assertion that cannot
+  // tell the two apart would pass either way.
   DEFAULT_SANDBOX_TIMEOUT_MS: 300_000,
-  DEFAULT_SANDBOX_VCPUS: 2,
+  DEFAULT_SANDBOX_VCPUS: 4,
+  BACKGROUND_AGENT_SANDBOX_TIMEOUT_MS: 1_800_000,
+  BACKGROUND_AGENT_SANDBOX_VCPUS: 2,
 }));
 
 const verifyRepoAccess = mock(
@@ -667,6 +674,8 @@ beforeEach(() => {
   persistRunSummary.mockClear();
   recordSummaryFailedEvent.mockClear();
   sandboxExec.mockClear();
+  sandboxStop.mockClear();
+  sandboxStop.mockImplementation(async () => undefined);
   connectSandbox.mockClear();
   verifyRepoAccess.mockClear();
   mintInstallationToken.mockClear();
@@ -2232,5 +2241,129 @@ describe("collectDeniedToolNames (#746 review fix)", () => {
         messages as Parameters<typeof collectDeniedToolNames>[1],
       ),
     ).toEqual([]);
+  });
+});
+
+/**
+ * #1210 — a background-agent run must release its sandbox.
+ *
+ * Measured over 12.52 days: 73 sandboxes at 8192 MB with a median life of
+ * exactly 300.0 minutes — the timeout ceiling — for a median 2.37 minutes of
+ * CPU work, costing $43.86 of the $59.73 provisioned-memory total. Nothing in
+ * this module ever called `stop()`, so the timeout was the only thing ending
+ * these runs. Vercel bills provisioned memory for wall-clock life regardless
+ * of CPU use, so an idle microVM costs the same as a busy one.
+ *
+ * `agent-loops` already does this correctly (agent-step.ts, "ALWAYS dispose
+ * sandbox — success and all failure paths"); these pin the same contract here.
+ */
+describe("#1210 background-agent sandbox disposal", () => {
+  test("stops the sandbox when the run completes successfully", async () => {
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-dispose-success",
+    });
+
+    expect(connectSandbox).toHaveBeenCalledTimes(1);
+    expect(sandboxStop).toHaveBeenCalledTimes(1);
+  });
+
+  test("stops the sandbox when the run returns early through a guard", async () => {
+    // Authorization lost after the sandbox exists: one of ~14 early returns
+    // between sandbox creation and the end of the step. Every one of them left
+    // the sandbox running for the full timeout.
+    afterEventRecorded = (event) => {
+      if (event.eventName === "background-agent.sandbox.started") {
+        currentAgent = currentAgent
+          ? { ...currentAgent, status: "disabled" }
+          : null;
+      }
+    };
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-dispose-guard",
+    });
+
+    expect(connectSandbox).toHaveBeenCalledTimes(1);
+    expect(sandboxStop).toHaveBeenCalledTimes(1);
+  });
+
+  test("stops the sandbox when the run throws", async () => {
+    // The agent call rejecting is the shape of an unexpected failure: whatever
+    // the step does with the error, the microVM must not outlive it.
+    generate.mockImplementationOnce(async () => {
+      throw new Error("model call exploded");
+    });
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-dispose-throw",
+    }).catch(() => undefined);
+
+    expect(connectSandbox).toHaveBeenCalledTimes(1);
+    expect(sandboxStop).toHaveBeenCalledTimes(1);
+  });
+
+  test("a failing stop does not change the run's own outcome", async () => {
+    // Disposal is best-effort cleanup. If it could fail the run, a Vercel
+    // hiccup at teardown would turn a completed agent run into a failed one.
+    sandboxStop.mockImplementation(async () => {
+      throw new Error("sandbox already gone");
+    });
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-dispose-stop-fails",
+    });
+
+    expect(currentRun.status).toBe("succeeded");
+  });
+
+  test("records the stop so an operator can tell code from timeout", async () => {
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-dispose-event",
+    });
+
+    const stopped = recordedEvent("background-agent.sandbox.stopped");
+    expect(stopped).toBeDefined();
+    // A missing event on an expensive run is the signal that the timeout ended
+    // it, which is this defect recurring.
+    const payload = stopped?.payload as
+      | { vcpus?: number; wallClockMs?: number; stopReason?: string }
+      | undefined;
+    expect(payload?.vcpus).toBe(2);
+    expect(typeof payload?.wallClockMs).toBe("number");
+    // The reason describes how the STEP exited, which is what distinguishes
+    // "the code released it" from "the timeout did". It is not the run's
+    // business status — a run can fail its checks and still exit normally.
+    expect(payload?.stopReason).toBe("step_returned");
+  });
+
+  test("requests background-agent sizing, not the interactive-session defaults", async () => {
+    // 4 vCPUs is 8192 MB (the SDK allocates 2048 MB per vCPU) held for five
+    // hours. Interactive sessions keep the larger defaults — they hibernate.
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-dispose-sizing",
+    });
+
+    const options = (
+      connectSandbox.mock.calls[0]?.[0] as {
+        options?: { vcpus?: number; timeout?: number };
+      }
+    )?.options;
+    expect(options?.vcpus).toBe(2);
+    expect(options?.timeout).toBe(1_800_000);
   });
 });
