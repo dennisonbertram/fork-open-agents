@@ -56,8 +56,32 @@ function resolvePositiveIntEnv(raw: string | undefined, fallback: number) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+/**
+ * Vercel allocates sandbox CPU in fixed tiers, and refuses anything else.
+ * Mirrors ALLOWED_VCPU_VALUES, which the repository-settings form already
+ * validates against; duplicated as a literal here because this module is
+ * imported by server code that must not pull in a settings-form module.
+ */
+const SUPPORTED_SANDBOX_VCPUS = new Set([1, 2, 4, 8]);
+
+/**
+ * Resolve the vCPU override against the tiers Vercel actually supports.
+ *
+ * A positive-but-unsupported value (`3`, `2.5`) is worse than no override:
+ * Vercel rejects the allocation, so every background-agent sandbox fails to
+ * connect and an override meant to give one repo more room takes the whole
+ * feature down. Anything not in the tier set falls back to the profile default.
+ */
+export function resolveBackgroundAgentVcpus(
+  raw: string | undefined,
+  fallback: number,
+): number {
+  const parsed = resolvePositiveIntEnv(raw, fallback);
+  return SUPPORTED_SANDBOX_VCPUS.has(parsed) ? parsed : fallback;
+}
+
 /** vCPUs for a background-agent sandbox; override with BACKGROUND_AGENT_SANDBOX_VCPUS. */
-export const BACKGROUND_AGENT_SANDBOX_VCPUS = resolvePositiveIntEnv(
+export const BACKGROUND_AGENT_SANDBOX_VCPUS = resolveBackgroundAgentVcpus(
   process.env.BACKGROUND_AGENT_SANDBOX_VCPUS,
   isHobbyResourceProfile() ? 1 : 2,
 );
