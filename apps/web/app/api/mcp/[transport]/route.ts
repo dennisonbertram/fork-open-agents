@@ -1,6 +1,8 @@
 import { createMcpHandler } from "mcp-handler";
 import { withMcpAuth } from "better-auth/plugins";
+import packageJson from "../../../../package.json";
 import { auth } from "@/lib/auth/config";
+import { getAuthBaseURLFallback } from "@/lib/auth/base-url";
 import {
   createToolContext,
   type McpErrorKind,
@@ -8,10 +10,16 @@ import {
   toMcpErrorPayload,
 } from "@/lib/mcp-server/context";
 import { listMcpTools, runMcpTool } from "@/lib/mcp-server/registry";
+import { toToolResult } from "@/lib/mcp-server/tool-result";
 import { checkRateLimit, rateLimitKey } from "@/lib/rate-limit";
 
 const MCP_RATE_LIMIT = 60;
 const MCP_RATE_LIMIT_WINDOW_MS = 60_000;
+
+function buildServerInstructions(): string {
+  const baseUrl = getAuthBaseURLFallback() ?? "http://localhost:3000";
+  return `This server exposes Open Agents cloud coding sessions. A "session" is an agent working in a cloud sandbox on one repository, reachable in a browser at ${baseUrl}/sessions/{sessionId}. Sessions hibernate when idle and resume automatically on the next message.`;
+}
 
 const AUTH_ERROR_KINDS: readonly McpErrorKind[] = [
   "unauthorized",
@@ -105,61 +113,77 @@ const mcpAuthHandler = withMcpAuth(mcpChallengeAuth, async (req, session) => {
     scopes: session.scopes,
   });
 
-  const mcpHandler = createMcpHandler(async (server) => {
-    for (const def of listMcpTools(ctx.scopes)) {
-      server.registerTool(
-        def.name,
-        { description: def.description, inputSchema: def.inputSchema },
-        async (rawInput: unknown) => {
-          const startedAt = Date.now();
-          try {
-            const result = await runMcpTool(def.name, ctx, rawInput);
-            logMcpEvent("info", "mcp.tool.invoked", {
-              userId: ctx.userId,
-              toolName: def.name,
-              requestId: ctx.requestId,
-              latencyMs: Date.now() - startedAt,
-              outcome: "success",
-            });
-            return {
-              content: [
-                { type: "text" as const, text: JSON.stringify(result) },
-              ],
-            };
-          } catch (error) {
-            const payload = toMcpErrorPayload(error);
-            logMcpEvent("info", "mcp.tool.invoked", {
-              userId: ctx.userId,
-              toolName: def.name,
-              requestId: ctx.requestId,
-              latencyMs: Date.now() - startedAt,
-              outcome: "error",
-            });
-            if (AUTH_ERROR_KINDS.includes(payload.errorKind)) {
-              logMcpEvent("warn", "mcp.auth.rejected", {
-                toolName: def.name,
-                requestId: ctx.requestId,
-                errorKind: payload.errorKind,
-              });
-            } else {
-              logMcpEvent("warn", "mcp.tool.failed", {
+  const mcpHandler = createMcpHandler(
+    async (server) => {
+      for (const def of listMcpTools(ctx.scopes)) {
+        server.registerTool(
+          def.name,
+          {
+            title: def.title,
+            description: def.description,
+            inputSchema: def.inputSchema,
+            outputSchema: def.outputSchema,
+            annotations: def.annotations,
+          },
+          async (rawInput: unknown) => {
+            const startedAt = Date.now();
+            try {
+              const result = await runMcpTool(def.name, ctx, rawInput);
+              const wireResult = toToolResult(def.outputSchema, result);
+              if (wireResult.isError) {
+                logMcpEvent("warn", "mcp.tool.output_schema_mismatch", {
+                  userId: ctx.userId,
+                  toolName: def.name,
+                  requestId: ctx.requestId,
+                });
+              }
+              logMcpEvent("info", "mcp.tool.invoked", {
                 userId: ctx.userId,
                 toolName: def.name,
                 requestId: ctx.requestId,
-                errorKind: payload.errorKind,
+                latencyMs: Date.now() - startedAt,
+                outcome: wireResult.isError ? "error" : "success",
               });
+              return wireResult;
+            } catch (error) {
+              const payload = toMcpErrorPayload(error);
+              logMcpEvent("info", "mcp.tool.invoked", {
+                userId: ctx.userId,
+                toolName: def.name,
+                requestId: ctx.requestId,
+                latencyMs: Date.now() - startedAt,
+                outcome: "error",
+              });
+              if (AUTH_ERROR_KINDS.includes(payload.errorKind)) {
+                logMcpEvent("warn", "mcp.auth.rejected", {
+                  toolName: def.name,
+                  requestId: ctx.requestId,
+                  errorKind: payload.errorKind,
+                });
+              } else {
+                logMcpEvent("warn", "mcp.tool.failed", {
+                  userId: ctx.userId,
+                  toolName: def.name,
+                  requestId: ctx.requestId,
+                  errorKind: payload.errorKind,
+                });
+              }
+              return {
+                isError: true as const,
+                content: [
+                  { type: "text" as const, text: JSON.stringify(payload) },
+                ],
+              };
             }
-            return {
-              isError: true as const,
-              content: [
-                { type: "text" as const, text: JSON.stringify(payload) },
-              ],
-            };
-          }
-        },
-      );
-    }
-  });
+          },
+        );
+      }
+    },
+    {
+      serverInfo: { name: "open-agents", version: packageJson.version },
+      instructions: buildServerInstructions(),
+    },
+  );
 
   return mcpHandler(req);
 });

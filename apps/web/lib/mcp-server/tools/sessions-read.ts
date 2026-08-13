@@ -10,16 +10,34 @@ import {
   getSessionMetadataById,
   getSessionsWithUnreadByUserId,
 } from "@/lib/db/sessions";
-import { isSandboxActive } from "@/lib/sandbox/utils";
-import { buildChatUrl, buildSessionUrl, McpToolError } from "../context";
+import {
+  buildChatUrl,
+  buildSessionUrl,
+  MCP_SCOPES,
+  McpToolError,
+} from "../context";
 import type { McpScope } from "../context";
+import {
+  isResumable,
+  type McpActivityState,
+  type McpSessionState,
+  type McpWorkspaceState,
+  toActivityState,
+  toSessionState,
+  toWorkspaceState,
+} from "../session-state";
+import { toIsoString } from "../timestamps";
 // Type-only: registry.ts imports the VALUE `sessionReadTools` from this
 // module, so a runtime import back (e.g. `defineMcpTool`) would create an
 // ESM circular value dependency that throws a TDZ ReferenceError whenever
 // this module is the load entry (as in this file's own test). `defineMcpTool`
 // is a pure identity function, so a local equivalent is behaviorally
 // identical without reintroducing the cycle.
-import type { AnyMcpToolDefinition, McpToolDefinition } from "../registry";
+import type {
+  AnyMcpToolDefinition,
+  McpToolAnnotations,
+  McpToolDefinition,
+} from "../registry";
 
 function defineTool<TSchema extends z.ZodTypeAny, TOutput>(
   definition: McpToolDefinition<TSchema, TOutput>,
@@ -36,6 +54,13 @@ export const MAX_DIFF_FILES = 100;
 
 const SESSION_READ_SCOPE: McpScope = "sessions:read";
 
+// All five tools in this file only read Open Agents data — none of them can
+// mutate a session, so every one gets the same read-only annotation pair.
+const READ_ONLY_ANNOTATIONS: McpToolAnnotations = {
+  readOnlyHint: true,
+  openWorldHint: false,
+};
+
 // `runMcpTool` always hands handlers a real `McpToolContext`, whose `scopes`
 // field is narrowed to `McpScope[]`. These exported handlers are also called
 // directly (bypassing the registry) with a plain `string[]` scopes array —
@@ -51,7 +76,10 @@ type ToolCallerContext = {
 export type McpSessionSummary = {
   id: string;
   title: string;
-  status: "running" | "completed" | "failed" | "archived";
+  state: McpSessionState;
+  workspace: McpWorkspaceState;
+  resumable: boolean;
+  activity: McpActivityState;
   repo: string | null;
   branch: string | null;
   linesAdded: number;
@@ -79,7 +107,10 @@ export type McpChatSummary = {
 export type McpSessionDetail = {
   id: string;
   title: string;
-  status: "running" | "completed" | "failed" | "archived";
+  state: McpSessionState;
+  workspace: McpWorkspaceState;
+  resumable: boolean;
+  activity: McpActivityState;
   repo: string | null;
   branch: string | null;
   url: string;
@@ -91,8 +122,6 @@ export type McpSessionDetail = {
   prNumber: number | null;
   prStatus: "open" | "merged" | "closed" | null;
   runtimeMode: "classic" | "managed_runtime";
-  lifecycleState: string | null;
-  sandboxActive: boolean;
   hasUnread: boolean;
   isStreaming: boolean;
   chats: McpChatSummary[];
@@ -119,16 +148,18 @@ export type WhoamiResult = {
   requestId: string;
 };
 
-const listSessionsInputSchema = z.object({
-  status: z.enum(["all", "active", "archived"]).default("active"),
-  limit: z
-    .number()
-    .int()
-    .min(1)
-    .max(MAX_SESSION_LIMIT)
-    .default(DEFAULT_SESSION_LIMIT),
-  offset: z.number().int().min(0).default(0),
-});
+const listSessionsInputSchema = z
+  .object({
+    status: z.enum(["all", "active", "archived"]).default("active"),
+    limit: z
+      .number()
+      .int()
+      .min(1)
+      .max(MAX_SESSION_LIMIT)
+      .default(DEFAULT_SESSION_LIMIT),
+    offset: z.number().int().min(0).default(0),
+  })
+  .strict();
 
 export type ListSessionsInput = z.infer<typeof listSessionsInputSchema>;
 
@@ -142,22 +173,26 @@ export type ListSessionsResult = {
   offset: number;
 };
 
-const getSessionInputSchema = z.object({
-  sessionId: z.string().min(1),
-});
+const getSessionInputSchema = z
+  .object({
+    sessionId: z.string().min(1),
+  })
+  .strict();
 
 export type GetSessionInput = z.infer<typeof getSessionInputSchema>;
 
-const getMessagesInputSchema = z.object({
-  sessionId: z.string().min(1),
-  chatId: z.string().min(1).optional(),
-  limit: z
-    .number()
-    .int()
-    .min(1)
-    .max(MAX_MESSAGE_LIMIT)
-    .default(DEFAULT_MESSAGE_LIMIT),
-});
+const getMessagesInputSchema = z
+  .object({
+    sessionId: z.string().min(1),
+    chatId: z.string().min(1).optional(),
+    limit: z
+      .number()
+      .int()
+      .min(1)
+      .max(MAX_MESSAGE_LIMIT)
+      .default(DEFAULT_MESSAGE_LIMIT),
+  })
+  .strict();
 
 export type GetMessagesInput = z.infer<typeof getMessagesInputSchema>;
 
@@ -170,9 +205,11 @@ export type GetMessagesResult = {
   messages: McpMessageSummary[];
 };
 
-const getDiffSummaryInputSchema = z.object({
-  sessionId: z.string().min(1),
-});
+const getDiffSummaryInputSchema = z
+  .object({
+    sessionId: z.string().min(1),
+  })
+  .strict();
 
 export type GetDiffSummaryInput = z.infer<typeof getDiffSummaryInputSchema>;
 
@@ -212,45 +249,25 @@ function toRepo(
   return repoOwner && repoName ? `${repoOwner}/${repoName}` : null;
 }
 
-/**
- * Coerce a timestamp that crosses the tool boundary into ISO 8601.
- *
- * Not every value typed `Date` in a db helper's return type is one at runtime.
- * `getSessionsWithUnreadByUserId` declares `lastActivityAt: Date` but computes
- * it as a raw `sql<Date>` expression, and postgres-js hands those back as
- * strings — calling `.toISOString()` directly turned every real list_sessions
- * call into internal_error while mocked tests stayed green. Coerce defensively
- * at every timestamp instead of trusting the declared type.
- */
-function toIsoString(
-  value: Date | string | number | null | undefined,
-): string | null {
-  if (value === null || value === undefined) {
-    return null;
-  }
-  if (value instanceof Date) {
-    return Number.isNaN(value.getTime()) ? null : value.toISOString();
-  }
-  // The columns behind these values are `timestamp`, not `timestamptz`, so a
-  // raw driver string carries no offset ("2026-01-01 00:05:00") and `new Date`
-  // would resolve it in the server's local zone — shifting it by the UTC
-  // offset. Drizzle's own PgTimestamp mapper appends "+0000" for
-  // non-timezone columns; do the same so both paths agree on the instant.
-  const normalized =
-    // Postgres writes the offset as "+00", "+0000", or "+00:00" depending on
-    // the driver, so all three must count as already-zoned.
-    typeof value === "string" && !/(?:[Zz]|[+-]\d{2}(?::?\d{2})?)$/.test(value)
-      ? `${value.replace(" ", "T")}Z`
-      : value;
-  const date = new Date(normalized);
-  return Number.isNaN(date.getTime()) ? null : date.toISOString();
-}
-
 function toSessionSummary(row: SessionWithUnreadRow): McpSessionSummary {
+  const state = toSessionState(row.status);
   return {
     id: row.id,
     title: row.title,
-    status: row.status,
+    state,
+    workspace: toWorkspaceState({
+      lifecycleState: row.lifecycleState,
+      sandboxExpiresAt: row.sandboxExpiresAt,
+      lifecycleUpdatedAt: row.updatedAt,
+    }),
+    resumable: isResumable(state),
+    activity: toActivityState({
+      hasActiveRunSlot: row.hasStreaming,
+      // Deliberately not `lastActivityAt`: that is the newest activity across
+      // every chat in the session, which would mask a stale slot on one chat
+      // behind a fresh message on another.
+      lastActivityAt: row.activeRunSlotAt,
+    }),
     repo: toRepo(row.repoOwner, row.repoName),
     branch: row.branch,
     linesAdded: row.linesAdded ?? 0,
@@ -463,11 +480,29 @@ export async function getSession(
   const record = await requireOwnedSessionMetadata(ctx, input.sessionId);
   const chatRows = await getChatSummariesBySessionId(record.id, ctx.userId);
   const chats = chatRows.map((chat) => toChatSummary(record.id, chat));
+  const state = toSessionState(record.status);
 
   return {
     id: record.id,
     title: record.title,
-    status: record.status,
+    state,
+    workspace: toWorkspaceState({
+      lifecycleState: record.lifecycleState,
+      sandboxExpiresAt: record.sandboxExpiresAt,
+      lifecycleUpdatedAt: record.updatedAt,
+    }),
+    resumable: isResumable(state),
+    // Bounded per chat: a run slot last touched longer ago than any run can
+    // live is stale, not live work.
+    activity: chatRows.some(
+      (chat) =>
+        toActivityState({
+          hasActiveRunSlot: chat.isStreaming,
+          lastActivityAt: chat.updatedAt,
+        }) === "working",
+    )
+      ? "working"
+      : "idle",
     repo: toRepo(record.repoOwner, record.repoName),
     branch: record.branch,
     url: buildSessionUrl(record.id),
@@ -481,8 +516,6 @@ export async function getSession(
     prNumber: record.prNumber,
     prStatus: record.prStatus,
     runtimeMode: record.runtimeMode,
-    lifecycleState: record.lifecycleState,
-    sandboxActive: isSandboxActive(record.sandboxState),
     hasUnread: chats.some((chat) => chat.hasUnread),
     isStreaming: chats.some((chat) => chat.isStreaming),
     chats,
@@ -580,45 +613,177 @@ export async function getDiffSummary(
   };
 }
 
+const sessionStateOutputSchema = z.enum(["active", "archived"]);
+const workspaceStateOutputSchema = z.enum([
+  "ready",
+  "hibernated",
+  "provisioning",
+  "restoring",
+  "failed",
+  "none",
+]);
+const activityStateOutputSchema = z.enum(["working", "idle"]);
+const prStatusOutputSchema = z.enum(["open", "merged", "closed"]).nullable();
+
+const sessionSummaryOutputSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  state: sessionStateOutputSchema,
+  workspace: workspaceStateOutputSchema,
+  resumable: z.boolean(),
+  activity: activityStateOutputSchema,
+  repo: z.string().nullable(),
+  branch: z.string().nullable(),
+  linesAdded: z.number(),
+  linesRemoved: z.number(),
+  prNumber: z.number().nullable(),
+  prStatus: prStatusOutputSchema,
+  hasUnread: z.boolean(),
+  isStreaming: z.boolean(),
+  latestChatId: z.string().nullable(),
+  lastActivityAt: z.string(),
+  createdAt: z.string(),
+  url: z.string(),
+});
+
+const chatSummaryOutputSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  isStreaming: z.boolean(),
+  hasUnread: z.boolean(),
+  lastAssistantMessageAt: z.string().nullable(),
+  createdAt: z.string(),
+  url: z.string(),
+});
+
+const messageSummaryOutputSchema = z.object({
+  id: z.string(),
+  role: z.enum(["user", "assistant"]),
+  createdAt: z.string(),
+  preview: z.string(),
+  hasToolCalls: z.boolean(),
+});
+
+const diffFileSummaryOutputSchema = z.object({
+  path: z.string(),
+  status: z.enum(["added", "modified", "deleted", "renamed"]),
+  additions: z.number(),
+  deletions: z.number(),
+});
+
+const whoamiOutputSchema = z.object({
+  userId: z.string(),
+  scopes: z.array(z.enum(MCP_SCOPES)),
+  requestId: z.string(),
+});
+
+const listSessionsOutputSchema = z.object({
+  sessions: z.array(sessionSummaryOutputSchema),
+  returned: z.number(),
+  total: z.number(),
+  limit: z.number(),
+  offset: z.number(),
+});
+
+const getSessionOutputSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  state: sessionStateOutputSchema,
+  workspace: workspaceStateOutputSchema,
+  resumable: z.boolean(),
+  activity: activityStateOutputSchema,
+  repo: z.string().nullable(),
+  branch: z.string().nullable(),
+  url: z.string(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  lastActivityAt: z.string().nullable(),
+  linesAdded: z.number(),
+  linesRemoved: z.number(),
+  prNumber: z.number().nullable(),
+  prStatus: prStatusOutputSchema,
+  runtimeMode: z.enum(["classic", "managed_runtime"]),
+  hasUnread: z.boolean(),
+  isStreaming: z.boolean(),
+  chats: z.array(chatSummaryOutputSchema),
+});
+
+const getMessagesOutputSchema = z.object({
+  sessionId: z.string(),
+  chatId: z.string(),
+  url: z.string(),
+  total: z.number(),
+  returned: z.number(),
+  messages: z.array(messageSummaryOutputSchema),
+});
+
+const getDiffSummaryOutputSchema = z.object({
+  sessionId: z.string(),
+  url: z.string(),
+  hasCachedDiff: z.boolean(),
+  computedAt: z.string().nullable(),
+  baseRef: z.string().nullable(),
+  totalFiles: z.number(),
+  totalAdditions: z.number(),
+  totalDeletions: z.number(),
+  files: z.array(diffFileSummaryOutputSchema),
+  truncated: z.boolean(),
+});
+
 export const sessionReadTools: readonly AnyMcpToolDefinition[] = [
   defineTool({
-    name: "whoami",
+    name: "open_agents_whoami",
+    title: "Open Agents Identity",
     description:
-      "Return the authenticated MCP identity (user id, granted scopes, request id) with no I/O.",
+      "Return the authenticated Open Agents identity for this MCP connection — Open Agents' own `userId`, granted `scopes`, and `requestId` — with no I/O against Open Agents data. Not the calling client's own identity or session.",
     scope: SESSION_READ_SCOPE,
-    inputSchema: z.object({}),
+    inputSchema: z.object({}).strict(),
+    outputSchema: whoamiOutputSchema,
+    annotations: READ_ONLY_ANNOTATIONS,
     handler: whoami,
   }),
   defineTool({
-    name: "list_sessions",
+    name: "open_agents_list_sessions",
+    title: "List Open Agents Sessions",
     description:
-      "List the caller's agent sessions with lightweight status, repo, and PR summary fields. Returns `returned` (rows on this page) and `total` (all sessions matching the same status filter), so page until offset + returned reaches total.",
+      "List the caller's coding sessions in Open Agents — this MCP server's own sessions, not the calling client's own session — with lightweight `state`, `workspace`, `resumable`, and `activity` fields plus repo and PR summaries. `state` (active/archived) is filing and matches the `status` input filter. `workspace` is the sandbox's own status (ready, hibernated, provisioning, restoring, failed, or none): only ready means a sandbox is live right now, and hibernated is the normal resting state — the sandbox is parked to stop billing and is restored automatically on the next message. `resumable` is true for every non-archived session, whatever its `workspace` says, because accepting new work is gated on filing alone; a hibernated or failed workspace is rebuilt on demand. `activity` is working only while a run is genuinely live. Returns `returned` (rows on this page) and `total` (all sessions matching the same status filter), so page until offset + returned reaches total.",
     scope: SESSION_READ_SCOPE,
     inputSchema: listSessionsInputSchema,
+    outputSchema: listSessionsOutputSchema,
+    annotations: READ_ONLY_ANNOTATIONS,
     handler: listSessions,
   }),
   defineTool({
-    name: "get_session",
+    name: "open_agents_get_session",
+    title: "Get Open Agents Session",
     description:
-      "Get full detail for one owned session, including its chats, without transcripts or diff bodies.",
+      "Get full detail for one Open Agents coding session (Open Agents' own session record, not the caller's MCP session) that the caller owns, including its `chats`, `state`, `workspace`, `resumable`, and `activity`, without transcripts or diff bodies. `workspace` reports ready only while a sandbox is live right now; hibernated is the normal resting state and is restored automatically on the next message. `resumable` is true for every non-archived session, whatever its `workspace` says, and `activity` is working only while a run is genuinely live.",
     scope: SESSION_READ_SCOPE,
     inputSchema: getSessionInputSchema,
+    outputSchema: getSessionOutputSchema,
+    annotations: READ_ONLY_ANNOTATIONS,
     handler: getSession,
   }),
   defineTool({
-    name: "get_messages",
+    name: "open_agents_get_messages",
+    title: "Get Open Agents Chat Messages",
     description:
-      "Get the newest messages in a chat (oldest-to-newest), each capped to a short text preview.",
+      "Get the newest messages in an Open Agents session's chat (Open Agents' own chat transcript, not this MCP connection's conversation) — oldest-to-newest — each capped to a short text preview. Provide `sessionId` and optional `chatId`; omit `chatId` to use the session's most recently active chat.",
     scope: SESSION_READ_SCOPE,
     inputSchema: getMessagesInputSchema,
+    outputSchema: getMessagesOutputSchema,
+    annotations: READ_ONLY_ANNOTATIONS,
     handler: getMessages,
   }),
   defineTool({
-    name: "get_diff_summary",
+    name: "open_agents_get_diff_summary",
+    title: "Get Open Agents Diff Summary",
     description:
-      "Get the cached per-file diff summary for a session (no diff bodies).",
+      "Get the cached per-file diff summary for an Open Agents coding session (Open Agents' own git diff cache for that session, not the caller's local working tree) — no diff bodies included, only path, status, additions, and deletions per file.",
     scope: SESSION_READ_SCOPE,
     inputSchema: getDiffSummaryInputSchema,
+    outputSchema: getDiffSummaryOutputSchema,
+    annotations: READ_ONLY_ANNOTATIONS,
     handler: getDiffSummary,
   }),
 ];
