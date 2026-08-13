@@ -76,3 +76,46 @@ specialists.**
   agent *inside* the sandbox (Pi, Claude Code, future tools) is also
   interchangeable. The durable thing is the worker's identity, memory, and
   workspace — brains and clients both churn.
+
+## The framing stories (added 2026-08-11)
+
+From a follow-up conversation, kept near-verbatim (lightly cleaned from a
+voice transcript). These are the canonical demos the product must make true.
+
+**The backlog fan-out:**
+
+> "I'm an agent. I'm working with you, for example, and we have a skill that
+> says for you to work with my Claude agents. I say, 'Hey, I have a backlog
+> of issues. Can you go through them?' You would go through each issue, check
+> it, then use the MCP server to call this [durable-object] sandbox. You'd
+> say, 'Hey agent in the cloud, work on this and create a PR for it.' You'd
+> go through all the tasks and then I could close my computer. In the cloud,
+> those agents would have been tasked to work through the backlog, and they
+> would start working on it."
+
+**Any agent, any device:**
+
+> "Maybe I'm on my phone with ChatGPT and I can say, 'Hey, what's the status
+> of my PRs? What's the status of these issues?' It would reach out to my
+> same backend and be able to tell me the status. Maybe something would be
+> stuck. I'd be using Codex on a different device and I could say, 'Hey
+> Codex, just go ahead and check in and fix those issues.' Codex goes in,
+> takes a look, applies its knowledge and information to it as well, and then
+> it gets fixed."
+
+**The product framing:**
+
+> "I've been framing it like a coding harness for your coding harness — a
+> coding harness for your agent. The agent is almost like representing the
+> human, because normally the human would go between all the different
+> platforms and manually do it. Instead, now I'm just talking to the agent,
+> and the agent is going between the platforms and doing it."
+
+What this adds to the shape: **the client of the product is the owner's
+agent, not the owner.** The human talks to whichever agent is at hand —
+Claude Code at a desk, ChatGPT on a phone, Codex on another machine — and
+that agent represents the human against the service. Three product
+consequences, recorded as stories 19–24 in [stories.md](stories.md):
+fan-out tasking (one command creates many workers), an account-level status
+surface any client can query cheaply, and client packaging (skills,
+connectors, config) as part of the product rather than an afterthought.

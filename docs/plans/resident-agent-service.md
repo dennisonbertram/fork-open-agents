@@ -52,7 +52,7 @@ it, replacing the model lobotomizes the project.
 
 Shape: **resident maintainer + structured memory + visiting specialists.**
 
-## Open question: who writes the memory?
+## Who writes the memory? (answered 2026-08-11)
 
 This decision drives the architecture:
 
@@ -60,8 +60,19 @@ This decision drives the architecture:
    but can drift from the actual workspace.
 2. **Sandbox-derived** — an artifact indexer watches the workspace. Truthful
    but shallow.
-3. **Both (likely answer)** — derived state as ground truth, worker narrative
-   as the interpretation layer on top.
+3. **Both** — derived state as ground truth, worker narrative as the
+   interpretation layer on top.
+
+The memory survey
+([resident-agent/research/memory-architectures.md](resident-agent/research/memory-architectures.md))
+settled this as a recommendation: **option 3**, and it is not novel — it is
+OpenHands' shipping condenser design (append-only event log as truth,
+regenerable LLM summary that never overwrites it) and Anthropic's own
+long-running-agent practice (git log as truth, progress file as
+interpretation, cross-checked each session). No surveyed system trusts
+self-report alone as ground truth. Proposed concrete shape: a typed task
+graph and an append-only event/decision log as the two truth tables; the
+worker's plan file is explicitly interpretation.
 
 ## Why this is durable
 
@@ -83,10 +94,13 @@ the sandbox being the surface.
 Three options were evaluated — this fork, upstream `vercel-labs/open-agents`,
 and a greenfield rebuild on Cloudflare:
 
-- **This fork** already has ~70% of the surface: an OAuth-secured MCP server
+- **This fork** already has much of the surface: an OAuth-secured MCP server
   (`apps/web/app/api/mcp/[transport]/route.ts`, tools in
   `apps/web/lib/mcp-server/tools/`), a reusable session spine
-  (`createSessionCore`, `startChatRun`), and reserved `agents:*` scopes.
+  (`createSessionCore`, `startChatRun`), and reserved `agents:*` scopes —
+  note the scopes are declared vocabulary only; no tool uses them yet
+  (verified 2026-08-11; see
+  [resident-agent/portable-designs.md](resident-agent/portable-designs.md)).
   Default path if the Cloudflare spike surfaces platform blockers.
 - **Upstream** is simpler but stalled (no commits since ~2026-06), has no MCP
   support and no machine auth, and its core runtime deps are beta. Reference
