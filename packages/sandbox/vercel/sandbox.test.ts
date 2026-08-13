@@ -100,6 +100,8 @@ function buildMockSession(name: string, state: MockSessionState = {}) {
   };
 }
 
+const updateCalls: Record<string, unknown>[] = [];
+
 function createMockSandboxSdk(name: string) {
   let session = buildMockSession(name, currentSessionStateFactory(name));
 
@@ -128,6 +130,9 @@ function createMockSandboxSdk(name: string) {
       return readFileToBufferResult;
     },
     stop: async () => {},
+    update: async (params: Record<string, unknown>) => {
+      updateCalls.push(params);
+    },
   };
 }
 
@@ -827,5 +832,62 @@ describe("VercelSandbox.writeFile", () => {
       (c) => c.cmd === "bash" && c.args?.some((a) => a.includes("base64")),
     );
     expect(base64Call).toBeUndefined();
+  });
+});
+
+/**
+ * #1210 defect 3 — snapshot expiry has to survive a resume.
+ *
+ * Stopping a persistent sandbox writes a snapshot, and `snapshotExpiration` is
+ * what bounds how long that snapshot is stored. It was passed only at creation,
+ * so the FIRST run of a named sandbox carried it and every reconnect afterwards
+ * silently did not — and background agents and hibernated sessions both reach
+ * their sandbox through the resume path, which is precisely where most stops
+ * (and therefore most snapshots) happen.
+ *
+ * Vercel's SDK exposes `update({ snapshotExpiration })` for a live sandbox,
+ * which is the only way to set it on a sandbox that already exists.
+ */
+describe("snapshot expiry on the resume path", () => {
+  test("connect applies snapshotExpiration to the resumed sandbox", async () => {
+    updateCalls.length = 0;
+    const { VercelSandbox } = await import("./sandbox");
+
+    await VercelSandbox.connect("session_expiry-test", {
+      resume: true,
+      snapshotExpiration: 604_800_000,
+    });
+
+    expect(updateCalls).toContainEqual({ snapshotExpiration: 604_800_000 });
+  });
+
+  test("connect leaves the sandbox alone when no expiry is configured", async () => {
+    updateCalls.length = 0;
+    const { VercelSandbox } = await import("./sandbox");
+
+    await VercelSandbox.connect("session_no-expiry", { resume: true });
+
+    expect(updateCalls).toEqual([]);
+  });
+});
+
+/**
+ * The wiring between the two, which the class-level test above cannot see.
+ *
+ * `connectVercel` is what every caller in the app actually uses, so an option
+ * that stops at its boundary never reaches a real sandbox. Removing the
+ * forwarding left every other test in this package green.
+ */
+describe("connectVercel forwards snapshot expiry to a resumed sandbox", () => {
+  test("a named sandbox reconnect carries the configured expiry", async () => {
+    updateCalls.length = 0;
+    const { connectVercel } = await import("./connect");
+
+    await connectVercel(
+      { sandboxName: "session_wiring-test" },
+      { resume: true, snapshotExpiration: 604_800_000 },
+    );
+
+    expect(updateCalls).toContainEqual({ snapshotExpiration: 604_800_000 });
   });
 });
