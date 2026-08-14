@@ -3741,6 +3741,73 @@ describe("runAgentWorkflow", () => {
       expect(workflowRun.status).toBe("completed");
     }, 15_000);
 
+    // #1242 regression (observability angle): the issue requires "a log
+    // line, the transcript, and the API read must never disagree about why
+    // a run ended". Distinct from the behavioral test above (which checks
+    // the persisted workflowRun.status) — this checks that a read-only run
+    // NEVER emits the fuse's `workflow.failed`/no-progress observability
+    // trail at all, and that `mcp.run.bounded` logs "completed", not
+    // "no_progress". On the pre-fix (git-delta-only) fuse this run trips at
+    // DEFAULT_HEADLESS_RUN_MAX_STALE_STEPS and both of these would fire —
+    // this test would fail if the #1242 fix were reverted.
+    test("regression: a read-only run with varying tool-call activity never emits the no-progress fuse's observability trail (#1242)", async () => {
+      const { DEFAULT_HEADLESS_RUN_MAX_STALE_STEPS } =
+        await import("@/lib/chat/headless-progress-budget");
+      agentFinishReason = "tool-calls";
+      agentRawFinishReason = "provider_tool_use";
+      spies.probeHeadlessRunGitFingerprint.mockImplementation(
+        (): Promise<string | null> => Promise.resolve("frozen-fingerprint"),
+      );
+      const STOP_AT_STEP = DEFAULT_HEADLESS_RUN_MAX_STALE_STEPS + 10;
+      let call = 0;
+      agentAssistantPartsFactory = () => {
+        call += 1;
+        if (call >= STOP_AT_STEP) {
+          agentFinishReason = "stop";
+        }
+        return [
+          {
+            type: "tool-task",
+            toolCallId: `call-${call}`,
+            state: "output-available",
+            preliminary: false,
+            input: { task: `Review PR #${call}` },
+            output: { final: [] },
+          },
+        ];
+      };
+      const infoSpy = spyOn(console, "info").mockImplementation(
+        () => undefined,
+      );
+
+      await runAgentWorkflow(
+        makeOptions({
+          agentOptions: { unattended: true },
+          maxSteps: undefined,
+        }),
+      );
+
+      const emitted = (spies.emitSessionEvent.mock.calls as unknown[][]).map(
+        (call_) =>
+          call_[0] as {
+            eventName?: string;
+            payload?: Record<string, unknown>;
+          },
+      );
+      expect(
+        emitted.find((event) => event.eventName === "workflow.failed"),
+      ).toBeUndefined();
+
+      const boundedCall = infoSpy.mock.calls.find((args) =>
+        String(args[1]).includes('"event":"mcp.run.bounded"'),
+      );
+      expect(boundedCall).toBeDefined();
+      expect(String(boundedCall?.[1])).toContain('"reason":"completed"');
+      expect(String(boundedCall?.[1])).not.toContain('"reason":"no_progress"');
+
+      infoSpy.mockRestore();
+    }, 15_000);
+
     // #1242 wedge contract: a run that keeps calling the SAME tool with the
     // SAME input (no git delta, no varying activity) is the genuine wedge
     // the fuse must still bound — the epic's read-only use case must not
