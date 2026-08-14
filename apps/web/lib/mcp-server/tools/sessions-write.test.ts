@@ -720,3 +720,76 @@ describe("stopRun", () => {
     expect(stopChatRun).not.toHaveBeenCalled();
   });
 });
+
+describe("regression: #1230 headless-run design decisions", () => {
+  test("startSession and sendMessage forward the exact real buildHeadlessAgentOptions() output, not a hand-copied approximation", async () => {
+    // A partial/field-by-field check (as the behavioral tests above do)
+    // would not catch a regression where, say, customInstructions gets
+    // dropped, or the allowlist filter regresses to include
+    // ask_user_question again for one caller but not the other. Comparing
+    // against the real module's own output closes that gap.
+    const { startSession, sendMessage } = await toolsModulePromise;
+    const { buildHeadlessAgentOptions } =
+      await import("../headless-run-options");
+    const expected = buildHeadlessAgentOptions();
+
+    let startSessionAgentOptions: unknown;
+    startChatRun.mockImplementation(async (input) => {
+      startSessionAgentOptions = (input as Record<string, unknown>)
+        .agentOptions;
+      return { status: "started", runId: "run-a" };
+    });
+    await startSession(makeCtx({}), {
+      repoOwner: "acme",
+      repoName: "widgets",
+      prompt: "go",
+    });
+    expect(startSessionAgentOptions).toEqual(expected);
+
+    seedSession(buildSessionRow());
+    getChatsBySessionId.mockImplementation(async () => [
+      { id: "chat-1", sessionId: "session-1" },
+    ]);
+    let sendMessageAgentOptions: unknown;
+    startChatRun.mockImplementation(async (input) => {
+      sendMessageAgentOptions = (input as Record<string, unknown>).agentOptions;
+      return { status: "started", runId: "run-b" };
+    });
+    await sendMessage(makeCtx({}), {
+      sessionId: "session-1",
+      prompt: "keep going",
+    });
+    expect(sendMessageAgentOptions).toEqual(expected);
+  });
+
+  test("start_session forwards an explicit autoCommit:false rather than dropping it — a truthy-check regression would silently keep auto-commit on", async () => {
+    // A naive `...(input.autoCommit ? { autoCommitPush: input.autoCommit } : {})`
+    // forwarding pattern would omit the key entirely when the caller
+    // explicitly opts OUT (autoCommit: false), letting createSessionCore fall
+    // through to repo defaults / user preferences instead — the opposite of
+    // what the caller asked for. The unconditional assignment this
+    // implementation uses must forward `false` as `false`.
+    const { startSession } = await toolsModulePromise;
+    let received: Record<string, unknown> | undefined;
+    createSessionCore.mockImplementation(async (input) => {
+      received = input as Record<string, unknown>;
+      return {
+        session: { id: "session-new", userId: "user-1" },
+        chat: { id: "chat-new", sessionId: "session-new" },
+      };
+    });
+
+    await startSession(makeCtx({}), {
+      repoOwner: "acme",
+      repoName: "widgets",
+      prompt: "build the thing",
+      autoCommit: false,
+      autoCreatePr: false,
+    });
+
+    expect(Object.hasOwn(received ?? {}, "autoCommitPush")).toBe(true);
+    expect(received?.autoCommitPush).toBe(false);
+    expect(Object.hasOwn(received ?? {}, "autoCreatePr")).toBe(true);
+    expect(received?.autoCreatePr).toBe(false);
+  });
+});
