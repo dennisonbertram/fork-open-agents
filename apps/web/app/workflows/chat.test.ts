@@ -4067,7 +4067,7 @@ describe("runAgentWorkflow", () => {
     // the persisted workflowRun.status) — this checks that a read-only run
     // NEVER emits the fuse's `workflow.failed`/no-progress observability
     // trail at all, and that `mcp.run.bounded` logs "completed", not
-    // "no_progress". On the pre-fix (git-delta-only) fuse this run trips at
+    // "no_progress_fuse". On the pre-fix (git-delta-only) fuse this run trips at
     // DEFAULT_HEADLESS_RUN_MAX_STALE_STEPS and both of these would fire —
     // this test would fail if the #1242 fix were reverted.
     test("regression: a read-only run with varying tool-call activity never emits the no-progress fuse's observability trail (#1242)", async () => {
@@ -4123,7 +4123,9 @@ describe("runAgentWorkflow", () => {
       );
       expect(boundedCall).toBeDefined();
       expect(String(boundedCall?.[1])).toContain('"reason":"completed"');
-      expect(String(boundedCall?.[1])).not.toContain('"reason":"no_progress"');
+      expect(String(boundedCall?.[1])).not.toContain(
+        '"reason":"no_progress_fuse"',
+      );
 
       infoSpy.mockRestore();
     }, 15_000);
@@ -4289,10 +4291,10 @@ describe("runAgentWorkflow", () => {
     // tests above, which check the persisted workflowRun.status — this
     // checks that the A/B/A/B cycle wedge emits the SAME observability
     // trail a strict repeat does (workflow.failed + mcp.run.bounded
-    // reason "no_progress"), and that the message specifically says
+    // reason "no_progress_fuse"), and that the message specifically says
     // "repeating" rather than the stalled-tree wording. On the pre-cycle-
     // detection code this run never stops at all (unbounded — no
-    // workflow.failed event, no "no_progress" log line ever fires), so this
+    // workflow.failed event, no "no_progress_fuse" log line ever fires), so this
     // test would fail if the cycle-detection fix were reverted.
     test("regression: an A/B/A/B cycle wedge emits the same observability trail as a strict repeat, with a distinct message (#1242)", async () => {
       agentFinishReason = "tool-calls";
@@ -4343,7 +4345,7 @@ describe("runAgentWorkflow", () => {
         String(args[1]).includes('"event":"mcp.run.bounded"'),
       );
       expect(boundedCall).toBeDefined();
-      expect(String(boundedCall?.[1])).toContain('"reason":"no_progress"');
+      expect(String(boundedCall?.[1])).toContain('"reason":"no_progress_fuse"');
 
       const textDeltas = writtenChunks
         .filter(
@@ -4422,12 +4424,12 @@ describe("runAgentWorkflow", () => {
         .join("");
       expect(textDeltas.toLowerCase()).toContain("stopped");
 
-      // Observability: mcp.run.bounded with reason "no_progress".
+      // Observability: mcp.run.bounded with reason "no_progress_fuse".
       const boundedCall = infoSpy.mock.calls.find((args) =>
         String(args[1]).includes('"event":"mcp.run.bounded"'),
       );
       expect(boundedCall).toBeDefined();
-      expect(String(boundedCall?.[1])).toContain('"reason":"no_progress"');
+      expect(String(boundedCall?.[1])).toContain('"reason":"no_progress_fuse"');
 
       infoSpy.mockRestore();
     }, 10_000);
@@ -4508,6 +4510,9 @@ describe("runAgentWorkflow", () => {
       );
       agentFinishReason = "tool-calls";
       agentRawFinishReason = "provider_tool_use";
+      const infoSpy = spyOn(console, "info").mockImplementation(
+        () => undefined,
+      );
 
       try {
         await runAgentWorkflow(
@@ -4550,6 +4555,18 @@ describe("runAgentWorkflow", () => {
       expect(failedEvent?.payload).toMatchObject({
         stopReason: "no_sandbox_step_cap",
       });
+
+      // Observability: mcp.run.bounded names the no-sandbox cap exactly as
+      // the persisted status / lastRunOutcome do.
+      const boundedCall = infoSpy.mock.calls.find((args) =>
+        String(args[1]).includes('"event":"mcp.run.bounded"'),
+      );
+      expect(boundedCall).toBeDefined();
+      expect(String(boundedCall?.[1])).toContain(
+        '"reason":"no_sandbox_step_cap"',
+      );
+
+      infoSpy.mockRestore();
 
       const textDeltas = writtenChunks
         .filter(
