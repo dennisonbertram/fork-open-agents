@@ -971,14 +971,14 @@ describe("getMessages", () => {
     expect(result.chatId).toBe("chat-most-recent");
   });
 
-  test("truncates each preview to MESSAGE_PREVIEW_CHARS and flags tool calls", async () => {
-    const { getMessages, MESSAGE_PREVIEW_CHARS } = await toolsModulePromise;
+  test("returns each message's full text (no 280-char preview cap) and flags tool calls", async () => {
+    const { getMessages } = await toolsModulePromise;
     seedSession(buildSessionRow());
     getChatById.mockImplementation(async () => ({
       id: "chat-1",
       sessionId: "session-1",
     }));
-    const longText = "x".repeat(MESSAGE_PREVIEW_CHARS + 50);
+    const longText = "x".repeat(330);
     seedMessages([
       {
         id: "m1",
@@ -1010,10 +1010,11 @@ describe("getMessages", () => {
     });
 
     const [first, second] = result.messages;
-    expect(first?.preview.length).toBe(MESSAGE_PREVIEW_CHARS);
-    expect(first?.preview.endsWith("…")).toBe(true);
+    expect(first?.text).toBe(longText);
+    expect(first?.chars).toBe(330);
+    expect(first?.capped).toBe(false);
     expect(first?.hasToolCalls).toBe(false);
-    expect(second?.preview).toBe("short reply");
+    expect(second?.text).toBe("short reply");
     expect(second?.hasToolCalls).toBe(true);
   });
 
@@ -1238,7 +1239,7 @@ describe("getMessages full text and tool trace (#1232)", () => {
     expect(trace?.[0]?.inputTruncated).toBe(false);
     // The raw output is bigger than the per-field bound, so it must be cut
     // AND flagged — never a silent shortening.
-    expect((trace?.[0]?.output.length ?? 0)).toBe(TOOL_TRACE_FIELD_CHARS);
+    expect(trace?.[0]?.output.length ?? 0).toBe(TOOL_TRACE_FIELD_CHARS);
     expect(trace?.[0]?.outputTruncated).toBe(true);
   });
 
@@ -1271,14 +1272,11 @@ describe("getMessages full text and tool trace (#1232)", () => {
     const returnedIds = new Set(result.messages.map((m) => m.id));
     const accountedIds = new Set([...result.truncated, ...result.omitted]);
     for (const row of rows) {
-      const fullyPresent =
-        returnedIds.has(row.id) && !accountedIds.has(row.id);
+      const fullyPresent = returnedIds.has(row.id) && !accountedIds.has(row.id);
       const shortened = accountedIds.has(row.id);
       expect(fullyPresent || shortened).toBe(true);
     }
-    expect(result.omitted.length + result.truncated.length).toBeGreaterThan(
-      0,
-    );
+    expect(result.omitted.length + result.truncated.length).toBeGreaterThan(0);
     // Nothing reported as omitted also appears in the returned messages.
     for (const id of result.omitted) {
       expect(returnedIds.has(id)).toBe(false);
