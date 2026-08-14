@@ -87,6 +87,12 @@ mock.module("@/lib/db/sessions", () => ({
   getSessionsWithUnreadByUserId,
 }));
 
+// #1241: sessions-write.ts pulls in registry.ts -> sessions-read.ts, which
+// now queries this module for get_session's lastRunOutcome.
+mock.module("@/lib/db/workflow-runs", () => ({
+  getLatestWorkflowRunStatusBySessionId: mock(async () => null),
+}));
+
 // Rate limiting for start_session must use the SAME key/ceiling shape as the
 // browser session-create path (apps/web/app/api/sessions/route.ts): key
 // "sessions-create:<userId>", limit 10, windowMs 60_000. `rateLimitKey` here

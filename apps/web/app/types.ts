@@ -38,7 +38,18 @@ export type WebAgentResponseTimelineSegment = {
 
 export type WebAgentResponseTimeline = {
   workflowRunId: string;
-  status: "completed" | "aborted" | "failed";
+  // #1241: mirrors workflowRuns.status, widened with four deliberate-stop
+  // values so a stalled or step-capped run isn't reported identically to a
+  // crash. Nothing in this file's consumers switches on the literal value
+  // today — it is only ever displayed.
+  status:
+    | "completed"
+    | "aborted"
+    | "failed"
+    | "no_progress_fuse"
+    | "no_sandbox_step_cap"
+    | "max_steps"
+    | "repeated_tool_failure";
   totalDurationMs: number;
   startedAt: string;
   finishedAt: string;

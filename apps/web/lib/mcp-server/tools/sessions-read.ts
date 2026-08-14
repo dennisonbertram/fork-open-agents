@@ -18,6 +18,7 @@ import {
   // reason.
   type SessionsSort,
 } from "@/lib/db/sessions";
+import { getLatestWorkflowRunStatusBySessionId } from "@/lib/db/workflow-runs";
 import { getLatestSessionEventByNames } from "@/lib/observability/session-event-lookup";
 import {
   buildChatUrl,
@@ -29,9 +30,11 @@ import type { McpScope } from "../context";
 import {
   isResumable,
   type McpActivityState,
+  type McpLastRunOutcome,
   type McpSessionState,
   type McpWorkspaceState,
   toActivityState,
+  toLastRunOutcome,
   toSessionState,
   toWorkspaceState,
 } from "../session-state";
@@ -179,6 +182,10 @@ export type McpSessionDetail = {
   workspace: McpWorkspaceState;
   resumable: boolean;
   activity: McpActivityState;
+  /** How the session's most recently recorded run ended, or null when it has
+   * no run yet. A third axis, distinct from `state` and `activity` — see
+   * `toLastRunOutcome` in session-state.ts. */
+  lastRunOutcome: McpLastRunOutcome | null;
   /** The most recently recorded auto-commit attempt for this session (start,
    * success, failure, or "no changes to commit"), or null when auto-commit
    * has never run. `status: "failed"` is the #1246 signal: session_events
@@ -826,6 +833,9 @@ export async function getSession(
   ]);
   const chats = chatRows.map((chat) => toChatSummary(record.id, chat));
   const state = toSessionState(record.status);
+  // get_session only, never list_sessions — see getLatestWorkflowRunStatusBySessionId's
+  // own doc comment for why this single lookup doesn't become an N+1.
+  const lastRunStatus = await getLatestWorkflowRunStatusBySessionId(record.id);
 
   return {
     id: record.id,
@@ -837,6 +847,7 @@ export async function getSession(
       lifecycleUpdatedAt: record.updatedAt,
     }),
     resumable: isResumable(state),
+    lastRunOutcome: toLastRunOutcome(lastRunStatus),
     lastAutoCommitEvent: toGitAutomationEvent(lastAutoCommitEvent),
     lastAutoPrEvent: toGitAutomationEvent(lastAutoPrEvent),
     // Bounded per chat: a run slot last touched longer ago than any run can
@@ -990,6 +1001,17 @@ const workspaceStateOutputSchema = z.enum([
   "none",
 ]);
 const activityStateOutputSchema = z.enum(["working", "idle"]);
+const lastRunOutcomeOutputSchema = z
+  .enum([
+    "completed",
+    "aborted",
+    "failed",
+    "no_progress_fuse",
+    "no_sandbox_step_cap",
+    "max_steps",
+    "repeated_tool_failure",
+  ])
+  .nullable();
 const prStatusOutputSchema = z.enum(["open", "merged", "closed"]).nullable();
 const gitAutomationEventOutputSchema = z
   .object({
@@ -1089,6 +1111,7 @@ const getSessionOutputSchema = z.object({
   workspace: workspaceStateOutputSchema,
   resumable: z.boolean(),
   activity: activityStateOutputSchema,
+  lastRunOutcome: lastRunOutcomeOutputSchema,
   lastAutoCommitEvent: gitAutomationEventOutputSchema,
   lastAutoPrEvent: gitAutomationEventOutputSchema,
   repo: z.string().nullable(),
@@ -1158,7 +1181,7 @@ export const sessionReadTools: readonly AnyMcpToolDefinition[] = [
     name: "open_agents_get_session",
     title: "Get Open Agents Session",
     description:
-      "Get full detail for one Open Agents coding session (Open Agents' own session record, not the caller's MCP session) that the caller owns, including its `chats`, `state`, `workspace`, `resumable`, and `activity`, without transcripts or diff bodies. `workspace` reports ready only while a sandbox is live right now; hibernated is the normal resting state and is restored automatically on the next message. `resumable` is true for every non-archived session, whatever its `workspace` says, and `activity` is working only while a run is genuinely live. `lastAutoCommitEvent` and `lastAutoPrEvent` report the most recently recorded outcome of this session's auto-commit and auto-PR steps (or null if that step has never run) — `status: \"failed\"` on either means a run finished without its work actually being saved to the branch or a pull request, which `prNumber`/`prStatus` alone would not reveal.",
+      "Get full detail for one Open Agents coding session (Open Agents' own session record, not the caller's MCP session) that the caller owns, including its `chats`, `state`, `workspace`, `resumable`, `activity`, and `lastRunOutcome`, without transcripts or diff bodies. `workspace` reports ready only while a sandbox is live right now; hibernated is the normal resting state and is restored automatically on the next message. `resumable` is true for every non-archived session, whatever its `workspace` says, and `activity` is working only while a run is genuinely live. `lastRunOutcome` is a third, distinct axis from `state` (filing) and `activity` (is a run live right now): it reports how the session's most recently recorded run ended — `completed`, `aborted` (user-stopped), `failed` (a genuine crash), or one of four deliberate headless stops (`no_progress_fuse`, `no_sandbox_step_cap`, `max_steps`, `repeated_tool_failure`) — or null when the session has no run yet. A stalled run and a finished run are never the same value. `lastAutoCommitEvent` and `lastAutoPrEvent` report the most recently recorded outcome of this session's auto-commit and auto-PR steps (or null if that step has never run) — `status: \"failed\"` on either means a run finished without its work actually being saved to the branch or a pull request, which `prNumber`/`prStatus` alone would not reveal.",
     scope: SESSION_READ_SCOPE,
     inputSchema: getSessionInputSchema,
     outputSchema: getSessionOutputSchema,
