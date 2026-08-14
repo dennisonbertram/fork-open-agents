@@ -3209,18 +3209,6 @@ async function resolveComposioToolsForRun(params: {
       }
     }
   } catch (error) {
-    // #1276: Composio is an optional external tool provider. This step runs
-    // once before the step loop (#1248), so a rethrow here is no longer one
-    // step's problem — the workflow engine retries the step 4 times, then
-    // fails the whole run at step zero before the agent takes a single
-    // action, even for a task that needs nothing from Composio (production
-    // evidence: issue #1276, session pGeAiKD5Si-8r6EjF57YW). Record the
-    // failure and degrade instead, matching the "Swallow — chat continues
-    // without GitHub tools" precedent below: `composioTools` stays
-    // `undefined`, and the run continues on built-in tools only. The
-    // `composio.session.failed` event above makes the failure visible to an
-    // operator and distinguishable from an unconfigured account (the "off"
-    // status path never emits this event).
     await emitSessionEvent({
       sessionId,
       chatId,
@@ -3238,6 +3226,7 @@ async function resolveComposioToolsForRun(params: {
         errorName: error instanceof Error ? error.name : "Error",
       },
     });
+    throw error;
   }
 
   return { tools: composioTools };
