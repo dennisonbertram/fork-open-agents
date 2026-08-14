@@ -17,6 +17,7 @@ or detailed procedures here; put that material in `docs/agents`,
 - [Local Development Setup](docs/process/local-development.md)
 - [Development Workflow](docs/process/development-workflow.md)
 - [Guard Integrity](docs/process/guard-integrity.md)
+- [Dogfood The Cloud Loop](docs/process/dogfood-cloud-fanout.md)
 - [Behavior-First TDD](docs/process/behavior-tdd.md)
 - [Authenticated Local UI Smoke](docs/process/development-workflow.md#authenticated-local-ui-smoke)
 - [Observability Discipline](docs/process/observability-discipline.md)
@@ -41,6 +42,27 @@ workspace. Treat `vercel-labs/open-agents` as an upstream source only.
   report that instead of falling back to Vercel Labs upstream.
 
 ## Build Process
+
+**Implementation work defaults to running on this product.** Plan locally, then
+dispatch the work to Open Agents cloud sessions over the hosted MCP server,
+review what comes back, and file whatever the attempt exposes. One day of doing
+this surfaced ten defects that the test suite, the type checker, and CI all
+passed clean — including work silently lost to a protected-branch push, runs
+truncated by the token limit and recorded as `completed`, and headless runs
+stalling forever on an approval nobody could give.
+
+Two rules that follow from it, because a slice always reports `completed`
+whether its output is excellent or unusable:
+
+- **Never merge on a green status.** Read the whole diff, confirm no file
+  outside the slice's assigned list changed, confirm no line changed that the
+  task did not call for, and run its tests locally.
+- **Write the acceptance condition before dispatching** — "only these files may
+  change, no existing line may be modified" — so grading is a mechanical check
+  on the diff rather than a judgment call afterwards.
+
+See [Dogfood The Cloud Loop](docs/process/dogfood-cloud-fanout.md) for the full
+loop, the evidence behind it, and when staying local is the right call.
 
 Use the process docs for non-trivial work:
 
