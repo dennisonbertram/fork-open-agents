@@ -3689,6 +3689,114 @@ describe("runAgentWorkflow", () => {
       expect(workflowRun.status).toBe("completed");
     }, 15_000);
 
+    // #1242 regression against the production incident: a read-only run
+    // (analysis, review, search, reporting) never changes the git tree by
+    // definition, so the fuse must not judge it on git delta alone. Distinct
+    // tool-call activity every step (varying input — "review a different PR
+    // each time") is a second signal that keeps the run alive well past the
+    // old git-only budget.
+    test("does not stop a headless run with no git delta as long as tool-call activity keeps varying (#1242)", async () => {
+      const { DEFAULT_HEADLESS_RUN_MAX_STALE_STEPS } =
+        await import("@/lib/chat/headless-progress-budget");
+      agentFinishReason = "tool-calls";
+      agentRawFinishReason = "provider_tool_use";
+      // The workspace never changes — this run is read-only.
+      spies.probeHeadlessRunGitFingerprint.mockImplementation(
+        (): Promise<string | null> => Promise.resolve("frozen-fingerprint"),
+      );
+      const STOP_AT_STEP = DEFAULT_HEADLESS_RUN_MAX_STALE_STEPS + 10;
+      let call = 0;
+      agentAssistantPartsFactory = () => {
+        call += 1;
+        if (call >= STOP_AT_STEP) {
+          agentFinishReason = "stop";
+        }
+        return [
+          {
+            type: "tool-task",
+            toolCallId: `call-${call}`,
+            state: "output-available",
+            preliminary: false,
+            input: { task: `Review PR #${call}` },
+            output: { final: [] },
+          },
+        ];
+      };
+
+      await runAgentWorkflow(
+        makeOptions({
+          agentOptions: { unattended: true },
+          maxSteps: undefined,
+        }),
+      );
+
+      const rwCalls = spies.recordWorkflowUsage.mock.calls as unknown[][];
+      const workflowRun = rwCalls.at(-1)?.[5] as {
+        stepTimings: Array<{ stepNumber: number }>;
+        status: string;
+      };
+      expect(workflowRun.stepTimings.length).toBeGreaterThan(
+        DEFAULT_HEADLESS_RUN_MAX_STALE_STEPS,
+      );
+      expect(workflowRun.status).toBe("completed");
+    }, 15_000);
+
+    // #1242 wedge contract: a run that keeps calling the SAME tool with the
+    // SAME input (no git delta, no varying activity) is the genuine wedge
+    // the fuse must still bound — the epic's read-only use case must not
+    // reopen the runaway-cost risk #1231 closed.
+    test("stops a headless run that repeats an identical tool call with no varying activity (#1242)", async () => {
+      const { DEFAULT_HEADLESS_RUN_MAX_STALE_STEPS } =
+        await import("@/lib/chat/headless-progress-budget");
+      agentFinishReason = "tool-calls";
+      agentRawFinishReason = "provider_tool_use";
+      spies.probeHeadlessRunGitFingerprint.mockImplementation(
+        (): Promise<string | null> => Promise.resolve("frozen-fingerprint"),
+      );
+      let call = 0;
+      agentAssistantPartsFactory = () => {
+        call += 1;
+        return [
+          {
+            type: "tool-task",
+            toolCallId: `call-${call}`,
+            state: "output-available",
+            preliminary: false,
+            input: { task: "List repository files" },
+            output: { final: [] },
+          },
+        ];
+      };
+
+      await runAgentWorkflow(
+        makeOptions({
+          agentOptions: { unattended: true },
+          maxSteps: undefined,
+        }),
+      );
+
+      const rwCalls = spies.recordWorkflowUsage.mock.calls as unknown[][];
+      const workflowRun = rwCalls.at(-1)?.[5] as {
+        stepTimings: Array<{ stepNumber: number }>;
+        status: string;
+      };
+      expect(workflowRun.stepTimings.length).toBe(
+        DEFAULT_HEADLESS_RUN_MAX_STALE_STEPS + 1,
+      );
+      expect(workflowRun.status).toBe("no_progress_fuse");
+
+      // The stop message must name BOTH signals it checked, not just
+      // "workspace changes" — this run never expected to touch the tree.
+      const textDeltas = writtenChunks
+        .filter(
+          (chunk): chunk is { type: "text-delta"; id: string; delta: string } =>
+            chunk.type === "text-delta",
+        )
+        .map((chunk) => chunk.delta)
+        .join("");
+      expect(textDeltas.toLowerCase()).toContain("tool-call activity");
+    }, 10_000);
+
     // Real per-step cost (~150ms, see the note above) × 21 steps ≈ 3s —
     // comfortably under the default 5s timeout, but a generous explicit
     // timeout keeps this from flaking on a slower CI runner.

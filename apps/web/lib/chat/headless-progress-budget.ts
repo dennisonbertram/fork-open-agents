@@ -46,13 +46,18 @@ export function getHeadlessRunMaxStaleSteps(): number {
  * sees when the no-progress fuse ends the turn. Must be legible on its own —
  * what was attempted is already in the transcript above this message; this
  * states why the run stopped and what to do next.
+ *
+ * #1242: names BOTH signals the fuse checks — the git working tree AND
+ * tool-call activity (see `app/workflows/headless-activity-signal.ts`) — so
+ * a read-only run is never told "no workspace changes" as if that alone
+ * were the failure; the fuse only trips when neither signal moved.
  */
 export function buildHeadlessProgressFuseMessage(
   staleSteps: number,
   maxStaleSteps: number,
 ): string {
   return [
-    `Stopped: no workspace changes were detected for ${staleSteps} consecutive steps (limit ${maxStaleSteps}), so this headless run is ending instead of continuing to burn steps with no progress.`,
+    `Stopped: no workspace changes or new tool-call activity were detected for ${staleSteps} consecutive steps (limit ${maxStaleSteps}), so this headless run is ending instead of continuing to burn steps with no progress.`,
     "",
     "If the goal is still valid, send a follow-up message with a narrower next step or the missing decision.",
   ].join("\n");

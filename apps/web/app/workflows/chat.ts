@@ -62,6 +62,10 @@ import {
   sendFinish,
 } from "./chat-post-finish";
 import { probeHeadlessRunGitFingerprint } from "./headless-progress-fuse";
+import {
+  buildHeadlessStepToolSignature,
+  createHeadlessActivityState,
+} from "./headless-activity-signal";
 import { annotateAbandonedTurns } from "@/lib/chat/annotate-abandoned-turns";
 import {
   buildHeadlessNoSandboxCapMessage,
@@ -2099,6 +2103,13 @@ export async function runAgentWorkflow(options: Options) {
     const headlessProgressBudget = headlessHasSandbox
       ? createProgressBudget({ maxStaleTurns: headlessRunMaxStaleSteps })
       : null;
+    // #1242: a second signal folded into the same budget so a read-only run
+    // (never changes git, by definition) is not judged solely on git delta —
+    // see headless-activity-signal.ts's module doc for the full rationale
+    // and why assistant text was deliberately left out.
+    const headlessActivityState = headlessProgressBudget
+      ? createHeadlessActivityState()
+      : null;
     const headlessNoSandboxStepCap =
       isHeadlessRun && !headlessHasSandbox
         ? getHeadlessRunNoSandboxStepCap()
@@ -2253,8 +2264,24 @@ export async function runAgentWorkflow(options: Options) {
           ? await probeHeadlessRunGitFingerprint(sandboxState)
           : null;
         headlessProbeCount += 1;
+        // #1242: fold this step's tool-call activity into the fingerprint so
+        // a read-only run (git never changes) is judged on more than git
+        // delta alone. Only when the git probe itself succeeded — a null
+        // probe keeps the existing "unknown, not stale" carve-out untouched
+        // rather than having activity mask a real probe failure. See
+        // headless-activity-signal.ts for what counts as "activity" and why.
+        const toolSignature = headlessActivityState
+          ? buildHeadlessStepToolSignature(
+              headlessActivityState,
+              result.responseMessage?.parts ?? pendingAssistantResponse.parts,
+            )
+          : null;
+        const combinedFingerprint =
+          gitFingerprint === null
+            ? null
+            : `${gitFingerprint}::${toolSignature ?? "∅"}`;
         const observation = headlessProgressBudget.observeTurn({
-          gitFingerprint,
+          gitFingerprint: combinedFingerprint,
         });
         if (observation.verdict === "stop") {
           headlessFuseTripped = true;
