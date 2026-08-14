@@ -356,6 +356,76 @@ describe("startSession", () => {
     expect(createSessionCore).not.toHaveBeenCalled();
   });
 
+  test("requests a headless run: unattended:true and a builtin allowlist excluding ask_user_question (#1230)", async () => {
+    const { startSession } = await toolsModulePromise;
+    let capturedAgentOptions: Record<string, unknown> | undefined;
+    startChatRun.mockImplementation(async (input) => {
+      capturedAgentOptions = (input as Record<string, unknown>)
+        .agentOptions as Record<string, unknown>;
+      return { status: "started", runId: "run-new" };
+    });
+
+    await startSession(makeCtx({}), {
+      repoOwner: "acme",
+      repoName: "widgets",
+      prompt: "build the thing",
+    });
+
+    expect(capturedAgentOptions).toBeDefined();
+    expect(capturedAgentOptions?.unattended).toBe(true);
+    const allowlist = capturedAgentOptions?.allowedBuiltinToolNames as
+      | string[]
+      | undefined;
+    expect(Array.isArray(allowlist)).toBe(true);
+    expect(allowlist).not.toContain("ask_user_question");
+    expect(typeof capturedAgentOptions?.customInstructions).toBe("string");
+  });
+
+  test("forwards autoCommit/autoCreatePr straight into createSessionCore — not into the workflow (#1230)", async () => {
+    // Per the session-level override design: createSessionCore already
+    // resolves autoCommitPush/autoCreatePr precedence (body > repo defaults >
+    // user prefs) and persists the result on the session row, which every
+    // later run on that session picks up. No workflow-level plumbing needed.
+    const { startSession } = await toolsModulePromise;
+    let received: Record<string, unknown> | undefined;
+    createSessionCore.mockImplementation(async (input) => {
+      received = input as Record<string, unknown>;
+      return {
+        session: { id: "session-new", userId: "user-1" },
+        chat: { id: "chat-new", sessionId: "session-new" },
+      };
+    });
+
+    await startSession(makeCtx({}), {
+      repoOwner: "acme",
+      repoName: "widgets",
+      prompt: "build the thing",
+      autoCommit: true,
+      autoCreatePr: true,
+    });
+
+    expect(received?.autoCommitPush).toBe(true);
+    expect(received?.autoCreatePr).toBe(true);
+  });
+
+  test(".strict() still rejects an unknown key on start_session", async () => {
+    const { runMcpTool } = await registryModulePromise;
+    const { McpToolError } = await contextModulePromise;
+
+    const promise = runMcpTool("open_agents_start_session", makeCtx({}), {
+      repoOwner: "acme",
+      repoName: "widgets",
+      prompt: "build the thing",
+      unknownField: "nope",
+    });
+
+    await expect(promise).rejects.toBeInstanceOf(McpToolError);
+    await expect(promise).rejects.toMatchObject({
+      errorKind: "invalid_request",
+    });
+    expect(createSessionCore).not.toHaveBeenCalled();
+  });
+
   test("surfaces the rate limit as errorKind rate_limited, using the same key/ceiling as the browser session-create path", async () => {
     const { startSession } = await toolsModulePromise;
     const { McpToolError } = await contextModulePromise;
@@ -498,6 +568,33 @@ describe("sendMessage", () => {
     expect(result.workflowRunId).toBe("run-1");
     // The fallback resolves the chat itself; an explicit-chatId lookup never runs.
     expect(getChatById).not.toHaveBeenCalled();
+  });
+
+  test("requests a headless run: unattended:true and a builtin allowlist excluding ask_user_question (#1230)", async () => {
+    const { sendMessage } = await toolsModulePromise;
+    seedSession(buildSessionRow());
+    getChatsBySessionId.mockImplementation(async () => [
+      { id: "chat-1", sessionId: "session-1" },
+    ]);
+    let capturedAgentOptions: Record<string, unknown> | undefined;
+    startChatRun.mockImplementation(async (input) => {
+      capturedAgentOptions = (input as Record<string, unknown>)
+        .agentOptions as Record<string, unknown>;
+      return { status: "started", runId: "run-1" };
+    });
+
+    await sendMessage(makeCtx({}), {
+      sessionId: "session-1",
+      prompt: "keep going",
+    });
+
+    expect(capturedAgentOptions).toBeDefined();
+    expect(capturedAgentOptions?.unattended).toBe(true);
+    const allowlist = capturedAgentOptions?.allowedBuiltinToolNames as
+      | string[]
+      | undefined;
+    expect(Array.isArray(allowlist)).toBe(true);
+    expect(allowlist).not.toContain("ask_user_question");
   });
 });
 
