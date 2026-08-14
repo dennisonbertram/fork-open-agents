@@ -105,7 +105,11 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Fetch base ref
-        run: git fetch --no-tags --depth=1 origin "$BASE_REF:refs/remotes/origin/$BASE_REF"
+        # Forced refspec (`+`): the base branch moves while a PR's checks run —
+        # any sibling merge does it — and an unforced update of an existing
+        # remote-tracking ref is then rejected as non-fast-forward, failing this
+        # job for a reason that has nothing to do with the code under test.
+        run: git fetch --no-tags --depth=1 origin "+$BASE_REF:refs/remotes/origin/$BASE_REF"
         env:
           BASE_REF: ${{ github.base_ref }}
 
