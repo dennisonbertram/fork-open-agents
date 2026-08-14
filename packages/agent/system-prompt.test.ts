@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { MANAGED_RUNTIME_COORDINATOR_TOOL_NAMES } from "./open-agent";
+import {
+  MANAGED_RUNTIME_COORDINATOR_TOOL_NAMES,
+  OPEN_AGENT_TOOL_NAMES,
+} from "./open-agent";
 import { buildSystemPrompt } from "./system-prompt";
 
 // DEFECT B: the managed-runtime coordinator's system prompt used to document
@@ -108,5 +111,76 @@ describe("classic-mode prompt is unchanged", () => {
       "- `edit` - Make precise string replacements in files.",
     );
     expect(classicPrompt).not.toContain("## Coordinator Tool Set");
+  });
+});
+
+// #1243: the system prompt used to describe the agent's tools as static
+// prose, independent of the tool set actually passed to the model. A run
+// whose tool set excludes a built-in tool (e.g. an MCP-started/headless run,
+// which denies `ask_user_question` because no browser can answer it -- see
+// apps/web/lib/mcp-server/headless-run-options.ts HEADLESS_DENIED_TOOL_NAMES)
+// still got a prompt advertising the removed tool, and in one section
+// instructing the agent to use it. These tests pin the prompt's tool
+// descriptions to the effective tool set passed via `toolNames`.
+describe("prompt tool descriptions match the effective tool set (#1243)", () => {
+  // Mirrors HEADLESS_DENIED_TOOL_NAMES in
+  // apps/web/lib/mcp-server/headless-run-options.ts. Kept as an array and
+  // iterated below (not a single hardcoded string check) so the guard
+  // automatically covers the next tool that gets denied to a restricted run.
+  const HEADLESS_DENIED_TOOL_NAMES: readonly string[] = ["ask_user_question"];
+
+  const headlessToolNames = OPEN_AGENT_TOOL_NAMES.filter(
+    (name) => !HEADLESS_DENIED_TOOL_NAMES.includes(name),
+  );
+
+  test("a tool set lacking ask_user_question produces no mention of it, including the clarify-requirements guidance", () => {
+    const prompt = buildSystemPrompt({ toolNames: headlessToolNames });
+
+    for (const deniedName of HEADLESS_DENIED_TOOL_NAMES) {
+      expect(prompt).not.toContain(`\`${deniedName}\``);
+    }
+    expect(prompt).not.toContain("## Gathering User Input");
+    expect(prompt).not.toContain(
+      "Use `ask_user_question` to clarify requirements or let users choose between approaches",
+    );
+    expect(prompt).not.toContain(
+      "Prefer structured questions over open-ended chat when you need specific decisions.",
+    );
+  });
+
+  test("a managed_runtime coordinator tool set lacking ask_user_question omits it from the coordinator tool list", () => {
+    const prompt = buildSystemPrompt({
+      runtimeMode: "managed_runtime",
+      toolNames: headlessToolNames.filter((name) =>
+        (MANAGED_RUNTIME_COORDINATOR_TOOL_NAMES as readonly string[]).includes(
+          name,
+        ),
+      ),
+    });
+
+    for (const deniedName of HEADLESS_DENIED_TOOL_NAMES) {
+      expect(prompt).not.toContain(`\`${deniedName}\``);
+    }
+  });
+
+  test("an unrestricted (full) tool set produces a prompt byte-identical to omitting toolNames", () => {
+    const withExplicitFullList = buildSystemPrompt({
+      toolNames: OPEN_AGENT_TOOL_NAMES,
+    });
+    const withOmittedToolNames = buildSystemPrompt({});
+
+    expect(withExplicitFullList).toBe(withOmittedToolNames);
+  });
+
+  test("an unrestricted managed_runtime tool set produces a prompt byte-identical to omitting toolNames", () => {
+    const withExplicitFullList = buildSystemPrompt({
+      runtimeMode: "managed_runtime",
+      toolNames: MANAGED_RUNTIME_COORDINATOR_TOOL_NAMES as readonly string[],
+    });
+    const withOmittedToolNames = buildSystemPrompt({
+      runtimeMode: "managed_runtime",
+    });
+
+    expect(withExplicitFullList).toBe(withOmittedToolNames);
   });
 });
