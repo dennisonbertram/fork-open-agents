@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { deriveWorkflowRunOutcomeStatus } from "@/lib/db/workflow-runs";
 import {
   RUN_SLOT_STALE_MS,
   toActivityState,
@@ -269,4 +270,86 @@ describe("toLastRunOutcome", () => {
     // typed outcome the schema does not advertise.
     expect(toLastRunOutcome("some-legacy-value")).toBeNull();
   });
+});
+
+/**
+ * Regression: the writer (deriveWorkflowRunOutcomeStatus, lib/db/workflow-runs.ts)
+ * and the reader (toLastRunOutcome, above) each carry their own copy of the
+ * same 7-value vocabulary. If a future change adds a new persisted status
+ * without teaching the reader about it — or renames one on either side — a
+ * real run would silently report `lastRunOutcome: null` through get_session
+ * instead of the value it actually has. Driving every writer output through
+ * the reader, rather than asserting the two lists match, catches that drift
+ * exactly where it would surface: get_session's response.
+ */
+describe("the writer's vocabulary and get_session's reader never drift apart (#1241 regression)", () => {
+  const scenarios: Array<Parameters<typeof deriveWorkflowRunOutcomeStatus>[0]> =
+    [
+      {
+        crashed: false,
+        wasAborted: false,
+        stoppedForRepeatedToolFailure: false,
+        exhaustedMaxSteps: false,
+        headlessFuseTripped: false,
+        headlessNoSandboxCapped: false,
+      },
+      {
+        crashed: false,
+        wasAborted: true,
+        stoppedForRepeatedToolFailure: false,
+        exhaustedMaxSteps: false,
+        headlessFuseTripped: false,
+        headlessNoSandboxCapped: false,
+      },
+      {
+        crashed: true,
+        wasAborted: false,
+        stoppedForRepeatedToolFailure: false,
+        exhaustedMaxSteps: false,
+        headlessFuseTripped: false,
+        headlessNoSandboxCapped: false,
+      },
+      {
+        crashed: false,
+        wasAborted: false,
+        stoppedForRepeatedToolFailure: true,
+        exhaustedMaxSteps: false,
+        headlessFuseTripped: false,
+        headlessNoSandboxCapped: false,
+      },
+      {
+        crashed: false,
+        wasAborted: false,
+        stoppedForRepeatedToolFailure: false,
+        exhaustedMaxSteps: true,
+        headlessFuseTripped: false,
+        headlessNoSandboxCapped: false,
+      },
+      {
+        crashed: false,
+        wasAborted: false,
+        stoppedForRepeatedToolFailure: false,
+        exhaustedMaxSteps: false,
+        headlessFuseTripped: true,
+        headlessNoSandboxCapped: false,
+      },
+      {
+        crashed: false,
+        wasAborted: false,
+        stoppedForRepeatedToolFailure: false,
+        exhaustedMaxSteps: false,
+        headlessFuseTripped: false,
+        headlessNoSandboxCapped: true,
+      },
+    ];
+
+  test.each(scenarios)(
+    "writer output round-trips to the same, non-null get_session outcome",
+    (params) => {
+      const written = deriveWorkflowRunOutcomeStatus(params);
+      const read = toLastRunOutcome(written);
+      expect(read).not.toBeNull();
+      expect(read).toBe(written);
+    },
+  );
 });
