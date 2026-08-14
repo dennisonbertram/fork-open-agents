@@ -34,6 +34,15 @@ export type HeadlessActivityState = {
   seenToolCallIds: Set<string>;
 };
 
+/**
+ * The placeholder `chat.ts` substitutes for `buildHeadlessStepToolSignature`
+ * returning null when it builds the combined git+activity fingerprint (see
+ * that call site). Exported so `headless-progress-detector.ts` can recognize
+ * "this step had no tool-call activity at all" from the combined fingerprint
+ * without re-deriving or duplicating the format.
+ */
+export const NO_TOOL_ACTIVITY_SIGNATURE = "∅";
+
 export function createHeadlessActivityState(): HeadlessActivityState {
   return { seenToolCallIds: new Set() };
 }
