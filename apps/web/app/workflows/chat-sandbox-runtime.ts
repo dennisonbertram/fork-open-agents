@@ -20,6 +20,10 @@ type ResolveChatSandboxRuntimeParams = Parameters<
 type BuildSandboxStateSession = {
   id: string;
   branch: string | null;
+  // The branch a new working `branch` was cut from (#1251). Only read when
+  // isNewBranch is true; absent/null preserves today's behavior (clone at
+  // the repository's default HEAD, same as before this field existed).
+  baseBranch?: string | null;
   cloneUrl: string | null;
   isNewBranch: boolean;
   prNumber: number | null;
@@ -63,11 +67,32 @@ function buildSandboxSource(
   const branchExistsOnOrigin = session.prNumber != null;
   const shouldCreateNewBranch = session.isNewBranch && !branchExistsOnOrigin;
 
+  if (shouldCreateNewBranch) {
+    return {
+      repo: session.cloneUrl,
+      newBranch: session.branch ?? undefined,
+      // #1251: clone at the base the caller asked to start from, so the new
+      // working branch is cut from it rather than the repository's default
+      // HEAD. No base recorded (a pre-#1251 session, or one where neither
+      // the caller nor repo settings named a branch) falls through to
+      // source.branch being omitted — the sandbox layer's own existing
+      // default (repository HEAD) applies, unchanged from before this field
+      // existed.
+      ...(session.baseBranch ? { branch: session.baseBranch } : {}),
+    };
+  }
+
   return {
     repo: session.cloneUrl,
-    ...(shouldCreateNewBranch
-      ? { newBranch: session.branch ?? undefined }
-      : { branch: session.branch ?? "main" }),
+    // ponytail: literal "main" fallback for the rare case a repo-backed
+    // session has no branch at all (isNewBranch: false, no caller branch, no
+    // repo-settings default branch — create-session.ts's own precedence
+    // chain already covers the common case via repoDefaults.defaultBranch).
+    // A real per-repo lookup here would make this function async and thread
+    // a GitHub token through both of buildSandboxSource's call sites
+    // (prewarm.ts and the workflow VM path) for a fallback that should
+    // already be rare; upgrade if it turns out not to be.
+    branch: session.branch ?? "main",
   };
 }
 

@@ -7,6 +7,7 @@ import {
   claimChatActiveStreamId,
   compareAndSetChatActiveStreamId,
   createChatMessageIfNotExists,
+  getSessionById,
   touchChat,
   updateChat,
   updateSession,
@@ -574,6 +575,26 @@ export async function runAutoCommitStep(params: {
   }
 }
 
+/**
+ * The session's base branch (#1251), or null when unavailable — a lookup
+ * failure here (a transient DB hiccup) must not fail the whole auto-PR
+ * attempt. It degrades to null, the same as a session that never recorded a
+ * base: performAutoCreatePr then falls back to its own repository-default
+ * resolution, today's behavior.
+ */
+async function resolvePrBaseBranch(sessionId: string): Promise<string | null> {
+  try {
+    const session = await getSessionById(sessionId);
+    return session?.baseBranch ?? null;
+  } catch (error) {
+    console.error(
+      "[workflow] Failed to load session base branch for auto-PR:",
+      error,
+    );
+    return null;
+  }
+}
+
 export async function runAutoCreatePrStep(params: {
   userId: string;
   sessionId: string;
@@ -586,7 +607,10 @@ export async function runAutoCreatePrStep(params: {
   try {
     const { connectSandbox } = await import("@open-agents/sandbox");
     const { performAutoCreatePr } = await import("@/lib/chat/auto-pr-direct");
-    const sandbox = await connectSandbox(params.sandboxState);
+    const [sandbox, baseBranch] = await Promise.all([
+      connectSandbox(params.sandboxState),
+      resolvePrBaseBranch(params.sessionId),
+    ]);
     const result = await performAutoCreatePr({
       sandbox,
       userId: params.userId,
@@ -594,6 +618,7 @@ export async function runAutoCreatePrStep(params: {
       sessionTitle: params.sessionTitle,
       repoOwner: params.repoOwner,
       repoName: params.repoName,
+      baseBranch,
     });
 
     if (result.error) {

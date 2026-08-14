@@ -200,6 +200,12 @@ export type McpSessionDetail = {
   lastAutoPrEvent: McpGitAutomationEvent | null;
   repo: string | null;
   branch: string | null;
+  /** The branch a new working `branch` was cut from (#1251), or null when
+   * either this session doesn't work on a new branch (`isNewBranch: false`)
+   * or no base was recorded (a session created before this field existed, or
+   * one where neither the caller nor repo settings named a starting
+   * branch — the repository default applied instead). */
+  baseBranch: string | null;
   url: string;
   createdAt: string;
   updatedAt: string;
@@ -863,6 +869,7 @@ export async function getSession(
       : "idle",
     repo: toRepo(record.repoOwner, record.repoName),
     branch: record.branch,
+    baseBranch: record.baseBranch,
     url: buildSessionUrl(record.id),
     createdAt: toIsoString(record.createdAt) ?? "",
     updatedAt: toIsoString(record.updatedAt) ?? "",
@@ -1116,6 +1123,7 @@ const getSessionOutputSchema = z.object({
   lastAutoPrEvent: gitAutomationEventOutputSchema,
   repo: z.string().nullable(),
   branch: z.string().nullable(),
+  baseBranch: z.string().nullable(),
   url: z.string(),
   createdAt: z.string(),
   updatedAt: z.string(),
@@ -1181,7 +1189,7 @@ export const sessionReadTools: readonly AnyMcpToolDefinition[] = [
     name: "open_agents_get_session",
     title: "Get Open Agents Session",
     description:
-      "Get full detail for one Open Agents coding session (Open Agents' own session record, not the caller's MCP session) that the caller owns, including its `chats`, `state`, `workspace`, `resumable`, `activity`, and `lastRunOutcome`, without transcripts or diff bodies. `workspace` reports ready only while a sandbox is live right now; hibernated is the normal resting state and is restored automatically on the next message. `resumable` is true for every non-archived session, whatever its `workspace` says, and `activity` is working only while a run is genuinely live. `lastRunOutcome` is a third, distinct axis from `state` (filing) and `activity` (is a run live right now): it reports how the session's most recently recorded run ended — `completed`, `aborted` (user-stopped), `failed` (a genuine crash), or one of four deliberate headless stops (`no_progress_fuse`, `no_sandbox_step_cap`, `max_steps`, `repeated_tool_failure`) — or null when the session has no run yet. A stalled run and a finished run are never the same value. `lastAutoCommitEvent` and `lastAutoPrEvent` report the most recently recorded outcome of this session's auto-commit and auto-PR steps (or null if that step has never run) — `status: \"failed\"` on either means a run finished without its work actually being saved to the branch or a pull request, which `prNumber`/`prStatus` alone would not reveal.",
+      "Get full detail for one Open Agents coding session (Open Agents' own session record, not the caller's MCP session) that the caller owns, including its `chats`, `state`, `workspace`, `resumable`, `activity`, and `lastRunOutcome`, without transcripts or diff bodies. `workspace` reports ready only while a sandbox is live right now; hibernated is the normal resting state and is restored automatically on the next message. `resumable` is true for every non-archived session, whatever its `workspace` says, and `activity` is working only while a run is genuinely live. `lastRunOutcome` is a third, distinct axis from `state` (filing) and `activity` (is a run live right now): it reports how the session's most recently recorded run ended — `completed`, `aborted` (user-stopped), `failed` (a genuine crash), or one of four deliberate headless stops (`no_progress_fuse`, `no_sandbox_step_cap`, `max_steps`, `repeated_tool_failure`) — or null when the session has no run yet. A stalled run and a finished run are never the same value. `lastAutoCommitEvent` and `lastAutoPrEvent` report the most recently recorded outcome of this session's auto-commit and auto-PR steps (or null if that step has never run) — `status: \"failed\"` on either means a run finished without its work actually being saved to the branch or a pull request, which `prNumber`/`prStatus` alone would not reveal. `baseBranch` reports the branch a new working `branch` was cut from (null when this session works directly on `branch`, or when no base was recorded) — the sandbox was cloned at it and, when this session auto-creates a PR, that PR targets it.",
     scope: SESSION_READ_SCOPE,
     inputSchema: getSessionInputSchema,
     outputSchema: getSessionOutputSchema,

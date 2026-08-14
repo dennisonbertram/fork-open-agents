@@ -338,6 +338,14 @@ export const sessions = pgTable(
     repoOwner: text("repo_owner"),
     repoName: text("repo_name"),
     branch: text("branch"),
+    // The branch a new working `branch` was cut from (#1251). Only ever set
+    // alongside isNewBranch: true. Nullable, no backfill: null means "no base
+    // recorded" — a session created before this column existed, a session
+    // that works directly on `branch` (isNewBranch: false), or a new-branch
+    // session where the caller didn't name a starting point. Every one of
+    // those falls back to the repository's default branch downstream, same
+    // as before this column existed.
+    baseBranch: text("base_branch"),
     cloneUrl: text("clone_url"),
     vercelProjectId: text("vercel_project_id"),
     vercelProjectName: text("vercel_project_name"),

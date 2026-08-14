@@ -239,6 +239,12 @@ const startSessionInputSchema = z
   .object({
     repoOwner: z.string().min(1),
     repoName: z.string().min(1),
+    // #1251: since a new working branch is the default (see `isNewBranch`
+    // below), `branch` normally means "the branch to start from" — the
+    // sandbox clones it and the auto-created PR targets it — NOT "the
+    // branch to work on". It only means "the branch to work on" when
+    // `isNewBranch: false` is passed explicitly. Omitting `branch` entirely
+    // starts from the repository's own default branch either way.
     branch: z.string().min(1).optional(),
     // MCP-started sessions default to creating a fresh working branch rather
     // than committing directly onto `branch` (#1246). Production evidence: a
@@ -635,7 +641,7 @@ export const sessionWriteTools: readonly AnyMcpToolDefinition[] = [
     name: "open_agents_start_session",
     title: "Start Open Agents Session",
     description:
-      "Open Agents: create a new Open Agents session against a GitHub repo — provisions a fresh cloud sandbox and starts a billed agent run with the given prompt. Not idempotent: every call spins up a new sandbox and a new run, even with identical inputs. Returns immediately, before the sandbox finishes provisioning; poll `open_agents_get_session` until its `workspace` field reports ready before assuming the sandbox is usable. Defaults to working on a freshly created branch rather than `branch` itself, because auto-commit pushing straight onto a protected branch fails silently: pass `isNewBranch: false` only when `branch` is known to accept direct pushes.",
+      "Open Agents: create a new Open Agents session against a GitHub repo — provisions a fresh cloud sandbox and starts a billed agent run with the given prompt. Not idempotent: every call spins up a new sandbox and a new run, even with identical inputs. Returns immediately, before the sandbox finishes provisioning; poll `open_agents_get_session` until its `workspace` field reports ready before assuming the sandbox is usable. Defaults to working on a freshly created branch rather than `branch` itself, because auto-commit pushing straight onto a protected branch fails silently: pass `isNewBranch: false` only when `branch` is known to accept direct pushes. With the default, `branch` means the branch to start FROM — the sandbox is cloned at it and the auto-created PR targets it — not the branch the agent works on; `open_agents_get_session`'s `baseBranch` field confirms what a session actually started from.",
     scope: SESSION_WRITE_SCOPE,
     inputSchema: startSessionInputSchema,
     outputSchema: startSessionOutputSchema,
