@@ -3009,14 +3009,11 @@ async function resolveComposioToolsForRun(params: {
     // fire). Non-fatal: never throws; tools continue without the
     // blocked slugs.
     if (
-      (composioResult.status === "ready" ||
-        composioResult.status === "off") &&
+      (composioResult.status === "ready" || composioResult.status === "off") &&
       composioResult.repoPolicyBlocked &&
       composioResult.repoPolicyBlocked.length > 0
     ) {
-      const blockedSlugs = composioResult.repoPolicyBlocked.map(
-        (b) => b.slug,
-      );
+      const blockedSlugs = composioResult.repoPolicyBlocked.map((b) => b.slug);
       const reasons = Object.fromEntries(
         composioResult.repoPolicyBlocked.map((b) => [b.slug, b.reason]),
       );

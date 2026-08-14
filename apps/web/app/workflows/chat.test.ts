@@ -1038,7 +1038,11 @@ describe("runAgentWorkflow", () => {
     spies.resolveComposioToolsForChat.mockImplementation(async () => ({
       status: "ready" as const,
       tools: { COMPOSIO_SLACK_SEND_MESSAGE: { description: "Send" } },
-      profile: { id: "profile-regress", name: "Slack", toolkitSlugs: ["slack"] },
+      profile: {
+        id: "profile-regress",
+        name: "Slack",
+        toolkitSlugs: ["slack"],
+      },
       composioSessionId: "composio-session-regress",
       configHash: "hash-regress",
       reusedSession: false,
