@@ -1,13 +1,26 @@
 /**
- * No-progress (git-delta) budget for background-agent runs (#914).
+ * No-progress (git-delta) budget. Originally written for background-agent
+ * runs (#914); moved out of `lib/background-agents` and reused unchanged by
+ * headless MCP chat runs (#1231) — this module has no background-agent or
+ * chat-specific knowledge, so it lives in a neutral top-level `lib` location
+ * rather than being owned by (or duplicated for) either feature.
  *
- * Pure, sandbox/DB-free tracker: given a per-turn "fingerprint" of the
- * sandbox's git working tree (see probeGitFingerprint in executor.ts), it
- * counts consecutive turns where the fingerprint did not change and signals
- * when that streak reaches the configured cap. This replaces a fixed total
- * turn count as the *primary* budget — a long-running but genuinely
- * productive run (fingerprint changing every turn) never trips it, while a
- * stalled run (same fingerprint turn after turn) is caught quickly.
+ * Pure, sandbox/DB-free tracker: given an observation's "fingerprint" of the
+ * sandbox's git working tree (see `probeGitFingerprint` in
+ * `lib/sandbox/git-fingerprint.ts`), it counts consecutive observations where
+ * the fingerprint did not change and signals when that streak reaches the
+ * configured cap. This replaces a fixed total step/turn count as the
+ * *primary* budget — a long-running but genuinely productive run (fingerprint
+ * changing every observation) never trips it, while a stalled run (same
+ * fingerprint observation after observation) is caught quickly.
+ *
+ * Callers choose their own observation cadence — see each caller's own
+ * comment for why. Background agents observe once per agent turn (one full
+ * `openAgent.generate()` call, which — because `openAgent` is configured with
+ * `stopWhen: stepCountIs(1)` — is exactly one model step). Headless chat runs
+ * mirror that cadence exactly: `runAgentWorkflow`'s step loop is *also* one
+ * model step per iteration, so "one observation per step" is the same
+ * granularity in both callers, not a coarser or finer sample.
  *
  * `ProgressVerdict` deliberately leaves room for a future `"nudge"` /
  * `"escalate"` state (background-agents-epic Task 3) without a breaking

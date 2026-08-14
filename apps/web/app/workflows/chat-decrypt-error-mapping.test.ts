@@ -66,6 +66,11 @@ const spies = {
   recordGoalLedgerStart: mock(() => Promise.resolve("goal-decrypt-test")),
   recordGoalLedgerEvent: mock(() => Promise.resolve()),
   recordGoalLedgerClose: mock(() => Promise.resolve()),
+  // #1231: unused by this file's tests (none run a headless/unattended
+  // agentOptions), but chat.ts's static import requires the export to exist.
+  hibernateHeadlessSandboxAtTurnEnd: mock(() =>
+    Promise.resolve({ action: "hibernated" as const }),
+  ),
 };
 
 // Control which error getInferenceProfileByIdForUser throws

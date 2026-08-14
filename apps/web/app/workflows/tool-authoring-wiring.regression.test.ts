@@ -366,6 +366,11 @@ mock.module("./chat-post-finish", () => ({
     prNumber: null,
     prUrl: null,
   }),
+  // #1231: unused by this file's tests (none run a headless/unattended
+  // agentOptions), but chat.ts's static import requires the export to exist.
+  hibernateHeadlessSandboxAtTurnEnd: async () => ({
+    action: "hibernated" as const,
+  }),
 }));
 
 mock.module("ai", () => ({
