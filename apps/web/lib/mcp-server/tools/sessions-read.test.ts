@@ -55,6 +55,7 @@ mock.module("@/lib/sandbox/utils", () => ({
 const toolsModulePromise = import("./sessions-read");
 const registryModulePromise = import("../registry");
 const contextModulePromise = import("../context");
+const toolTraceModulePromise = import("../tool-trace");
 
 // Minimal literal matching McpToolContext's shape; avoids importing `any`.
 function makeCtx(overrides: {
@@ -353,6 +354,7 @@ describe("listSessions", () => {
           hasStreaming: true,
           latestChatId: "chat-1",
           lastActivityAt: justNow,
+          label: "auth-refactor-2026-08-14",
         },
       ];
     });
@@ -390,7 +392,43 @@ describe("listSessions", () => {
       lastActivityAt: justNow.toISOString(),
       createdAt: "2026-01-01T00:00:00.000Z",
       url: "https://mcp.test/sessions/session-1",
+      label: "auth-refactor-2026-08-14",
     });
+  });
+
+  test("returns null label (not undefined, not an error) for a session created without one", async () => {
+    const { listSessions } = await toolsModulePromise;
+    getSessionsWithUnreadByUserId.mockImplementation(async () => [
+      {
+        id: "session-1",
+        title: "Fix bug",
+        status: "running",
+        lifecycleState: null,
+        sandboxExpiresAt: null,
+        updatedAt: new Date("2026-01-01T00:00:00Z"),
+        repoOwner: null,
+        repoName: null,
+        branch: null,
+        linesAdded: 0,
+        linesRemoved: 0,
+        prNumber: null,
+        prStatus: null,
+        createdAt: new Date("2026-01-01T00:00:00Z"),
+        hasUnread: false,
+        hasStreaming: false,
+        latestChatId: null,
+        lastActivityAt: new Date("2026-01-01T00:00:00Z"),
+        label: null,
+      },
+    ]);
+
+    const result = await listSessions(makeCtx({}), {
+      status: "all",
+      limit: 20,
+      offset: 0,
+    });
+
+    expect(result.sessions[0]?.label).toBeNull();
   });
 
   test("does not report a workspace as ready once its sandbox expiry has passed", async () => {
@@ -788,6 +826,311 @@ describe("listSessions", () => {
   });
 });
 
+describe("listSessions label filter", () => {
+  test("forwards the label filter into the page query", async () => {
+    const { listSessions } = await toolsModulePromise;
+
+    await listSessions(makeCtx({}), {
+      status: "all",
+      limit: 20,
+      offset: 0,
+      label: "auth-refactor-2026-08-14",
+    });
+
+    expect(getSessionsWithUnreadByUserId).toHaveBeenCalledWith("user-1", {
+      status: "all",
+      limit: 20,
+      offset: 0,
+      label: "auth-refactor-2026-08-14",
+      sort: "created_desc",
+    });
+  });
+
+  test("returns exactly the batch sharing a label, with a total scoped to that same filter", async () => {
+    const { listSessions } = await toolsModulePromise;
+    getSessionsWithUnreadByUserId.mockImplementation(async () => [
+      {
+        id: "session-1",
+        title: "Fix bug",
+        status: "running",
+        lifecycleState: null,
+        sandboxExpiresAt: null,
+        updatedAt: new Date("2026-01-01T00:00:00Z"),
+        repoOwner: null,
+        repoName: null,
+        branch: null,
+        linesAdded: 0,
+        linesRemoved: 0,
+        prNumber: null,
+        prStatus: null,
+        createdAt: new Date("2026-01-01T00:00:00Z"),
+        hasUnread: false,
+        hasStreaming: false,
+        latestChatId: null,
+        lastActivityAt: new Date("2026-01-01T00:00:00Z"),
+        label: "auth-refactor-2026-08-14",
+        // The batch has 5 members; this filtered query's own window total —
+        // NOT the account-wide 94 — is what a client should see.
+        totalCount: 5,
+      },
+    ]);
+
+    const result = await listSessions(makeCtx({}), {
+      status: "all",
+      limit: 20,
+      offset: 0,
+      label: "auth-refactor-2026-08-14",
+    });
+
+    expect(result.total).toBe(5);
+    expect(result.sessions).toHaveLength(1);
+    expect(result.sessions[0]?.label).toBe("auth-refactor-2026-08-14");
+  });
+
+  test("falls back to a label-scoped count query when the filtered page is empty", async () => {
+    const { listSessions } = await toolsModulePromise;
+    countSessionsByUserId.mockImplementation(async () => 0);
+
+    const result = await listSessions(makeCtx({}), {
+      status: "all",
+      limit: 20,
+      offset: 0,
+      label: "nonexistent-label",
+    });
+
+    expect(result.total).toBe(0);
+    expect(countSessionsByUserId).toHaveBeenCalledWith("user-1", {
+      status: "all",
+      label: "nonexistent-label",
+    });
+  });
+
+  test("omitting label filters nothing and does not pass a label key to the page query", async () => {
+    const { listSessions } = await toolsModulePromise;
+
+    await listSessions(makeCtx({}), {
+      status: "all",
+      limit: 20,
+      offset: 0,
+    });
+
+    expect(getSessionsWithUnreadByUserId).toHaveBeenCalledWith("user-1", {
+      status: "all",
+      limit: 20,
+      offset: 0,
+      sort: "created_desc",
+    });
+  });
+
+  test("regression: a non-empty filtered page never triggers a second count query — label reuses #1184's single-query total", async () => {
+    // #1184 established that `total` must come from the page query's own
+    // COUNT(*) OVER() rather than a second COUNT — two separate queries can
+    // observe two different snapshots, and a client stopping at
+    // offset + returned >= total then silently skips a row inserted between
+    // them. That guarantee is only as good as every filter staying inside
+    // the one query. A future edit that special-cases the label filter into
+    // its own COUNT (easy to reach for, since `label` is new) would
+    // reintroduce exactly the bug #1184 fixed, just for filtered callers
+    // instead of all of them — and every other label test here mocks
+    // `countSessionsByUserId` to return a harmless value, so none of them
+    // would catch it. This is the one that does: it fails loudly if the
+    // count function is called at all on a non-empty labeled page.
+    const { listSessions } = await toolsModulePromise;
+    getSessionsWithUnreadByUserId.mockImplementation(async () => [
+      {
+        id: "session-1",
+        title: "Fix bug",
+        status: "running",
+        lifecycleState: null,
+        sandboxExpiresAt: null,
+        updatedAt: new Date("2026-01-01T00:00:00Z"),
+        repoOwner: null,
+        repoName: null,
+        branch: null,
+        linesAdded: 0,
+        linesRemoved: 0,
+        prNumber: null,
+        prStatus: null,
+        createdAt: new Date("2026-01-01T00:00:00Z"),
+        hasUnread: false,
+        hasStreaming: false,
+        latestChatId: null,
+        lastActivityAt: new Date("2026-01-01T00:00:00Z"),
+        label: "auth-refactor-2026-08-14",
+        totalCount: 5,
+      },
+    ]);
+
+    const result = await listSessions(makeCtx({}), {
+      status: "all",
+      limit: 20,
+      offset: 0,
+      label: "auth-refactor-2026-08-14",
+    });
+
+    expect(result.total).toBe(5);
+    expect(countSessionsByUserId).not.toHaveBeenCalled();
+  });
+});
+
+describe("listSessions sort", () => {
+  test("defaults to created_desc — existing callers see unchanged behavior", async () => {
+    const { listSessions } = await toolsModulePromise;
+
+    await listSessions(makeCtx({}), { status: "all", limit: 20, offset: 0 });
+
+    expect(getSessionsWithUnreadByUserId).toHaveBeenCalledWith("user-1", {
+      status: "all",
+      limit: 20,
+      offset: 0,
+      sort: "created_desc",
+    });
+  });
+
+  test.each([
+    ["created_desc"],
+    ["created_asc"],
+    ["activity_desc"],
+    ["activity_asc"],
+  ])("forwards an explicit sort=%s into the page query", async (sort) => {
+    const { listSessions } = await toolsModulePromise;
+
+    await listSessions(makeCtx({}), {
+      status: "all",
+      limit: 20,
+      offset: 0,
+      sort: sort as "created_desc",
+    });
+
+    expect(getSessionsWithUnreadByUserId).toHaveBeenCalledWith("user-1", {
+      status: "all",
+      limit: 20,
+      offset: 0,
+      sort,
+    });
+  });
+
+  test("rejects an unsupported sort value as invalid_request via the schema", async () => {
+    const { runMcpTool } = await registryModulePromise;
+    const { McpToolError } = await contextModulePromise;
+
+    const promise = runMcpTool("open_agents_list_sessions", makeCtx({}), {
+      status: "all",
+      sort: "alphabetical",
+    });
+
+    await expect(promise).rejects.toBeInstanceOf(McpToolError);
+    await expect(promise).rejects.toMatchObject({
+      errorKind: "invalid_request",
+    });
+    expect(getSessionsWithUnreadByUserId).not.toHaveBeenCalled();
+  });
+
+  test("a full paged walk under every sort collects every row exactly once", async () => {
+    // A minimal fake page query standing in for the real SQL: it filters,
+    // sorts (deterministically, tiebroken by id — the same guarantee
+    // `buildSessionsOrderBy` provides for real), and paginates an in-memory
+    // fixture that deliberately gives several rows an IDENTICAL createdAt and
+    // lastActivityAt — the exact fan-out shape (several sessions started in
+    // one burst) that makes an undertiebroken sort skip or repeat rows across
+    // separate LIMIT/OFFSET pages.
+    const { listSessions } = await toolsModulePromise;
+    const tiedTimestamp = new Date("2026-08-14T00:00:00Z");
+    const fixture = Array.from({ length: 11 }, (_, i) => ({
+      id: `session-${i}`,
+      title: `Session ${i}`,
+      status: "running",
+      lifecycleState: null,
+      sandboxExpiresAt: null,
+      updatedAt: tiedTimestamp,
+      repoOwner: null,
+      repoName: null,
+      branch: null,
+      linesAdded: 0,
+      linesRemoved: 0,
+      prNumber: null,
+      prStatus: null,
+      createdAt: tiedTimestamp,
+      hasUnread: false,
+      hasStreaming: false,
+      latestChatId: null,
+      lastActivityAt: tiedTimestamp,
+      label: "batch",
+    }));
+
+    const sortedIdsAsc = [...fixture]
+      .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+      .map((row) => row.id);
+    // Every tied row shares createdAt/lastActivityAt, so — same as the real
+    // SQL — the only thing that can distinguish "created_desc" from
+    // "activity_desc" here is that each is independently tiebroken by id.
+    // Keying strictly off the `sort` value the mock actually receives (not a
+    // value captured from the outer loop) is what makes this test fail if
+    // `listSessions` ever stops forwarding `sort` to the page query.
+    const ordersBySort: Record<string, string[]> = {
+      created_desc: [...sortedIdsAsc].toReversed(),
+      created_asc: sortedIdsAsc,
+      activity_desc: [...sortedIdsAsc].toReversed(),
+      activity_asc: sortedIdsAsc,
+    };
+
+    getSessionsWithUnreadByUserId.mockImplementation(
+      async (_userId, options) => {
+        const opts = options as {
+          limit: number;
+          offset: number;
+          sort?: string;
+        };
+        const orderedIds = ordersBySort[opts.sort ?? ""];
+        if (!orderedIds) {
+          // sort was not forwarded (or forwarded as something unsupported):
+          // the real query has nothing to sort by, so report an empty page
+          // rather than guessing — the walk below then collects 0 rows.
+          return [];
+        }
+        const page = orderedIds
+          .slice(opts.offset, opts.offset + opts.limit)
+          .map((id) => fixture.find((row) => row.id === id));
+        return page.map((row) => ({
+          ...(row as (typeof fixture)[number]),
+          totalCount: fixture.length,
+        }));
+      },
+    );
+
+    for (const sort of [
+      "created_desc",
+      "created_asc",
+      "activity_desc",
+      "activity_asc",
+    ] as const) {
+      const orderedIds = ordersBySort[sort] as string[];
+      const pageSize = 3;
+      const collected: string[] = [];
+      let offset = 0;
+      let total = Number.POSITIVE_INFINITY;
+      while (offset < total) {
+        const page = await listSessions(makeCtx({}), {
+          status: "all",
+          limit: pageSize,
+          offset,
+          sort,
+        });
+        total = page.total;
+        collected.push(...page.sessions.map((s) => s.id));
+        offset += page.returned;
+        if (page.returned === 0) {
+          break;
+        }
+      }
+
+      expect(collected).toHaveLength(fixture.length);
+      expect(new Set(collected).size).toBe(fixture.length);
+      expect(collected).toEqual(orderedIds);
+    }
+  });
+});
+
 describe("getSession ownership", () => {
   test("a missing session and a session owned by a different user produce byte-identical not_found errors", async () => {
     const { getSession } = await toolsModulePromise;
@@ -970,14 +1313,14 @@ describe("getMessages", () => {
     expect(result.chatId).toBe("chat-most-recent");
   });
 
-  test("truncates each preview to MESSAGE_PREVIEW_CHARS and flags tool calls", async () => {
-    const { getMessages, MESSAGE_PREVIEW_CHARS } = await toolsModulePromise;
+  test("returns each message's full text (no 280-char preview cap) and flags tool calls", async () => {
+    const { getMessages } = await toolsModulePromise;
     seedSession(buildSessionRow());
     getChatById.mockImplementation(async () => ({
       id: "chat-1",
       sessionId: "session-1",
     }));
-    const longText = "x".repeat(MESSAGE_PREVIEW_CHARS + 50);
+    const longText = "x".repeat(330);
     seedMessages([
       {
         id: "m1",
@@ -1009,10 +1352,11 @@ describe("getMessages", () => {
     });
 
     const [first, second] = result.messages;
-    expect(first?.preview.length).toBe(MESSAGE_PREVIEW_CHARS);
-    expect(first?.preview.endsWith("…")).toBe(true);
+    expect(first?.text).toBe(longText);
+    expect(first?.chars).toBe(330);
+    expect(first?.capped).toBe(false);
     expect(first?.hasToolCalls).toBe(false);
-    expect(second?.preview).toBe("short reply");
+    expect(second?.text).toBe("short reply");
     expect(second?.hasToolCalls).toBe(true);
   });
 
@@ -1096,6 +1440,269 @@ describe("getMessages", () => {
     expect((caught as InstanceType<typeof McpToolError>).errorKind).toBe(
       "not_found",
     );
+  });
+});
+
+// --- #1232: get_messages must return full text, an opt-in tool trace, and a
+// truthfully-reported response budget instead of a 280-char preview that
+// silently dropped every tool call. ---
+describe("getMessages full text and tool trace (#1232)", () => {
+  test("returns a message's full text even past the old 280-char preview cap", async () => {
+    const { getMessages } = await toolsModulePromise;
+    seedSession(buildSessionRow());
+    getChatById.mockImplementation(async () => ({
+      id: "chat-1",
+      sessionId: "session-1",
+    }));
+    const longText = "y".repeat(5000);
+    seedMessages([
+      {
+        id: "m1",
+        role: "assistant",
+        createdAt: new Date("2026-01-01T00:00:00Z"),
+        parts: [{ type: "text", text: longText }],
+      },
+    ]);
+
+    const result = await getMessages(makeCtx({}), {
+      sessionId: "session-1",
+      chatId: "chat-1",
+      limit: 20,
+    });
+
+    expect(result.messages[0]?.text).toBe(longText);
+    expect(result.messages[0]?.chars).toBe(5000);
+    expect(result.messages[0]?.capped).toBe(false);
+  });
+
+  test("caps text at messageCharLimit and flags it capped, while chars still reports the true length", async () => {
+    const { getMessages } = await toolsModulePromise;
+    seedSession(buildSessionRow());
+    getChatById.mockImplementation(async () => ({
+      id: "chat-1",
+      sessionId: "session-1",
+    }));
+    const text = "z".repeat(500);
+    seedMessages([
+      {
+        id: "m1",
+        role: "assistant",
+        createdAt: new Date("2026-01-01T00:00:00Z"),
+        parts: [{ type: "text", text }],
+      },
+    ]);
+
+    const result = await getMessages(makeCtx({}), {
+      sessionId: "session-1",
+      chatId: "chat-1",
+      limit: 20,
+      messageCharLimit: 200,
+    });
+
+    expect(result.messages[0]?.text).toBe(text.slice(0, 200));
+    expect(result.messages[0]?.text.length).toBe(200);
+    expect(result.messages[0]?.capped).toBe(true);
+    expect(result.messages[0]?.chars).toBe(500);
+  });
+
+  test("does not cap text when messageCharLimit is omitted", async () => {
+    const { getMessages } = await toolsModulePromise;
+    seedSession(buildSessionRow());
+    getChatById.mockImplementation(async () => ({
+      id: "chat-1",
+      sessionId: "session-1",
+    }));
+    seedMessages([
+      {
+        id: "m1",
+        role: "user",
+        createdAt: new Date("2026-01-01T00:00:00Z"),
+        parts: [{ type: "text", text: "hello there" }],
+      },
+    ]);
+
+    const result = await getMessages(makeCtx({}), {
+      sessionId: "session-1",
+      chatId: "chat-1",
+      limit: 20,
+    });
+
+    expect(result.messages[0]?.capped).toBe(false);
+    expect(result.messages[0]?.text).toBe("hello there");
+  });
+
+  test("returns an ordered, bounded tool trace only when includeToolTrace is true", async () => {
+    const { getMessages } = await toolsModulePromise;
+    const { TOOL_TRACE_FIELD_CHARS } = await toolTraceModulePromise;
+    seedSession(buildSessionRow());
+    getChatById.mockImplementation(async () => ({
+      id: "chat-1",
+      sessionId: "session-1",
+    }));
+    const bigOutput = { stdout: "x".repeat(TOOL_TRACE_FIELD_CHARS + 500) };
+    seedMessages([
+      {
+        id: "m1",
+        role: "assistant",
+        createdAt: new Date("2026-01-01T00:00:00Z"),
+        parts: [
+          { type: "text", text: "ran a command" },
+          {
+            type: "tool-bash",
+            toolCallId: "call-1",
+            state: "output-available",
+            input: { command: "ls" },
+            output: bigOutput,
+          },
+        ],
+      },
+    ]);
+
+    const withoutTrace = await getMessages(makeCtx({}), {
+      sessionId: "session-1",
+      chatId: "chat-1",
+      limit: 20,
+    });
+    expect(withoutTrace.messages[0]?.toolTrace).toBeUndefined();
+    expect(withoutTrace.messages[0]?.hasToolCalls).toBe(true);
+
+    const withTrace = await getMessages(makeCtx({}), {
+      sessionId: "session-1",
+      chatId: "chat-1",
+      limit: 20,
+      includeToolTrace: true,
+    });
+    const trace = withTrace.messages[0]?.toolTrace;
+    expect(trace).toHaveLength(1);
+    expect(trace?.[0]?.toolCallId).toBe("call-1");
+    expect(trace?.[0]?.name).toBe("bash");
+    expect(trace?.[0]?.state).toBe("output-available");
+    expect(trace?.[0]?.input).toBe(JSON.stringify({ command: "ls" }));
+    expect(trace?.[0]?.inputTruncated).toBe(false);
+    // The raw output is bigger than the per-field bound, so it must be cut
+    // AND flagged — never a silent shortening.
+    expect(trace?.[0]?.output.length ?? 0).toBe(TOOL_TRACE_FIELD_CHARS);
+    expect(trace?.[0]?.outputTruncated).toBe(true);
+  });
+
+  test("a response exceeding the character budget truthfully reports truncated and omitted, dropping nothing silently", async () => {
+    const { getMessages, RESPONSE_CHAR_BUDGET } = await toolsModulePromise;
+    seedSession(buildSessionRow());
+    getChatById.mockImplementation(async () => ({
+      id: "chat-1",
+      sessionId: "session-1",
+    }));
+    // Five messages whose combined text comfortably exceeds the budget, so
+    // the oldest ones cannot all survive intact.
+    const perMessageChars = Math.ceil(RESPONSE_CHAR_BUDGET / 2);
+    const rows = Array.from({ length: 5 }, (_, i) => ({
+      id: `m${i}`,
+      role: "assistant" as const,
+      createdAt: new Date(`2026-01-01T00:0${i}:00Z`),
+      parts: [{ type: "text", text: "a".repeat(perMessageChars) }],
+    }));
+    seedMessages(rows);
+
+    const result = await getMessages(makeCtx({}), {
+      sessionId: "session-1",
+      chatId: "chat-1",
+      limit: 5,
+    });
+
+    // Nothing was silently dropped: every row not fully present in
+    // `messages` is accounted for in `truncated` or `omitted`.
+    const returnedIds = new Set(result.messages.map((m) => m.id));
+    const accountedIds = new Set([...result.truncated, ...result.omitted]);
+    for (const row of rows) {
+      const fullyPresent = returnedIds.has(row.id) && !accountedIds.has(row.id);
+      const shortened = accountedIds.has(row.id);
+      expect(fullyPresent || shortened).toBe(true);
+    }
+    expect(result.omitted.length + result.truncated.length).toBeGreaterThan(0);
+    // Nothing reported as omitted also appears in the returned messages.
+    for (const id of result.omitted) {
+      expect(returnedIds.has(id)).toBe(false);
+    }
+    // The newest message survives — the whole point of a headless check-in.
+    expect(returnedIds.has("m4")).toBe(true);
+  });
+
+  test("does not trip the response budget for an ordinary small window", async () => {
+    const { getMessages } = await toolsModulePromise;
+    seedSession(buildSessionRow());
+    getChatById.mockImplementation(async () => ({
+      id: "chat-1",
+      sessionId: "session-1",
+    }));
+    seedMessages([
+      {
+        id: "m1",
+        role: "user",
+        createdAt: new Date("2026-01-01T00:00:00Z"),
+        parts: [{ type: "text", text: "hi" }],
+      },
+      {
+        id: "m2",
+        role: "assistant",
+        createdAt: new Date("2026-01-01T00:01:00Z"),
+        parts: [{ type: "text", text: "hello" }],
+      },
+    ]);
+
+    const result = await getMessages(makeCtx({}), {
+      sessionId: "session-1",
+      chatId: "chat-1",
+      limit: 20,
+    });
+
+    expect(result.truncated).toEqual([]);
+    expect(result.omitted).toEqual([]);
+    expect(result.messages).toHaveLength(2);
+  });
+
+  test("messages with malformed or non-array parts return without throwing", async () => {
+    const { getMessages } = await toolsModulePromise;
+    seedSession(buildSessionRow());
+    getChatById.mockImplementation(async () => ({
+      id: "chat-1",
+      sessionId: "session-1",
+    }));
+    seedMessages([
+      {
+        id: "m1",
+        role: "user",
+        createdAt: new Date("2026-01-01T00:00:00Z"),
+        parts: "not an array or an object with .parts",
+      },
+      {
+        id: "m2",
+        role: "assistant",
+        createdAt: new Date("2026-01-01T00:01:00Z"),
+        parts: null,
+      },
+      {
+        id: "m3",
+        role: "assistant",
+        createdAt: new Date("2026-01-01T00:02:00Z"),
+        parts: { foo: "bar" },
+      },
+    ]);
+
+    const result = await getMessages(makeCtx({}), {
+      sessionId: "session-1",
+      chatId: "chat-1",
+      limit: 20,
+      includeToolTrace: true,
+    });
+
+    expect(result.messages).toHaveLength(3);
+    for (const message of result.messages) {
+      expect(message.text).toBe("");
+      expect(message.chars).toBe(0);
+      expect(message.capped).toBe(false);
+      expect(message.hasToolCalls).toBe(false);
+      expect(message.toolTrace).toEqual([]);
+    }
   });
 });
 

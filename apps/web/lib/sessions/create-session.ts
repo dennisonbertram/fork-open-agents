@@ -16,6 +16,11 @@ export interface CreateSessionCoreInput {
   username: string;
   name?: string;
   title?: string;
+  // Free-text tag the calling agent supplies to group a fan-out batch of
+  // sessions. Not a state, not a status, carries no behavior — persisted
+  // as-is and returned by the read tools. Omitted/undefined persists as
+  // null; every existing caller keeps working unchanged.
+  label?: string;
   repoOwner?: string;
   repoName?: string;
   branch?: string;
@@ -161,6 +166,7 @@ export async function createSessionCore(
       id: nanoid(),
       userId: input.userId,
       title,
+      label: input.label ?? null,
       status: "running",
       repoOwner: input.repoOwner,
       repoName: input.repoName,

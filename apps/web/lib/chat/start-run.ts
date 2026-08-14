@@ -1,3 +1,4 @@
+import type { OpenAgentCallOptions } from "@open-agents/agent";
 import { start } from "workflow/api";
 import type { WebAgentUIMessage } from "@/app/types";
 import { runAgentWorkflow } from "@/app/workflows/chat";
@@ -27,6 +28,10 @@ export type StartChatRunInput = {
   requestId?: string;
   authSession: unknown;
   maxSteps?: number;
+  // Per-run agent-call overrides (e.g. the MCP write tools' headless
+  // unattended/allowlist/instructions — see lib/mcp-server/headless-run-options.ts).
+  // Undefined = today's behavior; the browser chat route never sets this.
+  agentOptions?: Omit<OpenAgentCallOptions, "sandbox" | "skills">;
   // Set by a caller (the chat route) that already called
   // `reconcileChatRunSlot` for this request and confirmed the slot is
   // "ready" — skips a redundant reconcile here. MCP tool callers, which
@@ -228,6 +233,16 @@ export async function startChatRun(
 
   await persistLatestUserMessage(input.chatId, input.messages);
 
+  // #1231: the 500 default is dropped ONLY for headless (unattended) callers
+  // — they are bounded by the progress-based fuse in chat.ts instead. Every
+  // other caller, present or future, still gets the safety net: an unfused
+  // unbounded run is the worst failure mode in the workflow. Today the only
+  // two callers are the browser chat route (always passes 500 explicitly,
+  // unaffected either way) and the MCP write tools (always pass
+  // agentOptions.unattended: true, so this evaluates to undefined for them,
+  // unchanged from before this comment).
+  const isHeadlessCaller = input.agentOptions?.unattended === true;
+
   const run = await start(runAgentWorkflow, [
     {
       messages: input.messages,
@@ -243,7 +258,11 @@ export async function startChatRun(
       authSession: input.authSession as Parameters<
         typeof runAgentWorkflow
       >[0]["authSession"],
-      maxSteps: input.maxSteps ?? 500,
+      maxSteps: input.maxSteps ?? (isHeadlessCaller ? undefined : 500),
+      // Only present when a caller (currently: the MCP write tools) sets it —
+      // omitted entirely, not `agentOptions: undefined`, so the browser chat
+      // route's payload shape is byte-identical to before #1230.
+      ...(input.agentOptions ? { agentOptions: input.agentOptions } : {}),
     },
   ]);
 

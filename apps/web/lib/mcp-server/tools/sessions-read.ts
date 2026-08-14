@@ -9,6 +9,14 @@ import {
   getSessionDiffById,
   getSessionMetadataById,
   getSessionsWithUnreadByUserId,
+  // Type-only: db/sessions.ts is mocked wholesale in every test that loads
+  // this module (transitively via registry.ts), so pulling in a runtime
+  // value this module doesn't otherwise use would require every one of
+  // those mocks to also export it, or module evaluation throws before any
+  // test in this file runs. `SESSION_SORTS` (the runtime array) is
+  // deliberately re-declared locally below instead of imported for the same
+  // reason.
+  type SessionsSort,
 } from "@/lib/db/sessions";
 import {
   buildChatUrl,
@@ -27,6 +35,11 @@ import {
   toWorkspaceState,
 } from "../session-state";
 import { toIsoString } from "../timestamps";
+import {
+  buildToolTrace,
+  type McpToolTraceEntry,
+  type RawMessagePart,
+} from "../tool-trace";
 // Type-only: registry.ts imports the VALUE `sessionReadTools` from this
 // module, so a runtime import back (e.g. `defineMcpTool`) would create an
 // ESM circular value dependency that throws a TDZ ReferenceError whenever
@@ -49,7 +62,17 @@ export const DEFAULT_SESSION_LIMIT = 20;
 export const MAX_SESSION_LIMIT = 50;
 export const DEFAULT_MESSAGE_LIMIT = 20;
 export const MAX_MESSAGE_LIMIT = 50;
-export const MESSAGE_PREVIEW_CHARS = 280;
+// Ceiling on the optional per-message cap a client can request for a cheap
+// scan — bounds the input, not a default; full text is returned unless a
+// caller asks for less.
+export const MAX_MESSAGE_CHAR_LIMIT = 20_000;
+// Response-level character budget for get_messages. A 20-message window
+// measured at roughly 30k characters in production; this leaves headroom for
+// full text plus opt-in tool traces while still bounding the worst case (raw
+// `parts` JSON has reached 464,565 characters for a single message).
+// ponytail: a flat char budget, not a real token/byte accounting — revisit if
+// it starts tripping on ordinary windows in practice.
+export const RESPONSE_CHAR_BUDGET = 200_000;
 export const MAX_DIFF_FILES = 100;
 
 const SESSION_READ_SCOPE: McpScope = "sessions:read";
@@ -76,6 +99,10 @@ type ToolCallerContext = {
 export type McpSessionSummary = {
   id: string;
   title: string;
+  /** Free-text tag the calling agent supplied at creation to group a
+   * fan-out batch of sessions. Null when the session has none — not a
+   * state, not a status, carries no behavior. */
+  label: string | null;
   state: McpSessionState;
   workspace: McpWorkspaceState;
   resumable: boolean;
@@ -131,8 +158,17 @@ export type McpMessageSummary = {
   id: string;
   role: "user" | "assistant";
   createdAt: string;
-  preview: string;
+  /** Full message text — never cut except by an explicit `messageCharLimit`
+   * or the response-level budget, both of which set `capped` / `truncated`. */
+  text: string;
+  /** The true length of `text` before any capping, so a capped caller still
+   * knows how much was left out. */
+  chars: number;
+  /** True when `text` was cut short by the caller's own `messageCharLimit`. */
+  capped: boolean;
   hasToolCalls: boolean;
+  /** Present only when the caller passed `includeToolTrace: true`. */
+  toolTrace?: McpToolTraceEntry[];
 };
 
 export type McpDiffFileSummary = {
@@ -148,9 +184,28 @@ export type WhoamiResult = {
   requestId: string;
 };
 
+// Kept in sync with `SESSION_SORTS` (lib/db/sessions.ts) by hand rather than
+// imported — see the `SessionsSort` type-only import above for why a runtime
+// import here would break every test that mocks `@/lib/db/sessions`.
+// `satisfies` still catches drift: this fails to typecheck the moment the two
+// diverge.
+const SESSION_SORTS = [
+  "created_desc",
+  "created_asc",
+  "activity_desc",
+  "activity_asc",
+] as const satisfies readonly SessionsSort[];
+
 const listSessionsInputSchema = z
   .object({
     status: z.enum(["all", "active", "archived"]).default("active"),
+    // Exact match against the free-text label set at creation. Omitting it
+    // returns every session matching `status`, same as before this filter
+    // existed.
+    label: z.string().min(1).optional(),
+    // Defaults to created_desc — the fixed ordering every existing caller
+    // already saw, so omitting `sort` changes nothing.
+    sort: z.enum(SESSION_SORTS).default("created_desc"),
     limit: z
       .number()
       .int()
@@ -161,7 +216,18 @@ const listSessionsInputSchema = z
   })
   .strict();
 
-export type ListSessionsInput = z.infer<typeof listSessionsInputSchema>;
+// `sort` carries a zod `.default()`, so the schema's own parsed-output type
+// (what `z.infer` gives) makes it required — accurate for the real
+// runMcpTool path, which always parses through the schema first. Handlers
+// are also called directly in tests, bypassing that parse, so `sort` is
+// re-declared optional here; `listSessions` defaults it itself for that
+// case (see the comment at its call site).
+export type ListSessionsInput = Omit<
+  z.infer<typeof listSessionsInputSchema>,
+  "sort"
+> & {
+  sort?: SessionsSort;
+};
 
 export type ListSessionsResult = {
   sessions: McpSessionSummary[];
@@ -191,6 +257,18 @@ const getMessagesInputSchema = z
       .min(1)
       .max(MAX_MESSAGE_LIMIT)
       .default(DEFAULT_MESSAGE_LIMIT),
+    // Optional, no default: omitting it returns full text. When set, each
+    // message's `text` is cut to this many characters and flagged `capped`;
+    // `chars` still reports the true length.
+    messageCharLimit: z
+      .number()
+      .int()
+      .min(1)
+      .max(MAX_MESSAGE_CHAR_LIMIT)
+      .optional(),
+    // Optional, no default: the trace is opt-in because a tool-heavy window
+    // costs materially more of the response budget.
+    includeToolTrace: z.boolean().optional(),
   })
   .strict();
 
@@ -203,6 +281,12 @@ export type GetMessagesResult = {
   total: number;
   returned: number;
   messages: McpMessageSummary[];
+  /** Ids of messages whose `text` was cut further by the response budget
+   * (on top of any `messageCharLimit` capping already applied). */
+  truncated: string[];
+  /** Ids of messages dropped entirely from `messages` by the response
+   * budget. Never silent — a client can tell exactly what it did not get. */
+  omitted: string[];
 };
 
 const getDiffSummaryInputSchema = z
@@ -254,6 +338,7 @@ function toSessionSummary(row: SessionWithUnreadRow): McpSessionSummary {
   return {
     id: row.id,
     title: row.title,
+    label: row.label ?? null,
     state,
     workspace: toWorkspaceState({
       lifecycleState: row.lifecycleState,
@@ -325,8 +410,6 @@ async function requireOwnedSessionDiff(
 
 // A message's `parts` jsonb column holds either the parts array directly, or
 // the whole persisted UIMessage object with an array at `.parts`.
-type RawMessagePart = { type?: unknown; text?: unknown };
-
 function extractMessageParts(raw: unknown): RawMessagePart[] {
   if (Array.isArray(raw)) {
     return raw as RawMessagePart[];
@@ -341,8 +424,8 @@ function extractMessageParts(raw: unknown): RawMessagePart[] {
   return [];
 }
 
-function buildMessagePreview(parts: RawMessagePart[]): string {
-  const text = parts
+function buildMessageText(parts: RawMessagePart[]): string {
+  return parts
     .filter(
       (part): part is { type: "text"; text: string } =>
         !!part &&
@@ -354,28 +437,138 @@ function buildMessagePreview(parts: RawMessagePart[]): string {
     .join(" ")
     .replace(/\s+/g, " ")
     .trim();
-
-  if (text.length <= MESSAGE_PREVIEW_CHARS) {
-    return text;
-  }
-  return `${text.slice(0, MESSAGE_PREVIEW_CHARS - 1)}…`;
 }
 
 function hasToolCallParts(parts: RawMessagePart[]): boolean {
   return parts.some(
-    (part) => typeof part?.type === "string" && part.type.startsWith("tool-"),
+    (part) =>
+      typeof part?.type === "string" &&
+      (part.type.startsWith("tool-") || part.type === "dynamic-tool"),
   );
 }
 
-function toMessageSummary(row: ChatMessageRow): McpMessageSummary {
+function toMessageSummary(
+  row: ChatMessageRow,
+  options: { messageCharLimit?: number; includeToolTrace: boolean },
+): McpMessageSummary {
   const parts = extractMessageParts(row.parts);
-  return {
+  const fullText = buildMessageText(parts);
+  const chars = fullText.length;
+  const capped =
+    options.messageCharLimit !== undefined && chars > options.messageCharLimit;
+  const text = capped ? fullText.slice(0, options.messageCharLimit) : fullText;
+
+  const summary: McpMessageSummary = {
     id: row.id,
     role: row.role,
     createdAt: toIsoString(row.createdAt) ?? "",
-    preview: buildMessagePreview(parts),
+    text,
+    chars,
+    capped,
     hasToolCalls: hasToolCallParts(parts),
   };
+  if (options.includeToolTrace) {
+    summary.toolTrace = buildToolTrace(parts);
+  }
+  return summary;
+}
+
+// Rough per-message JSON envelope cost (id/role/timestamp/braces) counted
+// against the response budget alongside text and tool-trace chars.
+// ponytail: an approximation, not exact byte accounting.
+const MESSAGE_OVERHEAD_CHARS = 100;
+
+function toolTraceCost(trace: McpToolTraceEntry[] | undefined): number {
+  if (!trace) {
+    return 0;
+  }
+  return trace.reduce(
+    (sum, entry) => sum + entry.input.length + entry.output.length,
+    0,
+  );
+}
+
+function messageCost(message: McpMessageSummary): number {
+  return (
+    message.text.length +
+    toolTraceCost(message.toolTrace) +
+    MESSAGE_OVERHEAD_CHARS
+  );
+}
+
+/**
+ * Fit `messages` (oldest-to-newest) inside RESPONSE_CHAR_BUDGET, preferring
+ * the newest messages intact since a headless check-in cares most about what
+ * just happened. Anything that does not fit is reported, never silently cut:
+ * a message that partially fits has its `text` shortened and its id added to
+ * `truncated`; a message with no room at all is dropped and its id added to
+ * `omitted`.
+ */
+function applyResponseBudget(messages: McpMessageSummary[]): {
+  messages: McpMessageSummary[];
+  truncated: string[];
+  omitted: string[];
+} {
+  let remaining = RESPONSE_CHAR_BUDGET;
+  const kept: McpMessageSummary[] = [];
+  const truncated: string[] = [];
+  const omitted: string[] = [];
+
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i];
+    if (!message) {
+      continue;
+    }
+    const cost = messageCost(message);
+    if (cost <= remaining) {
+      kept.unshift(message);
+      remaining -= cost;
+      continue;
+    }
+
+    const overhead = MESSAGE_OVERHEAD_CHARS + toolTraceCost(message.toolTrace);
+    const textBudget = remaining - overhead;
+    if (textBudget > 0) {
+      kept.unshift({ ...message, text: message.text.slice(0, textBudget) });
+      truncated.push(message.id);
+    } else {
+      omitted.push(message.id);
+    }
+    remaining = 0;
+    for (let j = i - 1; j >= 0; j--) {
+      const older = messages[j];
+      if (older) {
+        omitted.push(older.id);
+      }
+    }
+    break;
+  }
+
+  omitted.reverse();
+  return { messages: kept, truncated, omitted };
+}
+
+function logMessagesRead(fields: {
+  requestId: string;
+  userId: string;
+  sessionId: string;
+  chatId: string;
+  returned: number;
+  total: number;
+  chars: number;
+  omitted: number;
+  truncated: number;
+}): void {
+  // Never log message text, tool inputs, or tool outputs — only counts and
+  // ids-worth of shape, none of which carries repository content.
+  console.info(
+    "[mcp-server] mcp.messages.read",
+    JSON.stringify({
+      service: "mcp-server",
+      event: "mcp.messages.read",
+      ...fields,
+    }),
+  );
 }
 
 // Cached diff (sessions.cachedDiff) is untyped jsonb — narrow defensively
@@ -441,14 +634,48 @@ export function whoami(
   });
 }
 
+/**
+ * Observability: lets an operator tell whether a client is paging a filtered
+ * or unfiltered list via
+ * `grep '"event":"mcp.sessions.listed"' logs | grep '"userId":"<id>"'`.
+ * `label` is deliberately a presence boolean, never the filter's own value —
+ * it is user-supplied free text, so it is content, not an id or a count.
+ */
+function logSessionsListed(fields: {
+  requestId: string;
+  userId: string;
+  label: boolean;
+  sort: SessionsSort;
+  returned: number;
+  total: number;
+}): void {
+  console.info(
+    "[mcp-server] mcp.sessions.listed",
+    JSON.stringify({
+      service: "mcp-server",
+      event: "mcp.sessions.listed",
+      ...fields,
+    }),
+  );
+}
+
 export async function listSessions(
   ctx: ToolCallerContext,
   input: ListSessionsInput,
 ): Promise<ListSessionsResult> {
+  const labelFilter = input.label ? { label: input.label } : {};
+  // `sort` carries a zod `.default()`, which only fills in on the real
+  // runMcpTool path (its schema.parse call). Defaulting again here keeps a
+  // direct handler call (as the tools' own unit tests make, bypassing
+  // runMcpTool) behaving identically to an omitted `sort` over MCP.
+  const sort = input.sort ?? "created_desc";
+
   const rows = await getSessionsWithUnreadByUserId(ctx.userId, {
     status: input.status,
     limit: input.limit,
     offset: input.offset,
+    sort,
+    ...labelFilter,
   });
 
   const sessions = rows.map(toSessionSummary);
@@ -462,7 +689,19 @@ export async function listSessions(
   // or past the end cannot skip anything with a slightly stale total.
   const total =
     rows[0]?.totalCount ??
-    (await countSessionsByUserId(ctx.userId, { status: input.status }));
+    (await countSessionsByUserId(ctx.userId, {
+      status: input.status,
+      ...labelFilter,
+    }));
+
+  logSessionsListed({
+    requestId: ctx.requestId,
+    userId: ctx.userId,
+    label: Boolean(input.label),
+    sort,
+    returned: sessions.length,
+    total,
+  });
 
   return {
     sessions,
@@ -555,7 +794,25 @@ export async function getMessages(
     getRecentChatMessages(chatId, input.limit),
     countChatMessages(chatId),
   ]);
-  const messages = rows.map(toMessageSummary);
+  const rawMessages = rows.map((row) =>
+    toMessageSummary(row, {
+      messageCharLimit: input.messageCharLimit,
+      includeToolTrace: input.includeToolTrace ?? false,
+    }),
+  );
+  const { messages, truncated, omitted } = applyResponseBudget(rawMessages);
+
+  logMessagesRead({
+    requestId: ctx.requestId,
+    userId: ctx.userId,
+    sessionId: record.id,
+    chatId,
+    returned: messages.length,
+    total,
+    chars: messages.reduce((sum, message) => sum + message.text.length, 0),
+    omitted: omitted.length,
+    truncated: truncated.length,
+  });
 
   return {
     sessionId: record.id,
@@ -564,6 +821,8 @@ export async function getMessages(
     total,
     returned: messages.length,
     messages,
+    truncated,
+    omitted,
   };
 }
 
@@ -628,6 +887,7 @@ const prStatusOutputSchema = z.enum(["open", "merged", "closed"]).nullable();
 const sessionSummaryOutputSchema = z.object({
   id: z.string(),
   title: z.string(),
+  label: z.string().nullable(),
   state: sessionStateOutputSchema,
   workspace: workspaceStateOutputSchema,
   resumable: z.boolean(),
@@ -656,12 +916,25 @@ const chatSummaryOutputSchema = z.object({
   url: z.string(),
 });
 
+const toolTraceEntryOutputSchema = z.object({
+  toolCallId: z.string(),
+  name: z.string(),
+  state: z.string(),
+  input: z.string(),
+  inputTruncated: z.boolean(),
+  output: z.string(),
+  outputTruncated: z.boolean(),
+});
+
 const messageSummaryOutputSchema = z.object({
   id: z.string(),
   role: z.enum(["user", "assistant"]),
   createdAt: z.string(),
-  preview: z.string(),
+  text: z.string(),
+  chars: z.number(),
+  capped: z.boolean(),
   hasToolCalls: z.boolean(),
+  toolTrace: z.array(toolTraceEntryOutputSchema).optional(),
 });
 
 const diffFileSummaryOutputSchema = z.object({
@@ -715,6 +988,8 @@ const getMessagesOutputSchema = z.object({
   total: z.number(),
   returned: z.number(),
   messages: z.array(messageSummaryOutputSchema),
+  truncated: z.array(z.string()),
+  omitted: z.array(z.string()),
 });
 
 const getDiffSummaryOutputSchema = z.object({
@@ -746,7 +1021,7 @@ export const sessionReadTools: readonly AnyMcpToolDefinition[] = [
     name: "open_agents_list_sessions",
     title: "List Open Agents Sessions",
     description:
-      "List the caller's coding sessions in Open Agents — this MCP server's own sessions, not the calling client's own session — with lightweight `state`, `workspace`, `resumable`, and `activity` fields plus repo and PR summaries. `state` (active/archived) is filing and matches the `status` input filter. `workspace` is the sandbox's own status (ready, hibernated, provisioning, restoring, failed, or none): only ready means a sandbox is live right now, and hibernated is the normal resting state — the sandbox is parked to stop billing and is restored automatically on the next message. `resumable` is true for every non-archived session, whatever its `workspace` says, because accepting new work is gated on filing alone; a hibernated or failed workspace is rebuilt on demand. `activity` is working only while a run is genuinely live. Returns `returned` (rows on this page) and `total` (all sessions matching the same status filter), so page until offset + returned reaches total.",
+      "List the caller's coding sessions in Open Agents — this MCP server's own sessions, not the calling client's own session — with lightweight `state`, `workspace`, `resumable`, and `activity` fields plus repo and PR summaries. `state` (active/archived) is filing and matches the `status` input filter. `workspace` is the sandbox's own status (ready, hibernated, provisioning, restoring, failed, or none): only ready means a sandbox is live right now, and hibernated is the normal resting state — the sandbox is parked to stop billing and is restored automatically on the next message. `resumable` is true for every non-archived session, whatever its `workspace` says, because accepting new work is gated on filing alone; a hibernated or failed workspace is rebuilt on demand. `activity` is working only while a run is genuinely live. Pass `label` to narrow the page (and `total`) to sessions sharing that exact free-text tag — the same one `open_agents_start_session` accepts — which is how a client that did not start a fan-out batch can find it later. `sort` picks the page order (default `created_desc`); every option is stable across pages, so paging until offset + returned reaches total never skips or repeats a row even when several sessions share a timestamp. Returns `returned` (rows on this page) and `total` (all sessions matching the same status/label filters).",
     scope: SESSION_READ_SCOPE,
     inputSchema: listSessionsInputSchema,
     outputSchema: listSessionsOutputSchema,
@@ -768,7 +1043,7 @@ export const sessionReadTools: readonly AnyMcpToolDefinition[] = [
     name: "open_agents_get_messages",
     title: "Get Open Agents Chat Messages",
     description:
-      "Get the newest messages in an Open Agents session's chat (Open Agents' own chat transcript, not this MCP connection's conversation) — oldest-to-newest — each capped to a short text preview. Provide `sessionId` and optional `chatId`; omit `chatId` to use the session's most recently active chat.",
+      "Get the newest messages in an Open Agents session's chat (Open Agents' own chat transcript, not this MCP connection's conversation) — oldest-to-newest — with each message's full `text` and its true `chars` length. Provide `sessionId` and optional `chatId`; omit `chatId` to use the session's most recently active chat. Pass `messageCharLimit` for a cheap scan: `text` is then cut to that many characters and the message is flagged `capped`, while `chars` still reports the true length. Pass `includeToolTrace: true` to also get each tool call's `name`, `state`, and bounded `input`/`output` on assistant messages. The response can be large — if it would exceed the server's own character budget, affected messages are truthfully reported in `truncated` (text cut further) or `omitted` (dropped entirely) rather than silently shortened.",
     scope: SESSION_READ_SCOPE,
     inputSchema: getMessagesInputSchema,
     outputSchema: getMessagesOutputSchema,

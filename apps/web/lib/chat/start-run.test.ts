@@ -90,6 +90,7 @@ type StartChatRunInput = {
   requestId?: string;
   authSession: unknown;
   maxSteps?: number;
+  agentOptions?: Record<string, unknown>;
 };
 
 function baseInput(
@@ -279,6 +280,120 @@ describe("startChatRun: happy path with no active stream", () => {
     });
 
     expect(claimChatActiveStreamId).toHaveBeenCalledWith("chat-1", "run-new");
+  });
+
+  test("forwards agentOptions to the workflow payload when the caller sets it (#1230: MCP headless runs)", async () => {
+    const { startChatRun } = await moduleUnderTestPromise;
+    const agentOptions = {
+      unattended: true,
+      allowedBuiltinToolNames: ["bash", "read"],
+      customInstructions: "run headless",
+    };
+
+    await startChatRun(baseInput({ agentOptions }));
+
+    expect(startWorkflow).toHaveBeenCalledTimes(1);
+    const [, args] = startWorkflow.mock.calls[0] as [
+      unknown,
+      [Record<string, unknown>],
+    ];
+    expect(args[0].agentOptions).toEqual(agentOptions);
+  });
+
+  test("does not default maxSteps to 500 for a caller that omits it (#1231: headless MCP runs must not inherit the browser step cap)", async () => {
+    const { startChatRun } = await moduleUnderTestPromise;
+    const agentOptions = { unattended: true };
+
+    await startChatRun(baseInput({ agentOptions }));
+
+    expect(startWorkflow).toHaveBeenCalledTimes(1);
+    const [, args] = startWorkflow.mock.calls[0] as [
+      unknown,
+      [Record<string, unknown>],
+    ];
+    // Undefined, not 500 — the chat step loop treats undefined maxSteps as
+    // unbounded and a progress-based fuse takes over for headless runs.
+    expect(args[0].maxSteps).toBeUndefined();
+  });
+
+  test("defaults maxSteps to 500 for a NON-headless caller that omits it (safety net for any future caller besides the browser route and MCP)", async () => {
+    const { startChatRun } = await moduleUnderTestPromise;
+
+    // No agentOptions at all — not headless — and no maxSteps override.
+    await startChatRun(baseInput());
+
+    expect(startWorkflow).toHaveBeenCalledTimes(1);
+    const [, args] = startWorkflow.mock.calls[0] as [
+      unknown,
+      [Record<string, unknown>],
+    ];
+    expect(args[0].maxSteps).toBe(500);
+  });
+
+  test("defaults maxSteps to 500 for a caller whose agentOptions is set but not unattended", async () => {
+    const { startChatRun } = await moduleUnderTestPromise;
+
+    await startChatRun(baseInput({ agentOptions: { unattended: false } }));
+
+    expect(startWorkflow).toHaveBeenCalledTimes(1);
+    const [, args] = startWorkflow.mock.calls[0] as [
+      unknown,
+      [Record<string, unknown>],
+    ];
+    expect(args[0].maxSteps).toBe(500);
+  });
+
+  test("omits agentOptions from the workflow payload entirely when the caller does not set it — the browser chat route's shape", async () => {
+    const { startChatRun } = await moduleUnderTestPromise;
+
+    await startChatRun(baseInput());
+
+    expect(startWorkflow).toHaveBeenCalledTimes(1);
+    const [, args] = startWorkflow.mock.calls[0] as [
+      unknown,
+      [Record<string, unknown>],
+    ];
+    // Exact key check (not toMatchObject): a stray `agentOptions: undefined`
+    // key would still change the payload's own shape even though it reads as
+    // falsy, and this is the guard that the browser chat route — which never
+    // sets agentOptions — gets byte-identical behavior to before #1230.
+    expect(Object.hasOwn(args[0], "agentOptions")).toBe(false);
+  });
+
+  test("regression: the browser chat route's workflow payload is unchanged by #1230", async () => {
+    // app/api/chat/route.ts calls startChatRun with exactly this field set
+    // (no agentOptions, no autoCommitEnabled/autoCreatePrEnabled) and always
+    // has. If this test fails after #1230, the browser's interactive runs
+    // silently changed shape.
+    const { startChatRun } = await moduleUnderTestPromise;
+    const message = userMessage("hello there", "msg-browser");
+
+    await startChatRun({
+      chatId: "chat-1",
+      sessionId: "session-1",
+      userId: "user-1",
+      messages: [message],
+      requestUrl: "https://app.test/api/chat",
+      requestId: "req-browser",
+      authSession: { user: { id: "user-1" } },
+      maxSteps: 500,
+    });
+
+    expect(startWorkflow).toHaveBeenCalledTimes(1);
+    const [, args] = startWorkflow.mock.calls[0] as [
+      unknown,
+      [Record<string, unknown>],
+    ];
+    expect(args[0]).toEqual({
+      messages: [message],
+      chatId: "chat-1",
+      sessionId: "session-1",
+      userId: "user-1",
+      requestUrl: "https://app.test/api/chat",
+      requestId: "req-browser",
+      authSession: { user: { id: "user-1" } },
+      maxSteps: 500,
+    });
   });
 
   test("the claim losing the race cancels the just-started run and reports the LIVE run, not the cancelled one", async () => {

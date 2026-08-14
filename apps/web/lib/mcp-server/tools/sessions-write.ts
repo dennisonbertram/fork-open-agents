@@ -114,6 +114,41 @@ function scheduleAfterResponse(callback: () => Promise<void>): void {
 }
 
 /**
+ * Observability for #1230's Definition of Done: lets an operator confirm a
+ * given session ran headless via
+ * `grep '"event":"mcp.run.started"' logs | grep '"sessionId":"<id>"'`.
+ * Ids and counts only — `deniedToolNames` is a fixed tool-name list, never
+ * prompt or message text.
+ */
+function logMcpRunStarted(input: {
+  requestId: string;
+  userId: string;
+  sessionId: string;
+  chatId: string;
+  workflowRunId: string;
+  deniedToolNames: readonly string[];
+  autoCommit: boolean | null;
+  autoCreatePr: boolean | null;
+}): void {
+  console.info(
+    "[mcp-server] headless run started",
+    JSON.stringify({
+      service: "mcp-server",
+      event: "mcp.run.started",
+      requestId: input.requestId,
+      userId: input.userId,
+      sessionId: input.sessionId,
+      chatId: input.chatId,
+      workflowRunId: input.workflowRunId,
+      unattended: true,
+      deniedToolNames: input.deniedToolNames,
+      autoCommit: input.autoCommit,
+      autoCreatePr: input.autoCreatePr,
+    }),
+  );
+}
+
+/**
  * `startChatRun`'s "resumed" and "conflict" outcomes both mean a run is
  * already live on this chat — a caller sending a new message can't safely
  * layer it on top. Only "started" is a clean result for a write tool.
@@ -207,6 +242,18 @@ const startSessionInputSchema = z
     branch: z.string().min(1).optional(),
     prompt: z.string().min(1),
     runtimeMode: z.enum(["classic", "managed_runtime"]).optional(),
+    // Forwarded straight into createSessionCore's own precedence (request
+    // body > repo defaults > user preferences) and persisted on the session
+    // row (autoCommitPushOverride / autoCreatePrOverride) — every later run
+    // on this session, including send_message, inherits it. No per-run
+    // workflow plumbing needed.
+    autoCommit: z.boolean().optional(),
+    autoCreatePr: z.boolean().optional(),
+    // Free-text tag to group a fan-out batch of sessions started together
+    // (e.g. "auth-refactor-2026-08-14"). Not a state, not a status, carries
+    // no behavior — forwarded to createSessionCore, persisted, and returned
+    // by the read tools. Omitting it leaves the session unlabeled.
+    label: z.string().min(1).optional(),
   })
   .strict();
 
@@ -246,11 +293,13 @@ export async function startSession(
     { createSessionCore },
     { startChatRun },
     { checkRateLimit, rateLimitKey },
+    { buildHeadlessAgentOptions, HEADLESS_DENIED_TOOL_NAMES },
   ] = await Promise.all([
     import("@/lib/db/users"),
     import("@/lib/sessions/create-session"),
     import("@/lib/chat/start-run"),
     import("@/lib/rate-limit"),
+    import("../headless-run-options"),
   ]);
 
   const limited = await checkRateLimit({
@@ -308,6 +357,9 @@ export async function startSession(
     cloneUrl: `https://github.com/${input.repoOwner}/${input.repoName}`,
     branch: input.branch,
     runtimeMode: input.runtimeMode,
+    autoCommitPush: input.autoCommit,
+    autoCreatePr: input.autoCreatePr,
+    label: input.label,
     scheduleBackgroundWork: scheduleAfterResponse,
   });
 
@@ -319,8 +371,19 @@ export async function startSession(
     requestUrl: requestOrigin(),
     requestId: ctx.requestId,
     authSession: null,
+    agentOptions: buildHeadlessAgentOptions(),
   });
   const workflowRunId = requireFreshlyStartedRun(result, chat.id);
+  logMcpRunStarted({
+    requestId: ctx.requestId,
+    userId: ctx.userId,
+    sessionId: session.id,
+    chatId: chat.id,
+    workflowRunId,
+    deniedToolNames: HEADLESS_DENIED_TOOL_NAMES,
+    autoCommit: input.autoCommit ?? null,
+    autoCreatePr: input.autoCreatePr ?? null,
+  });
 
   return {
     sessionId: session.id,
@@ -360,9 +423,14 @@ export async function sendMessage(
   input: SendMessageInput,
 ): Promise<SendMessageResult> {
   // See the comment in startSession for why these are dynamic imports.
-  const [{ startChatRun }, { buildMessagesFromDb }] = await Promise.all([
+  const [
+    { startChatRun },
+    { buildMessagesFromDb },
+    { buildHeadlessAgentOptions, HEADLESS_DENIED_TOOL_NAMES },
+  ] = await Promise.all([
     import("@/lib/chat/start-run"),
     import("@/lib/chat/messages-from-db"),
+    import("../headless-run-options"),
   ]);
 
   const record = await requireOwnedSession(ctx.userId, input.sessionId, {
@@ -380,8 +448,21 @@ export async function sendMessage(
     requestUrl: requestOrigin(),
     requestId: ctx.requestId,
     authSession: null,
+    agentOptions: buildHeadlessAgentOptions(),
   });
   const workflowRunId = requireFreshlyStartedRun(result, chatId);
+  logMcpRunStarted({
+    requestId: ctx.requestId,
+    userId: ctx.userId,
+    sessionId: record.id,
+    chatId,
+    workflowRunId,
+    deniedToolNames: HEADLESS_DENIED_TOOL_NAMES,
+    // send_message has no per-message auto-commit/PR override — the
+    // session-level default from start_session already applies.
+    autoCommit: null,
+    autoCreatePr: null,
+  });
 
   return {
     sessionId: record.id,
@@ -434,6 +515,99 @@ export async function stopRun(
     chatId,
     stopped: result.stopped,
     workflowRunId: result.workflowRunId,
+  };
+}
+
+const archiveSessionInputSchema = z
+  .object({
+    sessionId: z.string().min(1),
+  })
+  .strict();
+
+export type ArchiveSessionInput = z.infer<typeof archiveSessionInputSchema>;
+
+export type ArchiveSessionResult = {
+  sessionId: string;
+  status: "archived";
+  // True when the session was already archived before this call — the
+  // archive-twice-is-safe contract: the second call changes nothing, and
+  // this is how a caller can tell.
+  alreadyArchived: boolean;
+};
+
+const archiveSessionOutputSchema = z.object({
+  sessionId: z.string(),
+  status: z.literal("archived"),
+  alreadyArchived: z.boolean(),
+});
+
+/**
+ * Observability for the archive tool's Definition of Done: lets an operator
+ * confirm which session/sandbox a call archived via
+ * `grep '"event":"mcp.session.archived"' logs | grep '"sessionId":"<id>"'`.
+ * Ids and counts only.
+ */
+function logSessionArchived(fields: {
+  requestId: string;
+  userId: string;
+  sessionId: string;
+  sandboxName: string | null;
+  alreadyArchived: boolean;
+}): void {
+  console.info(
+    "[mcp-server] session archived",
+    JSON.stringify({
+      service: "mcp-server",
+      event: "mcp.session.archived",
+      ...fields,
+    }),
+  );
+}
+
+/**
+ * Archives an Open Agents session and releases its sandbox, in-process —
+ * never through the HTTP route (`app/api/sessions/[sessionId]/route.ts`),
+ * which BotID blocks for headless callers in production. Ownership fails
+ * closed as `not_found` (the same shape as a missing session), never
+ * `forbidden`, so the error can never confirm that a session id exists but
+ * belongs to someone else.
+ */
+export async function archiveSession(
+  ctx: ToolCallerContext,
+  input: ArchiveSessionInput,
+): Promise<ArchiveSessionResult> {
+  // See the comment in startSession for why this is a dynamic import.
+  const { archiveSession: archiveSessionRecord } =
+    await import("@/lib/sandbox/archive-session");
+
+  const record = await requireOwnedSession(ctx.userId, input.sessionId);
+  const alreadyArchived = record.status === "archived";
+
+  const result = await archiveSessionRecord(record.id, {
+    scheduleBackgroundWork: scheduleAfterResponse,
+  });
+
+  if (!result.session) {
+    // Ownership was already confirmed above; only reachable if the session
+    // was deleted in the narrow window between that check and this call.
+    throw new McpToolError(
+      "not_found",
+      `Session ${input.sessionId} was not found.`,
+    );
+  }
+
+  logSessionArchived({
+    requestId: ctx.requestId,
+    userId: ctx.userId,
+    sessionId: record.id,
+    sandboxName: record.sandboxState?.sandboxName ?? null,
+    alreadyArchived,
+  });
+
+  return {
+    sessionId: record.id,
+    status: "archived",
+    alreadyArchived,
   };
 }
 
@@ -493,5 +667,21 @@ export const sessionWriteTools: readonly AnyMcpToolDefinition[] = [
       openWorldHint: false,
     },
     handler: stopRun,
+  }),
+  defineTool({
+    name: "open_agents_archive_session",
+    title: "Archive Open Agents Session",
+    description:
+      "Open Agents: archive an Open Agents coding session and release its sandbox. Destructive-adjacent but reversible in the sense that the session record and transcript remain — only the live sandbox is torn down and the session moves out of the active list. Idempotent — calling it again on an already-archived session is safe and resolves with `alreadyArchived` true rather than an error.",
+    scope: SESSION_WRITE_SCOPE,
+    inputSchema: archiveSessionInputSchema,
+    outputSchema: archiveSessionOutputSchema,
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    handler: archiveSession,
   }),
 ];

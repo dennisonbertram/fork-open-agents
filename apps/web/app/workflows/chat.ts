@@ -49,6 +49,7 @@ import {
   closeStream,
   clearActiveStream,
   hasAutoCommitChangesStep,
+  hibernateHeadlessSandboxAtTurnEnd,
   persistAssistantMessage,
   persistAssistantMessageWithToolResults,
   persistSandboxState,
@@ -60,7 +61,15 @@ import {
   runAutoCreatePrStep,
   sendFinish,
 } from "./chat-post-finish";
+import { probeHeadlessRunGitFingerprint } from "./headless-progress-fuse";
 import { annotateAbandonedTurns } from "@/lib/chat/annotate-abandoned-turns";
+import {
+  buildHeadlessNoSandboxCapMessage,
+  buildHeadlessProgressFuseMessage,
+  getHeadlessRunMaxStaleSteps,
+  getHeadlessRunNoSandboxStepCap,
+} from "@/lib/chat/headless-progress-budget";
+import { createProgressBudget } from "@/lib/progress-budget";
 import { dedupeMessageReasoning } from "@/lib/chat/dedupe-message-reasoning";
 import {
   buildProviderRejectionMessage,
@@ -1743,6 +1752,12 @@ export async function runAgentWorkflow(options: Options) {
   const writable = getWritable<UIMessageChunk>();
   const emitSessionEvent = emitWorkflowSessionEvent;
 
+  // #1231: `unattended: true` is how the MCP write tools mark a headless run
+  // (see buildHeadlessAgentOptions in lib/mcp-server/headless-run-options.ts —
+  // the only caller that sets it). The browser chat route never sets
+  // agentOptions at all, so this is false for every browser-started run.
+  const isHeadlessRun = options.agentOptions?.unattended === true;
+
   const latestMessage = options.messages.at(-1);
 
   if (latestMessage == null) {
@@ -1833,6 +1848,13 @@ export async function runAgentWorkflow(options: Options) {
   const stepTimings: WorkflowRunStepTiming[] = [];
   let wasAborted = false;
   let exhaustedMaxSteps = false;
+  // #1231: set when the headless no-progress fuse ends the run; headlessProbeCount
+  // is the number of fuse observations taken (one per continuing step).
+  let headlessFuseTripped = false;
+  let headlessProbeCount = 0;
+  // #1231: set when a headless run with no sandbox (nothing to probe) hits
+  // the fixed fallback step cap instead.
+  let headlessNoSandboxCapped = false;
   let totalUsage: LanguageModelUsage | undefined;
   let finalFinishReason: FinishReason | undefined;
   let streamClosed = false;
@@ -1999,9 +2021,21 @@ export async function runAgentWorkflow(options: Options) {
             ? { sandboxName: runtime.sandboxState.sandboxName }
             : undefined))
         : undefined;
+    // The two customInstructions sources must compose, not clobber: a shallow
+    // spread would let a caller override (e.g. the MCP headless instructions)
+    // silently drop assistantFileLinkPrompt, the base instruction that makes
+    // assistant messages link workspace files. Every other agentOptions field
+    // caller/base can set has no such collision.
+    const baseCustomInstructions = modelRuntime.agentOptions.customInstructions;
+    const callerCustomInstructions = options.agentOptions?.customInstructions;
     const agentOptions: OpenAgentCallOptions = {
       ...modelRuntime.agentOptions,
       ...options.agentOptions,
+      ...(baseCustomInstructions && callerCustomInstructions
+        ? {
+            customInstructions: `${baseCustomInstructions}\n\n${callerCustomInstructions}`,
+          }
+        : {}),
       runtimeMode: runtime.runtimeMode,
       // Signal to the agent that there is no sandbox VM; the tool policy will
       // exclude all sandbox-dependent tools (file/bash/exec/edit/task).
@@ -2031,6 +2065,31 @@ export async function runAgentWorkflow(options: Options) {
     };
     sandboxState =
       runtime.mode === "sandbox" ? runtime.sandboxState : undefined;
+
+    // #1231: headless runs have no fixed maxSteps (see start-run.ts) — this
+    // budget is what actually bounds them. One observation per step that
+    // continues (see lib/progress-budget.ts's module doc for why that
+    // cadence matches background agents' one-observation-per-turn exactly).
+    // `initialFingerprint` is deliberately omitted: the first observation
+    // seeds the baseline instead of costing a probe before the run has taken
+    // a single step.
+    //
+    // The fuse only works when there is a sandbox to probe. A headless
+    // send_message to a no-repo session (sandboxState is null —
+    // create-session.ts:186) has nothing to fingerprint: every probe would
+    // return null, which the budget treats as "unknown, not stale" forever,
+    // leaving the run unbounded AND unfused. `headlessNoSandboxStepCap` is
+    // the fallback signal for exactly that case — a plain step count, since
+    // it is the only signal available without a workspace to observe.
+    const headlessHasSandbox = isHeadlessRun && sandboxState !== undefined;
+    const headlessRunMaxStaleSteps = getHeadlessRunMaxStaleSteps();
+    const headlessProgressBudget = headlessHasSandbox
+      ? createProgressBudget({ maxStaleTurns: headlessRunMaxStaleSteps })
+      : null;
+    const headlessNoSandboxStepCap =
+      isHeadlessRun && !headlessHasSandbox
+        ? getHeadlessRunNoSandboxStepCap()
+        : undefined;
 
     for (
       let step = 0;
@@ -2168,6 +2227,65 @@ export async function runAgentWorkflow(options: Options) {
 
       if (!shouldContinue) {
         break;
+      }
+
+      // #1231: the no-progress fuse — only relevant when the run is about to
+      // take another step, and only for a headless run that has a sandbox to
+      // probe. A probe failure mid-run (connect error, timeout) still
+      // degrades to a null fingerprint, treated as "unknown, not stale"
+      // rather than tripping the fuse — that is a transient hiccup, not the
+      // structural no-sandbox case handled by the cap below.
+      if (headlessProgressBudget) {
+        const gitFingerprint = sandboxState
+          ? await probeHeadlessRunGitFingerprint(sandboxState)
+          : null;
+        headlessProbeCount += 1;
+        const observation = headlessProgressBudget.observeTurn({
+          gitFingerprint,
+        });
+        if (observation.verdict === "stop") {
+          headlessFuseTripped = true;
+          const fuseText = buildHeadlessProgressFuseMessage(
+            observation.staleTurns,
+            headlessRunMaxStaleSteps,
+          );
+          await sendTextMessage(
+            writable,
+            `${assistantId}:headless-progress-fuse`,
+            fuseText,
+          );
+          pendingAssistantResponse = {
+            ...pendingAssistantResponse,
+            parts: [
+              ...pendingAssistantResponse.parts,
+              { type: "text", text: fuseText },
+            ],
+          };
+          break;
+        }
+      } else if (headlessNoSandboxStepCap !== undefined) {
+        // No sandbox to probe — the fuse above cannot run at all. Bound the
+        // run by step count instead, since that is the only signal
+        // available (see the const's comment above the loop).
+        if (step + 1 >= headlessNoSandboxStepCap) {
+          headlessNoSandboxCapped = true;
+          const capText = buildHeadlessNoSandboxCapMessage(
+            headlessNoSandboxStepCap,
+          );
+          await sendTextMessage(
+            writable,
+            `${assistantId}:headless-no-sandbox-cap`,
+            capText,
+          );
+          pendingAssistantResponse = {
+            ...pendingAssistantResponse,
+            parts: [
+              ...pendingAssistantResponse.parts,
+              { type: "text", text: capText },
+            ],
+          };
+          break;
+        }
       }
 
       if (options.maxSteps !== undefined && step + 1 >= options.maxSteps) {
@@ -2445,7 +2563,10 @@ export async function runAgentWorkflow(options: Options) {
 
     workflowStatus = wasAborted
       ? "aborted"
-      : exhaustedMaxSteps || stoppedForRepeatedToolFailure
+      : exhaustedMaxSteps ||
+          stoppedForRepeatedToolFailure ||
+          headlessFuseTripped ||
+          headlessNoSandboxCapped
         ? "failed"
         : "completed";
 
@@ -2556,6 +2677,36 @@ export async function runAgentWorkflow(options: Options) {
       }
     } finally {
       const runFinishedAt = new Date();
+
+      // #1231: hibernate a headless run's sandbox immediately when its turn
+      // ends — for any reason (done, blocked, fused) — instead of waiting out
+      // the inactivity window. Placed first in this finally block, after the
+      // active-stream slot is guaranteed released above, so the lifecycle
+      // evaluation does not see this run as still "active". Never throws.
+      if (isHeadlessRun) {
+        await hibernateHeadlessSandboxAtTurnEnd({
+          sessionId: options.sessionId,
+          sandboxName: runtimeSandboxName,
+        });
+        console.info(
+          "[mcp-server] headless run bounded",
+          JSON.stringify({
+            service: "mcp-server",
+            event: "mcp.run.bounded",
+            sessionId: options.sessionId,
+            chatId: options.chatId,
+            workflowRunId,
+            reason: headlessFuseTripped
+              ? "no_progress"
+              : headlessNoSandboxCapped
+                ? "no_sandbox_cap"
+                : "completed",
+            turns: headlessProbeCount,
+            steps: stepTimings.length,
+          }),
+        );
+      }
+
       await recordWorkflowUsage(
         options.userId,
         modelId,
@@ -2627,7 +2778,11 @@ export async function runAgentWorkflow(options: Options) {
             ? "repeated_tool_failure"
             : exhaustedMaxSteps
               ? "max_steps"
-              : null,
+              : headlessFuseTripped
+                ? "no_progress_fuse"
+                : headlessNoSandboxCapped
+                  ? "no_sandbox_step_cap"
+                  : null,
         },
       });
 

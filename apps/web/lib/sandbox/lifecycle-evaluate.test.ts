@@ -196,4 +196,38 @@ describe("evaluateSandboxLifecycle", () => {
       }),
     );
   });
+
+  // #1231: headless MCP runs force hibernation immediately at turn end by
+  // setting hibernateAfter to now and driving this SAME function with a new
+  // "headless-turn-end" reason — no new bypass. These two tests prove that
+  // reuse is safe: the reason is accepted, and the existing race protection
+  // (recheck for an active stream right before stopping) applies unchanged,
+  // so a `send_message` that lands in the race window still wins.
+  test("accepts the headless-turn-end reason and hibernates exactly like any other reason", async () => {
+    const result = await evaluateSandboxLifecycle(
+      "session-1",
+      "headless-turn-end",
+    );
+
+    expect(result).toEqual({ action: "hibernated" });
+    expect(spies.stop).toHaveBeenCalledTimes(1);
+  });
+
+  test("a send_message that claims the active stream during the headless-turn-end race wins over hibernation", async () => {
+    spies.connectSandbox.mockImplementationOnce(async () => {
+      // Simulates a follow-up send_message's startChatRun claiming the
+      // active-stream slot in the window between the first due-check and
+      // the sandbox connect completing.
+      chatsInSession = [{ id: "chat-1", activeStreamId: "wrun-follow-up" }];
+      return { stop: stopSpy };
+    });
+
+    const result = await evaluateSandboxLifecycle(
+      "session-1",
+      "headless-turn-end",
+    );
+
+    expect(result).toEqual({ action: "skipped", reason: "active-workflow" });
+    expect(spies.stop).not.toHaveBeenCalled();
+  });
 });

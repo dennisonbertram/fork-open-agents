@@ -132,3 +132,14 @@ export async function runAutoCreatePrStep(
     await import("./chat-post-finish-impl");
   return createPr(params);
 }
+
+export async function hibernateHeadlessSandboxAtTurnEnd(
+  params: Parameters<
+    ChatPostFinishModule["hibernateHeadlessSandboxAtTurnEnd"]
+  >[0],
+): ReturnType<ChatPostFinishModule["hibernateHeadlessSandboxAtTurnEnd"]> {
+  "use step";
+  const { hibernateHeadlessSandboxAtTurnEnd: hibernate } =
+    await import("./chat-post-finish-impl");
+  return hibernate(params);
+}
