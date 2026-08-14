@@ -1259,6 +1259,45 @@ describe("runAgentWorkflow", () => {
     );
   });
 
+  // TASK-1276 regression: a different angle from BT-1..BT-3 above — those
+  // all use maxSteps: 1 (makeOptions' default), which cannot tell "resolved
+  // once, failure swallowed" apart from "re-resolved and re-thrown on every
+  // step but the run happened to survive step 1 anyway". A multi-step run
+  // is the integration point where a revert to per-step resolution (or a
+  // reintroduced rethrow) would surface: either every step would retry and
+  // fail, or every step would emit its own composio.session.failed event.
+  // Would fail if #1276's fix (the rethrow removal) is reverted: the second
+  // step would never run, and the run would reject instead of completing.
+  test("TASK-1276 regression: a Composio resolution failure on a multi-step run still resolves once, still fails the run open, and every step continues on built-in tools", async () => {
+    const setupError = new Error(
+      "Composio tools are selected, but COMPOSIO_API_KEY is not configured.",
+    );
+    setupError.name = "ComposioSetupError";
+    spies.resolveComposioToolsForChat.mockImplementationOnce(async () => {
+      throw setupError;
+    });
+    agentFinishReason = "tool-calls";
+    agentRawFinishReason = "provider_tool_use";
+
+    await runAgentWorkflow(makeOptions({ maxSteps: 2 }));
+
+    // #1248: resolved once per run, not once per step — a second call would
+    // mean the caching regressed.
+    expect(spies.resolveComposioToolsForChat).toHaveBeenCalledTimes(1);
+    // Both steps ran (the run was not aborted at step zero) and neither
+    // received Composio tools.
+    expect(agentStreamToolsCalls.length).toBe(2);
+    expect(agentStreamToolsCalls[0]).toBeUndefined();
+    expect(agentStreamToolsCalls[1]).toBeUndefined();
+    // The failure was recorded exactly once, not once per step.
+    const failedEventCalls = (
+      spies.emitSessionEvent.mock.calls as unknown as Array<
+        [{ eventName?: string }]
+      >
+    ).filter(([input]) => input.eventName === "composio.session.failed");
+    expect(failedEventCalls).toHaveLength(1);
+  });
+
   test("passes managed runtime mode into agent options", async () => {
     spies.resolveChatSandboxRuntime.mockImplementationOnce(
       (params: { assistantId: string }) => {
