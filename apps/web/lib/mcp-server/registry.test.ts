@@ -46,6 +46,11 @@ mock.module("@/lib/db/sessions", () => ({
   countSessionsByUserId,
 }));
 
+// #1241: get_session's lastRunOutcome lookup.
+mock.module("@/lib/db/workflow-runs", () => ({
+  getLatestWorkflowRunStatusBySessionId: mock(async () => null),
+}));
+
 const modPromise = import("./registry");
 
 function makeCtx(overrides?: {

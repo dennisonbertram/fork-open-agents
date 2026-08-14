@@ -77,6 +77,29 @@ describe("normalized run status", () => {
     });
   });
 
+  // #1241: workflowRuns.status widened to four new deliberate-stop values
+  // (no_progress_fuse, no_sandbox_step_cap, max_steps,
+  // repeated_tool_failure). This reader used to see only "failed" for all of
+  // them; it must keep treating them as failed/needs-attention rather than
+  // falling into the catch-all "unknown" branch, or every account-coordinator
+  // consumer of chat_workflow runs silently loses failure visibility the
+  // moment the writer starts persisting the more specific value.
+  test.each([
+    "no_progress_fuse",
+    "no_sandbox_step_cap",
+    "max_steps",
+    "repeated_tool_failure",
+  ])("chat_workflow keeps treating %s as a failure needing attention", (nativeStatus) => {
+    expect(
+      normalizeRunStatus({ source: "chat_workflow", nativeStatus }),
+    ).toEqual({
+      state: "finished",
+      outcome: "failed",
+      health: "needs_attention",
+      attentionReasons: ["failed"],
+    });
+  });
+
   test("keeps a completed loop successful while warning about failed steps", () => {
     expect(
       normalizeRunStatus({

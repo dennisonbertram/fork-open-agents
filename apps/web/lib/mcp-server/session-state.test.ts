@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   RUN_SLOT_STALE_MS,
   toActivityState,
+  toLastRunOutcome,
   toWorkspaceState,
   WORKSPACE_SETUP_STALL_MS,
 } from "./session-state";
@@ -217,5 +218,57 @@ describe("toActivityState", () => {
         now: NOW,
       }),
     ).toBe("working");
+  });
+});
+
+/**
+ * #1241: `lastRunOutcome` is a third, distinct axis from `state` (filing) and
+ * `activity` (is a run live right now) — it answers "how did the last
+ * completed run end". Before this, a stalled run, a step-capped run, and a
+ * genuinely finished run all reported the same thing through get_session,
+ * because nothing downstream of `workflow_runs.status` distinguished them.
+ */
+describe("toLastRunOutcome", () => {
+  test("a session with no run yet reports null, not a made-up status", () => {
+    expect(toLastRunOutcome(null)).toBeNull();
+    expect(toLastRunOutcome(undefined)).toBeNull();
+  });
+
+  test("a finished run reports completed", () => {
+    expect(toLastRunOutcome("completed")).toBe("completed");
+  });
+
+  test("a user-stopped run reports aborted", () => {
+    expect(toLastRunOutcome("aborted")).toBe("aborted");
+  });
+
+  test("a crash reports failed, distinguishable from every deliberate stop", () => {
+    expect(toLastRunOutcome("failed")).toBe("failed");
+  });
+
+  test("the no-progress fuse names itself", () => {
+    expect(toLastRunOutcome("no_progress_fuse")).toBe("no_progress_fuse");
+  });
+
+  test("the no-sandbox step cap names itself, distinct from the fuse", () => {
+    expect(toLastRunOutcome("no_sandbox_step_cap")).toBe(
+      "no_sandbox_step_cap",
+    );
+  });
+
+  test("exhausting maxSteps names itself", () => {
+    expect(toLastRunOutcome("max_steps")).toBe("max_steps");
+  });
+
+  test("repeated tool failure names itself", () => {
+    expect(toLastRunOutcome("repeated_tool_failure")).toBe(
+      "repeated_tool_failure",
+    );
+  });
+
+  test("an unrecognized stored value reports null rather than inventing a status", () => {
+    // Defensive: a historical or corrupted row must never be echoed back as a
+    // typed outcome the schema does not advertise.
+    expect(toLastRunOutcome("some-legacy-value")).toBeNull();
   });
 });

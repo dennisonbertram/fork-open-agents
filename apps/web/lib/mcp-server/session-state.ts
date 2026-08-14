@@ -27,6 +27,11 @@ export type McpWorkspaceState =
   | "none";
 export type McpActivityState = "working" | "idle";
 
+// TDD red stub (#1241) — replaced by the real derivation in the green commit.
+export function toLastRunOutcome(_status: string | null | undefined): unknown {
+  throw new Error("not implemented");
+}
+
 /**
  * How long a workspace may sit in a transitional state before the API stops
  * claiming it is still setting up.

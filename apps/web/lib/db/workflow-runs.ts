@@ -4,6 +4,18 @@ import { workflowRuns, workflowRunSteps } from "./schema";
 
 export type WorkflowRunStatus = "completed" | "aborted" | "failed";
 
+// TDD red stub (#1241) — replaced by the real mapping in the green commit.
+export function deriveWorkflowRunOutcomeStatus(_params: {
+  crashed: boolean;
+  wasAborted: boolean;
+  stoppedForRepeatedToolFailure: boolean;
+  exhaustedMaxSteps: boolean;
+  headlessFuseTripped: boolean;
+  headlessNoSandboxCapped: boolean;
+}): WorkflowRunStatus {
+  throw new Error("not implemented");
+}
+
 export type WorkflowRunStepTiming = {
   stepNumber: number;
   startedAt: string;
