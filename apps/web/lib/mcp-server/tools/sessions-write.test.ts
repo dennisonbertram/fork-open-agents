@@ -488,6 +488,98 @@ describe("startSession", () => {
     expect(received?.label).toBeUndefined();
   });
 
+  test("BT-1246-01: defaults to isNewBranch:true, so auto-commit gets a fresh working branch instead of pushing onto the branch the caller named", async () => {
+    // Production evidence (#1246): a session started with branch: "develop"
+    // and no isNewBranch opinion committed directly onto develop, and the
+    // push was rejected by branch protection — silently, with the run still
+    // reported "completed". createSessionCore must receive isNewBranch:true
+    // by default so it generates a fresh branch instead.
+    const { startSession } = await toolsModulePromise;
+    let received: Record<string, unknown> | undefined;
+    createSessionCore.mockImplementation(async (input) => {
+      received = input as Record<string, unknown>;
+      return {
+        session: { id: "session-new", userId: "user-1" },
+        chat: { id: "chat-new", sessionId: "session-new" },
+      };
+    });
+
+    await startSession(makeCtx({}), {
+      repoOwner: "acme",
+      repoName: "widgets",
+      prompt: "build the thing",
+      branch: "develop",
+    });
+
+    expect(received?.branch).toBe("develop");
+    expect(received?.isNewBranch).toBe(true);
+  });
+
+  test("BT-1246-02: an explicit isNewBranch:false opts out and commits directly onto the named branch", async () => {
+    const { startSession } = await toolsModulePromise;
+    let received: Record<string, unknown> | undefined;
+    createSessionCore.mockImplementation(async (input) => {
+      received = input as Record<string, unknown>;
+      return {
+        session: { id: "session-new", userId: "user-1" },
+        chat: { id: "chat-new", sessionId: "session-new" },
+      };
+    });
+
+    await startSession(makeCtx({}), {
+      repoOwner: "acme",
+      repoName: "widgets",
+      prompt: "build the thing",
+      branch: "scratch/throwaway",
+      isNewBranch: false,
+    });
+
+    expect(received?.branch).toBe("scratch/throwaway");
+    expect(received?.isNewBranch).toBe(false);
+  });
+
+  test("BT-1246-03: an explicit isNewBranch:true is forwarded as-is (not just left to the default)", async () => {
+    const { startSession } = await toolsModulePromise;
+    let received: Record<string, unknown> | undefined;
+    createSessionCore.mockImplementation(async (input) => {
+      received = input as Record<string, unknown>;
+      return {
+        session: { id: "session-new", userId: "user-1" },
+        chat: { id: "chat-new", sessionId: "session-new" },
+      };
+    });
+
+    await startSession(makeCtx({}), {
+      repoOwner: "acme",
+      repoName: "widgets",
+      prompt: "build the thing",
+      isNewBranch: true,
+    });
+
+    expect(received?.isNewBranch).toBe(true);
+  });
+
+  test("regression: omitting branch entirely still defaults isNewBranch to true — the working-branch default does not depend on the caller naming a branch", async () => {
+    const { startSession } = await toolsModulePromise;
+    let received: Record<string, unknown> | undefined;
+    createSessionCore.mockImplementation(async (input) => {
+      received = input as Record<string, unknown>;
+      return {
+        session: { id: "session-new", userId: "user-1" },
+        chat: { id: "chat-new", sessionId: "session-new" },
+      };
+    });
+
+    await startSession(makeCtx({}), {
+      repoOwner: "acme",
+      repoName: "widgets",
+      prompt: "build the thing",
+    });
+
+    expect(received?.branch).toBeUndefined();
+    expect(received?.isNewBranch).toBe(true);
+  });
+
   test(".strict() still rejects an unknown key on start_session", async () => {
     const { runMcpTool } = await registryModulePromise;
     const { McpToolError } = await contextModulePromise;
