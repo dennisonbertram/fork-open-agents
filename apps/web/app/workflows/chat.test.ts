@@ -3783,6 +3783,44 @@ describe("runAgentWorkflow", () => {
         sandboxName: "session_session-1",
       });
     });
+
+    // Regression: a browser-started run (the default `agentOptions: {}` from
+    // makeOptions, matching the real chat route's payload — see
+    // start-run.test.ts's "regression: the browser chat route's workflow
+    // payload is unchanged") must keep its exact pre-#1231 behavior. This
+    // would fail if `isHeadlessRun` ever became true for a run that didn't
+    // opt into `unattended: true`, or if the fuse/hibernate calls stopped
+    // being gated by it.
+    test("regression: a browser-started run never probes or hibernates, and keeps its fixed step cap", async () => {
+      agentFinishReason = "tool-calls";
+      agentRawFinishReason = "provider_tool_use";
+
+      await runAgentWorkflow(makeOptions({ maxSteps: 2 }));
+
+      expect(spies.probeHeadlessRunGitFingerprint).not.toHaveBeenCalled();
+      expect(spies.hibernateHeadlessSandboxAtTurnEnd).not.toHaveBeenCalled();
+
+      const rwCalls = spies.recordWorkflowUsage.mock.calls as unknown[][];
+      const workflowRun = rwCalls.at(-1)?.[5] as {
+        stepTimings: Array<{ stepNumber: number }>;
+        status: string;
+      };
+      // Unchanged from before #1231: maxSteps:2 still exhausts and fails.
+      expect(workflowRun.stepTimings).toHaveLength(2);
+      expect(workflowRun.status).toBe("failed");
+
+      const emitted = (spies.emitSessionEvent.mock.calls as unknown[][]).map(
+        (call) =>
+          call[0] as {
+            eventName?: string;
+            payload?: Record<string, unknown>;
+          },
+      );
+      const failedEvent = emitted.findLast(
+        (event) => event.eventName === "workflow.failed",
+      );
+      expect(failedEvent?.payload).toMatchObject({ stopReason: "max_steps" });
+    });
   });
 
   test("recordGoalLedgerClose uses 'canceled' status when workflow is aborted", async () => {
