@@ -2146,24 +2146,6 @@ export async function runAgentWorkflow(options: Options) {
     // be truncated in a browser chat just as easily as an MCP one.
     const maxLengthContinuations = getMaxLengthContinuations();
 
-    // TASK-1248: resolve Composio tools ONCE for the whole run, before the
-    // step loop, and reuse the result on every step below — see
-    // resolveComposioToolsForRun's doc comment. `composioRunTools` lives in
-    // this "use workflow" function's own local scope (a plain variable, not
-    // a database-backed cache), which is what makes it safe to hold across
-    // steps inside the workflow VM.
-    const composioRunResolution = await resolveComposioToolsForRun({
-      userId: options.userId,
-      chatId: options.chatId,
-      sessionId: options.sessionId,
-      requestId: options.requestId ?? null,
-      workflowRunId,
-      runtimeMode: agentOptions.runtimeMode ?? "classic",
-      sandboxName: runtimeSandboxName,
-      managedRuntimeProfileRunId,
-    });
-    const composioRunTools = composioRunResolution.tools;
-
     for (
       let step = 0;
       options.maxSteps === undefined || step < options.maxSteps;
@@ -2191,7 +2173,6 @@ export async function runAgentWorkflow(options: Options) {
           agentOptions,
           modelRuntime.actionResolution,
           step + 1,
-          composioRunTools,
         );
       } catch (error) {
         if (isStepTimingError(error)) {
@@ -3040,198 +3021,6 @@ async function resolveStepInferenceProfileModel(params: {
   return resolveInferenceProfileModelSelection(params);
 }
 
-// TASK-1248: resolved ONCE per run (called before the step loop in
-// runAgentWorkflow) instead of once per agent step. The prior per-step call
-// site paid Composio's session-retrieve + tools() round trips (~3 HTTP calls)
-// on every step — 24 resolutions for a 24-step production run — for a result
-// that is deterministic for the life of a run (same user/chat/repo config).
-// The resolved value is threaded into every runAgentStep call as a plain
-// parameter and held in runAgentWorkflow's own local scope: workflow-local
-// state, not a database-backed cache, per the "use workflow" VM constraint
-// (chat.ts must not pull `lib/db` value imports in at module scope).
-async function resolveComposioToolsForRun(params: {
-  userId: string;
-  chatId: string;
-  sessionId: string;
-  requestId: string | null;
-  workflowRunId: string;
-  runtimeMode: "classic" | "managed_runtime";
-  sandboxName: string | null;
-  managedRuntimeProfileRunId: string | null;
-}): Promise<{ tools: ToolSet | undefined }> {
-  "use step";
-
-  const { resolveComposioToolsForChat } =
-    await import("@/lib/composio/session");
-  const { emitSessionEvent } = await import("@/lib/observability/events");
-
-  const {
-    userId,
-    chatId,
-    sessionId,
-    requestId,
-    workflowRunId,
-    runtimeMode,
-    sandboxName,
-    managedRuntimeProfileRunId,
-  } = params;
-
-  let composioTools: ToolSet | undefined;
-  try {
-    const composioResult = await resolveComposioToolsForChat({
-      userId,
-      chatId,
-      agentKey: "main",
-      runtimeMode,
-    });
-
-    // #799 post-review fix: a repo-policy block (partial on a ready
-    // outcome, or total on an off outcome) previously left no trace at
-    // all — the tool list silently shrank, or an all-blocked chat looked
-    // identical to a never-configured one. Record a typed, visible
-    // degradation event whenever repoPolicyBlocked is non-empty, on
-    // EITHER outcome, before the ready-specific events below (so it is
-    // visible even when composioResult.status is "off" and none of those
-    // fire). Non-fatal: never throws; tools continue without the
-    // blocked slugs.
-    if (
-      (composioResult.status === "ready" || composioResult.status === "off") &&
-      composioResult.repoPolicyBlocked &&
-      composioResult.repoPolicyBlocked.length > 0
-    ) {
-      const blockedSlugs = composioResult.repoPolicyBlocked.map((b) => b.slug);
-      const reasons = Object.fromEntries(
-        composioResult.repoPolicyBlocked.map((b) => [b.slug, b.reason]),
-      );
-      // Summary MUST start with "Blocked toolkit for this repository: "
-      // so lib/composio/errors.ts's getComposioErrorKind classifies it as
-      // composio_repo_policy_blocked, and the runtime-observability
-      // panel's LikelyIssue card (composio.* + status "failed") renders
-      // it verbatim (#800).
-      await emitSessionEvent({
-        sessionId,
-        chatId,
-        userId,
-        source: "workflow",
-        actorType: "coordinator",
-        eventName: "composio.repo_policy.blocked",
-        status: "failed",
-        summary: `Blocked toolkit for this repository: ${composioResult.repoPolicyBlocked
-          .map((b) => `${b.slug} (${b.reason})`)
-          .join(", ")}.`,
-        requestId,
-        workflowRunId,
-        sandboxName,
-        managedRuntimeProfileRunId,
-        payload: {
-          blockedSlugs,
-          reasons,
-        },
-      });
-    }
-
-    if (composioResult.status === "ready") {
-      composioTools = composioResult.tools;
-      await emitSessionEvent({
-        sessionId,
-        chatId,
-        userId,
-        source: "workflow",
-        actorType: "coordinator",
-        eventName: "composio.profile.selected",
-        status: "succeeded",
-        summary: composioResult.profile
-          ? `Using Composio profile: ${composioResult.profile.name}.`
-          : `Using Composio direct toolkit list.`,
-        requestId,
-        workflowRunId,
-        sandboxName,
-        managedRuntimeProfileRunId,
-        payload: {
-          profileId: composioResult.profile?.id ?? null,
-          profileName: composioResult.profile?.name ?? null,
-          toolkitSlugs: composioResult.profile?.toolkitSlugs ?? null,
-          configHash: composioResult.configHash,
-          composioSessionId: composioResult.composioSessionId,
-          toolCount: Object.keys(composioResult.tools).length,
-        },
-      });
-      await emitSessionEvent({
-        sessionId,
-        chatId,
-        userId,
-        source: "workflow",
-        actorType: "coordinator",
-        eventName: composioResult.reusedSession
-          ? "composio.session.reused"
-          : "composio.session.created",
-        status: "succeeded",
-        summary: composioResult.reusedSession
-          ? "Reused Composio tool session."
-          : "Created Composio tool session.",
-        requestId,
-        workflowRunId,
-        sandboxName,
-        managedRuntimeProfileRunId,
-        payload: {
-          profileId: composioResult.profile?.id ?? null,
-          configHash: composioResult.configHash,
-          composioSessionId: composioResult.composioSessionId,
-        },
-      });
-
-      // Warn when a selected toolkit has no connected account — its tools are
-      // offered but cannot authenticate (e.g. GitHub picked but never linked).
-      const disconnectedToolkits = composioResult.disconnectedToolkits ?? [];
-      if (disconnectedToolkits.length > 0) {
-        await emitSessionEvent({
-          sessionId,
-          chatId,
-          userId,
-          source: "workflow",
-          actorType: "coordinator",
-          eventName: "composio.toolkit.not_connected",
-          status: "failed",
-          summary: `Selected Composio ${
-            disconnectedToolkits.length === 1 ? "toolkit is" : "toolkits are"
-          } not connected: ${disconnectedToolkits.join(", ")}. Connect ${
-            disconnectedToolkits.length === 1 ? "it" : "them"
-          } in settings — those tools cannot authenticate until then.`,
-          requestId,
-          workflowRunId,
-          sandboxName,
-          managedRuntimeProfileRunId,
-          payload: {
-            disconnectedToolkits,
-            composioSessionId: composioResult.composioSessionId,
-          },
-        });
-      }
-    }
-  } catch (error) {
-    await emitSessionEvent({
-      sessionId,
-      chatId,
-      userId,
-      source: "workflow",
-      actorType: "coordinator",
-      eventName: "composio.session.failed",
-      status: "failed",
-      summary: getComposioUserFacingError(error),
-      requestId,
-      workflowRunId,
-      sandboxName,
-      managedRuntimeProfileRunId,
-      payload: {
-        errorName: error instanceof Error ? error.name : "Error",
-      },
-    });
-    throw error;
-  }
-
-  return { tools: composioTools };
-}
-
 const runAgentStep = async (
   messages: ModelMessage[],
   originalMessages: WebAgentUIMessage[],
@@ -3251,16 +3040,13 @@ const runAgentStep = async (
   agentOptions: OpenAgentCallOptions,
   actionResolution: ChatModelActionResolution,
   stepNumber: number,
-  // TASK-1248: resolved ONCE per run by resolveComposioToolsForRun (called
-  // before the step loop), not once per step — see that function's doc
-  // comment for why. `undefined` means resolution was skipped/off for this
-  // run, same as the old per-step "off" outcome.
-  runComposioTools: ToolSet | undefined,
 ) => {
   "use step";
 
   const stepStartedAt = new Date();
   const { webAgent } = await import("@/app/config");
+  const { resolveComposioToolsForChat } =
+    await import("@/lib/composio/session");
   const { resolveGitHubToolsForChat } = await import("@/lib/github/tools");
   const { emitSessionEvent } = await import("@/lib/observability/events");
 
@@ -3423,12 +3209,166 @@ const runAgentStep = async (
     let totalMessageUsage = existingTotalMessageUsage;
     let totalMessageCost = existingTotalMessageCost;
 
-    // TASK-1248: resolved once per run by resolveComposioToolsForRun
-    // (called before the step loop in runAgentWorkflow) and threaded in as
-    // `runComposioTools` — see that function's doc comment. Kept as its own
-    // `const` (rather than renaming the parameter) so the merge call below
-    // reads identically to before the refactor.
-    const composioTools: ToolSet | undefined = runComposioTools;
+    let composioTools: ToolSet | undefined;
+    try {
+      const composioResult = await resolveComposioToolsForChat({
+        userId,
+        chatId,
+        agentKey: "main",
+        runtimeMode: agentOptions.runtimeMode ?? "classic",
+      });
+
+      // #799 post-review fix: a repo-policy block (partial on a ready
+      // outcome, or total on an off outcome) previously left no trace at
+      // all — the tool list silently shrank, or an all-blocked chat looked
+      // identical to a never-configured one. Record a typed, visible
+      // degradation event whenever repoPolicyBlocked is non-empty, on
+      // EITHER outcome, before the ready-specific events below (so it is
+      // visible even when composioResult.status is "off" and none of those
+      // fire). Non-fatal: never throws; tools continue without the
+      // blocked slugs.
+      if (
+        (composioResult.status === "ready" ||
+          composioResult.status === "off") &&
+        composioResult.repoPolicyBlocked &&
+        composioResult.repoPolicyBlocked.length > 0
+      ) {
+        const blockedSlugs = composioResult.repoPolicyBlocked.map(
+          (b) => b.slug,
+        );
+        const reasons = Object.fromEntries(
+          composioResult.repoPolicyBlocked.map((b) => [b.slug, b.reason]),
+        );
+        // Summary MUST start with "Blocked toolkit for this repository: "
+        // so lib/composio/errors.ts's getComposioErrorKind classifies it as
+        // composio_repo_policy_blocked, and the runtime-observability
+        // panel's LikelyIssue card (composio.* + status "failed") renders
+        // it verbatim (#800).
+        await emitSessionEvent({
+          sessionId,
+          chatId,
+          userId,
+          source: "workflow",
+          actorType: "coordinator",
+          eventName: "composio.repo_policy.blocked",
+          status: "failed",
+          summary: `Blocked toolkit for this repository: ${composioResult.repoPolicyBlocked
+            .map((b) => `${b.slug} (${b.reason})`)
+            .join(", ")}.`,
+          requestId,
+          workflowRunId,
+          sandboxName: stepSandboxName,
+          managedRuntimeProfileRunId: stepManagedRuntimeProfileRunId,
+          payload: {
+            stepNumber,
+            blockedSlugs,
+            reasons,
+          },
+        });
+      }
+
+      if (composioResult.status === "ready") {
+        composioTools = composioResult.tools;
+        await emitSessionEvent({
+          sessionId,
+          chatId,
+          userId,
+          source: "workflow",
+          actorType: "coordinator",
+          eventName: "composio.profile.selected",
+          status: "succeeded",
+          summary: composioResult.profile
+            ? `Using Composio profile: ${composioResult.profile.name}.`
+            : `Using Composio direct toolkit list.`,
+          requestId,
+          workflowRunId,
+          sandboxName: stepSandboxName,
+          managedRuntimeProfileRunId: stepManagedRuntimeProfileRunId,
+          payload: {
+            stepNumber,
+            profileId: composioResult.profile?.id ?? null,
+            profileName: composioResult.profile?.name ?? null,
+            toolkitSlugs: composioResult.profile?.toolkitSlugs ?? null,
+            configHash: composioResult.configHash,
+            composioSessionId: composioResult.composioSessionId,
+            toolCount: Object.keys(composioResult.tools).length,
+          },
+        });
+        await emitSessionEvent({
+          sessionId,
+          chatId,
+          userId,
+          source: "workflow",
+          actorType: "coordinator",
+          eventName: composioResult.reusedSession
+            ? "composio.session.reused"
+            : "composio.session.created",
+          status: "succeeded",
+          summary: composioResult.reusedSession
+            ? "Reused Composio tool session."
+            : "Created Composio tool session.",
+          requestId,
+          workflowRunId,
+          sandboxName: stepSandboxName,
+          managedRuntimeProfileRunId: stepManagedRuntimeProfileRunId,
+          payload: {
+            stepNumber,
+            profileId: composioResult.profile?.id ?? null,
+            configHash: composioResult.configHash,
+            composioSessionId: composioResult.composioSessionId,
+          },
+        });
+
+        // Warn when a selected toolkit has no connected account — its tools are
+        // offered but cannot authenticate (e.g. GitHub picked but never linked).
+        const disconnectedToolkits = composioResult.disconnectedToolkits ?? [];
+        if (disconnectedToolkits.length > 0) {
+          await emitSessionEvent({
+            sessionId,
+            chatId,
+            userId,
+            source: "workflow",
+            actorType: "coordinator",
+            eventName: "composio.toolkit.not_connected",
+            status: "failed",
+            summary: `Selected Composio ${
+              disconnectedToolkits.length === 1 ? "toolkit is" : "toolkits are"
+            } not connected: ${disconnectedToolkits.join(", ")}. Connect ${
+              disconnectedToolkits.length === 1 ? "it" : "them"
+            } in settings — those tools cannot authenticate until then.`,
+            requestId,
+            workflowRunId,
+            sandboxName: stepSandboxName,
+            managedRuntimeProfileRunId: stepManagedRuntimeProfileRunId,
+            payload: {
+              stepNumber,
+              disconnectedToolkits,
+              composioSessionId: composioResult.composioSessionId,
+            },
+          });
+        }
+      }
+    } catch (error) {
+      await emitSessionEvent({
+        sessionId,
+        chatId,
+        userId,
+        source: "workflow",
+        actorType: "coordinator",
+        eventName: "composio.session.failed",
+        status: "failed",
+        summary: getComposioUserFacingError(error),
+        requestId,
+        workflowRunId,
+        sandboxName: stepSandboxName,
+        managedRuntimeProfileRunId: stepManagedRuntimeProfileRunId,
+        payload: {
+          stepNumber,
+          errorName: error instanceof Error ? error.name : "Error",
+        },
+      });
+      throw error;
+    }
 
     let githubTools: ToolSet | undefined;
     try {
