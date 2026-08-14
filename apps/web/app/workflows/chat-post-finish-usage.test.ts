@@ -50,6 +50,14 @@ mock.module("@/lib/db/sessions", () => ({
   claimChatActiveStreamId: mock(() => Promise.resolve(true)),
   compareAndSetChatActiveStreamId: mock(() => Promise.resolve(true)),
   createChatMessageIfNotExists: mock(() => Promise.resolve(undefined)),
+  // #1251: chat-post-finish-impl.ts's runAutoCreatePrStep now reads the
+  // session's baseBranch — unused by this file's own recordWorkflowUsage
+  // tests, but every symbol chat-post-finish-impl.ts imports from this
+  // module must be exported here too, or the module fails to load at all
+  // (Bun's mock.module replaces the whole module).
+  getSessionById: mock(() =>
+    Promise.resolve({ id: "session-1", baseBranch: null }),
+  ),
   touchChat: mock(() => Promise.resolve()),
   updateChat: mock(() => Promise.resolve()),
   updateSession: mock(() => Promise.resolve()),

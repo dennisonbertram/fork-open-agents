@@ -62,14 +62,22 @@ import {
   sendFinish,
 } from "./chat-post-finish";
 import { probeHeadlessRunGitFingerprint } from "./headless-progress-fuse";
+import {
+  buildHeadlessStepToolSignature,
+  createHeadlessActivityState,
+  NO_TOOL_ACTIVITY_SIGNATURE,
+} from "./headless-activity-signal";
+import { createHeadlessProgressDetector } from "./headless-progress-detector";
 import { annotateAbandonedTurns } from "@/lib/chat/annotate-abandoned-turns";
 import {
   buildHeadlessNoSandboxCapMessage,
   buildHeadlessProgressFuseMessage,
+  getHeadlessRunCycleRepeats,
+  getHeadlessRunMaxCyclePeriod,
   getHeadlessRunMaxStaleSteps,
   getHeadlessRunNoSandboxStepCap,
 } from "@/lib/chat/headless-progress-budget";
-import { createProgressBudget } from "@/lib/progress-budget";
+import { getMaxLengthContinuations } from "@/lib/chat/length-continuation-budget";
 import { dedupeMessageReasoning } from "@/lib/chat/dedupe-message-reasoning";
 import {
   buildProviderRejectionMessage,
@@ -1861,6 +1869,20 @@ export async function runAgentWorkflow(options: Options) {
   // #1231: set when a headless run with no sandbox (nothing to probe) hits
   // the fixed fallback step cap instead.
   let headlessNoSandboxCapped = false;
+  // #1247: a step whose finishReason is "length" continues the run instead
+  // of ending it — see the loop below. `consecutiveLengthContinuations`
+  // counts how many such steps have happened in a row (reset by any other
+  // finish reason); `truncationBoundExhausted` is set once that count
+  // exceeds `maxLengthContinuations`, the only case a truncated run actually
+  // ends the run.
+  let consecutiveLengthContinuations = 0;
+  let truncationBoundExhausted = false;
+  // #1247: set when the run ends because it paused for the user to approve
+  // or supply tool input (shouldPauseForToolInteraction) — not a failure.
+  let awaitingToolApproval = false;
+  // #1247: set when the run ends on a finish reason other than stop,
+  // tool-calls, or length (currently content-filter, error, or other).
+  let endedUnexpectedly = false;
   let totalUsage: LanguageModelUsage | undefined;
   let finalFinishReason: FinishReason | undefined;
   let streamClosed = false;
@@ -2096,13 +2118,33 @@ export async function runAgentWorkflow(options: Options) {
     // it is the only signal available without a workspace to observe.
     const headlessHasSandbox = isHeadlessRun && sandboxState !== undefined;
     const headlessRunMaxStaleSteps = getHeadlessRunMaxStaleSteps();
-    const headlessProgressBudget = headlessHasSandbox
-      ? createProgressBudget({ maxStaleTurns: headlessRunMaxStaleSteps })
+    // #1242 follow-up: a window + detectRepetition (repeat AND cycle arms)
+    // instead of an adjacent-only comparison — see
+    // headless-progress-detector.ts's module doc for why an A/B/A/B loop
+    // with a frozen git tree needed this (an adjacent comparison never finds
+    // a repeating BLOCK, only a repeating single value).
+    const headlessProgressDetector = headlessHasSandbox
+      ? createHeadlessProgressDetector({
+          repeatThreshold: headlessRunMaxStaleSteps,
+          maxCyclePeriod: getHeadlessRunMaxCyclePeriod(),
+          cycleRepeats: getHeadlessRunCycleRepeats(),
+        })
+      : null;
+    // #1242: a second signal folded into the same fingerprint so a read-only
+    // run (never changes git, by definition) is not judged solely on git
+    // delta — see headless-activity-signal.ts's module doc for the full
+    // rationale and why assistant text was deliberately left out.
+    const headlessActivityState = headlessProgressDetector
+      ? createHeadlessActivityState()
       : null;
     const headlessNoSandboxStepCap =
       isHeadlessRun && !headlessHasSandbox
         ? getHeadlessRunNoSandboxStepCap()
         : undefined;
+    // #1247: read once per run, same precedent as headlessRunMaxStaleSteps
+    // above — applies to every run, not only headless ones, since a step can
+    // be truncated in a browser chat just as easily as an MCP one.
+    const maxLengthContinuations = getMaxLengthContinuations();
 
     for (
       let step = 0;
@@ -2232,13 +2274,46 @@ export async function runAgentWorkflow(options: Options) {
         break;
       }
 
-      const shouldContinue =
+      const pausedForToolApproval =
         result.finishReason === "tool-calls" &&
-        !shouldPauseForToolInteraction(
+        shouldPauseForToolInteraction(
           result.responseMessage?.parts ?? pendingAssistantResponse.parts,
         );
 
+      // #1247: "length" means the provider's per-response output-token
+      // ceiling cut the model off mid-work, not that the run is done — the
+      // truncated response is already appended to modelMessages above, so
+      // simply not breaking here lets the next step continue from it,
+      // exactly like a tool-calls step. Bounded by maxLengthContinuations so
+      // a response that is truncated on every single step cannot run
+      // forever.
+      const isLengthContinuation = result.finishReason === "length";
+      consecutiveLengthContinuations = isLengthContinuation
+        ? consecutiveLengthContinuations + 1
+        : 0;
+
+      if (
+        isLengthContinuation &&
+        consecutiveLengthContinuations > maxLengthContinuations
+      ) {
+        truncationBoundExhausted = true;
+        break;
+      }
+
+      const shouldContinue =
+        isLengthContinuation ||
+        (result.finishReason === "tool-calls" && !pausedForToolApproval);
+
       if (!shouldContinue) {
+        if (pausedForToolApproval) {
+          awaitingToolApproval = true;
+        } else if (result.finishReason !== "stop") {
+          // Every FinishReason other than stop/tool-calls/length: currently
+          // content-filter, error, or other (the AI SDK's full union). A
+          // future SDK addition here defaults to this shared bucket too,
+          // rather than silently being read as a clean completion.
+          endedUnexpectedly = true;
+        }
         break;
       }
 
@@ -2248,20 +2323,38 @@ export async function runAgentWorkflow(options: Options) {
       // degrades to a null fingerprint, treated as "unknown, not stale"
       // rather than tripping the fuse — that is a transient hiccup, not the
       // structural no-sandbox case handled by the cap below.
-      if (headlessProgressBudget) {
+      if (headlessProgressDetector) {
         const gitFingerprint = sandboxState
           ? await probeHeadlessRunGitFingerprint(sandboxState)
           : null;
         headlessProbeCount += 1;
-        const observation = headlessProgressBudget.observeTurn({
-          gitFingerprint,
+        // #1242: fold this step's tool-call activity into the fingerprint so
+        // a read-only run (git never changes) is judged on more than git
+        // delta alone. Only when the git probe itself succeeded — a null
+        // probe keeps the existing "unknown, not stale" carve-out untouched
+        // rather than having activity mask a real probe failure. See
+        // headless-activity-signal.ts for what counts as "activity" and why.
+        const toolSignature = headlessActivityState
+          ? buildHeadlessStepToolSignature(
+              headlessActivityState,
+              result.responseMessage?.parts ?? pendingAssistantResponse.parts,
+            )
+          : null;
+        const combinedFingerprint =
+          gitFingerprint === null
+            ? null
+            : `${gitFingerprint}::${toolSignature ?? NO_TOOL_ACTIVITY_SIGNATURE}`;
+        const observation = headlessProgressDetector.observeTurn({
+          fingerprint: combinedFingerprint,
         });
         if (observation.verdict === "stop") {
           headlessFuseTripped = true;
-          const fuseText = buildHeadlessProgressFuseMessage(
-            observation.staleTurns,
-            headlessRunMaxStaleSteps,
-          );
+          const fuseText = buildHeadlessProgressFuseMessage({
+            reason: observation.reason,
+            repeatCount: observation.repeatCount,
+            cycleLength: observation.cycleLength,
+            maxStaleSteps: headlessRunMaxStaleSteps,
+          });
           await sendTextMessage(
             writable,
             `${assistantId}:headless-progress-fuse`,
@@ -2330,10 +2423,12 @@ export async function runAgentWorkflow(options: Options) {
         : []),
     ]);
 
-    const finishedNaturally =
-      !wasAborted &&
-      finalFinishReason !== undefined &&
-      finalFinishReason !== "tool-calls";
+    // #1247: tightened from "anything but tool-calls" to "stop" specifically
+    // — "length" (and content-filter/error/other) used to count as a natural
+    // finish here too, which let auto-commit save a truncated or unexpectedly
+    // ended response as if the work were done. Only a clean "stop" is a
+    // finish worth auto-committing.
+    const finishedNaturally = !wasAborted && finalFinishReason === "stop";
     const commitPartId = `${assistantId}:commit`;
     const prPartId = `${assistantId}:pr`;
     const repoOwner = runtime.repoOwner;
@@ -2574,12 +2669,21 @@ export async function runAgentWorkflow(options: Options) {
       await persistAssistantMessage(options.chatId, pendingAssistantResponse);
     }
 
+    // #1247: truncated and endedUnexpectedly join the existing deliberate
+    // stops in the coarse "failed" bucket — incomplete or untrustworthy
+    // work, same treatment as a stalled or step-capped run. awaitingToolApproval
+    // deliberately does NOT: pausing for the user is not a failure, and
+    // filing it as one would misreport 16% of production runs (the issue's
+    // own measurement of the tool-calls-pause pattern) as broken. Only the
+    // fine-grained `workflowRunOutcomeStatus` below distinguishes it.
     workflowStatus = wasAborted
       ? "aborted"
       : exhaustedMaxSteps ||
           stoppedForRepeatedToolFailure ||
           headlessFuseTripped ||
-          headlessNoSandboxCapped
+          headlessNoSandboxCapped ||
+          truncationBoundExhausted ||
+          endedUnexpectedly
         ? "failed"
         : "completed";
     workflowRunOutcomeStatus = deriveWorkflowRunOutcomeStatus({
@@ -2589,6 +2693,9 @@ export async function runAgentWorkflow(options: Options) {
       exhaustedMaxSteps,
       headlessFuseTripped,
       headlessNoSandboxCapped,
+      truncationBoundExhausted,
+      awaitingToolApproval,
+      endedUnexpectedly,
     });
 
     if (
@@ -2665,6 +2772,9 @@ export async function runAgentWorkflow(options: Options) {
       exhaustedMaxSteps,
       headlessFuseTripped,
       headlessNoSandboxCapped,
+      truncationBoundExhausted,
+      awaitingToolApproval,
+      endedUnexpectedly,
     });
     caughtError = error;
 
@@ -2725,11 +2835,22 @@ export async function runAgentWorkflow(options: Options) {
             sessionId: options.sessionId,
             chatId: options.chatId,
             workflowRunId,
-            reason: headlessFuseTripped
-              ? "no_progress"
-              : headlessNoSandboxCapped
-                ? "no_sandbox_cap"
-                : "completed",
+            // #1247: "truncated", "awaiting_tool_approval", and
+            // "ended_unexpectedly" use the exact same literal as
+            // workflowRunOutcomeStatus/lastRunOutcome — "one vocabulary,
+            // three surfaces". The pre-existing "no_progress"/"no_sandbox_cap"
+            // strings below predate that requirement and are left as-is.
+            reason: truncationBoundExhausted
+              ? "truncated"
+              : awaitingToolApproval
+                ? "awaiting_tool_approval"
+                : endedUnexpectedly
+                  ? "ended_unexpectedly"
+                  : headlessFuseTripped
+                    ? "no_progress"
+                    : headlessNoSandboxCapped
+                      ? "no_sandbox_cap"
+                      : "completed",
             turns: headlessProbeCount,
             steps: stepTimings.length,
           }),
@@ -2811,7 +2932,13 @@ export async function runAgentWorkflow(options: Options) {
                 ? "no_progress_fuse"
                 : headlessNoSandboxCapped
                   ? "no_sandbox_step_cap"
-                  : null,
+                  : truncationBoundExhausted
+                    ? "truncated"
+                    : awaitingToolApproval
+                      ? "awaiting_tool_approval"
+                      : endedUnexpectedly
+                        ? "ended_unexpectedly"
+                        : null,
         },
       });
 

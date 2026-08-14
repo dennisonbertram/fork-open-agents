@@ -31,6 +31,9 @@ const spies = {
   updateSession: mock((_sessionId: string, _patch: Record<string, unknown>) =>
     Promise.resolve(),
   ),
+  getSessionById: mock((_sessionId: string) =>
+    Promise.resolve({ id: "session-1", baseBranch: null } as unknown),
+  ),
   upsertChatMessageScoped: mock(() =>
     Promise.resolve(upsertChatMessageScopedResult),
   ),
@@ -65,6 +68,7 @@ mock.module("@/lib/db/sessions", () => ({
   claimChatActiveStreamId: spies.claimChatActiveStreamId,
   compareAndSetChatActiveStreamId: spies.compareAndSetChatActiveStreamId,
   createChatMessageIfNotExists: spies.createChatMessageIfNotExists,
+  getSessionById: spies.getSessionById,
   isFirstChatMessage: spies.isFirstChatMessage,
   touchChat: spies.touchChat,
   updateChat: spies.updateChat,
@@ -147,6 +151,9 @@ beforeEach(() => {
   createChatMessageIfNotExistsResult = { id: "msg-1" };
   isFirstChatMessageResult = false;
   upsertChatMessageScopedResult = { status: "inserted" };
+  spies.getSessionById.mockImplementation((_sessionId: string) =>
+    Promise.resolve({ id: "session-1", baseBranch: null } as unknown),
+  );
 });
 
 // ─── persistUserMessage ────────────────────────────────────────────
@@ -478,6 +485,65 @@ describe("runAutoCreatePrStep", () => {
       repoName: "repo",
       sandboxState: { type: "vercel" } as never,
     });
+  });
+
+  test("BT-1251-10: passes the session's baseBranch through to performAutoCreatePr", async () => {
+    spies.getSessionById.mockImplementation((_sessionId: string) =>
+      Promise.resolve({ id: "session-1", baseBranch: "develop" } as unknown),
+    );
+
+    await runAutoCreatePrStep({
+      userId: "user-1",
+      sessionId: "session-1",
+      sessionTitle: "My session",
+      repoOwner: "acme",
+      repoName: "repo",
+      sandboxState: { type: "vercel" } as never,
+    });
+
+    expect(spies.getSessionById).toHaveBeenCalledWith("session-1");
+    expect(spies.performAutoCreatePr).toHaveBeenCalledWith(
+      expect.objectContaining({ baseBranch: "develop" }),
+    );
+  });
+
+  test("regression: a session with no baseBranch passes null through, not undefined dropped silently — preserves today's repository-default behavior", async () => {
+    spies.getSessionById.mockImplementation((_sessionId: string) =>
+      Promise.resolve({ id: "session-1", baseBranch: null } as unknown),
+    );
+
+    await runAutoCreatePrStep({
+      userId: "user-1",
+      sessionId: "session-1",
+      sessionTitle: "My session",
+      repoOwner: "acme",
+      repoName: "repo",
+      sandboxState: { type: "vercel" } as never,
+    });
+
+    expect(spies.performAutoCreatePr).toHaveBeenCalledWith(
+      expect.objectContaining({ baseBranch: null }),
+    );
+  });
+
+  test("does not throw when the session lookup for baseBranch fails — auto-PR still runs, falling back to the repository default", async () => {
+    spies.getSessionById.mockImplementation(() =>
+      Promise.reject(new Error("db unavailable")),
+    );
+
+    const result = await runAutoCreatePrStep({
+      userId: "user-1",
+      sessionId: "session-1",
+      sessionTitle: "My session",
+      repoOwner: "acme",
+      repoName: "repo",
+      sandboxState: { type: "vercel" } as never,
+    });
+
+    expect(result.error).toBeUndefined();
+    expect(spies.performAutoCreatePr).toHaveBeenCalledWith(
+      expect.objectContaining({ baseBranch: null }),
+    );
   });
 });
 

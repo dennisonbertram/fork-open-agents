@@ -62,6 +62,37 @@ function generateBranchName(username: string, name?: string | null): string {
   return `${initials}/${randomSuffix}`;
 }
 
+/**
+ * Resolves the session's working branch and, for a new-branch session, the
+ * base it was cut from (#1251).
+ *
+ * Before this existed, the new-branch path called generateBranchName() and
+ * never read `inputBranch` at all — a session created with isNewBranch: true
+ * and branch: "develop" silently discarded "develop" and was cloned from the
+ * repository's default branch instead.
+ */
+export function resolveSessionBranches(params: {
+  isNewBranch: boolean;
+  inputBranch?: string;
+  repoDefaultBranch?: string | null;
+  username: string;
+  name?: string | null;
+}): { branch: string | undefined; baseBranch: string | null } {
+  if (params.isNewBranch) {
+    return {
+      branch: generateBranchName(params.username, params.name),
+      // The caller's branch (or, absent that, the repo's own default) becomes
+      // the base the new working branch is cut from — never itself the
+      // working branch, which is always the freshly generated name above.
+      baseBranch: params.inputBranch ?? params.repoDefaultBranch ?? null,
+    };
+  }
+  return {
+    branch: params.inputBranch ?? params.repoDefaultBranch ?? undefined,
+    baseBranch: null,
+  };
+}
+
 async function resolveSessionTitle(
   explicitTitle: string | undefined,
   userId: string,
@@ -127,14 +158,13 @@ export async function createSessionCore(
   const effectiveIsNewBranch =
     input.isNewBranch ?? repoDefaults?.isNewBranch ?? false;
 
-  // Branch: if effectiveIsNewBranch, generate a new branch name;
-  // otherwise use the explicit body branch or resolved default branch.
-  let finalBranch: string | undefined;
-  if (effectiveIsNewBranch) {
-    finalBranch = generateBranchName(input.username, input.name);
-  } else {
-    finalBranch = input.branch ?? repoDefaults?.defaultBranch ?? undefined;
-  }
+  const { branch: finalBranch, baseBranch } = resolveSessionBranches({
+    isNewBranch: effectiveIsNewBranch,
+    inputBranch: input.branch,
+    repoDefaultBranch: repoDefaults?.defaultBranch,
+    username: input.username,
+    name: input.name,
+  });
 
   // runtimeMode precedence: body (explicit New-Chat picker choice) > repo
   // defaults > system "classic". A default-profile preference change never
@@ -171,6 +201,7 @@ export async function createSessionCore(
       repoOwner: input.repoOwner,
       repoName: input.repoName,
       branch: finalBranch,
+      baseBranch,
       cloneUrl: input.cloneUrl,
       vercelProjectId: resolvedVercelProject?.projectId ?? null,
       vercelProjectName: resolvedVercelProject?.projectName ?? null,

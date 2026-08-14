@@ -338,6 +338,14 @@ export const sessions = pgTable(
     repoOwner: text("repo_owner"),
     repoName: text("repo_name"),
     branch: text("branch"),
+    // The branch a new working `branch` was cut from (#1251). Only ever set
+    // alongside isNewBranch: true. Nullable, no backfill: null means "no base
+    // recorded" — a session created before this column existed, a session
+    // that works directly on `branch` (isNewBranch: false), or a new-branch
+    // session where the caller didn't name a starting point. Every one of
+    // those falls back to the repository's default branch downstream, same
+    // as before this column existed.
+    baseBranch: text("base_branch"),
     cloneUrl: text("clone_url"),
     vercelProjectId: text("vercel_project_id"),
     vercelProjectName: text("vercel_project_name"),
@@ -1912,6 +1920,13 @@ export const workflowRuns = pgTable(
     // app/workflows/chat.ts, #1231) is filed under its own name instead of
     // collapsing into "failed" alongside a genuine crash. `failed` keeps
     // meaning "the workflow threw"; the four new values are deliberate stops.
+    // #1247: widened a second time with "truncated" (a step hit the
+    // provider's output-token ceiling and stayed truncated after every
+    // continuation the budget allowed), "awaiting_tool_approval" (the run
+    // paused for the user, not a failure), and "ended_unexpectedly" (the
+    // content-filter/error/other finish reasons) — see the doc comment on
+    // `WorkflowRunStatus` (lib/chat/workflow-run-outcome.ts) for the full
+    // rationale, and the reader audit there for every consumer this touches.
     // Plain Postgres `text` with a TypeScript-level enum — no check
     // constraint, so this widening needs no migration (confirmed via
     // `db:generate`).
@@ -1924,6 +1939,9 @@ export const workflowRuns = pgTable(
         "no_sandbox_step_cap",
         "max_steps",
         "repeated_tool_failure",
+        "truncated",
+        "awaiting_tool_approval",
+        "ended_unexpectedly",
       ],
     }).notNull(),
     startedAt: timestamp("started_at").notNull(),
