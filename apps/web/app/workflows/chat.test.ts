@@ -3109,6 +3109,30 @@ describe("runAgentWorkflow", () => {
     );
   });
 
+  // Regression for a #1230 follow-up defect: `agentOptions: { ...modelRuntime.agentOptions, ...options.agentOptions }`
+  // is a shallow spread, so a caller-supplied customInstructions (e.g. the MCP
+  // headless instructions) wholesale replaced assistantFileLinkPrompt instead
+  // of composing with it — every MCP-started run silently lost the file-link
+  // instruction. The fix must compose (base first, caller's second), not
+  // clobber.
+  test("composes a caller-supplied customInstructions with the base file-link prompt instead of replacing it", async () => {
+    const { assistantFileLinkPrompt } =
+      await import("@/lib/assistant-file-links");
+    const callerInstructions =
+      "You are running headless: no human is watching this session.";
+
+    await runAgentWorkflow(
+      makeOptions({
+        agentOptions: { customInstructions: callerInstructions },
+      }),
+    );
+
+    const opts = agentStreamOptions as Record<string, unknown> | undefined;
+    const customInstructions = opts?.customInstructions as string | undefined;
+    expect(customInstructions).toContain(assistantFileLinkPrompt);
+    expect(customInstructions).toContain(callerInstructions);
+  });
+
   // ── PARAMOUNT INVARIANT: subagent roster must be null when no DB rows ──────
   // BT-ROSTER-001 through BT-ROSTER-003 guard against the invariant violation
   // described in the blocking finding: when resolveAgentForRole returns a synthetic

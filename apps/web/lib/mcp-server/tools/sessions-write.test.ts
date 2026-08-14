@@ -1,4 +1,12 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  mock,
+  spyOn,
+  test,
+} from "bun:test";
 
 mock.module("server-only", () => ({}));
 
@@ -791,5 +799,79 @@ describe("regression: #1230 headless-run design decisions", () => {
     expect(received?.autoCommitPush).toBe(false);
     expect(Object.hasOwn(received ?? {}, "autoCreatePr")).toBe(true);
     expect(received?.autoCreatePr).toBe(false);
+  });
+
+  test("startSession emits mcp.run.started at info with ids/counts only — no prompt text", async () => {
+    const infoSpy = spyOn(console, "info").mockImplementation(() => undefined);
+    const { startSession } = await toolsModulePromise;
+    startChatRun.mockImplementation(
+      async () => ({ status: "started", runId: "run-started" }) as unknown,
+    );
+
+    await startSession(makeCtx({ requestId: "req-headless" }), {
+      repoOwner: "acme",
+      repoName: "widgets",
+      prompt: "this prompt text must never be logged",
+      autoCommit: true,
+      autoCreatePr: false,
+    });
+
+    const call = infoSpy.mock.calls.find(([, payload]) =>
+      typeof payload === "string" ? payload.includes("mcp.run.started") : false,
+    );
+    expect(call).toBeDefined();
+    const logged = JSON.parse(call?.[1] as string) as Record<string, unknown>;
+    expect(logged).toMatchObject({
+      service: "mcp-server",
+      event: "mcp.run.started",
+      requestId: "req-headless",
+      userId: "user-1",
+      sessionId: "session-new",
+      chatId: "chat-new",
+      workflowRunId: "run-started",
+      unattended: true,
+      autoCommit: true,
+      autoCreatePr: false,
+    });
+    expect(logged.deniedToolNames).toContain("ask_user_question");
+    expect(JSON.stringify(logged)).not.toContain("this prompt text");
+    infoSpy.mockRestore();
+  });
+
+  test("sendMessage emits mcp.run.started at info, with autoCommit/autoCreatePr null (no per-message override)", async () => {
+    const infoSpy = spyOn(console, "info").mockImplementation(() => undefined);
+    const { sendMessage } = await toolsModulePromise;
+    seedSession(buildSessionRow());
+    getChatsBySessionId.mockImplementation(async () => [
+      { id: "chat-1", sessionId: "session-1" },
+    ]);
+    startChatRun.mockImplementation(
+      async () => ({ status: "started", runId: "run-started-2" }) as unknown,
+    );
+
+    await sendMessage(makeCtx({ requestId: "req-headless-2" }), {
+      sessionId: "session-1",
+      prompt: "keep going",
+    });
+
+    const call = infoSpy.mock.calls.find(([, payload]) =>
+      typeof payload === "string" ? payload.includes("mcp.run.started") : false,
+    );
+    expect(call).toBeDefined();
+    const logged = JSON.parse(call?.[1] as string) as Record<string, unknown>;
+    expect(logged).toMatchObject({
+      service: "mcp-server",
+      event: "mcp.run.started",
+      requestId: "req-headless-2",
+      userId: "user-1",
+      sessionId: "session-1",
+      chatId: "chat-1",
+      workflowRunId: "run-started-2",
+      unattended: true,
+      autoCommit: null,
+      autoCreatePr: null,
+    });
+    expect(logged.deniedToolNames).toContain("ask_user_question");
+    infoSpy.mockRestore();
   });
 });
