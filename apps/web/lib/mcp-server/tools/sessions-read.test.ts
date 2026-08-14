@@ -1368,6 +1368,26 @@ describe("getSession ownership", () => {
       expect(prCall?.eventNames).not.toContain(name);
     }
   });
+
+  test("regression: a failed git-automation event lookup degrades to null rather than failing the whole get_session call", async () => {
+    // get_session is the caller's primary read tool — a transient failure in
+    // this brand-new side lookup (a DB hiccup, a bad query) must not take the
+    // rest of the session detail down with it.
+    const { getSession } = await toolsModulePromise;
+    seedSession(buildSessionRow());
+    getLatestSessionEventByNames.mockImplementation(async ({ eventNames }) => {
+      if (eventNames.includes("workflow.auto_commit.failed")) {
+        throw new Error("db unavailable");
+      }
+      return null;
+    });
+
+    const result = await getSession(makeCtx({}), { sessionId: "session-1" });
+
+    expect(result.id).toBe("session-1");
+    expect(result.lastAutoCommitEvent).toBeNull();
+    expect(result.lastAutoPrEvent).toBeNull();
+  });
 });
 
 describe("getMessages", () => {

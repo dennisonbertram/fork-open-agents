@@ -400,6 +400,31 @@ function toGitAutomationEvent(
   };
 }
 
+/**
+ * get_session's primary job — session state, chats, workspace — must not go
+ * down because this side lookup did. A transient DB error here degrades to
+ * "no recorded event" rather than failing the whole get_session call.
+ */
+async function safeLatestGitAutomationEvent(params: {
+  sessionId: string;
+  eventNames: readonly string[];
+}): Promise<Awaited<ReturnType<typeof getLatestSessionEventByNames>>> {
+  try {
+    return await getLatestSessionEventByNames(params);
+  } catch (error) {
+    console.error(
+      "[mcp-server] failed to load git-automation event",
+      JSON.stringify({
+        service: "mcp-server",
+        event: "mcp.get_session.git_automation_lookup_failed",
+        sessionId: params.sessionId,
+        message: error instanceof Error ? error.message : String(error),
+      }),
+    );
+    return null;
+  }
+}
+
 function toSessionSummary(row: SessionWithUnreadRow): McpSessionSummary {
   const state = toSessionState(row.status);
   return {
@@ -790,11 +815,11 @@ export async function getSession(
   // regression test for this in sessions-read.test.ts.
   const [chatRows, lastAutoCommitEvent, lastAutoPrEvent] = await Promise.all([
     getChatSummariesBySessionId(record.id, ctx.userId),
-    getLatestSessionEventByNames({
+    safeLatestGitAutomationEvent({
       sessionId: record.id,
       eventNames: AUTO_COMMIT_EVENT_NAMES,
     }),
-    getLatestSessionEventByNames({
+    safeLatestGitAutomationEvent({
       sessionId: record.id,
       eventNames: AUTO_PR_EVENT_NAMES,
     }),
