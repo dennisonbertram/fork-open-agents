@@ -1,7 +1,7 @@
 import { tool } from "ai";
 import { z } from "zod";
 import * as path from "path";
-import { getSandbox } from "./utils";
+import { getSandbox, getUnattended } from "./utils";
 import { bashPolicy, classifyToolApproval } from "./approval-policy";
 
 const TIMEOUT_MS = 120_000;
@@ -45,7 +45,7 @@ export function commandNeedsApproval(command: string): boolean {
 
 export const bashTool = (options?: ToolOptions) =>
   tool({
-    needsApproval: async (args) => {
+    needsApproval: async (args, { experimental_context }) => {
       // Route through the full policy classifier so gitPushPolicy fires first,
       // then bashPolicy. This ensures destructive git ops (force-push, reset
       // --hard, clean -fd) are gated at runtime, not just in the policy engine.
@@ -53,14 +53,28 @@ export const bashTool = (options?: ToolOptions) =>
         command: args.command,
       });
 
-      if (decision.requires) {
-        if (typeof options?.needsApproval === "function") {
-          return options.needsApproval(args);
-        }
-        return options?.needsApproval ?? true;
+      if (!decision.requires) {
+        return false;
       }
 
-      return false;
+      // In an unattended run (background agent / agent-loop step) there is no
+      // human to answer an approval prompt. Split on blast radius, not tool
+      // identity, so the run does not wedge on a never-approved tool call:
+      //   - local bash effects (bashPolicy) stay inside the ephemeral
+      //     per-session sandbox -> auto-approve.
+      //   - the git-push family (gitPushPolicy) mutates state that outlives
+      //     the sandbox -> keep gated; the unattended loop denies it with a
+      //     recorded reason.
+      if (getUnattended(experimental_context)) {
+        return decision.category === "git-force-push";
+      }
+
+      // Attended run: unchanged — respect any caller override else require
+      // approval by default.
+      if (typeof options?.needsApproval === "function") {
+        return options.needsApproval(args);
+      }
+      return options?.needsApproval ?? true;
     },
     description: `Execute a bash command in the user's shell (non-interactive).
 

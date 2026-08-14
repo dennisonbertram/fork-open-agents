@@ -12,7 +12,8 @@
  *  - Follows the repo convention: factory function returning tool({ description, inputSchema, execute, needsApproval })
  *  - Uses execute(args, { experimental_context }) — reads browser session from an injectable resolver
  *  - Returns discriminated { success: true, ... } / { success: false, error: {kind, message} } — never throws
- *  - Routes needsApproval through classifyToolApproval (approval-policy.ts) — browser tools are outward-facing → requires approval
+ *  - needsApproval requires approval when attended; auto-approves in unattended runs
+ *    (no human can answer) since browser effects stay inside the ephemeral sandbox
  *
  * The writer contract for screenshots:
  *  - If context.writer is present, tool calls writer.write({ type: "file", url: "data:image/png;base64,...", mediaType: "image/png" })
@@ -31,9 +32,9 @@
 
 import { tool } from "ai";
 import { z } from "zod";
-import { classifyToolApproval } from "./approval-policy";
 import { buildScreenshotStreamChunk } from "./browser-image-part";
 import { getBrowserSession } from "./browser-session";
+import { getUnattended } from "./utils";
 import {
   capBrowserText,
   redactBrowserText,
@@ -176,9 +177,14 @@ USAGE:
 - Provide an absolute URL.
 - The browser session persists across tool calls so subsequent click/type/extract/screenshot operate on this page.`,
     inputSchema: navigateInputSchema,
-    needsApproval: (_args: z.infer<typeof navigateInputSchema>) => {
-      return classifyToolApproval("browser_navigate", _args).requires;
-    },
+    // In an unattended run (background agent / agent-loop step) there is no
+    // human to approve a browser tool call. Browser effects stay inside the
+    // ephemeral per-session sandbox, so auto-approve to avoid wedging the run
+    // on its first call. An attended run keeps requiring approval, unchanged.
+    needsApproval: (
+      _args: z.infer<typeof navigateInputSchema>,
+      { experimental_context },
+    ) => !getUnattended(experimental_context),
     execute: async ({ url, waitUntil = "load" }, { experimental_context }) => {
       const ctx = getBrowserContext(experimental_context);
       const recorder = ctx.browserEventRecorder;
@@ -231,9 +237,10 @@ USAGE:
 - Accepts CSS selectors and Playwright text= selectors.
 - Auto-waits for the element to be actionable.`,
     inputSchema: clickInputSchema,
-    needsApproval: (_args: z.infer<typeof clickInputSchema>) => {
-      return classifyToolApproval("browser_click", _args).requires;
-    },
+    needsApproval: (
+      _args: z.infer<typeof clickInputSchema>,
+      { experimental_context },
+    ) => !getUnattended(experimental_context),
     execute: async (
       { selector, timeoutMs = 5000 },
       { experimental_context },
@@ -287,9 +294,10 @@ export const browserTypeTool = () =>
 USAGE:
 - Fills the element value, then optionally presses Enter to submit.`,
     inputSchema: typeInputSchema,
-    needsApproval: (_args: z.infer<typeof typeInputSchema>) => {
-      return classifyToolApproval("browser_type", _args).requires;
-    },
+    needsApproval: (
+      _args: z.infer<typeof typeInputSchema>,
+      { experimental_context },
+    ) => !getUnattended(experimental_context),
     execute: async (
       { selector, text, submit = false },
       { experimental_context },
@@ -346,9 +354,10 @@ USAGE:
 - Omit selector to read the full document body text.
 - Provide selector to target a specific element; provide attribute to read e.g. href.`,
     inputSchema: extractInputSchema,
-    needsApproval: (_args: z.infer<typeof extractInputSchema>) => {
-      return classifyToolApproval("browser_extract", _args).requires;
-    },
+    needsApproval: (
+      _args: z.infer<typeof extractInputSchema>,
+      { experimental_context },
+    ) => !getUnattended(experimental_context),
     execute: async ({ selector, attribute }, { experimental_context }) => {
       const ctx = getBrowserContext(experimental_context);
       const recorder = ctx.browserEventRecorder;
@@ -429,9 +438,10 @@ USAGE:
 - Returns an AI SDK file part (Data URL) so the screenshot renders inline.
 - Use fullPage for the entire page, or selector for a specific element.`,
     inputSchema: screenshotInputSchema,
-    needsApproval: (_args: z.infer<typeof screenshotInputSchema>) => {
-      return classifyToolApproval("browser_screenshot", _args).requires;
-    },
+    needsApproval: (
+      _args: z.infer<typeof screenshotInputSchema>,
+      { experimental_context },
+    ) => !getUnattended(experimental_context),
     execute: async (
       { fullPage = false, selector },
       { experimental_context },
