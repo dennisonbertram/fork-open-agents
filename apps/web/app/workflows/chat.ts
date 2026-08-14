@@ -2857,8 +2857,8 @@ export async function runAgentWorkflow(options: Options) {
             // #1247: "truncated", "awaiting_tool_approval", and
             // "ended_unexpectedly" use the exact same literal as
             // workflowRunOutcomeStatus/lastRunOutcome — "one vocabulary,
-            // three surfaces". The pre-existing "no_progress"/"no_sandbox_cap"
-            // strings below predate that requirement and are left as-is.
+            // three surfaces". The "no_progress_fuse"/"no_sandbox_step_cap"
+            // strings below match the outcome vocabulary exactly.
             reason: truncationBoundExhausted
               ? "truncated"
               : awaitingToolApproval
@@ -2866,9 +2866,9 @@ export async function runAgentWorkflow(options: Options) {
                 : endedUnexpectedly
                   ? "ended_unexpectedly"
                   : headlessFuseTripped
-                    ? "no_progress"
+                    ? "no_progress_fuse"
                     : headlessNoSandboxCapped
-                      ? "no_sandbox_cap"
+                      ? "no_sandbox_step_cap"
                       : "completed",
             turns: headlessProbeCount,
             steps: stepTimings.length,

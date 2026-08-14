@@ -4343,7 +4343,7 @@ describe("runAgentWorkflow", () => {
         String(args[1]).includes('"event":"mcp.run.bounded"'),
       );
       expect(boundedCall).toBeDefined();
-      expect(String(boundedCall?.[1])).toContain('"reason":"no_progress"');
+      expect(String(boundedCall?.[1])).toContain('"reason":"no_progress_fuse"');
 
       const textDeltas = writtenChunks
         .filter(
@@ -4422,12 +4422,12 @@ describe("runAgentWorkflow", () => {
         .join("");
       expect(textDeltas.toLowerCase()).toContain("stopped");
 
-      // Observability: mcp.run.bounded with reason "no_progress".
+      // Observability: mcp.run.bounded with reason "no_progress_fuse".
       const boundedCall = infoSpy.mock.calls.find((args) =>
         String(args[1]).includes('"event":"mcp.run.bounded"'),
       );
       expect(boundedCall).toBeDefined();
-      expect(String(boundedCall?.[1])).toContain('"reason":"no_progress"');
+      expect(String(boundedCall?.[1])).toContain('"reason":"no_progress_fuse"');
 
       infoSpy.mockRestore();
     }, 10_000);
@@ -4500,6 +4500,10 @@ describe("runAgentWorkflow", () => {
       const originalCap = process.env[noSandboxCapEnvKey];
       process.env[noSandboxCapEnvKey] = "3";
 
+      const infoSpy = spyOn(console, "info").mockImplementation(
+        () => undefined,
+      );
+
       spies.resolveChatSandboxRuntime.mockImplementationOnce(
         (params: { assistantId: string }) => {
           writtenChunks.push({ type: "start", messageId: params.assistantId });
@@ -4559,6 +4563,16 @@ describe("runAgentWorkflow", () => {
         .map((chunk) => chunk.delta)
         .join("");
       expect(textDeltas.toLowerCase()).toContain("stopped");
+
+      // Observability: mcp.run.bounded with reason "no_sandbox_step_cap".
+      const boundedCall = infoSpy.mock.calls.find((args) =>
+        String(args[1]).includes('"event":"mcp.run.bounded"'),
+      );
+      expect(boundedCall).toBeDefined();
+      expect(String(boundedCall?.[1])).toContain(
+        '"reason":"no_sandbox_step_cap"',
+      );
+      infoSpy.mockRestore();
     });
 
     // Regression: a browser-started run (the default `agentOptions: {}` from
