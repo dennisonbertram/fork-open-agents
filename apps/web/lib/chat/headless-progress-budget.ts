@@ -57,3 +57,49 @@ export function buildHeadlessProgressFuseMessage(
     "If the goal is still valid, send a follow-up message with a narrower next step or the missing decision.",
   ].join("\n");
 }
+
+/**
+ * Fallback bound for a headless run with no sandbox to probe (a no-repo
+ * session — createSessionCore sets `sandboxState: null` when there is no
+ * repo, so `open_agents_send_message` can start a headless run against one
+ * exactly like any other owned session). The no-progress fuse above cannot
+ * see progress there — every probe would be null, which the budget treats as
+ * "unknown, not stale" forever — so a plain step count is the only signal
+ * available. Independently tunable from HEADLESS_RUN_MAX_STALE_STEPS: the two
+ * bound different failure modes (stalled-with-a-workspace vs.
+ * cannot-observe-a-workspace) and may need different values.
+ */
+export const DEFAULT_HEADLESS_RUN_NO_SANDBOX_STEP_CAP = 50;
+
+/** Same ceiling rationale as HEADLESS_RUN_MAX_STALE_STEPS_CEILING. */
+export const HEADLESS_RUN_NO_SANDBOX_STEP_CAP_CEILING = 500;
+
+/**
+ * Reads `HEADLESS_RUN_NO_SANDBOX_STEP_CAP`. Falls back to the default for a
+ * missing, non-numeric, or non-positive value; clamps to the ceiling above.
+ */
+export function getHeadlessRunNoSandboxStepCap(): number {
+  const raw = process.env.HEADLESS_RUN_NO_SANDBOX_STEP_CAP?.trim();
+  if (!raw) {
+    return DEFAULT_HEADLESS_RUN_NO_SANDBOX_STEP_CAP;
+  }
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return DEFAULT_HEADLESS_RUN_NO_SANDBOX_STEP_CAP;
+  }
+  return Math.min(parsed, HEADLESS_RUN_NO_SANDBOX_STEP_CAP_CEILING);
+}
+
+/**
+ * The message a reading agent sees when the no-sandbox fallback cap ends the
+ * turn — distinct from `buildHeadlessProgressFuseMessage` because the cause
+ * is different (no workspace to observe, not a stalled one) and a reader
+ * debugging logs should not conflate the two.
+ */
+export function buildHeadlessNoSandboxCapMessage(cap: number): string {
+  return [
+    `Stopped: this session has no sandbox, so progress cannot be observed, and this headless run reached the fixed step cap for that case (${cap}).`,
+    "",
+    "If the goal needs a workspace (reading or changing files), retry against a repo-backed session. Otherwise send a follow-up message with a narrower next step.",
+  ].join("\n");
+}

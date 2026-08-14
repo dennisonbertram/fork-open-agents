@@ -64,8 +64,10 @@ import {
 import { probeHeadlessRunGitFingerprint } from "./headless-progress-fuse";
 import { annotateAbandonedTurns } from "@/lib/chat/annotate-abandoned-turns";
 import {
+  buildHeadlessNoSandboxCapMessage,
   buildHeadlessProgressFuseMessage,
   getHeadlessRunMaxStaleSteps,
+  getHeadlessRunNoSandboxStepCap,
 } from "@/lib/chat/headless-progress-budget";
 import { createProgressBudget } from "@/lib/progress-budget";
 import { dedupeMessageReasoning } from "@/lib/chat/dedupe-message-reasoning";
@@ -1850,6 +1852,9 @@ export async function runAgentWorkflow(options: Options) {
   // is the number of fuse observations taken (one per continuing step).
   let headlessFuseTripped = false;
   let headlessProbeCount = 0;
+  // #1231: set when a headless run with no sandbox (nothing to probe) hits
+  // the fixed fallback step cap instead.
+  let headlessNoSandboxCapped = false;
   let totalUsage: LanguageModelUsage | undefined;
   let finalFinishReason: FinishReason | undefined;
   let streamClosed = false;
@@ -2068,10 +2073,23 @@ export async function runAgentWorkflow(options: Options) {
     // `initialFingerprint` is deliberately omitted: the first observation
     // seeds the baseline instead of costing a probe before the run has taken
     // a single step.
+    //
+    // The fuse only works when there is a sandbox to probe. A headless
+    // send_message to a no-repo session (sandboxState is null —
+    // create-session.ts:186) has nothing to fingerprint: every probe would
+    // return null, which the budget treats as "unknown, not stale" forever,
+    // leaving the run unbounded AND unfused. `headlessNoSandboxStepCap` is
+    // the fallback signal for exactly that case — a plain step count, since
+    // it is the only signal available without a workspace to observe.
+    const headlessHasSandbox = isHeadlessRun && sandboxState !== undefined;
     const headlessRunMaxStaleSteps = getHeadlessRunMaxStaleSteps();
-    const headlessProgressBudget = isHeadlessRun
+    const headlessProgressBudget = headlessHasSandbox
       ? createProgressBudget({ maxStaleTurns: headlessRunMaxStaleSteps })
       : null;
+    const headlessNoSandboxStepCap =
+      isHeadlessRun && !headlessHasSandbox
+        ? getHeadlessRunNoSandboxStepCap()
+        : undefined;
 
     for (
       let step = 0;
@@ -2212,9 +2230,11 @@ export async function runAgentWorkflow(options: Options) {
       }
 
       // #1231: the no-progress fuse — only relevant when the run is about to
-      // take another step. A probe failure (sandbox-free session, connect
-      // error) degrades to a null fingerprint, which the budget treats as
-      // "unknown, not stale" rather than tripping the fuse.
+      // take another step, and only for a headless run that has a sandbox to
+      // probe. A probe failure mid-run (connect error, timeout) still
+      // degrades to a null fingerprint, treated as "unknown, not stale"
+      // rather than tripping the fuse — that is a transient hiccup, not the
+      // structural no-sandbox case handled by the cap below.
       if (headlessProgressBudget) {
         const gitFingerprint = sandboxState
           ? await probeHeadlessRunGitFingerprint(sandboxState)
@@ -2239,6 +2259,29 @@ export async function runAgentWorkflow(options: Options) {
             parts: [
               ...pendingAssistantResponse.parts,
               { type: "text", text: fuseText },
+            ],
+          };
+          break;
+        }
+      } else if (headlessNoSandboxStepCap !== undefined) {
+        // No sandbox to probe — the fuse above cannot run at all. Bound the
+        // run by step count instead, since that is the only signal
+        // available (see the const's comment above the loop).
+        if (step + 1 >= headlessNoSandboxStepCap) {
+          headlessNoSandboxCapped = true;
+          const capText = buildHeadlessNoSandboxCapMessage(
+            headlessNoSandboxStepCap,
+          );
+          await sendTextMessage(
+            writable,
+            `${assistantId}:headless-no-sandbox-cap`,
+            capText,
+          );
+          pendingAssistantResponse = {
+            ...pendingAssistantResponse,
+            parts: [
+              ...pendingAssistantResponse.parts,
+              { type: "text", text: capText },
             ],
           };
           break;
@@ -2522,7 +2565,8 @@ export async function runAgentWorkflow(options: Options) {
       ? "aborted"
       : exhaustedMaxSteps ||
           stoppedForRepeatedToolFailure ||
-          headlessFuseTripped
+          headlessFuseTripped ||
+          headlessNoSandboxCapped
         ? "failed"
         : "completed";
 
@@ -2652,7 +2696,11 @@ export async function runAgentWorkflow(options: Options) {
             sessionId: options.sessionId,
             chatId: options.chatId,
             workflowRunId,
-            reason: headlessFuseTripped ? "no_progress" : "completed",
+            reason: headlessFuseTripped
+              ? "no_progress"
+              : headlessNoSandboxCapped
+                ? "no_sandbox_cap"
+                : "completed",
             turns: headlessProbeCount,
             steps: stepTimings.length,
           }),
@@ -2732,7 +2780,9 @@ export async function runAgentWorkflow(options: Options) {
               ? "max_steps"
               : headlessFuseTripped
                 ? "no_progress_fuse"
-                : null,
+                : headlessNoSandboxCapped
+                  ? "no_sandbox_step_cap"
+                  : null,
         },
       });
 
