@@ -18,6 +18,9 @@ describe("deriveWorkflowRunOutcomeStatus", () => {
     exhaustedMaxSteps: false,
     headlessFuseTripped: false,
     headlessNoSandboxCapped: false,
+    truncationBoundExhausted: false,
+    awaitingToolApproval: false,
+    endedUnexpectedly: false,
   };
 
   test("a clean finish is completed", () => {
@@ -83,6 +86,76 @@ describe("deriveWorkflowRunOutcomeStatus", () => {
         ...base,
         crashed: true,
         wasAborted: true,
+      }),
+    ).toBe("aborted");
+  });
+
+  // #1247: `length` cut a step off mid-work — the model had more to say, so
+  // the run continues instead of ending there. Only when the continuation
+  // budget itself runs out is the run reported at all, and it must be
+  // reported as truncated, not as a clean completion.
+  test("exhausting the length-continuation budget reports its own value", () => {
+    expect(
+      deriveWorkflowRunOutcomeStatus({
+        ...base,
+        truncationBoundExhausted: true,
+      }),
+    ).toBe("truncated");
+  });
+
+  // #1247: a run that pauses for tool approval is neither a clean finish nor
+  // a truncation — it is waiting on the user for the next turn.
+  test("pausing for tool approval reports its own value, distinct from completed and from truncated", () => {
+    expect(
+      deriveWorkflowRunOutcomeStatus({
+        ...base,
+        awaitingToolApproval: true,
+      }),
+    ).toBe("awaiting_tool_approval");
+  });
+
+  // #1247: content-filter / error / other all share one value — none of them
+  // is a guess about intent (unlike the rejected todo-based heuristic), but
+  // splitting three rare provider-side exits into three separate names a
+  // caller would have to special-case individually was not worth the
+  // vocabulary growth. See the module doc for the full reasoning.
+  test("an unhandled finish reason (content-filter / error / other) reports the shared 'ended unexpectedly' value", () => {
+    expect(
+      deriveWorkflowRunOutcomeStatus({
+        ...base,
+        endedUnexpectedly: true,
+      }),
+    ).toBe("ended_unexpectedly");
+  });
+
+  test("exhausted maxSteps takes priority over a length-continuation flag left set from an earlier step", () => {
+    // Mutually exclusive in practice (only one break fires per run), but the
+    // precedence must still be deterministic if that ever changes.
+    expect(
+      deriveWorkflowRunOutcomeStatus({
+        ...base,
+        exhaustedMaxSteps: true,
+        truncationBoundExhausted: true,
+      }),
+    ).toBe("max_steps");
+  });
+
+  test("a crash reports failed even if the truncation budget was exhausted", () => {
+    expect(
+      deriveWorkflowRunOutcomeStatus({
+        ...base,
+        crashed: true,
+        truncationBoundExhausted: true,
+      }),
+    ).toBe("failed");
+  });
+
+  test("a user-initiated abort takes priority over an approval pause", () => {
+    expect(
+      deriveWorkflowRunOutcomeStatus({
+        ...base,
+        wasAborted: true,
+        awaitingToolApproval: true,
       }),
     ).toBe("aborted");
   });
