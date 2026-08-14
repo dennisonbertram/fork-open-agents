@@ -198,6 +198,11 @@ import { RuntimeStatusBadge } from "./runtime-status-badge";
 import { WorkflowPickerCompact } from "./workflow-picker-compact";
 import { SessionHeaderPrActions } from "./session-header-pr-actions";
 import {
+  McpRunLockNotice,
+  resolveActiveRunSource,
+  useMcpComposerLock,
+} from "./session-chat-mcp-run-lock";
+import {
   createOnDemandSandboxForSession,
   createSandbox,
   getSandboxCreateErrorDetails,
@@ -2006,6 +2011,25 @@ export function SessionChatContent({
     () => chats.find((candidate) => candidate.id === chatInfo.id) ?? null,
     [chatInfo.id, chats],
   );
+  const activeRunSource = resolveActiveRunSource(
+    (currentChatListItem as { activeRunSource?: unknown } | null)
+      ?.activeRunSource,
+  );
+  const composerLock = useMcpComposerLock({
+    activeRunSource,
+    isStreaming: currentChatListItem?.isStreaming ?? false,
+  });
+  const [mcpRunTakeoverConfirming, setMcpRunTakeoverConfirming] =
+    useState(false);
+
+  // If the run ends (or the source changes) while a take-over is being
+  // confirmed, drop the pending confirmation so a later headless run is not
+  // left dangling in a confirm state.
+  useEffect(() => {
+    if (!composerLock.locked) {
+      setMcpRunTakeoverConfirming(false);
+    }
+  }, [composerLock.locked]);
   const handleForkAssistantMessage = useCallback(
     async (messageId: string) => {
       if (forkingAssistantMessageId !== null) {
@@ -4559,6 +4583,16 @@ export function SessionChatContent({
                     }}
                     className="hidden"
                   />
+                  <McpRunLockNotice
+                    locked={composerLock.locked}
+                    confirming={mcpRunTakeoverConfirming}
+                    onTakeOver={() => {
+                      composerLock.takeOver();
+                      setMcpRunTakeoverConfirming(false);
+                    }}
+                    onCancel={() => setMcpRunTakeoverConfirming(false)}
+                    onRequestTakeOver={() => setMcpRunTakeoverConfirming(true)}
+                  />
                   <div className="relative">
                     {showSuggestions && (
                       <FileSuggestionsDropdown
@@ -4890,7 +4924,7 @@ export function SessionChatContent({
                                 addTextAttachment(pastedText);
                               }
                             }}
-                            disabled={isArchived}
+                            disabled={isArchived || composerLock.locked}
                             className="w-full resize-none overflow-y-auto bg-transparent text-foreground placeholder:text-muted-foreground focus:outline-none"
                             style={{ minHeight: "24px" }}
                           />
@@ -5177,6 +5211,7 @@ export function SessionChatContent({
                                       disabled={
                                         isArchived ||
                                         isChatInFlight ||
+                                        composerLock.locked ||
                                         (!input.trim() &&
                                           images.length === 0 &&
                                           textAttachments.length === 0) ||
