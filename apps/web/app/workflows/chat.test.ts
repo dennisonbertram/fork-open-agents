@@ -2071,9 +2071,8 @@ describe("runAgentWorkflow", () => {
     });
 
     test("reports truncated once the length-continuation budget is exhausted, distinct from a clean completion", async () => {
-      const { DEFAULT_MAX_LENGTH_CONTINUATIONS } = await import(
-        "@/lib/chat/length-continuation-budget"
-      );
+      const { DEFAULT_MAX_LENGTH_CONTINUATIONS } =
+        await import("@/lib/chat/length-continuation-budget");
       agentFinishReason = "length";
       agentRawFinishReason = "provider_length";
       // Every step is truncated — the response never fits, however many
@@ -2203,9 +2202,9 @@ describe("runAgentWorkflow", () => {
       const emitted = (spies.emitSessionEvent.mock.calls as unknown[][]).map(
         (call) => call[0] as { eventName?: string },
       );
-      expect(emitted.some((event) => event.eventName === "workflow.completed")).toBe(
-        true,
-      );
+      expect(
+        emitted.some((event) => event.eventName === "workflow.completed"),
+      ).toBe(true);
     });
 
     test.each(["content-filter", "error", "other"] as const)(
