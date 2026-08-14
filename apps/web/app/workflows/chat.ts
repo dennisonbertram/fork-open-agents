@@ -49,6 +49,7 @@ import {
   closeStream,
   clearActiveStream,
   hasAutoCommitChangesStep,
+  hibernateHeadlessSandboxAtTurnEnd,
   persistAssistantMessage,
   persistAssistantMessageWithToolResults,
   persistSandboxState,
@@ -60,7 +61,13 @@ import {
   runAutoCreatePrStep,
   sendFinish,
 } from "./chat-post-finish";
+import { probeHeadlessRunGitFingerprint } from "./headless-progress-fuse";
 import { annotateAbandonedTurns } from "@/lib/chat/annotate-abandoned-turns";
+import {
+  buildHeadlessProgressFuseMessage,
+  getHeadlessRunMaxStaleSteps,
+} from "@/lib/chat/headless-progress-budget";
+import { createProgressBudget } from "@/lib/progress-budget";
 import { dedupeMessageReasoning } from "@/lib/chat/dedupe-message-reasoning";
 import {
   buildProviderRejectionMessage,
@@ -1743,6 +1750,12 @@ export async function runAgentWorkflow(options: Options) {
   const writable = getWritable<UIMessageChunk>();
   const emitSessionEvent = emitWorkflowSessionEvent;
 
+  // #1231: `unattended: true` is how the MCP write tools mark a headless run
+  // (see buildHeadlessAgentOptions in lib/mcp-server/headless-run-options.ts —
+  // the only caller that sets it). The browser chat route never sets
+  // agentOptions at all, so this is false for every browser-started run.
+  const isHeadlessRun = options.agentOptions?.unattended === true;
+
   const latestMessage = options.messages.at(-1);
 
   if (latestMessage == null) {
@@ -1833,6 +1846,10 @@ export async function runAgentWorkflow(options: Options) {
   const stepTimings: WorkflowRunStepTiming[] = [];
   let wasAborted = false;
   let exhaustedMaxSteps = false;
+  // #1231: set when the headless no-progress fuse ends the run; headlessProbeCount
+  // is the number of fuse observations taken (one per continuing step).
+  let headlessFuseTripped = false;
+  let headlessProbeCount = 0;
   let totalUsage: LanguageModelUsage | undefined;
   let finalFinishReason: FinishReason | undefined;
   let streamClosed = false;
@@ -2044,6 +2061,18 @@ export async function runAgentWorkflow(options: Options) {
     sandboxState =
       runtime.mode === "sandbox" ? runtime.sandboxState : undefined;
 
+    // #1231: headless runs have no fixed maxSteps (see start-run.ts) — this
+    // budget is what actually bounds them. One observation per step that
+    // continues (see lib/progress-budget.ts's module doc for why that
+    // cadence matches background agents' one-observation-per-turn exactly).
+    // `initialFingerprint` is deliberately omitted: the first observation
+    // seeds the baseline instead of costing a probe before the run has taken
+    // a single step.
+    const headlessRunMaxStaleSteps = getHeadlessRunMaxStaleSteps();
+    const headlessProgressBudget = isHeadlessRun
+      ? createProgressBudget({ maxStaleTurns: headlessRunMaxStaleSteps })
+      : null;
+
     for (
       let step = 0;
       options.maxSteps === undefined || step < options.maxSteps;
@@ -2180,6 +2209,40 @@ export async function runAgentWorkflow(options: Options) {
 
       if (!shouldContinue) {
         break;
+      }
+
+      // #1231: the no-progress fuse — only relevant when the run is about to
+      // take another step. A probe failure (sandbox-free session, connect
+      // error) degrades to a null fingerprint, which the budget treats as
+      // "unknown, not stale" rather than tripping the fuse.
+      if (headlessProgressBudget) {
+        const gitFingerprint = sandboxState
+          ? await probeHeadlessRunGitFingerprint(sandboxState)
+          : null;
+        headlessProbeCount += 1;
+        const observation = headlessProgressBudget.observeTurn({
+          gitFingerprint,
+        });
+        if (observation.verdict === "stop") {
+          headlessFuseTripped = true;
+          const fuseText = buildHeadlessProgressFuseMessage(
+            observation.staleTurns,
+            headlessRunMaxStaleSteps,
+          );
+          await sendTextMessage(
+            writable,
+            `${assistantId}:headless-progress-fuse`,
+            fuseText,
+          );
+          pendingAssistantResponse = {
+            ...pendingAssistantResponse,
+            parts: [
+              ...pendingAssistantResponse.parts,
+              { type: "text", text: fuseText },
+            ],
+          };
+          break;
+        }
       }
 
       if (options.maxSteps !== undefined && step + 1 >= options.maxSteps) {
@@ -2457,7 +2520,9 @@ export async function runAgentWorkflow(options: Options) {
 
     workflowStatus = wasAborted
       ? "aborted"
-      : exhaustedMaxSteps || stoppedForRepeatedToolFailure
+      : exhaustedMaxSteps ||
+          stoppedForRepeatedToolFailure ||
+          headlessFuseTripped
         ? "failed"
         : "completed";
 
@@ -2568,6 +2633,32 @@ export async function runAgentWorkflow(options: Options) {
       }
     } finally {
       const runFinishedAt = new Date();
+
+      // #1231: hibernate a headless run's sandbox immediately when its turn
+      // ends — for any reason (done, blocked, fused) — instead of waiting out
+      // the inactivity window. Placed first in this finally block, after the
+      // active-stream slot is guaranteed released above, so the lifecycle
+      // evaluation does not see this run as still "active". Never throws.
+      if (isHeadlessRun) {
+        await hibernateHeadlessSandboxAtTurnEnd({
+          sessionId: options.sessionId,
+          sandboxName: runtimeSandboxName,
+        });
+        console.info(
+          "[mcp-server] headless run bounded",
+          JSON.stringify({
+            service: "mcp-server",
+            event: "mcp.run.bounded",
+            sessionId: options.sessionId,
+            chatId: options.chatId,
+            workflowRunId,
+            reason: headlessFuseTripped ? "no_progress" : "completed",
+            turns: headlessProbeCount,
+            steps: stepTimings.length,
+          }),
+        );
+      }
+
       await recordWorkflowUsage(
         options.userId,
         modelId,
@@ -2639,7 +2730,9 @@ export async function runAgentWorkflow(options: Options) {
             ? "repeated_tool_failure"
             : exhaustedMaxSteps
               ? "max_steps"
-              : null,
+              : headlessFuseTripped
+                ? "no_progress_fuse"
+                : null,
         },
       });
 

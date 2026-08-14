@@ -248,7 +248,12 @@ export async function startChatRun(
       authSession: input.authSession as Parameters<
         typeof runAgentWorkflow
       >[0]["authSession"],
-      maxSteps: input.maxSteps ?? 500,
+      // #1231: no default. The browser chat route always sets this
+      // explicitly (500); MCP headless callers never set it, and the chat
+      // step loop treats `undefined` as unbounded — a progress-based fuse
+      // (lib/progress-budget.ts) bounds a headless run instead. Do not
+      // reintroduce a fallback here without also removing/adjusting the fuse.
+      maxSteps: input.maxSteps,
       // Only present when a caller (currently: the MCP write tools) sets it —
       // omitted entirely, not `agentOptions: undefined`, so the browser chat
       // route's payload shape is byte-identical to before #1230.
