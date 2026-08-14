@@ -2229,4 +2229,22 @@ describe("session-state descriptions match what the fields actually do", () => {
       expect(tool.description).toContain("right now");
     }
   });
+
+  test("get_session description guides clients to re-read when activity is idle and lastRunOutcome is null", async () => {
+    const { sessionReadTools } = await toolsModulePromise;
+    const getSessionDef = sessionReadTools.find(
+      (def) => def.name === "open_agents_get_session",
+    );
+    if (!getSessionDef) {
+      throw new Error("open_agents_get_session not registered");
+    }
+
+    // The description must explicitly tell clients to issue a brief re-read
+    // when they see activity:"idle" with lastRunOutcome:null — this distinguishes
+    // "run finished but outcome not yet written" from "never ran".
+    expect(getSessionDef.description).toContain("re-read");
+    expect(getSessionDef.description).toContain("idle");
+    expect(getSessionDef.description).toContain("lastRunOutcome");
+    expect(getSessionDef.description).toContain("null");
+  });
 });
