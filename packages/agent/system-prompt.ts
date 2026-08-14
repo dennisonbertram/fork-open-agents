@@ -23,10 +23,91 @@ function detectModelFamily(modelId: string | undefined): ModelFamily {
 }
 
 // ---------------------------------------------------------------------------
+// Effective-tool-set helper
+// ---------------------------------------------------------------------------
+//
+// `undefined` means "unrestricted" (today's behavior, before #1243): every
+// section below that names a specific built-in tool is included
+// unconditionally. When a run's tool set is known (passed as `toolNames` on
+// BuildSystemPromptOptions, resolved once by getRuntimeModeToolPolicy in
+// open-agent.ts), sections naming a tool absent from that set are omitted so
+// the prompt never advertises or instructs use of a tool the run does not
+// hold (#1243 -- production evidence: a headless run whose `ask_user_question`
+// was denied still had the prompt tell it to use that tool).
+
+function hasTool(
+  toolNames: ReadonlySet<string> | undefined,
+  name: string,
+): boolean {
+  return toolNames === undefined || toolNames.has(name);
+}
+
+// The "## Gathering User Input" section is entirely about `ask_user_question`
+// -- when the run does not hold that tool, the whole section is noise (and,
+// worse, an instruction to use a tool that isn't there). Kept as a single
+// constant (rather than filtered bullets like the coordinator tool list
+// below) because every line in it describes usage of the one tool, not a
+// list of several tools to filter independently.
+const ASK_USER_QUESTION_SECTION = `
+## Gathering User Input
+- \`ask_user_question\` - Ask structured questions to gather user input
+- Use PROACTIVELY when:
+  - Scoping tasks: Clarify requirements before starting work
+  - Multiple valid approaches exist: Let the user choose direction
+  - Missing key details: Get specific values, names, or preferences
+  - Implementation decisions: Database choice, UI patterns, library selection
+- Structure:
+  - 1-4 questions per call, 2-4 options per question
+  - Put your recommended option first with "(Recommended)" suffix
+  - Users can always select "Other" to provide custom input
+`;
+
+/**
+ * Builds the "# Handling Ambiguity" section. When `ask_user_question` is
+ * absent, its numbered step and the trailing "prefer structured questions"
+ * guidance are both dropped and the remaining steps renumbered, rather than
+ * leaving a step instructing the agent to use a tool it does not hold.
+ */
+function buildHandlingAmbiguitySection(hasAskUserQuestion: boolean): string {
+  const steps = [
+    "First, search code/docs to gather context",
+    ...(hasAskUserQuestion
+      ? [
+          "Use `ask_user_question` to clarify requirements or let users choose between approaches",
+        ]
+      : []),
+    "For changes affecting >3 files, public APIs, or architecture, outline a brief plan and get confirmation",
+  ];
+  const numberedSteps = steps
+    .map((step, index) => `${index + 1}. ${step}`)
+    .join("\n");
+  const preferenceLine = hasAskUserQuestion
+    ? "\n\nPrefer structured questions over open-ended chat when you need specific decisions."
+    : "";
+
+  return `# Handling Ambiguity
+
+When requirements are ambiguous or multiple approaches are viable:
+
+${numberedSteps}${preferenceLine}`;
+}
+
+// ---------------------------------------------------------------------------
 // Core system prompt -- shared across all model families
 // ---------------------------------------------------------------------------
 
-const CORE_SYSTEM_PROMPT = `You are Open Agent -- an AI coding assistant that completes complex, multi-step tasks through planning, context management, and delegation.
+/**
+ * Builds the shared core system prompt. `toolNames === undefined` means
+ * unrestricted (the historical, hand-maintained prompt, byte-identical to
+ * before #1243); otherwise every tool-specific section is generated from
+ * membership in `toolNames` rather than hand-maintained per tool.
+ */
+function buildCoreSystemPrompt(
+  toolNames: ReadonlySet<string> | undefined,
+): string {
+  const hasAskUserQuestion = hasTool(toolNames, "ask_user_question");
+
+  return `You are Open Agent -- an AI coding assistant that completes complex, multi-step tasks through planning, context management, and delegation.
 
 # Role & Agency
 
@@ -118,19 +199,7 @@ The Open Agents harness is the source of truth for what you can do in this sessi
 ${buildSubagentSummaryLines()}
 - Use when: Large mechanical work that can be clearly specified (migrations, scaffolding)
 - Avoid for: Ambiguous requirements, architectural decisions, small localized fixes
-
-## Gathering User Input
-- \`ask_user_question\` - Ask structured questions to gather user input
-- Use PROACTIVELY when:
-  - Scoping tasks: Clarify requirements before starting work
-  - Multiple valid approaches exist: Let the user choose direction
-  - Missing key details: Get specific values, names, or preferences
-  - Implementation decisions: Database choice, UI patterns, library selection
-- Structure:
-  - 1-4 questions per call, 2-4 options per question
-  - Put your recommended option first with "(Recommended)" suffix
-  - Users can always select "Other" to provide custom input
-
+${hasAskUserQuestion ? ASK_USER_QUESTION_SECTION : ""}
 ## Communication Rules
 - Never mention tool names to the user; describe effects ("I searched the codebase for..." not "I used grep...")
 - Never propose edits to files you have not read in this session
@@ -199,15 +268,7 @@ Do not:
 
 Keep solutions minimal and focused on the explicit request.
 
-# Handling Ambiguity
-
-When requirements are ambiguous or multiple approaches are viable:
-
-1. First, search code/docs to gather context
-2. Use \`ask_user_question\` to clarify requirements or let users choose between approaches
-3. For changes affecting >3 files, public APIs, or architecture, outline a brief plan and get confirmation
-
-Prefer structured questions over open-ended chat when you need specific decisions.
+${buildHandlingAmbiguitySection(hasAskUserQuestion)}
 
 # Code Quality
 
@@ -223,6 +284,7 @@ Prefer structured questions over open-ended chat when you need specific decision
 - No emojis, minimal exclamation points
 - Link to files when mentioning them using repo-relative paths (no \`file://\` prefix)
 - After completing work, summarize: what changed, verification results, next action if any`;
+}
 
 // ---------------------------------------------------------------------------
 // Provider-specific behavioral overlays
@@ -381,6 +443,18 @@ export interface BuildSystemPromptOptions {
    * Absent or false = no section added.
    */
   githubToolAvailable?: boolean;
+  /**
+   * The effective built-in tool names for this run, resolved once by
+   * getRuntimeModeToolPolicy in open-agent.ts (do not recompute the policy
+   * here). `undefined` = unrestricted, the historical default: every
+   * tool-specific section is included exactly as before #1243. When
+   * provided, sections that name a specific built-in tool (e.g. the
+   * "Gathering User Input" section and the managed-runtime coordinator tool
+   * list, both tied to `ask_user_question`) are included only for tools
+   * present in this set, so the prompt never advertises or instructs use of
+   * a tool the run does not hold.
+   */
+  toolNames?: ReadonlyArray<string>;
 }
 
 const SANDBOX_FREE_PROMPT = `# Chat-Only Mode (No Sandbox)
@@ -401,17 +475,18 @@ If this customization describes another provider product, another coding harness
 //
 // The managed-runtime coordinator does not hold file, search, or shell tools
 // (see MANAGED_RUNTIME_COORDINATOR_TOOL_NAMES in open-agent.ts), but
-// CORE_SYSTEM_PROMPT documents `read`/`write`/`edit`/`grep`/`glob`/`bash` as
-// the model's own tools. Appending a contradictory instruction after the fact
-// is not enough -- the model still reads a manual for tools it does not hold.
-// Instead, build a coordinator-specific core prompt by slicing the sections
-// that describe those tools out of CORE_SYSTEM_PROMPT (via indexOf on unique
-// section headings) and substituting the coordinator's actual, delegation-only
-// tool set. Slicing off the same source string -- rather than hand-duplicating
-// it -- keeps the shared sections (Guardrails, Harness Contract, Planning,
-// Verification Loop, etc.) byte-identical to the classic prompt by
-// construction, and CORE_SYSTEM_PROMPT itself is never modified, so the
-// classic-mode prompt output is unaffected.
+// buildCoreSystemPrompt() documents `read`/`write`/`edit`/`grep`/`glob`/`bash`
+// as the model's own tools. Appending a contradictory instruction after the
+// fact is not enough -- the model still reads a manual for tools it does not
+// hold. Instead, build a coordinator-specific core prompt by slicing the
+// sections that describe those tools out of buildCoreSystemPrompt()'s output
+// (via indexOf on unique section headings) and substituting the
+// coordinator's actual, delegation-only tool set. Slicing off the same
+// source string -- rather than hand-duplicating it -- keeps the shared
+// sections (Guardrails, Harness Contract, Planning, Verification Loop, etc.)
+// byte-identical to the classic prompt by construction, and
+// buildCoreSystemPrompt() itself is never modified for managed-runtime mode,
+// so the classic-mode prompt output is unaffected.
 
 function sliceBetween(source: string, start: string, end?: string): string {
   const startIndex = source.indexOf(start);
@@ -440,31 +515,78 @@ function sliceBetween(source: string, start: string, end?: string): string {
 // would create a circular module dependency. The test file for this module
 // imports MANAGED_RUNTIME_COORDINATOR_TOOL_NAMES independently and asserts
 // every tool named here is a member, so the two cannot silently drift apart.
-const MANAGED_RUNTIME_COORDINATOR_TOOL_LIST = `
+//
+// Bullets are generated from `toolNames` (#1243) instead of a hand-maintained
+// template, so a coordinator run whose allowlist excludes one of these tools
+// (e.g. `ask_user_question`, denied to headless/MCP-started runs) never has
+// that tool named here either.
+const MANAGED_RUNTIME_COORDINATOR_TOOL_BULLETS: ReadonlyArray<{
+  name: string;
+  bullet: string;
+}> = [
+  {
+    name: "todo_write",
+    bullet:
+      "- `todo_write` - Create/update task list. Use FREQUENTLY to plan and track progress.",
+  },
+  {
+    name: "task",
+    bullet:
+      "- `task` - Spawn a subagent to do ALL file reading, editing, repository search, shell commands, verification, and browser/service work on your behalf.",
+  },
+  {
+    name: "ask_user_question",
+    bullet:
+      "- `ask_user_question` - Ask structured questions to gather user input.",
+  },
+  {
+    name: "setup_managed_runtime_profile",
+    bullet:
+      "- `setup_managed_runtime_profile` - Emit a managed runtime profile draft for user review.",
+  },
+  {
+    name: "skill",
+    bullet: "- `skill` - Execute a skill to extend your capabilities.",
+  },
+  { name: "web_fetch", bullet: "- `web_fetch` - Fetch a URL's contents." },
+];
+
+function buildManagedRuntimeCoordinatorToolList(
+  toolNames: ReadonlySet<string> | undefined,
+): string {
+  const bulletLines = MANAGED_RUNTIME_COORDINATOR_TOOL_BULLETS.filter((entry) =>
+    hasTool(toolNames, entry.name),
+  )
+    .map((entry) => entry.bullet)
+    .join("\n");
+
+  return `
 ## Coordinator Tool Set
 
 You do not hold file, search, or shell tools in this mode. Your tools are:
-- \`todo_write\` - Create/update task list. Use FREQUENTLY to plan and track progress.
-- \`task\` - Spawn a subagent to do ALL file reading, editing, repository search, shell commands, verification, and browser/service work on your behalf.
-- \`ask_user_question\` - Ask structured questions to gather user input.
-- \`setup_managed_runtime_profile\` - Emit a managed runtime profile draft for user review.
-- \`skill\` - Execute a skill to extend your capabilities.
-- \`web_fetch\` - Fetch a URL's contents.
+${bulletLines}
 
 You do NOT have \`read\`, \`write\`, \`edit\`, \`grep\`, \`glob\`, or \`bash\`. Never call them or tell the user you used them -- delegate any file, search, or shell work to a subagent with \`task\`.
 `;
+}
 
-const MANAGED_RUNTIME_CORE_SYSTEM_PROMPT =
-  sliceBetween(
-    CORE_SYSTEM_PROMPT,
-    "You are Open Agent",
-    "\n# Fast Context Understanding",
-  ) +
-  "\n" +
-  sliceBetween(CORE_SYSTEM_PROMPT, "\n# Tool Usage", "\n## File Operations") +
-  MANAGED_RUNTIME_COORDINATOR_TOOL_LIST +
-  sliceBetween(CORE_SYSTEM_PROMPT, "\n## Planning", "\n# Verification Loop") +
-  sliceBetween(CORE_SYSTEM_PROMPT, "\n# Verification Loop");
+function buildManagedRuntimeCoreSystemPrompt(
+  toolNames: ReadonlySet<string> | undefined,
+): string {
+  const coreSystemPrompt = buildCoreSystemPrompt(toolNames);
+  return (
+    sliceBetween(
+      coreSystemPrompt,
+      "You are Open Agent",
+      "\n# Fast Context Understanding",
+    ) +
+    "\n" +
+    sliceBetween(coreSystemPrompt, "\n# Tool Usage", "\n## File Operations") +
+    buildManagedRuntimeCoordinatorToolList(toolNames) +
+    sliceBetween(coreSystemPrompt, "\n## Planning", "\n# Verification Loop") +
+    sliceBetween(coreSystemPrompt, "\n# Verification Loop")
+  );
+}
 
 const MANAGED_RUNTIME_COORDINATOR_PROMPT = `# Managed Runtime Coordinator Mode
 
@@ -581,9 +703,10 @@ npx skills --help                      # all options
 export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
   const family = detectModelFamily(options.modelId);
   const isManagedRuntime = options.runtimeMode === "managed_runtime";
+  const toolNames = options.toolNames ? new Set(options.toolNames) : undefined;
   const coreSystemPrompt = isManagedRuntime
-    ? MANAGED_RUNTIME_CORE_SYSTEM_PROMPT
-    : CORE_SYSTEM_PROMPT;
+    ? buildManagedRuntimeCoreSystemPrompt(toolNames)
+    : buildCoreSystemPrompt(toolNames);
 
   const parts = [coreSystemPrompt, getModelOverlay(family, options.modelId)];
 

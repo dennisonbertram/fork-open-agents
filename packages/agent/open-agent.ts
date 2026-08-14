@@ -475,6 +475,22 @@ export const openAgent = new ToolLoopAgent({
     const writer = options.writer;
     const sessionId = options.sessionId;
 
+    // Resolved once and reused for both the prompt and the tool set (#1243):
+    // the prompt must describe exactly the tools this call actually holds,
+    // so it is built from the same resolved policy rather than recomputing
+    // or re-deriving it separately.
+    const resolvedTools = getRuntimeModeToolPolicy(
+      runtimeMode,
+      settings.tools,
+      {
+        sandboxFree,
+        toolAuthoringEnabled,
+        manageAgentEnabled,
+        allowedBuiltinToolNames,
+      },
+    );
+    const toolNames = Object.keys(resolvedTools);
+
     const instructions = buildSystemPrompt({
       cwd: sandbox.workingDirectory,
       currentBranch: sandbox.currentBranch,
@@ -488,18 +504,14 @@ export const openAgent = new ToolLoopAgent({
       sandboxFree,
       githubToolsEnabled,
       githubToolAvailable,
+      toolNames,
     });
 
     return {
       ...settings,
       model: callModel,
       tools: addCacheControl({
-        tools: getRuntimeModeToolPolicy(runtimeMode, settings.tools, {
-          sandboxFree,
-          toolAuthoringEnabled,
-          manageAgentEnabled,
-          allowedBuiltinToolNames,
-        }) as typeof tools,
+        tools: resolvedTools as typeof tools,
         model: callModel,
       }),
       instructions,
