@@ -92,10 +92,16 @@ import { getModelSystemPromptForSelection } from "@/lib/model-system-prompts";
 import type { InferenceRoute } from "@/lib/inference/types";
 import type { RecordSessionEventInput } from "@/lib/observability/events";
 import type { Session as AuthSession } from "@/lib/session/types";
-import type {
-  WorkflowRunStatus,
-  WorkflowRunStepTiming,
-} from "@/lib/db/workflow-runs";
+// #1241: the value import comes from lib/chat, NOT lib/db/workflow-runs —
+// this file runs inside the workflow VM, and lib/db/workflow-runs
+// transitively imports `postgres`/`nanoid`, which the workflow VM build
+// rejects. `WorkflowRunStepTiming` is fine to import type-only from lib/db;
+// type-only imports are erased and carry no runtime dependency.
+import {
+  deriveWorkflowRunOutcomeStatus,
+  type WorkflowRunStatus,
+} from "@/lib/chat/workflow-run-outcome";
+import type { WorkflowRunStepTiming } from "@/lib/db/workflow-runs";
 import {
   extractManagedRuntimeWorkersFromParts,
   summarizeManagedRuntimeDirectToolUse,
@@ -1859,6 +1865,13 @@ export async function runAgentWorkflow(options: Options) {
   let finalFinishReason: FinishReason | undefined;
   let streamClosed = false;
   let workflowStatus: WorkflowRunStatus = "completed";
+  // #1241: the fine-grained status persisted to workflowRuns.status. Kept
+  // separate from `workflowStatus` above (which stays the coarse
+  // completed/aborted/failed value every other consumer in this function —
+  // session events, the goal ledger, runtime-proof status — already
+  // switches on) so widening the persisted vocabulary can't change any of
+  // their behavior.
+  let workflowRunOutcomeStatus: WorkflowRunStatus = "completed";
   let caughtError: unknown;
   let sandboxState: OpenAgentCallOptions["sandbox"]["state"] | undefined;
   let shouldRefreshCachedDiff = false;
@@ -2569,6 +2582,14 @@ export async function runAgentWorkflow(options: Options) {
           headlessNoSandboxCapped
         ? "failed"
         : "completed";
+    workflowRunOutcomeStatus = deriveWorkflowRunOutcomeStatus({
+      crashed: false,
+      wasAborted,
+      stoppedForRepeatedToolFailure,
+      exhaustedMaxSteps,
+      headlessFuseTripped,
+      headlessNoSandboxCapped,
+    });
 
     if (
       runtime.mode === "sandbox" &&
@@ -2637,6 +2658,14 @@ export async function runAgentWorkflow(options: Options) {
     streamClosed = true;
   } catch (error) {
     workflowStatus = wasAborted ? "aborted" : "failed";
+    workflowRunOutcomeStatus = deriveWorkflowRunOutcomeStatus({
+      crashed: true,
+      wasAborted,
+      stoppedForRepeatedToolFailure,
+      exhaustedMaxSteps,
+      headlessFuseTripped,
+      headlessNoSandboxCapped,
+    });
     caughtError = error;
 
     if (pendingAssistantResponse.parts.length === 0 && !streamClosed) {
@@ -2726,7 +2755,7 @@ export async function runAgentWorkflow(options: Options) {
           inferenceRoute,
           inferenceProfileId,
           errorMessage: caughtError ? getErrorMessage(caughtError) : null,
-          status: workflowStatus,
+          status: workflowRunOutcomeStatus,
           startedAt: runStartedAt.toISOString(),
           finishedAt: runFinishedAt.toISOString(),
           totalDurationMs: runFinishedAt.getTime() - runStartedAt.getTime(),

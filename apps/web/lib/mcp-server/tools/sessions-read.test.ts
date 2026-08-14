@@ -52,6 +52,16 @@ mock.module("@/lib/sandbox/utils", () => ({
   isSandboxActive,
 }));
 
+// #1241: get_session's `lastRunOutcome` field. get_session only, never
+// list_sessions — issued once per call against the session_id index, so it
+// never becomes an N+1 across a page of sessions.
+const getLatestWorkflowRunStatusBySessionId = mock(
+  async (_sessionId: string) => null as string | null,
+);
+mock.module("@/lib/db/workflow-runs", () => ({
+  getLatestWorkflowRunStatusBySessionId,
+}));
+
 const toolsModulePromise = import("./sessions-read");
 const registryModulePromise = import("../registry");
 const contextModulePromise = import("../context");
@@ -184,6 +194,8 @@ beforeEach(() => {
   countSessionsByUserId.mockClear();
   countSessionsByUserId.mockImplementation(async () => 0);
   isSandboxActive.mockClear();
+  getLatestWorkflowRunStatusBySessionId.mockClear();
+  getLatestWorkflowRunStatusBySessionId.mockImplementation(async () => null);
 });
 
 afterEach(() => {
@@ -1250,6 +1262,102 @@ describe("getSession ownership", () => {
 
     expect(result.activity).toBe("idle");
     expect(result.isStreaming).toBe(true);
+  });
+});
+
+/**
+ * #1241: get_session reports how the last run ended — a third axis distinct
+ * from `state` (filing) and `activity` (is a run live right now). Before
+ * this, a stalled run, a step-capped run, a crash, and a clean finish all
+ * reported identically through this tool.
+ */
+describe("getSession lastRunOutcome (#1241)", () => {
+  test("a session with no run yet reports null", async () => {
+    const { getSession } = await toolsModulePromise;
+    seedSession(buildSessionRow());
+    getLatestWorkflowRunStatusBySessionId.mockImplementation(async () => null);
+
+    const result = await getSession(makeCtx({}), { sessionId: "session-1" });
+
+    expect(result.lastRunOutcome).toBeNull();
+    expect(getLatestWorkflowRunStatusBySessionId).toHaveBeenCalledWith(
+      "session-1",
+    );
+  });
+
+  test.each([
+    "completed",
+    "aborted",
+    "failed",
+    "no_progress_fuse",
+    "no_sandbox_step_cap",
+    "max_steps",
+    "repeated_tool_failure",
+  ] as const)(
+    "reports %s through get_session with the writer's own vocabulary",
+    async (status) => {
+      const { getSession } = await toolsModulePromise;
+      seedSession(buildSessionRow());
+      getLatestWorkflowRunStatusBySessionId.mockImplementation(
+        async () => status,
+      );
+
+      const result = await getSession(makeCtx({}), {
+        sessionId: "session-1",
+      });
+
+      expect(result.lastRunOutcome).toBe(status);
+    },
+  );
+
+  test("a crash is distinguishable from the no-progress fuse", async () => {
+    const { getSession } = await toolsModulePromise;
+    seedSession(buildSessionRow());
+
+    getLatestWorkflowRunStatusBySessionId.mockImplementation(
+      async () => "failed",
+    );
+    const crashed = await getSession(makeCtx({}), { sessionId: "session-1" });
+
+    getLatestWorkflowRunStatusBySessionId.mockImplementation(
+      async () => "no_progress_fuse",
+    );
+    const fused = await getSession(makeCtx({}), { sessionId: "session-1" });
+
+    expect(crashed.lastRunOutcome).toBe("failed");
+    expect(fused.lastRunOutcome).toBe("no_progress_fuse");
+    expect(crashed.lastRunOutcome).not.toBe(fused.lastRunOutcome);
+  });
+
+  test("get_session's real result conforms to its advertised outputSchema for every outcome", async () => {
+    const { getSession } = await toolsModulePromise;
+    const { sessionReadTools } = await toolsModulePromise;
+    const getSessionDef = sessionReadTools.find(
+      (def) => def.name === "open_agents_get_session",
+    );
+    if (!getSessionDef) {
+      throw new Error("open_agents_get_session not registered");
+    }
+
+    seedSession(buildSessionRow());
+
+    for (const status of [
+      null,
+      "completed",
+      "no_progress_fuse",
+      "no_sandbox_step_cap",
+      "max_steps",
+      "repeated_tool_failure",
+    ] as const) {
+      getLatestWorkflowRunStatusBySessionId.mockImplementation(
+        async () => status,
+      );
+      const result = await getSession(makeCtx({}), {
+        sessionId: "session-1",
+      });
+      const parsed = getSessionDef.outputSchema.safeParse(result);
+      expect(parsed.success).toBe(true);
+    }
   });
 });
 

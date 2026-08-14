@@ -111,7 +111,20 @@ export function normalizeRunStatus(
     };
   }
 
-  if (nativeStatus === "failed") {
+  // #1241: workflowRuns.status widened with four deliberate-stop values
+  // (no_progress_fuse, no_sandbox_step_cap, max_steps, repeated_tool_failure)
+  // that used to all be persisted as "failed". Keep treating them the same
+  // way here so a chat_workflow run doesn't silently fall through to
+  // "unknown" the moment the writer starts persisting the more specific
+  // value — get_session's `lastRunOutcome` is where the finer distinction is
+  // surfaced instead.
+  if (
+    nativeStatus === "failed" ||
+    nativeStatus === "no_progress_fuse" ||
+    nativeStatus === "no_sandbox_step_cap" ||
+    nativeStatus === "max_steps" ||
+    nativeStatus === "repeated_tool_failure"
+  ) {
     return terminalStatus("failed");
   }
 

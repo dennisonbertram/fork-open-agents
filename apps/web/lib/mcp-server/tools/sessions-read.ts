@@ -18,6 +18,7 @@ import {
   // reason.
   type SessionsSort,
 } from "@/lib/db/sessions";
+import { getLatestWorkflowRunStatusBySessionId } from "@/lib/db/workflow-runs";
 import {
   buildChatUrl,
   buildSessionUrl,
@@ -28,9 +29,11 @@ import type { McpScope } from "../context";
 import {
   isResumable,
   type McpActivityState,
+  type McpLastRunOutcome,
   type McpSessionState,
   type McpWorkspaceState,
   toActivityState,
+  toLastRunOutcome,
   toSessionState,
   toWorkspaceState,
 } from "../session-state";
@@ -138,6 +141,10 @@ export type McpSessionDetail = {
   workspace: McpWorkspaceState;
   resumable: boolean;
   activity: McpActivityState;
+  /** How the session's most recently recorded run ended, or null when it has
+   * no run yet. A third axis, distinct from `state` and `activity` — see
+   * `toLastRunOutcome` in session-state.ts. */
+  lastRunOutcome: McpLastRunOutcome | null;
   repo: string | null;
   branch: string | null;
   url: string;
@@ -720,6 +727,9 @@ export async function getSession(
   const chatRows = await getChatSummariesBySessionId(record.id, ctx.userId);
   const chats = chatRows.map((chat) => toChatSummary(record.id, chat));
   const state = toSessionState(record.status);
+  // get_session only, never list_sessions — see getLatestWorkflowRunStatusBySessionId's
+  // own doc comment for why this single lookup doesn't become an N+1.
+  const lastRunStatus = await getLatestWorkflowRunStatusBySessionId(record.id);
 
   return {
     id: record.id,
@@ -731,6 +741,7 @@ export async function getSession(
       lifecycleUpdatedAt: record.updatedAt,
     }),
     resumable: isResumable(state),
+    lastRunOutcome: toLastRunOutcome(lastRunStatus),
     // Bounded per chat: a run slot last touched longer ago than any run can
     // live is stale, not live work.
     activity: chatRows.some(
@@ -882,6 +893,17 @@ const workspaceStateOutputSchema = z.enum([
   "none",
 ]);
 const activityStateOutputSchema = z.enum(["working", "idle"]);
+const lastRunOutcomeOutputSchema = z
+  .enum([
+    "completed",
+    "aborted",
+    "failed",
+    "no_progress_fuse",
+    "no_sandbox_step_cap",
+    "max_steps",
+    "repeated_tool_failure",
+  ])
+  .nullable();
 const prStatusOutputSchema = z.enum(["open", "merged", "closed"]).nullable();
 
 const sessionSummaryOutputSchema = z.object({
@@ -965,6 +987,7 @@ const getSessionOutputSchema = z.object({
   workspace: workspaceStateOutputSchema,
   resumable: z.boolean(),
   activity: activityStateOutputSchema,
+  lastRunOutcome: lastRunOutcomeOutputSchema,
   repo: z.string().nullable(),
   branch: z.string().nullable(),
   url: z.string(),
@@ -1032,7 +1055,7 @@ export const sessionReadTools: readonly AnyMcpToolDefinition[] = [
     name: "open_agents_get_session",
     title: "Get Open Agents Session",
     description:
-      "Get full detail for one Open Agents coding session (Open Agents' own session record, not the caller's MCP session) that the caller owns, including its `chats`, `state`, `workspace`, `resumable`, and `activity`, without transcripts or diff bodies. `workspace` reports ready only while a sandbox is live right now; hibernated is the normal resting state and is restored automatically on the next message. `resumable` is true for every non-archived session, whatever its `workspace` says, and `activity` is working only while a run is genuinely live.",
+      "Get full detail for one Open Agents coding session (Open Agents' own session record, not the caller's MCP session) that the caller owns, including its `chats`, `state`, `workspace`, `resumable`, `activity`, and `lastRunOutcome`, without transcripts or diff bodies. `workspace` reports ready only while a sandbox is live right now; hibernated is the normal resting state and is restored automatically on the next message. `resumable` is true for every non-archived session, whatever its `workspace` says, and `activity` is working only while a run is genuinely live. `lastRunOutcome` is a third, distinct axis from `state` (filing) and `activity` (is a run live right now): it reports how the session's most recently recorded run ended — `completed`, `aborted` (user-stopped), `failed` (a genuine crash), or one of four deliberate headless stops (`no_progress_fuse`, `no_sandbox_step_cap`, `max_steps`, `repeated_tool_failure`) — or null when the session has no run yet. A stalled run and a finished run are never the same value.",
     scope: SESSION_READ_SCOPE,
     inputSchema: getSessionInputSchema,
     outputSchema: getSessionOutputSchema,
