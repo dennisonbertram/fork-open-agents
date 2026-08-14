@@ -354,6 +354,7 @@ describe("listSessions", () => {
           hasStreaming: true,
           latestChatId: "chat-1",
           lastActivityAt: justNow,
+          label: "auth-refactor-2026-08-14",
         },
       ];
     });
@@ -391,7 +392,43 @@ describe("listSessions", () => {
       lastActivityAt: justNow.toISOString(),
       createdAt: "2026-01-01T00:00:00.000Z",
       url: "https://mcp.test/sessions/session-1",
+      label: "auth-refactor-2026-08-14",
     });
+  });
+
+  test("returns null label (not undefined, not an error) for a session created without one", async () => {
+    const { listSessions } = await toolsModulePromise;
+    getSessionsWithUnreadByUserId.mockImplementation(async () => [
+      {
+        id: "session-1",
+        title: "Fix bug",
+        status: "running",
+        lifecycleState: null,
+        sandboxExpiresAt: null,
+        updatedAt: new Date("2026-01-01T00:00:00Z"),
+        repoOwner: null,
+        repoName: null,
+        branch: null,
+        linesAdded: 0,
+        linesRemoved: 0,
+        prNumber: null,
+        prStatus: null,
+        createdAt: new Date("2026-01-01T00:00:00Z"),
+        hasUnread: false,
+        hasStreaming: false,
+        latestChatId: null,
+        lastActivityAt: new Date("2026-01-01T00:00:00Z"),
+        label: null,
+      },
+    ]);
+
+    const result = await listSessions(makeCtx({}), {
+      status: "all",
+      limit: 20,
+      offset: 0,
+    });
+
+    expect(result.sessions[0]?.label).toBeNull();
   });
 
   test("does not report a workspace as ready once its sandbox expiry has passed", async () => {
@@ -786,6 +823,261 @@ describe("listSessions", () => {
     expect(countSessionsByUserId).toHaveBeenCalledWith("user-1", {
       status: "active",
     });
+  });
+});
+
+describe("listSessions label filter", () => {
+  test("forwards the label filter into the page query", async () => {
+    const { listSessions } = await toolsModulePromise;
+
+    await listSessions(makeCtx({}), {
+      status: "all",
+      limit: 20,
+      offset: 0,
+      label: "auth-refactor-2026-08-14",
+    });
+
+    expect(getSessionsWithUnreadByUserId).toHaveBeenCalledWith("user-1", {
+      status: "all",
+      limit: 20,
+      offset: 0,
+      label: "auth-refactor-2026-08-14",
+      sort: "created_desc",
+    });
+  });
+
+  test("returns exactly the batch sharing a label, with a total scoped to that same filter", async () => {
+    const { listSessions } = await toolsModulePromise;
+    getSessionsWithUnreadByUserId.mockImplementation(async () => [
+      {
+        id: "session-1",
+        title: "Fix bug",
+        status: "running",
+        lifecycleState: null,
+        sandboxExpiresAt: null,
+        updatedAt: new Date("2026-01-01T00:00:00Z"),
+        repoOwner: null,
+        repoName: null,
+        branch: null,
+        linesAdded: 0,
+        linesRemoved: 0,
+        prNumber: null,
+        prStatus: null,
+        createdAt: new Date("2026-01-01T00:00:00Z"),
+        hasUnread: false,
+        hasStreaming: false,
+        latestChatId: null,
+        lastActivityAt: new Date("2026-01-01T00:00:00Z"),
+        label: "auth-refactor-2026-08-14",
+        // The batch has 5 members; this filtered query's own window total —
+        // NOT the account-wide 94 — is what a client should see.
+        totalCount: 5,
+      },
+    ]);
+
+    const result = await listSessions(makeCtx({}), {
+      status: "all",
+      limit: 20,
+      offset: 0,
+      label: "auth-refactor-2026-08-14",
+    });
+
+    expect(result.total).toBe(5);
+    expect(result.sessions).toHaveLength(1);
+    expect(result.sessions[0]?.label).toBe("auth-refactor-2026-08-14");
+  });
+
+  test("falls back to a label-scoped count query when the filtered page is empty", async () => {
+    const { listSessions } = await toolsModulePromise;
+    countSessionsByUserId.mockImplementation(async () => 0);
+
+    const result = await listSessions(makeCtx({}), {
+      status: "all",
+      limit: 20,
+      offset: 0,
+      label: "nonexistent-label",
+    });
+
+    expect(result.total).toBe(0);
+    expect(countSessionsByUserId).toHaveBeenCalledWith("user-1", {
+      status: "all",
+      label: "nonexistent-label",
+    });
+  });
+
+  test("omitting label filters nothing and does not pass a label key to the page query", async () => {
+    const { listSessions } = await toolsModulePromise;
+
+    await listSessions(makeCtx({}), {
+      status: "all",
+      limit: 20,
+      offset: 0,
+    });
+
+    expect(getSessionsWithUnreadByUserId).toHaveBeenCalledWith("user-1", {
+      status: "all",
+      limit: 20,
+      offset: 0,
+      sort: "created_desc",
+    });
+  });
+});
+
+describe("listSessions sort", () => {
+  test("defaults to created_desc — existing callers see unchanged behavior", async () => {
+    const { listSessions } = await toolsModulePromise;
+
+    await listSessions(makeCtx({}), { status: "all", limit: 20, offset: 0 });
+
+    expect(getSessionsWithUnreadByUserId).toHaveBeenCalledWith("user-1", {
+      status: "all",
+      limit: 20,
+      offset: 0,
+      sort: "created_desc",
+    });
+  });
+
+  test.each([
+    ["created_desc"],
+    ["created_asc"],
+    ["activity_desc"],
+    ["activity_asc"],
+  ])("forwards an explicit sort=%s into the page query", async (sort) => {
+    const { listSessions } = await toolsModulePromise;
+
+    await listSessions(makeCtx({}), {
+      status: "all",
+      limit: 20,
+      offset: 0,
+      sort: sort as "created_desc",
+    });
+
+    expect(getSessionsWithUnreadByUserId).toHaveBeenCalledWith("user-1", {
+      status: "all",
+      limit: 20,
+      offset: 0,
+      sort,
+    });
+  });
+
+  test("rejects an unsupported sort value as invalid_request via the schema", async () => {
+    const { runMcpTool } = await registryModulePromise;
+    const { McpToolError } = await contextModulePromise;
+
+    const promise = runMcpTool("open_agents_list_sessions", makeCtx({}), {
+      status: "all",
+      sort: "alphabetical",
+    });
+
+    await expect(promise).rejects.toBeInstanceOf(McpToolError);
+    await expect(promise).rejects.toMatchObject({
+      errorKind: "invalid_request",
+    });
+    expect(getSessionsWithUnreadByUserId).not.toHaveBeenCalled();
+  });
+
+  test("a full paged walk under every sort collects every row exactly once", async () => {
+    // A minimal fake page query standing in for the real SQL: it filters,
+    // sorts (deterministically, tiebroken by id — the same guarantee
+    // `buildSessionsOrderBy` provides for real), and paginates an in-memory
+    // fixture that deliberately gives several rows an IDENTICAL createdAt and
+    // lastActivityAt — the exact fan-out shape (several sessions started in
+    // one burst) that makes an undertiebroken sort skip or repeat rows across
+    // separate LIMIT/OFFSET pages.
+    const { listSessions } = await toolsModulePromise;
+    const tiedTimestamp = new Date("2026-08-14T00:00:00Z");
+    const fixture = Array.from({ length: 11 }, (_, i) => ({
+      id: `session-${i}`,
+      title: `Session ${i}`,
+      status: "running",
+      lifecycleState: null,
+      sandboxExpiresAt: null,
+      updatedAt: tiedTimestamp,
+      repoOwner: null,
+      repoName: null,
+      branch: null,
+      linesAdded: 0,
+      linesRemoved: 0,
+      prNumber: null,
+      prStatus: null,
+      createdAt: tiedTimestamp,
+      hasUnread: false,
+      hasStreaming: false,
+      latestChatId: null,
+      lastActivityAt: tiedTimestamp,
+      label: "batch",
+    }));
+
+    const sortedIdsAsc = [...fixture]
+      .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+      .map((row) => row.id);
+    // Every tied row shares createdAt/lastActivityAt, so — same as the real
+    // SQL — the only thing that can distinguish "created_desc" from
+    // "activity_desc" here is that each is independently tiebroken by id.
+    // Keying strictly off the `sort` value the mock actually receives (not a
+    // value captured from the outer loop) is what makes this test fail if
+    // `listSessions` ever stops forwarding `sort` to the page query.
+    const ordersBySort: Record<string, string[]> = {
+      created_desc: [...sortedIdsAsc].reverse(),
+      created_asc: sortedIdsAsc,
+      activity_desc: [...sortedIdsAsc].reverse(),
+      activity_asc: sortedIdsAsc,
+    };
+
+    getSessionsWithUnreadByUserId.mockImplementation(
+      async (_userId, options) => {
+        const opts = options as {
+          limit: number;
+          offset: number;
+          sort?: string;
+        };
+        const orderedIds = ordersBySort[opts.sort ?? ""];
+        if (!orderedIds) {
+          // sort was not forwarded (or forwarded as something unsupported):
+          // the real query has nothing to sort by, so report an empty page
+          // rather than guessing — the walk below then collects 0 rows.
+          return [];
+        }
+        const page = orderedIds
+          .slice(opts.offset, opts.offset + opts.limit)
+          .map((id) => fixture.find((row) => row.id === id));
+        return page.map((row) => ({
+          ...(row as (typeof fixture)[number]),
+          totalCount: fixture.length,
+        }));
+      },
+    );
+
+    for (const sort of [
+      "created_desc",
+      "created_asc",
+      "activity_desc",
+      "activity_asc",
+    ] as const) {
+      const orderedIds = ordersBySort[sort] as string[];
+      const pageSize = 3;
+      const collected: string[] = [];
+      let offset = 0;
+      let total = Number.POSITIVE_INFINITY;
+      while (offset < total) {
+        const page = await listSessions(makeCtx({}), {
+          status: "all",
+          limit: pageSize,
+          offset,
+          sort,
+        });
+        total = page.total;
+        collected.push(...page.sessions.map((s) => s.id));
+        offset += page.returned;
+        if (page.returned === 0) {
+          break;
+        }
+      }
+
+      expect(collected).toHaveLength(fixture.length);
+      expect(new Set(collected).size).toBe(fixture.length);
+      expect(collected).toEqual(orderedIds);
+    }
   });
 });
 
