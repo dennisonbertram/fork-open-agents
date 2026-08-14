@@ -131,6 +131,23 @@ mock.module("@/lib/chat/start-run", () => ({
   reconcileChatRunSlot,
 }));
 
+// archive_session calls archiveSession (lib/sandbox/archive-session.ts) IN
+// PROCESS — never the HTTP route, which BotID blocks for headless callers in
+// production. Its real implementation pulls in @open-agents/sandbox,
+// @/lib/github/pulls, and @/lib/github/token, none of which this unit test
+// needs, so the whole module is mocked at this boundary.
+const archiveSession = mock(
+  async (_sessionId: string, _options: unknown) =>
+    ({
+      session: { id: "session-1", userId: "user-1", status: "archived" },
+      archiveTriggered: true,
+    }) as unknown,
+);
+
+mock.module("@/lib/sandbox/archive-session", () => ({
+  archiveSession,
+}));
+
 const toolsModulePromise = import("./sessions-write");
 const registryModulePromise = import("../registry");
 const contextModulePromise = import("../context");
@@ -167,6 +184,7 @@ const TOOL_NAMES = [
   "open_agents_start_session",
   "open_agents_send_message",
   "open_agents_stop_run",
+  "open_agents_archive_session",
 ];
 
 function expectNoWriteIo(): void {
@@ -177,6 +195,7 @@ function expectNoWriteIo(): void {
   expect(startChatRun).not.toHaveBeenCalled();
   expect(stopChatRun).not.toHaveBeenCalled();
   expect(checkRateLimit).not.toHaveBeenCalled();
+  expect(archiveSession).not.toHaveBeenCalled();
 }
 
 beforeEach(() => {
@@ -216,6 +235,14 @@ beforeEach(() => {
     action: "ready",
     runId: null,
   }));
+  archiveSession.mockClear();
+  archiveSession.mockImplementation(
+    async () =>
+      ({
+        session: { id: "session-1", userId: "user-1", status: "archived" },
+        archiveTriggered: true,
+      }) as unknown,
+  );
 });
 
 afterEach(() => {
@@ -414,6 +441,51 @@ describe("startSession", () => {
 
     expect(received?.autoCommitPush).toBe(true);
     expect(received?.autoCreatePr).toBe(true);
+  });
+
+  test("stores and returns a label supplied at creation", async () => {
+    const { startSession } = await toolsModulePromise;
+    let received: Record<string, unknown> | undefined;
+    createSessionCore.mockImplementation(async (input) => {
+      received = input as Record<string, unknown>;
+      return {
+        session: {
+          id: "session-new",
+          userId: "user-1",
+          label: (input as Record<string, unknown>).label,
+        },
+        chat: { id: "chat-new", sessionId: "session-new" },
+      };
+    });
+
+    await startSession(makeCtx({}), {
+      repoOwner: "acme",
+      repoName: "widgets",
+      prompt: "build the thing",
+      label: "auth-refactor-2026-08-14",
+    });
+
+    expect(received?.label).toBe("auth-refactor-2026-08-14");
+  });
+
+  test("a session created without a label leaves createSessionCore's label input undefined — nothing else changes", async () => {
+    const { startSession } = await toolsModulePromise;
+    let received: Record<string, unknown> | undefined;
+    createSessionCore.mockImplementation(async (input) => {
+      received = input as Record<string, unknown>;
+      return {
+        session: { id: "session-new", userId: "user-1" },
+        chat: { id: "chat-new", sessionId: "session-new" },
+      };
+    });
+
+    await startSession(makeCtx({}), {
+      repoOwner: "acme",
+      repoName: "widgets",
+      prompt: "build the thing",
+    });
+
+    expect(received?.label).toBeUndefined();
   });
 
   test(".strict() still rejects an unknown key on start_session", async () => {
@@ -726,6 +798,175 @@ describe("stopRun", () => {
       "not_found",
     );
     expect(stopChatRun).not.toHaveBeenCalled();
+  });
+});
+
+describe("archiveSession", () => {
+  test("archives a session the caller owns and reports it was not already archived", async () => {
+    const { archiveSession: archiveSessionTool } = await toolsModulePromise;
+    seedSession(buildSessionRow({ status: "running" }));
+    archiveSession.mockImplementation(async (sessionId, options) => {
+      expect(sessionId).toBe("session-1");
+      expect(
+        typeof (options as Record<string, unknown>).scheduleBackgroundWork,
+      ).toBe("function");
+      return {
+        session: { id: "session-1", userId: "user-1", status: "archived" },
+        archiveTriggered: true,
+      };
+    });
+
+    const result = await archiveSessionTool(makeCtx({}), {
+      sessionId: "session-1",
+    });
+
+    expect(result).toEqual({
+      sessionId: "session-1",
+      status: "archived",
+      alreadyArchived: false,
+    });
+  });
+
+  test("archiving twice is safe and reports nothing changed the second time", async () => {
+    const { archiveSession: archiveSessionTool } = await toolsModulePromise;
+    seedSession(buildSessionRow({ status: "archived" }));
+    archiveSession.mockImplementation(async () => ({
+      session: { id: "session-1", userId: "user-1", status: "archived" },
+      // archiveSession's real contract: archiveTriggered is false when the
+      // session was already archived, since nothing needed to change.
+      archiveTriggered: false,
+    }));
+
+    const result = await archiveSessionTool(makeCtx({}), {
+      sessionId: "session-1",
+    });
+
+    expect(result).toEqual({
+      sessionId: "session-1",
+      status: "archived",
+      alreadyArchived: true,
+    });
+  });
+
+  test("a missing session and a session owned by a different user produce byte-identical not_found errors — never forbidden, which would reveal the session exists", async () => {
+    const { archiveSession: archiveSessionTool } = await toolsModulePromise;
+    const { McpToolError } = await contextModulePromise;
+    const ctx = makeCtx({ userId: "user-1" });
+
+    seedSession(undefined);
+    let missingError: unknown;
+    try {
+      await archiveSessionTool(ctx, { sessionId: "session-x" });
+    } catch (error) {
+      missingError = error;
+    }
+
+    seedSession(buildSessionRow({ id: "session-x", userId: "someone-else" }));
+    let foreignError: unknown;
+    try {
+      await archiveSessionTool(ctx, { sessionId: "session-x" });
+    } catch (error) {
+      foreignError = error;
+    }
+
+    expect(missingError).toBeInstanceOf(McpToolError);
+    expect(foreignError).toBeInstanceOf(McpToolError);
+    const missing = missingError as InstanceType<typeof McpToolError>;
+    const foreign = foreignError as InstanceType<typeof McpToolError>;
+
+    expect(missing.errorKind).toBe("not_found");
+    expect(foreign.errorKind).toBe("not_found");
+    expect(missing.message).toBe(foreign.message);
+    expect(missing.message).toBe("Session session-x was not found.");
+    expect(archiveSession).not.toHaveBeenCalled();
+  });
+
+  test(".strict() rejects an unknown key on archive_session", async () => {
+    const { runMcpTool } = await registryModulePromise;
+    const { McpToolError } = await contextModulePromise;
+
+    const promise = runMcpTool("open_agents_archive_session", makeCtx({}), {
+      sessionId: "session-1",
+      unknownField: "nope",
+    });
+
+    await expect(promise).rejects.toBeInstanceOf(McpToolError);
+    await expect(promise).rejects.toMatchObject({
+      errorKind: "invalid_request",
+    });
+    expect(archiveSession).not.toHaveBeenCalled();
+  });
+
+  test("emits mcp.session.archived at info with ids/counts only, never the session's own content", async () => {
+    const infoSpy = spyOn(console, "info").mockImplementation(() => undefined);
+    try {
+      const { archiveSession: archiveSessionTool } = await toolsModulePromise;
+      seedSession(
+        buildSessionRow({
+          status: "running",
+          sandboxState: { type: "vercel", sandboxName: "sbx-archive-1" },
+        }),
+      );
+      archiveSession.mockImplementation(async () => ({
+        session: { id: "session-1", userId: "user-1", status: "archived" },
+        archiveTriggered: true,
+      }));
+
+      await archiveSessionTool(makeCtx({ requestId: "req-archive" }), {
+        sessionId: "session-1",
+      });
+
+      const call = infoSpy.mock.calls.find(([, payload]) =>
+        typeof payload === "string"
+          ? payload.includes("mcp.session.archived")
+          : false,
+      );
+      expect(call).toBeDefined();
+      const logged = JSON.parse(call?.[1] as string) as Record<string, unknown>;
+      expect(logged).toMatchObject({
+        service: "mcp-server",
+        event: "mcp.session.archived",
+        requestId: "req-archive",
+        userId: "user-1",
+        sessionId: "session-1",
+        sandboxName: "sbx-archive-1",
+        alreadyArchived: false,
+      });
+    } finally {
+      infoSpy.mockRestore();
+    }
+  });
+
+  test("regression: the scheduleBackgroundWork it passes defers work, rather than running it inline like archive-session.ts's own fire-and-forget default", async () => {
+    // archiveSession's sandbox teardown (stopping the sandbox, refreshing
+    // git/PR state) is real I/O that can take seconds — the same class of
+    // problem #1230 already fixed for the sandbox prewarm kick. Passing
+    // SOME function through (asserted elsewhere in this file) is not enough:
+    // if `scheduleAfterResponse` is ever replaced with a callback that just
+    // invokes its argument immediately, `archiveSession` (this tool) would
+    // still call it and still forward a "function", but the deferral this
+    // exists for would be silently gone. This calls the captured
+    // scheduleBackgroundWork with a probe and proves the probe does not run
+    // synchronously within it.
+    const { archiveSession: archiveSessionTool } = await toolsModulePromise;
+    seedSession(buildSessionRow({ status: "running" }));
+    let capturedSchedule: ((cb: () => Promise<void>) => void) | undefined;
+    archiveSession.mockImplementation(async (_sessionId, options) => {
+      capturedSchedule = (options as Record<string, unknown>)
+        .scheduleBackgroundWork as (cb: () => Promise<void>) => void;
+      return {
+        session: { id: "session-1", userId: "user-1", status: "archived" },
+        archiveTriggered: true,
+      };
+    });
+
+    await archiveSessionTool(makeCtx({}), { sessionId: "session-1" });
+
+    let ranSynchronously = false;
+    capturedSchedule?.(async () => {
+      ranSynchronously = true;
+    });
+    expect(ranSynchronously).toBe(false);
   });
 });
 
