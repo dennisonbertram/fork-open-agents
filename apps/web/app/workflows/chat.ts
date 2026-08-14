@@ -1999,9 +1999,21 @@ export async function runAgentWorkflow(options: Options) {
             ? { sandboxName: runtime.sandboxState.sandboxName }
             : undefined))
         : undefined;
+    // The two customInstructions sources must compose, not clobber: a shallow
+    // spread would let a caller override (e.g. the MCP headless instructions)
+    // silently drop assistantFileLinkPrompt, the base instruction that makes
+    // assistant messages link workspace files. Every other agentOptions field
+    // caller/base can set has no such collision.
+    const baseCustomInstructions = modelRuntime.agentOptions.customInstructions;
+    const callerCustomInstructions = options.agentOptions?.customInstructions;
     const agentOptions: OpenAgentCallOptions = {
       ...modelRuntime.agentOptions,
       ...options.agentOptions,
+      ...(baseCustomInstructions && callerCustomInstructions
+        ? {
+            customInstructions: `${baseCustomInstructions}\n\n${callerCustomInstructions}`,
+          }
+        : {}),
       runtimeMode: runtime.runtimeMode,
       // Signal to the agent that there is no sandbox VM; the tool policy will
       // exclude all sandbox-dependent tools (file/bash/exec/edit/task).

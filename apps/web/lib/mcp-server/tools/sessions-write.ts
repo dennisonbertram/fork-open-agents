@@ -114,6 +114,41 @@ function scheduleAfterResponse(callback: () => Promise<void>): void {
 }
 
 /**
+ * Observability for #1230's Definition of Done: lets an operator confirm a
+ * given session ran headless via
+ * `grep '"event":"mcp.run.started"' logs | grep '"sessionId":"<id>"'`.
+ * Ids and counts only — `deniedToolNames` is a fixed tool-name list, never
+ * prompt or message text.
+ */
+function logMcpRunStarted(input: {
+  requestId: string;
+  userId: string;
+  sessionId: string;
+  chatId: string;
+  workflowRunId: string;
+  deniedToolNames: readonly string[];
+  autoCommit: boolean | null;
+  autoCreatePr: boolean | null;
+}): void {
+  console.info(
+    "[mcp-server] headless run started",
+    JSON.stringify({
+      service: "mcp-server",
+      event: "mcp.run.started",
+      requestId: input.requestId,
+      userId: input.userId,
+      sessionId: input.sessionId,
+      chatId: input.chatId,
+      workflowRunId: input.workflowRunId,
+      unattended: true,
+      deniedToolNames: input.deniedToolNames,
+      autoCommit: input.autoCommit,
+      autoCreatePr: input.autoCreatePr,
+    }),
+  );
+}
+
+/**
  * `startChatRun`'s "resumed" and "conflict" outcomes both mean a run is
  * already live on this chat — a caller sending a new message can't safely
  * layer it on top. Only "started" is a clean result for a write tool.
@@ -207,6 +242,13 @@ const startSessionInputSchema = z
     branch: z.string().min(1).optional(),
     prompt: z.string().min(1),
     runtimeMode: z.enum(["classic", "managed_runtime"]).optional(),
+    // Forwarded straight into createSessionCore's own precedence (request
+    // body > repo defaults > user preferences) and persisted on the session
+    // row (autoCommitPushOverride / autoCreatePrOverride) — every later run
+    // on this session, including send_message, inherits it. No per-run
+    // workflow plumbing needed.
+    autoCommit: z.boolean().optional(),
+    autoCreatePr: z.boolean().optional(),
   })
   .strict();
 
@@ -246,11 +288,13 @@ export async function startSession(
     { createSessionCore },
     { startChatRun },
     { checkRateLimit, rateLimitKey },
+    { buildHeadlessAgentOptions, HEADLESS_DENIED_TOOL_NAMES },
   ] = await Promise.all([
     import("@/lib/db/users"),
     import("@/lib/sessions/create-session"),
     import("@/lib/chat/start-run"),
     import("@/lib/rate-limit"),
+    import("../headless-run-options"),
   ]);
 
   const limited = await checkRateLimit({
@@ -308,6 +352,8 @@ export async function startSession(
     cloneUrl: `https://github.com/${input.repoOwner}/${input.repoName}`,
     branch: input.branch,
     runtimeMode: input.runtimeMode,
+    autoCommitPush: input.autoCommit,
+    autoCreatePr: input.autoCreatePr,
     scheduleBackgroundWork: scheduleAfterResponse,
   });
 
@@ -319,8 +365,19 @@ export async function startSession(
     requestUrl: requestOrigin(),
     requestId: ctx.requestId,
     authSession: null,
+    agentOptions: buildHeadlessAgentOptions(),
   });
   const workflowRunId = requireFreshlyStartedRun(result, chat.id);
+  logMcpRunStarted({
+    requestId: ctx.requestId,
+    userId: ctx.userId,
+    sessionId: session.id,
+    chatId: chat.id,
+    workflowRunId,
+    deniedToolNames: HEADLESS_DENIED_TOOL_NAMES,
+    autoCommit: input.autoCommit ?? null,
+    autoCreatePr: input.autoCreatePr ?? null,
+  });
 
   return {
     sessionId: session.id,
@@ -360,9 +417,14 @@ export async function sendMessage(
   input: SendMessageInput,
 ): Promise<SendMessageResult> {
   // See the comment in startSession for why these are dynamic imports.
-  const [{ startChatRun }, { buildMessagesFromDb }] = await Promise.all([
+  const [
+    { startChatRun },
+    { buildMessagesFromDb },
+    { buildHeadlessAgentOptions, HEADLESS_DENIED_TOOL_NAMES },
+  ] = await Promise.all([
     import("@/lib/chat/start-run"),
     import("@/lib/chat/messages-from-db"),
+    import("../headless-run-options"),
   ]);
 
   const record = await requireOwnedSession(ctx.userId, input.sessionId, {
@@ -380,8 +442,21 @@ export async function sendMessage(
     requestUrl: requestOrigin(),
     requestId: ctx.requestId,
     authSession: null,
+    agentOptions: buildHeadlessAgentOptions(),
   });
   const workflowRunId = requireFreshlyStartedRun(result, chatId);
+  logMcpRunStarted({
+    requestId: ctx.requestId,
+    userId: ctx.userId,
+    sessionId: record.id,
+    chatId,
+    workflowRunId,
+    deniedToolNames: HEADLESS_DENIED_TOOL_NAMES,
+    // send_message has no per-message auto-commit/PR override — the
+    // session-level default from start_session already applies.
+    autoCommit: null,
+    autoCreatePr: null,
+  });
 
   return {
     sessionId: record.id,

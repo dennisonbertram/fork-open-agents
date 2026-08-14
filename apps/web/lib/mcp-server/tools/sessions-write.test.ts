@@ -1,4 +1,12 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  mock,
+  spyOn,
+  test,
+} from "bun:test";
 
 mock.module("server-only", () => ({}));
 
@@ -356,6 +364,76 @@ describe("startSession", () => {
     expect(createSessionCore).not.toHaveBeenCalled();
   });
 
+  test("requests a headless run: unattended:true and a builtin allowlist excluding ask_user_question (#1230)", async () => {
+    const { startSession } = await toolsModulePromise;
+    let capturedAgentOptions: Record<string, unknown> | undefined;
+    startChatRun.mockImplementation(async (input) => {
+      capturedAgentOptions = (input as Record<string, unknown>)
+        .agentOptions as Record<string, unknown>;
+      return { status: "started", runId: "run-new" };
+    });
+
+    await startSession(makeCtx({}), {
+      repoOwner: "acme",
+      repoName: "widgets",
+      prompt: "build the thing",
+    });
+
+    expect(capturedAgentOptions).toBeDefined();
+    expect(capturedAgentOptions?.unattended).toBe(true);
+    const allowlist = capturedAgentOptions?.allowedBuiltinToolNames as
+      | string[]
+      | undefined;
+    expect(Array.isArray(allowlist)).toBe(true);
+    expect(allowlist).not.toContain("ask_user_question");
+    expect(typeof capturedAgentOptions?.customInstructions).toBe("string");
+  });
+
+  test("forwards autoCommit/autoCreatePr straight into createSessionCore — not into the workflow (#1230)", async () => {
+    // Per the session-level override design: createSessionCore already
+    // resolves autoCommitPush/autoCreatePr precedence (body > repo defaults >
+    // user prefs) and persists the result on the session row, which every
+    // later run on that session picks up. No workflow-level plumbing needed.
+    const { startSession } = await toolsModulePromise;
+    let received: Record<string, unknown> | undefined;
+    createSessionCore.mockImplementation(async (input) => {
+      received = input as Record<string, unknown>;
+      return {
+        session: { id: "session-new", userId: "user-1" },
+        chat: { id: "chat-new", sessionId: "session-new" },
+      };
+    });
+
+    await startSession(makeCtx({}), {
+      repoOwner: "acme",
+      repoName: "widgets",
+      prompt: "build the thing",
+      autoCommit: true,
+      autoCreatePr: true,
+    });
+
+    expect(received?.autoCommitPush).toBe(true);
+    expect(received?.autoCreatePr).toBe(true);
+  });
+
+  test(".strict() still rejects an unknown key on start_session", async () => {
+    const { runMcpTool } = await registryModulePromise;
+    const { McpToolError } = await contextModulePromise;
+
+    const promise = runMcpTool("open_agents_start_session", makeCtx({}), {
+      repoOwner: "acme",
+      repoName: "widgets",
+      prompt: "build the thing",
+      unknownField: "nope",
+    });
+
+    await expect(promise).rejects.toBeInstanceOf(McpToolError);
+    await expect(promise).rejects.toMatchObject({
+      errorKind: "invalid_request",
+    });
+    expect(createSessionCore).not.toHaveBeenCalled();
+  });
+
   test("surfaces the rate limit as errorKind rate_limited, using the same key/ceiling as the browser session-create path", async () => {
     const { startSession } = await toolsModulePromise;
     const { McpToolError } = await contextModulePromise;
@@ -499,6 +577,33 @@ describe("sendMessage", () => {
     // The fallback resolves the chat itself; an explicit-chatId lookup never runs.
     expect(getChatById).not.toHaveBeenCalled();
   });
+
+  test("requests a headless run: unattended:true and a builtin allowlist excluding ask_user_question (#1230)", async () => {
+    const { sendMessage } = await toolsModulePromise;
+    seedSession(buildSessionRow());
+    getChatsBySessionId.mockImplementation(async () => [
+      { id: "chat-1", sessionId: "session-1" },
+    ]);
+    let capturedAgentOptions: Record<string, unknown> | undefined;
+    startChatRun.mockImplementation(async (input) => {
+      capturedAgentOptions = (input as Record<string, unknown>)
+        .agentOptions as Record<string, unknown>;
+      return { status: "started", runId: "run-1" };
+    });
+
+    await sendMessage(makeCtx({}), {
+      sessionId: "session-1",
+      prompt: "keep going",
+    });
+
+    expect(capturedAgentOptions).toBeDefined();
+    expect(capturedAgentOptions?.unattended).toBe(true);
+    const allowlist = capturedAgentOptions?.allowedBuiltinToolNames as
+      | string[]
+      | undefined;
+    expect(Array.isArray(allowlist)).toBe(true);
+    expect(allowlist).not.toContain("ask_user_question");
+  });
 });
 
 describe("stopRun", () => {
@@ -621,5 +726,163 @@ describe("stopRun", () => {
       "not_found",
     );
     expect(stopChatRun).not.toHaveBeenCalled();
+  });
+});
+
+describe("regression: #1230 headless-run design decisions", () => {
+  test("startSession and sendMessage forward the exact real buildHeadlessAgentOptions() output, not a hand-copied approximation", async () => {
+    // A partial/field-by-field check (as the behavioral tests above do)
+    // would not catch a regression where, say, customInstructions gets
+    // dropped, or the allowlist filter regresses to include
+    // ask_user_question again for one caller but not the other. Comparing
+    // against the real module's own output closes that gap.
+    const { startSession, sendMessage } = await toolsModulePromise;
+    const { buildHeadlessAgentOptions } =
+      await import("../headless-run-options");
+    const expected = buildHeadlessAgentOptions();
+
+    let startSessionAgentOptions: unknown;
+    startChatRun.mockImplementation(async (input) => {
+      startSessionAgentOptions = (input as Record<string, unknown>)
+        .agentOptions;
+      return { status: "started", runId: "run-a" };
+    });
+    await startSession(makeCtx({}), {
+      repoOwner: "acme",
+      repoName: "widgets",
+      prompt: "go",
+    });
+    expect(startSessionAgentOptions).toEqual(expected);
+
+    seedSession(buildSessionRow());
+    getChatsBySessionId.mockImplementation(async () => [
+      { id: "chat-1", sessionId: "session-1" },
+    ]);
+    let sendMessageAgentOptions: unknown;
+    startChatRun.mockImplementation(async (input) => {
+      sendMessageAgentOptions = (input as Record<string, unknown>).agentOptions;
+      return { status: "started", runId: "run-b" };
+    });
+    await sendMessage(makeCtx({}), {
+      sessionId: "session-1",
+      prompt: "keep going",
+    });
+    expect(sendMessageAgentOptions).toEqual(expected);
+  });
+
+  test("start_session forwards an explicit autoCommit:false rather than dropping it — a truthy-check regression would silently keep auto-commit on", async () => {
+    // A naive `...(input.autoCommit ? { autoCommitPush: input.autoCommit } : {})`
+    // forwarding pattern would omit the key entirely when the caller
+    // explicitly opts OUT (autoCommit: false), letting createSessionCore fall
+    // through to repo defaults / user preferences instead — the opposite of
+    // what the caller asked for. The unconditional assignment this
+    // implementation uses must forward `false` as `false`.
+    const { startSession } = await toolsModulePromise;
+    let received: Record<string, unknown> | undefined;
+    createSessionCore.mockImplementation(async (input) => {
+      received = input as Record<string, unknown>;
+      return {
+        session: { id: "session-new", userId: "user-1" },
+        chat: { id: "chat-new", sessionId: "session-new" },
+      };
+    });
+
+    await startSession(makeCtx({}), {
+      repoOwner: "acme",
+      repoName: "widgets",
+      prompt: "build the thing",
+      autoCommit: false,
+      autoCreatePr: false,
+    });
+
+    expect(Object.hasOwn(received ?? {}, "autoCommitPush")).toBe(true);
+    expect(received?.autoCommitPush).toBe(false);
+    expect(Object.hasOwn(received ?? {}, "autoCreatePr")).toBe(true);
+    expect(received?.autoCreatePr).toBe(false);
+  });
+
+  test("startSession emits mcp.run.started at info with ids/counts only — no prompt text", async () => {
+    const infoSpy = spyOn(console, "info").mockImplementation(() => undefined);
+    try {
+      const { startSession } = await toolsModulePromise;
+      startChatRun.mockImplementation(
+        async () => ({ status: "started", runId: "run-started" }) as unknown,
+      );
+
+      await startSession(makeCtx({ requestId: "req-headless" }), {
+        repoOwner: "acme",
+        repoName: "widgets",
+        prompt: "this prompt text must never be logged",
+        autoCommit: true,
+        autoCreatePr: false,
+      });
+
+      const call = infoSpy.mock.calls.find(([, payload]) =>
+        typeof payload === "string"
+          ? payload.includes("mcp.run.started")
+          : false,
+      );
+      expect(call).toBeDefined();
+      const logged = JSON.parse(call?.[1] as string) as Record<string, unknown>;
+      // Default createSessionCore mock (see beforeEach) resolves session-1/chat-1.
+      expect(logged).toMatchObject({
+        service: "mcp-server",
+        event: "mcp.run.started",
+        requestId: "req-headless",
+        userId: "user-1",
+        sessionId: "session-1",
+        chatId: "chat-1",
+        workflowRunId: "run-started",
+        unattended: true,
+        autoCommit: true,
+        autoCreatePr: false,
+      });
+      expect(logged.deniedToolNames).toContain("ask_user_question");
+      expect(JSON.stringify(logged)).not.toContain("this prompt text");
+    } finally {
+      infoSpy.mockRestore();
+    }
+  });
+
+  test("sendMessage emits mcp.run.started at info, with autoCommit/autoCreatePr null (no per-message override)", async () => {
+    const infoSpy = spyOn(console, "info").mockImplementation(() => undefined);
+    try {
+      const { sendMessage } = await toolsModulePromise;
+      seedSession(buildSessionRow());
+      getChatsBySessionId.mockImplementation(async () => [
+        { id: "chat-1", sessionId: "session-1" },
+      ]);
+      startChatRun.mockImplementation(
+        async () => ({ status: "started", runId: "run-started-2" }) as unknown,
+      );
+
+      await sendMessage(makeCtx({ requestId: "req-headless-2" }), {
+        sessionId: "session-1",
+        prompt: "keep going",
+      });
+
+      const call = infoSpy.mock.calls.find(([, payload]) =>
+        typeof payload === "string"
+          ? payload.includes("mcp.run.started")
+          : false,
+      );
+      expect(call).toBeDefined();
+      const logged = JSON.parse(call?.[1] as string) as Record<string, unknown>;
+      expect(logged).toMatchObject({
+        service: "mcp-server",
+        event: "mcp.run.started",
+        requestId: "req-headless-2",
+        userId: "user-1",
+        sessionId: "session-1",
+        chatId: "chat-1",
+        workflowRunId: "run-started-2",
+        unattended: true,
+        autoCommit: null,
+        autoCreatePr: null,
+      });
+      expect(logged.deniedToolNames).toContain("ask_user_question");
+    } finally {
+      infoSpy.mockRestore();
+    }
   });
 });
