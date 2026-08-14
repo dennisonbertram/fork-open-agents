@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { stableStringify } from "./repetition-detector";
 
 // Re-exported so existing importers keep one entry point. The detector
 // itself lives in a crypto-free module because workflow functions
@@ -6,6 +7,7 @@ import { createHash } from "node:crypto";
 // repetition-detector.ts.
 export {
   detectRepetition,
+  stableStringify,
   type RepetitionConfig,
   type RepetitionVerdict,
 } from "./repetition-detector";
@@ -26,27 +28,6 @@ type MinimalToolCall = {
   toolName: string;
   input?: unknown;
 };
-
-/**
- * Recursively produces a canonical JSON-ish string for `value`: object keys
- * are sorted so key-reordered-but-equivalent args hash identically; arrays
- * keep their order (order is meaningful there); primitives fall back to
- * JSON.stringify.
- */
-function stableStringify(value: unknown): string {
-  if (value === null || typeof value !== "object") {
-    return JSON.stringify(value);
-  }
-  if (Array.isArray(value)) {
-    return `[${value.map((item) => stableStringify(item)).join(",")}]`;
-  }
-  const record = value as Record<string, unknown>;
-  const keys = Object.keys(record).sort();
-  const entries = keys.map(
-    (key) => `${JSON.stringify(key)}:${stableStringify(record[key])}`,
-  );
-  return `{${entries.join(",")}}`;
-}
 
 /**
  * Hashes an entire turn's tool calls (in call order) into a single sha256

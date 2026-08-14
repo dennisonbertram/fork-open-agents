@@ -29,6 +29,33 @@ export type RepetitionConfig = {
   maxCyclePeriod?: number;
 };
 
+/**
+ * Recursively produces a canonical JSON-ish string for `value`: object keys
+ * are sorted so key-reordered-but-equivalent args compare equal; arrays keep
+ * their order (order is meaningful there); primitives fall back to
+ * `JSON.stringify`.
+ *
+ * Moved here (rather than `action-repetition.ts`, which imports
+ * `node:crypto` for `hashTurnToolCalls`) so a crypto-free caller — e.g.
+ * `app/workflows/chat.ts`, a workflow function — can build a comparable
+ * tool-call signature without pulling `node:crypto` into the workflow VM
+ * bundle. `action-repetition.ts` re-exports this for existing importers.
+ */
+export function stableStringify(value: unknown): string {
+  if (value === null || typeof value !== "object") {
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableStringify(item)).join(",")}]`;
+  }
+  const record = value as Record<string, unknown>;
+  const keys = Object.keys(record).sort();
+  const entries = keys.map(
+    (key) => `${JSON.stringify(key)}:${stableStringify(record[key])}`,
+  );
+  return `{${entries.join(",")}}`;
+}
+
 const DEFAULT_CYCLE_REPEATS = 2;
 const DEFAULT_MAX_CYCLE_PERIOD = 3;
 
