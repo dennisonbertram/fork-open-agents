@@ -1018,9 +1018,9 @@ describe("listSessions sort", () => {
     // value captured from the outer loop) is what makes this test fail if
     // `listSessions` ever stops forwarding `sort` to the page query.
     const ordersBySort: Record<string, string[]> = {
-      created_desc: [...sortedIdsAsc].reverse(),
+      created_desc: [...sortedIdsAsc].toReversed(),
       created_asc: sortedIdsAsc,
-      activity_desc: [...sortedIdsAsc].reverse(),
+      activity_desc: [...sortedIdsAsc].toReversed(),
       activity_asc: sortedIdsAsc,
     };
 

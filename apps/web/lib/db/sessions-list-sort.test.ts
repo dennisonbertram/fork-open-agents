@@ -47,9 +47,7 @@ describe("buildSessionsOrderBy", () => {
       .orderBy(...buildSessionsOrderBy("created_desc"));
 
     const clause = orderByClause(query.toSQL().sql);
-    expect(clause).toBe(
-      '"sessions"."created_at" desc, "sessions"."id" asc',
-    );
+    expect(clause).toBe('"sessions"."created_at" desc, "sessions"."id" asc');
   });
 
   test("created_asc orders by created_at asc, tiebroken by id asc", async () => {

@@ -1,6 +1,7 @@
 import type { SandboxState } from "@open-agents/sandbox";
 import {
   and,
+  asc,
   desc,
   eq,
   getTableColumns,
@@ -8,6 +9,7 @@ import {
   isNull,
   ne,
   or,
+  type SQL,
   sql,
 } from "drizzle-orm";
 import { db } from "./client";
@@ -209,16 +211,16 @@ export async function getSessionsByUserId(userId: string) {
 }
 
 /**
- * Total sessions for a user, optionally narrowed by the same status filter
- * `getSessionsWithUnreadByUserId` applies, so a paged caller can report a
- * total that describes the same set as the page it just fetched.
+ * Total sessions for a user, optionally narrowed by the same status/label
+ * filters `getSessionsWithUnreadByUserId` applies, so a paged caller can
+ * report a total that describes the same set as the page it just fetched.
  *
  * The status predicate must stay identical to that query's: "active" means
  * everything not archived, not `status = "running"`.
  */
 export async function countSessionsByUserId(
   userId: string,
-  options: { status?: "all" | "active" | "archived" } = {},
+  options: { status?: "all" | "active" | "archived"; label?: string } = {},
 ): Promise<number> {
   const status = options.status ?? "all";
   const statusFilter =
@@ -227,15 +229,14 @@ export async function countSessionsByUserId(
       : status === "archived"
         ? eq(sessions.status, "archived")
         : undefined;
+  const labelFilter = options.label
+    ? eq(sessions.label, options.label)
+    : undefined;
 
   const [result] = await db
     .select({ count: sql<number>`COUNT(*)::int` })
     .from(sessions)
-    .where(
-      statusFilter
-        ? and(eq(sessions.userId, userId), statusFilter)
-        : eq(sessions.userId, userId),
-    );
+    .where(and(eq(sessions.userId, userId), statusFilter, labelFilter));
 
   return result?.count ?? 0;
 }
@@ -258,6 +259,7 @@ type SessionSidebarFields = Pick<
   | "id"
   | "title"
   | "status"
+  | "label"
   | "lifecycleState"
   | "sandboxExpiresAt"
   | "updatedAt"
@@ -292,8 +294,48 @@ export type SessionWithUnread = SessionSidebarFields & {
   totalCount: number;
 };
 
+/**
+ * Sort options for `getSessionsWithUnreadByUserId`'s page query. Each one
+ * ends in a deterministic tiebreaker on `sessions.id` (see
+ * `buildSessionsOrderBy`) — without it, Postgres does not guarantee a stable
+ * order across separate LIMIT/OFFSET calls when multiple rows share the same
+ * primary sort key, which is exactly the fan-out shape this exists for
+ * (several sessions created in one request burst can share an identical
+ * `created_at`). An inconsistent order across pages silently skips or
+ * repeats rows (#1184's paging invariant, extended to sorting).
+ */
+export const SESSION_SORTS = [
+  "created_desc",
+  "created_asc",
+  "activity_desc",
+  "activity_asc",
+] as const;
+
+export type SessionsSort = (typeof SESSION_SORTS)[number];
+
+// Same expression as the `lastActivityAt` select column below — re-declared
+// here because ORDER BY cannot reference a GROUP BY query's own select alias
+// for an aggregate expression via drizzle's query builder.
+const LAST_ACTIVITY_ORDER_EXPR = sql`COALESCE(MAX(${chats.updatedAt}), ${sessions.createdAt})`;
+
+export function buildSessionsOrderBy(sort: SessionsSort): SQL[] {
+  switch (sort) {
+    case "created_asc":
+      return [asc(sessions.createdAt), asc(sessions.id)];
+    case "activity_desc":
+      return [desc(LAST_ACTIVITY_ORDER_EXPR), asc(sessions.id)];
+    case "activity_asc":
+      return [asc(LAST_ACTIVITY_ORDER_EXPR), asc(sessions.id)];
+    default:
+      // "created_desc", and the fallback for any future sort value.
+      return [desc(sessions.createdAt), asc(sessions.id)];
+  }
+}
+
 type GetSessionsWithUnreadByUserIdOptions = {
   status?: "all" | "active" | "archived";
+  label?: string;
+  sort?: SessionsSort;
   limit?: number;
   offset?: number;
 };
@@ -316,12 +358,16 @@ export async function getSessionsWithUnreadByUserId(
       : status === "archived"
         ? eq(sessions.status, "archived")
         : undefined;
+  const labelFilter = options?.label
+    ? eq(sessions.label, options.label)
+    : undefined;
 
   const baseQuery = db
     .select({
       id: sessions.id,
       title: sessions.title,
       status: sessions.status,
+      label: sessions.label,
       lifecycleState: sessions.lifecycleState,
       // Two cheap timestamp columns (not the heavyweight `sandboxState` JSON):
       // `lifecycleState` alone cannot say whether a sandbox is live — it reads
@@ -365,13 +411,9 @@ export async function getSessionsWithUnreadByUserId(
       chatReads,
       and(eq(chatReads.chatId, chats.id), eq(chatReads.userId, userId)),
     )
-    .where(
-      statusFilter
-        ? and(eq(sessions.userId, userId), statusFilter)
-        : eq(sessions.userId, userId),
-    )
+    .where(and(eq(sessions.userId, userId), statusFilter, labelFilter))
     .groupBy(sessions.id)
-    .orderBy(desc(sessions.createdAt));
+    .orderBy(...buildSessionsOrderBy(options?.sort ?? "created_desc"));
 
   const withOffset =
     typeof options?.offset === "number" && options.offset > 0

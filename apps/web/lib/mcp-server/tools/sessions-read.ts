@@ -9,6 +9,14 @@ import {
   getSessionDiffById,
   getSessionMetadataById,
   getSessionsWithUnreadByUserId,
+  // Type-only: db/sessions.ts is mocked wholesale in every test that loads
+  // this module (transitively via registry.ts), so pulling in a runtime
+  // value this module doesn't otherwise use would require every one of
+  // those mocks to also export it, or module evaluation throws before any
+  // test in this file runs. `SESSION_SORTS` (the runtime array) is
+  // deliberately re-declared locally below instead of imported for the same
+  // reason.
+  type SessionsSort,
 } from "@/lib/db/sessions";
 import {
   buildChatUrl,
@@ -91,6 +99,10 @@ type ToolCallerContext = {
 export type McpSessionSummary = {
   id: string;
   title: string;
+  /** Free-text tag the calling agent supplied at creation to group a
+   * fan-out batch of sessions. Null when the session has none — not a
+   * state, not a status, carries no behavior. */
+  label: string | null;
   state: McpSessionState;
   workspace: McpWorkspaceState;
   resumable: boolean;
@@ -172,9 +184,28 @@ export type WhoamiResult = {
   requestId: string;
 };
 
+// Kept in sync with `SESSION_SORTS` (lib/db/sessions.ts) by hand rather than
+// imported — see the `SessionsSort` type-only import above for why a runtime
+// import here would break every test that mocks `@/lib/db/sessions`.
+// `satisfies` still catches drift: this fails to typecheck the moment the two
+// diverge.
+const SESSION_SORTS = [
+  "created_desc",
+  "created_asc",
+  "activity_desc",
+  "activity_asc",
+] as const satisfies readonly SessionsSort[];
+
 const listSessionsInputSchema = z
   .object({
     status: z.enum(["all", "active", "archived"]).default("active"),
+    // Exact match against the free-text label set at creation. Omitting it
+    // returns every session matching `status`, same as before this filter
+    // existed.
+    label: z.string().min(1).optional(),
+    // Defaults to created_desc — the fixed ordering every existing caller
+    // already saw, so omitting `sort` changes nothing.
+    sort: z.enum(SESSION_SORTS).default("created_desc"),
     limit: z
       .number()
       .int()
@@ -185,7 +216,18 @@ const listSessionsInputSchema = z
   })
   .strict();
 
-export type ListSessionsInput = z.infer<typeof listSessionsInputSchema>;
+// `sort` carries a zod `.default()`, so the schema's own parsed-output type
+// (what `z.infer` gives) makes it required — accurate for the real
+// runMcpTool path, which always parses through the schema first. Handlers
+// are also called directly in tests, bypassing that parse, so `sort` is
+// re-declared optional here; `listSessions` defaults it itself for that
+// case (see the comment at its call site).
+export type ListSessionsInput = Omit<
+  z.infer<typeof listSessionsInputSchema>,
+  "sort"
+> & {
+  sort?: SessionsSort;
+};
 
 export type ListSessionsResult = {
   sessions: McpSessionSummary[];
@@ -296,6 +338,7 @@ function toSessionSummary(row: SessionWithUnreadRow): McpSessionSummary {
   return {
     id: row.id,
     title: row.title,
+    label: row.label ?? null,
     state,
     workspace: toWorkspaceState({
       lifecycleState: row.lifecycleState,
@@ -591,14 +634,48 @@ export function whoami(
   });
 }
 
+/**
+ * Observability: lets an operator tell whether a client is paging a filtered
+ * or unfiltered list via
+ * `grep '"event":"mcp.sessions.listed"' logs | grep '"userId":"<id>"'`.
+ * `label` is deliberately a presence boolean, never the filter's own value —
+ * it is user-supplied free text, so it is content, not an id or a count.
+ */
+function logSessionsListed(fields: {
+  requestId: string;
+  userId: string;
+  label: boolean;
+  sort: SessionsSort;
+  returned: number;
+  total: number;
+}): void {
+  console.info(
+    "[mcp-server] mcp.sessions.listed",
+    JSON.stringify({
+      service: "mcp-server",
+      event: "mcp.sessions.listed",
+      ...fields,
+    }),
+  );
+}
+
 export async function listSessions(
   ctx: ToolCallerContext,
   input: ListSessionsInput,
 ): Promise<ListSessionsResult> {
+  const labelFilter = input.label ? { label: input.label } : {};
+  // `sort` carries a zod `.default()`, which only fills in on the real
+  // runMcpTool path (its schema.parse call). Defaulting again here keeps a
+  // direct handler call (as the tools' own unit tests make, bypassing
+  // runMcpTool) behaving identically to an omitted `sort` over MCP.
+  const sort = input.sort ?? "created_desc";
+
   const rows = await getSessionsWithUnreadByUserId(ctx.userId, {
     status: input.status,
     limit: input.limit,
     offset: input.offset,
+    sort,
+    ...labelFilter,
   });
 
   const sessions = rows.map(toSessionSummary);
@@ -612,7 +689,19 @@ export async function listSessions(
   // or past the end cannot skip anything with a slightly stale total.
   const total =
     rows[0]?.totalCount ??
-    (await countSessionsByUserId(ctx.userId, { status: input.status }));
+    (await countSessionsByUserId(ctx.userId, {
+      status: input.status,
+      ...labelFilter,
+    }));
+
+  logSessionsListed({
+    requestId: ctx.requestId,
+    userId: ctx.userId,
+    label: Boolean(input.label),
+    sort,
+    returned: sessions.length,
+    total,
+  });
 
   return {
     sessions,
@@ -798,6 +887,7 @@ const prStatusOutputSchema = z.enum(["open", "merged", "closed"]).nullable();
 const sessionSummaryOutputSchema = z.object({
   id: z.string(),
   title: z.string(),
+  label: z.string().nullable(),
   state: sessionStateOutputSchema,
   workspace: workspaceStateOutputSchema,
   resumable: z.boolean(),
@@ -931,7 +1021,7 @@ export const sessionReadTools: readonly AnyMcpToolDefinition[] = [
     name: "open_agents_list_sessions",
     title: "List Open Agents Sessions",
     description:
-      "List the caller's coding sessions in Open Agents — this MCP server's own sessions, not the calling client's own session — with lightweight `state`, `workspace`, `resumable`, and `activity` fields plus repo and PR summaries. `state` (active/archived) is filing and matches the `status` input filter. `workspace` is the sandbox's own status (ready, hibernated, provisioning, restoring, failed, or none): only ready means a sandbox is live right now, and hibernated is the normal resting state — the sandbox is parked to stop billing and is restored automatically on the next message. `resumable` is true for every non-archived session, whatever its `workspace` says, because accepting new work is gated on filing alone; a hibernated or failed workspace is rebuilt on demand. `activity` is working only while a run is genuinely live. Returns `returned` (rows on this page) and `total` (all sessions matching the same status filter), so page until offset + returned reaches total.",
+      "List the caller's coding sessions in Open Agents — this MCP server's own sessions, not the calling client's own session — with lightweight `state`, `workspace`, `resumable`, and `activity` fields plus repo and PR summaries. `state` (active/archived) is filing and matches the `status` input filter. `workspace` is the sandbox's own status (ready, hibernated, provisioning, restoring, failed, or none): only ready means a sandbox is live right now, and hibernated is the normal resting state — the sandbox is parked to stop billing and is restored automatically on the next message. `resumable` is true for every non-archived session, whatever its `workspace` says, because accepting new work is gated on filing alone; a hibernated or failed workspace is rebuilt on demand. `activity` is working only while a run is genuinely live. Pass `label` to narrow the page (and `total`) to sessions sharing that exact free-text tag — the same one `open_agents_start_session` accepts — which is how a client that did not start a fan-out batch can find it later. `sort` picks the page order (default `created_desc`); every option is stable across pages, so paging until offset + returned reaches total never skips or repeats a row even when several sessions share a timestamp. Returns `returned` (rows on this page) and `total` (all sessions matching the same status/label filters).",
     scope: SESSION_READ_SCOPE,
     inputSchema: listSessionsInputSchema,
     outputSchema: listSessionsOutputSchema,

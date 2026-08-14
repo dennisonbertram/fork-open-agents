@@ -324,6 +324,11 @@ export const sessions = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     title: text("title").notNull(),
+    // Free-text tag supplied by the calling agent to group a fan-out batch of
+    // sessions (e.g. "auth-refactor-2026-08-14"). Not a state, not a status,
+    // carries no behavior. Nullable with no backfill so existing rows are
+    // unaffected.
+    label: text("label"),
     status: text("status", {
       enum: ["running", "completed", "failed", "archived"],
     })
@@ -405,7 +410,10 @@ export const sessions = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
-  (table) => [index("sessions_user_id_idx").on(table.userId)],
+  (table) => [
+    index("sessions_user_id_idx").on(table.userId),
+    index("sessions_label_idx").on(table.label),
+  ],
 );
 
 export const chats = pgTable(
