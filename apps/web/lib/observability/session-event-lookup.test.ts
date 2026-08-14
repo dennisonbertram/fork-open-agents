@@ -28,9 +28,7 @@ mock.module("@/lib/db/client", () => ({
   },
 }));
 
-const { getLatestSessionEventByNames } = await import(
-  "./session-event-lookup"
-);
+const { getLatestSessionEventByNames } = await import("./session-event-lookup");
 
 function buildRow(overrides: Record<string, unknown> = {}) {
   return {
@@ -80,7 +78,10 @@ describe("getLatestSessionEventByNames", () => {
 
     const result = await getLatestSessionEventByNames({
       sessionId: "session-1",
-      eventNames: ["workflow.auto_commit.failed", "workflow.auto_commit.succeeded"],
+      eventNames: [
+        "workflow.auto_commit.failed",
+        "workflow.auto_commit.succeeded",
+      ],
     });
 
     expect(result).toEqual({

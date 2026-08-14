@@ -1333,7 +1333,8 @@ describe("getSession ownership", () => {
     expect(result.lastAutoPrEvent).toEqual({
       eventName: "workflow.auto_pr.skipped",
       status: "skipped",
-      summary: "Auto-commit failed: Changes must be made through a pull request.",
+      summary:
+        "Auto-commit failed: Changes must be made through a pull request.",
       occurredAt: "2026-08-14T12:17:54.000Z",
     });
     expect(result.lastAutoCommitEvent).toBeNull();
@@ -1347,7 +1348,8 @@ describe("getSession ownership", () => {
 
     expect(getLatestSessionEventByNames).toHaveBeenCalledTimes(2);
     const calls = getLatestSessionEventByNames.mock.calls.map(
-      ([params]) => params as { sessionId: string; eventNames: readonly string[] },
+      ([params]) =>
+        params as { sessionId: string; eventNames: readonly string[] },
     );
     for (const call of calls) {
       expect(call.sessionId).toBe("session-9");
