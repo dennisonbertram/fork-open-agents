@@ -586,6 +586,47 @@ describe("startSession", () => {
     expect(received?.isNewBranch).toBe(true);
   });
 
+  test("forwards an explicit model to createSessionCore", async () => {
+    const { startSession } = await toolsModulePromise;
+    let received: Record<string, unknown> | undefined;
+    createSessionCore.mockImplementation(async (input) => {
+      received = input as Record<string, unknown>;
+      return {
+        session: { id: "session-new", userId: "user-1" },
+        chat: { id: "chat-new", sessionId: "session-new" },
+      };
+    });
+
+    await startSession(makeCtx({}), {
+      repoOwner: "acme",
+      repoName: "widgets",
+      prompt: "build the thing",
+      model: "anthropic/claude-4.5-sonnet",
+    });
+
+    expect(received?.model).toBe("anthropic/claude-4.5-sonnet");
+  });
+
+  test("omitting model leaves createSessionCore's model input undefined — nothing else changes", async () => {
+    const { startSession } = await toolsModulePromise;
+    let received: Record<string, unknown> | undefined;
+    createSessionCore.mockImplementation(async (input) => {
+      received = input as Record<string, unknown>;
+      return {
+        session: { id: "session-new", userId: "user-1" },
+        chat: { id: "chat-new", sessionId: "session-new" },
+      };
+    });
+
+    await startSession(makeCtx({}), {
+      repoOwner: "acme",
+      repoName: "widgets",
+      prompt: "build the thing",
+    });
+
+    expect(received?.model).toBeUndefined();
+  });
+
   test(".strict() still rejects an unknown key on start_session", async () => {
     const { runMcpTool } = await registryModulePromise;
     const { McpToolError } = await contextModulePromise;

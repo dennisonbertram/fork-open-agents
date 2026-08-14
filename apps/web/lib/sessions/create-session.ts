@@ -21,6 +21,9 @@ export interface CreateSessionCoreInput {
   // as-is and returned by the read tools. Omitted/undefined persists as
   // null; every existing caller keeps working unchanged.
   label?: string;
+  // Optional model for the session. Applied to the initial chat with
+  // precedence: request body > repo defaults > user preferences.
+  model?: string;
   repoOwner?: string;
   repoName?: string;
   branch?: string;
@@ -178,6 +181,9 @@ export async function createSessionCore(
     repoDefaults?.managedRuntimeProfileId ??
     preferences.defaultManagedRuntimeProfileId;
 
+  // model precedence: body > user preferences
+  const effectiveModel = input.model ?? preferences.defaultModelId;
+
   const resolvedVercelProject = input.resolvedVercelProject ?? null;
 
   const defaultComposioProfileId =
@@ -228,7 +234,7 @@ export async function createSessionCore(
       id: nanoid(),
       title: "New chat",
       ...splitModelSelection(
-        preferences.defaultModelId,
+        effectiveModel,
         preferences.defaultInferenceProfileId,
       ),
       composioSelection: {

@@ -31,9 +31,14 @@ mock.module("@/lib/db/composio", () => ({
 }));
 
 const capturedSessionInserts: Record<string, unknown>[] = [];
+const capturedChatInserts: Record<string, unknown>[] = [];
 const createSessionWithInitialChat = mock(
-  async (input: { session: Record<string, unknown> }) => {
+  async (input: {
+    session: Record<string, unknown>;
+    initialChat: Record<string, unknown>;
+  }) => {
     capturedSessionInserts.push(input.session);
+    capturedChatInserts.push(input.initialChat);
     return {
       session: { id: "session-1", ...input.session },
       chat: { id: "chat-1", sessionId: "session-1" },
@@ -133,6 +138,7 @@ describe("createSessionCore (#1251 end-to-end wiring regression)", () => {
   test("regression: baseBranch reaches the session row createSessionWithInitialChat receives", async () => {
     repoDefaultsResult = { defaultBranch: "main" };
     capturedSessionInserts.length = 0;
+    capturedChatInserts.length = 0;
 
     await createSessionCore({
       userId: "user-1",
@@ -152,6 +158,7 @@ describe("createSessionCore (#1251 end-to-end wiring regression)", () => {
   test("regression: isNewBranch false never persists a baseBranch, even with a repo default configured", async () => {
     repoDefaultsResult = { defaultBranch: "main" };
     capturedSessionInserts.length = 0;
+    capturedChatInserts.length = 0;
 
     await createSessionCore({
       userId: "user-1",
@@ -165,5 +172,43 @@ describe("createSessionCore (#1251 end-to-end wiring regression)", () => {
     const inserted = capturedSessionInserts[0];
     expect(inserted?.baseBranch).toBeNull();
     expect(inserted?.branch).toBe("develop");
+  });
+});
+
+describe("createSessionCore model precedence", () => {
+  test("an explicit model overrides the user preference default and is used for the initial chat", async () => {
+    repoDefaultsResult = { defaultBranch: "main" };
+    capturedSessionInserts.length = 0;
+    capturedChatInserts.length = 0;
+
+    await createSessionCore({
+      userId: "user-1",
+      username: "dennison",
+      repoOwner: "acme",
+      repoName: "widgets",
+      model: "anthropic/claude-4.5-sonnet",
+    });
+
+    const chat = capturedChatInserts[0];
+    // splitModelSelection is called with the explicit model, not the preference default
+    // The resulting chat should have modelId set from the explicit model
+    expect(chat?.modelId).toBe("anthropic/claude-4.5-sonnet");
+  });
+
+  test("omitting model uses the user preference default for the initial chat", async () => {
+    repoDefaultsResult = { defaultBranch: "main" };
+    capturedSessionInserts.length = 0;
+    capturedChatInserts.length = 0;
+
+    await createSessionCore({
+      userId: "user-1",
+      username: "dennison",
+      repoOwner: "acme",
+      repoName: "widgets",
+    });
+
+    // Should fall back to preferences.defaultModelId ("test-model" from the mock)
+    const chat = capturedChatInserts[0];
+    expect(chat?.modelId).toBe("test-model");
   });
 });
