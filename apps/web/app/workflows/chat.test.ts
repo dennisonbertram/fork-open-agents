@@ -3784,6 +3784,77 @@ describe("runAgentWorkflow", () => {
       });
     });
 
+    // A headless send_message to a no-repo session (createSessionCore sets
+    // sandboxState: null when there is no repo — create-session.ts:186) has
+    // no sandbox to probe: every fingerprint would be null, and the
+    // no-progress budget treats null as "unknown, not stale" forever. Without
+    // a fallback, that run is unbounded AND unfused — the exact runaway-cost
+    // outcome the issue says must not ship. This is that fallback.
+    test("stops a headless run with no sandbox at the fixed fallback cap, with a distinct legible reason", async () => {
+      const noSandboxCapEnvKey = "HEADLESS_RUN_NO_SANDBOX_STEP_CAP";
+      const originalCap = process.env[noSandboxCapEnvKey];
+      process.env[noSandboxCapEnvKey] = "3";
+
+      spies.resolveChatSandboxRuntime.mockImplementationOnce(
+        (params: { assistantId: string }) => {
+          writtenChunks.push({ type: "start", messageId: params.assistantId });
+          return Promise.resolve(createResolvedSandboxFreeRuntime());
+        },
+      );
+      agentFinishReason = "tool-calls";
+      agentRawFinishReason = "provider_tool_use";
+
+      try {
+        await runAgentWorkflow(
+          makeOptions({
+            agentOptions: { unattended: true },
+            maxSteps: undefined,
+          }),
+        );
+      } finally {
+        if (originalCap === undefined) {
+          delete process.env[noSandboxCapEnvKey];
+        } else {
+          process.env[noSandboxCapEnvKey] = originalCap;
+        }
+      }
+
+      // No sandbox ever existed, so the git-fingerprint probe must never run.
+      expect(spies.probeHeadlessRunGitFingerprint).not.toHaveBeenCalled();
+
+      const rwCalls = spies.recordWorkflowUsage.mock.calls as unknown[][];
+      const workflowRun = rwCalls.at(-1)?.[5] as {
+        stepTimings: Array<{ stepNumber: number }>;
+        status: string;
+      };
+      expect(workflowRun.stepTimings).toHaveLength(3);
+      expect(workflowRun.status).toBe("failed");
+
+      const emitted = (spies.emitSessionEvent.mock.calls as unknown[][]).map(
+        (call) =>
+          call[0] as {
+            eventName?: string;
+            payload?: Record<string, unknown>;
+          },
+      );
+      const failedEvent = emitted.findLast(
+        (event) => event.eventName === "workflow.failed",
+      );
+      // Distinct from "no_progress_fuse": this run was never probed at all.
+      expect(failedEvent?.payload).toMatchObject({
+        stopReason: "no_sandbox_step_cap",
+      });
+
+      const textDeltas = writtenChunks
+        .filter(
+          (chunk): chunk is { type: "text-delta"; id: string; delta: string } =>
+            chunk.type === "text-delta",
+        )
+        .map((chunk) => chunk.delta)
+        .join("");
+      expect(textDeltas.toLowerCase()).toContain("stopped");
+    });
+
     // Regression: a browser-started run (the default `agentOptions: {}` from
     // makeOptions, matching the real chat route's payload — see
     // start-run.test.ts's "regression: the browser chat route's workflow

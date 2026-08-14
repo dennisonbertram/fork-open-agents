@@ -316,6 +316,33 @@ describe("startChatRun: happy path with no active stream", () => {
     expect(args[0].maxSteps).toBeUndefined();
   });
 
+  test("defaults maxSteps to 500 for a NON-headless caller that omits it (safety net for any future caller besides the browser route and MCP)", async () => {
+    const { startChatRun } = await moduleUnderTestPromise;
+
+    // No agentOptions at all — not headless — and no maxSteps override.
+    await startChatRun(baseInput());
+
+    expect(startWorkflow).toHaveBeenCalledTimes(1);
+    const [, args] = startWorkflow.mock.calls[0] as [
+      unknown,
+      [Record<string, unknown>],
+    ];
+    expect(args[0].maxSteps).toBe(500);
+  });
+
+  test("defaults maxSteps to 500 for a caller whose agentOptions is set but not unattended", async () => {
+    const { startChatRun } = await moduleUnderTestPromise;
+
+    await startChatRun(baseInput({ agentOptions: { unattended: false } }));
+
+    expect(startWorkflow).toHaveBeenCalledTimes(1);
+    const [, args] = startWorkflow.mock.calls[0] as [
+      unknown,
+      [Record<string, unknown>],
+    ];
+    expect(args[0].maxSteps).toBe(500);
+  });
+
   test("omits agentOptions from the workflow payload entirely when the caller does not set it — the browser chat route's shape", async () => {
     const { startChatRun } = await moduleUnderTestPromise;
 

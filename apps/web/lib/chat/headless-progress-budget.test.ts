@@ -1,16 +1,23 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
+  buildHeadlessNoSandboxCapMessage,
   buildHeadlessProgressFuseMessage,
   DEFAULT_HEADLESS_RUN_MAX_STALE_STEPS,
+  DEFAULT_HEADLESS_RUN_NO_SANDBOX_STEP_CAP,
   getHeadlessRunMaxStaleSteps,
+  getHeadlessRunNoSandboxStepCap,
   HEADLESS_RUN_MAX_STALE_STEPS_CEILING,
+  HEADLESS_RUN_NO_SANDBOX_STEP_CAP_CEILING,
 } from "./headless-progress-budget";
 
 const ENV_KEY = "HEADLESS_RUN_MAX_STALE_STEPS";
+const NO_SANDBOX_ENV_KEY = "HEADLESS_RUN_NO_SANDBOX_STEP_CAP";
 const original = process.env[ENV_KEY];
+const originalNoSandbox = process.env[NO_SANDBOX_ENV_KEY];
 
 beforeEach(() => {
   delete process.env[ENV_KEY];
+  delete process.env[NO_SANDBOX_ENV_KEY];
 });
 
 afterEach(() => {
@@ -18,6 +25,11 @@ afterEach(() => {
     delete process.env[ENV_KEY];
   } else {
     process.env[ENV_KEY] = original;
+  }
+  if (originalNoSandbox === undefined) {
+    delete process.env[NO_SANDBOX_ENV_KEY];
+  } else {
+    process.env[NO_SANDBOX_ENV_KEY] = originalNoSandbox;
   }
 });
 
@@ -71,5 +83,57 @@ describe("buildHeadlessProgressFuseMessage (#1231)", () => {
     // Must read as an explanation, not a bare code/enum value.
     expect(message.length).toBeGreaterThan(40);
     expect(message.toLowerCase()).toContain("stopped");
+  });
+});
+
+// #1231 follow-up: a headless run with no sandbox (no-repo session) cannot be
+// probed — every fingerprint is null, so the no-progress budget above never
+// trips. This fixed cap is the only signal available for that case.
+describe("getHeadlessRunNoSandboxStepCap (#1231)", () => {
+  test("defaults when the env var is unset", () => {
+    expect(getHeadlessRunNoSandboxStepCap()).toBe(
+      DEFAULT_HEADLESS_RUN_NO_SANDBOX_STEP_CAP,
+    );
+  });
+
+  test("reads a valid positive integer from the env var", () => {
+    process.env[NO_SANDBOX_ENV_KEY] = "12";
+    expect(getHeadlessRunNoSandboxStepCap()).toBe(12);
+  });
+
+  test("falls back to the default for a non-numeric or non-positive value", () => {
+    process.env[NO_SANDBOX_ENV_KEY] = "nope";
+    expect(getHeadlessRunNoSandboxStepCap()).toBe(
+      DEFAULT_HEADLESS_RUN_NO_SANDBOX_STEP_CAP,
+    );
+    process.env[NO_SANDBOX_ENV_KEY] = "0";
+    expect(getHeadlessRunNoSandboxStepCap()).toBe(
+      DEFAULT_HEADLESS_RUN_NO_SANDBOX_STEP_CAP,
+    );
+  });
+
+  test("clamps a value above the ceiling", () => {
+    process.env[NO_SANDBOX_ENV_KEY] = "999999";
+    expect(getHeadlessRunNoSandboxStepCap()).toBe(
+      HEADLESS_RUN_NO_SANDBOX_STEP_CAP_CEILING,
+    );
+  });
+
+  // Independently tunable, as required: overriding the stale-steps budget
+  // must not move the no-sandbox cap and vice versa.
+  test("is independent of HEADLESS_RUN_MAX_STALE_STEPS", () => {
+    process.env[ENV_KEY] = "3";
+    expect(getHeadlessRunNoSandboxStepCap()).toBe(
+      DEFAULT_HEADLESS_RUN_NO_SANDBOX_STEP_CAP,
+    );
+  });
+});
+
+describe("buildHeadlessNoSandboxCapMessage (#1231)", () => {
+  test("names the cap and explains why a sandbox-free run cannot use the progress fuse", () => {
+    const message = buildHeadlessNoSandboxCapMessage(50);
+    expect(message).toContain("50");
+    expect(message.toLowerCase()).toContain("stopped");
+    expect(message.length).toBeGreaterThan(40);
   });
 });
