@@ -207,6 +207,13 @@ const startSessionInputSchema = z
     branch: z.string().min(1).optional(),
     prompt: z.string().min(1),
     runtimeMode: z.enum(["classic", "managed_runtime"]).optional(),
+    // Forwarded straight into createSessionCore's own precedence (request
+    // body > repo defaults > user preferences) and persisted on the session
+    // row (autoCommitPushOverride / autoCreatePrOverride) — every later run
+    // on this session, including send_message, inherits it. No per-run
+    // workflow plumbing needed.
+    autoCommit: z.boolean().optional(),
+    autoCreatePr: z.boolean().optional(),
   })
   .strict();
 
@@ -246,11 +253,13 @@ export async function startSession(
     { createSessionCore },
     { startChatRun },
     { checkRateLimit, rateLimitKey },
+    { buildHeadlessAgentOptions },
   ] = await Promise.all([
     import("@/lib/db/users"),
     import("@/lib/sessions/create-session"),
     import("@/lib/chat/start-run"),
     import("@/lib/rate-limit"),
+    import("../headless-run-options"),
   ]);
 
   const limited = await checkRateLimit({
@@ -308,6 +317,8 @@ export async function startSession(
     cloneUrl: `https://github.com/${input.repoOwner}/${input.repoName}`,
     branch: input.branch,
     runtimeMode: input.runtimeMode,
+    autoCommitPush: input.autoCommit,
+    autoCreatePr: input.autoCreatePr,
     scheduleBackgroundWork: scheduleAfterResponse,
   });
 
@@ -319,6 +330,7 @@ export async function startSession(
     requestUrl: requestOrigin(),
     requestId: ctx.requestId,
     authSession: null,
+    agentOptions: buildHeadlessAgentOptions(),
   });
   const workflowRunId = requireFreshlyStartedRun(result, chat.id);
 
@@ -360,9 +372,14 @@ export async function sendMessage(
   input: SendMessageInput,
 ): Promise<SendMessageResult> {
   // See the comment in startSession for why these are dynamic imports.
-  const [{ startChatRun }, { buildMessagesFromDb }] = await Promise.all([
+  const [
+    { startChatRun },
+    { buildMessagesFromDb },
+    { buildHeadlessAgentOptions },
+  ] = await Promise.all([
     import("@/lib/chat/start-run"),
     import("@/lib/chat/messages-from-db"),
+    import("../headless-run-options"),
   ]);
 
   const record = await requireOwnedSession(ctx.userId, input.sessionId, {
@@ -380,6 +397,7 @@ export async function sendMessage(
     requestUrl: requestOrigin(),
     requestId: ctx.requestId,
     authSession: null,
+    agentOptions: buildHeadlessAgentOptions(),
   });
   const workflowRunId = requireFreshlyStartedRun(result, chatId);
 

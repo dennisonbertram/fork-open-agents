@@ -48,9 +48,7 @@ describe("buildHeadlessAgentOptions", () => {
     expect(options.allowedBuiltinToolNames).toEqual([
       ...HEADLESS_ALLOWED_BUILTIN_TOOL_NAMES,
     ]);
-    expect(options.allowedBuiltinToolNames).not.toContain(
-      "ask_user_question",
-    );
+    expect(options.allowedBuiltinToolNames).not.toContain("ask_user_question");
     expect(typeof options.customInstructions).toBe("string");
     expect((options.customInstructions as string).length).toBeGreaterThan(0);
   });
