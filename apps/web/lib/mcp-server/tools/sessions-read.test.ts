@@ -1275,9 +1275,7 @@ describe("getSession lastRunOutcome (#1241)", () => {
   test("a session with no run yet reports null", async () => {
     const { getSession } = await toolsModulePromise;
     seedSession(buildSessionRow());
-    getLatestWorkflowRunStatusBySessionId.mockImplementation(
-      async () => null,
-    );
+    getLatestWorkflowRunStatusBySessionId.mockImplementation(async () => null);
 
     const result = await getSession(makeCtx({}), { sessionId: "session-1" });
 

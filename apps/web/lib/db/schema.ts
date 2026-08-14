@@ -1906,8 +1906,25 @@ export const workflowRuns = pgTable(
       "managed_runtime_profile_run_id",
     ).references(() => managedRuntimeProfileRuns.id, { onDelete: "set null" }),
     errorMessage: text("error_message"),
+    // #1241: widened from ["completed", "aborted", "failed"] so a deliberate
+    // stop (the no-progress fuse, the no-sandbox step cap, exhausted
+    // maxSteps, or repeated tool failure — see `stopReason` in
+    // app/workflows/chat.ts, #1231) is filed under its own name instead of
+    // collapsing into "failed" alongside a genuine crash. `failed` keeps
+    // meaning "the workflow threw"; the four new values are deliberate stops.
+    // Plain Postgres `text` with a TypeScript-level enum — no check
+    // constraint, so this widening needs no migration (confirmed via
+    // `db:generate`).
     status: text("status", {
-      enum: ["completed", "aborted", "failed"],
+      enum: [
+        "completed",
+        "aborted",
+        "failed",
+        "no_progress_fuse",
+        "no_sandbox_step_cap",
+        "max_steps",
+        "repeated_tool_failure",
+      ],
     }).notNull(),
     startedAt: timestamp("started_at").notNull(),
     finishedAt: timestamp("finished_at").notNull(),

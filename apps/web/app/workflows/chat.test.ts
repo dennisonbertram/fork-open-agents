@@ -1991,7 +1991,7 @@ describe("runAgentWorkflow", () => {
     });
   });
 
-  test("marks workflow run as failed when maxSteps is exhausted", async () => {
+  test("marks workflow run max_steps when maxSteps is exhausted (#1241)", async () => {
     agentFinishReason = "tool-calls";
     agentRawFinishReason = "provider_tool_use";
 
@@ -2014,7 +2014,9 @@ describe("runAgentWorkflow", () => {
     };
 
     expect(workflowRun.workflowRunId).toBe("wrun_test-123");
-    expect(workflowRun.status).toBe("failed");
+    // #1241: a deliberate stop is filed under its own name, distinct from a
+    // genuine crash, so get_session's lastRunOutcome can tell them apart.
+    expect(workflowRun.status).toBe("max_steps");
     expect(workflowRun.totalDurationMs).toBeGreaterThanOrEqual(0);
     expect(workflowRun.stepTimings).toHaveLength(2);
     expect(workflowRun.stepTimings).toEqual([
@@ -3721,7 +3723,9 @@ describe("runAgentWorkflow", () => {
       expect(workflowRun.stepTimings.length).toBe(
         DEFAULT_HEADLESS_RUN_MAX_STALE_STEPS + 1,
       );
-      expect(workflowRun.status).toBe("failed");
+      // #1241: filed under its own name, not the generic "failed" a crash
+      // gets — get_session's lastRunOutcome depends on this distinction.
+      expect(workflowRun.status).toBe("no_progress_fuse");
 
       const emitted = (spies.emitSessionEvent.mock.calls as unknown[][]).map(
         (call) =>
@@ -3828,7 +3832,8 @@ describe("runAgentWorkflow", () => {
         status: string;
       };
       expect(workflowRun.stepTimings).toHaveLength(3);
-      expect(workflowRun.status).toBe("failed");
+      // #1241: distinct from "no_progress_fuse" and from a genuine crash.
+      expect(workflowRun.status).toBe("no_sandbox_step_cap");
 
       const emitted = (spies.emitSessionEvent.mock.calls as unknown[][]).map(
         (call) =>
@@ -3876,9 +3881,13 @@ describe("runAgentWorkflow", () => {
         stepTimings: Array<{ stepNumber: number }>;
         status: string;
       };
-      // Unchanged from before #1231: maxSteps:2 still exhausts and fails.
+      // Unchanged from before #1231: maxSteps:2 still exhausts the run.
       expect(workflowRun.stepTimings).toHaveLength(2);
-      expect(workflowRun.status).toBe("failed");
+      // #1241: workflowRuns.status now names the specific stop reason
+      // instead of the generic "failed" — this run is a browser-started
+      // regression case, not headless, but maxSteps exhaustion applies
+      // either way.
+      expect(workflowRun.status).toBe("max_steps");
 
       const emitted = (spies.emitSessionEvent.mock.calls as unknown[][]).map(
         (call) =>

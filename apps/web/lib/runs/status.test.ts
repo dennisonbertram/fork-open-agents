@@ -89,16 +89,19 @@ describe("normalized run status", () => {
     "no_sandbox_step_cap",
     "max_steps",
     "repeated_tool_failure",
-  ])("chat_workflow keeps treating %s as a failure needing attention", (nativeStatus) => {
-    expect(
-      normalizeRunStatus({ source: "chat_workflow", nativeStatus }),
-    ).toEqual({
-      state: "finished",
-      outcome: "failed",
-      health: "needs_attention",
-      attentionReasons: ["failed"],
-    });
-  });
+  ])(
+    "chat_workflow keeps treating %s as a failure needing attention",
+    (nativeStatus) => {
+      expect(
+        normalizeRunStatus({ source: "chat_workflow", nativeStatus }),
+      ).toEqual({
+        state: "finished",
+        outcome: "failed",
+        health: "needs_attention",
+        attentionReasons: ["failed"],
+      });
+    },
+  );
 
   test("keeps a completed loop successful while warning about failed steps", () => {
     expect(

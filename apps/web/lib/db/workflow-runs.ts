@@ -1,11 +1,30 @@
+import { desc, eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { db } from "./client";
 import { workflowRuns, workflowRunSteps } from "./schema";
 
-export type WorkflowRunStatus = "completed" | "aborted" | "failed";
+// #1241: widened from ["completed", "aborted", "failed"] — see the schema
+// comment on `workflowRuns.status` for why this needed no migration. `failed`
+// keeps meaning "the workflow threw"; the four new values are deliberate
+// stops (see `stopReason` in app/workflows/chat.ts, #1231), reusing that
+// same vocabulary rather than inventing a second one.
+export type WorkflowRunStatus =
+  | "completed"
+  | "aborted"
+  | "failed"
+  | "no_progress_fuse"
+  | "no_sandbox_step_cap"
+  | "max_steps"
+  | "repeated_tool_failure";
 
-// TDD red stub (#1241) — replaced by the real mapping in the green commit.
-export function deriveWorkflowRunOutcomeStatus(_params: {
+/**
+ * Maps the raw stop signals app/workflows/chat.ts already tracks onto the
+ * persisted, widened status vocabulary. A crash always wins over a stop
+ * signal that happened to already be set (an unrelated exception thrown
+ * after a fuse tripped must still be filed as `failed`, not
+ * `no_progress_fuse`); an explicit user abort wins over both.
+ */
+export function deriveWorkflowRunOutcomeStatus(params: {
   crashed: boolean;
   wasAborted: boolean;
   stoppedForRepeatedToolFailure: boolean;
@@ -13,7 +32,44 @@ export function deriveWorkflowRunOutcomeStatus(_params: {
   headlessFuseTripped: boolean;
   headlessNoSandboxCapped: boolean;
 }): WorkflowRunStatus {
-  throw new Error("not implemented");
+  if (params.crashed) {
+    return params.wasAborted ? "aborted" : "failed";
+  }
+  if (params.wasAborted) {
+    return "aborted";
+  }
+  if (params.stoppedForRepeatedToolFailure) {
+    return "repeated_tool_failure";
+  }
+  if (params.exhaustedMaxSteps) {
+    return "max_steps";
+  }
+  if (params.headlessFuseTripped) {
+    return "no_progress_fuse";
+  }
+  if (params.headlessNoSandboxCapped) {
+    return "no_sandbox_step_cap";
+  }
+  return "completed";
+}
+
+/**
+ * The most recent run's raw status for a session, or null if the session has
+ * never had a run recorded. Backs get_session's `lastRunOutcome` only — never
+ * list_sessions, so this single indexed lookup (`workflow_runs_session_id_idx`)
+ * never becomes an N+1 across a page of sessions.
+ */
+export async function getLatestWorkflowRunStatusBySessionId(
+  sessionId: string,
+): Promise<string | null> {
+  const [run] = await db
+    .select({ status: workflowRuns.status })
+    .from(workflowRuns)
+    .where(eq(workflowRuns.sessionId, sessionId))
+    .orderBy(desc(workflowRuns.createdAt))
+    .limit(1);
+
+  return run?.status ?? null;
 }
 
 export type WorkflowRunStepTiming = {

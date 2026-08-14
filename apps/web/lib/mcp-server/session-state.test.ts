@@ -251,9 +251,7 @@ describe("toLastRunOutcome", () => {
   });
 
   test("the no-sandbox step cap names itself, distinct from the fuse", () => {
-    expect(toLastRunOutcome("no_sandbox_step_cap")).toBe(
-      "no_sandbox_step_cap",
-    );
+    expect(toLastRunOutcome("no_sandbox_step_cap")).toBe("no_sandbox_step_cap");
   });
 
   test("exhausting maxSteps names itself", () => {

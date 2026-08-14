@@ -27,9 +27,53 @@ export type McpWorkspaceState =
   | "none";
 export type McpActivityState = "working" | "idle";
 
-// TDD red stub (#1241) — replaced by the real derivation in the green commit.
-export function toLastRunOutcome(_status: string | null | undefined): unknown {
-  throw new Error("not implemented");
+/**
+ * How the session's most recently recorded run ended — a third axis,
+ * distinct from `state` (filing) and `activity` (is a run live right now).
+ * Reuses `workflowRuns.status`'s own vocabulary (#1241), which itself reuses
+ * `stopReason`'s vocabulary (#1231) rather than inventing a second one:
+ *
+ *   `completed`              the run finished normally.
+ *   `aborted`                the user stopped it.
+ *   `failed`                 the workflow threw — a genuine crash.
+ *   `no_progress_fuse`       the headless no-progress fuse ended the run.
+ *   `no_sandbox_step_cap`    the headless no-sandbox step cap ended the run.
+ *   `max_steps`              the run exhausted maxSteps.
+ *   `repeated_tool_failure`  the run stopped on repeated tool failures.
+ */
+export type McpLastRunOutcome =
+  | "completed"
+  | "aborted"
+  | "failed"
+  | "no_progress_fuse"
+  | "no_sandbox_step_cap"
+  | "max_steps"
+  | "repeated_tool_failure";
+
+const LAST_RUN_OUTCOMES: ReadonlySet<string> = new Set([
+  "completed",
+  "aborted",
+  "failed",
+  "no_progress_fuse",
+  "no_sandbox_step_cap",
+  "max_steps",
+  "repeated_tool_failure",
+] satisfies McpLastRunOutcome[]);
+
+/**
+ * `status` is `workflow_runs.status` for the session's most recent run, or
+ * null when the session has no run yet. Null is also returned for a stored
+ * value outside the advertised vocabulary (a historical row, in principle)
+ * rather than echoing it back as a typed outcome the schema does not
+ * declare — retrofitting historical rows is explicitly out of scope (#1241).
+ */
+export function toLastRunOutcome(
+  status: string | null | undefined,
+): McpLastRunOutcome | null {
+  if (status && LAST_RUN_OUTCOMES.has(status)) {
+    return status as McpLastRunOutcome;
+  }
+  return null;
 }
 
 /**
