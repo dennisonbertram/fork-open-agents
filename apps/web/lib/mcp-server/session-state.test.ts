@@ -270,6 +270,28 @@ describe("toLastRunOutcome", () => {
     // typed outcome the schema does not advertise.
     expect(toLastRunOutcome("some-legacy-value")).toBeNull();
   });
+
+  // #1247: a step cut off by the provider's output-token ceiling
+  // (finishReason "length") used to be filed identically to a clean finish.
+  test("a truncated run names itself, distinct from a clean finish", () => {
+    expect(toLastRunOutcome("truncated")).toBe("truncated");
+  });
+
+  // #1247: a run paused for tool approval used to be filed identically to a
+  // clean finish too — the same defect as truncation, wearing a different
+  // hat.
+  test("a run awaiting tool approval names itself, distinct from completed and from truncated", () => {
+    expect(toLastRunOutcome("awaiting_tool_approval")).toBe(
+      "awaiting_tool_approval",
+    );
+  });
+
+  // #1247: content-filter / error / other finish reasons share one value —
+  // still distinct from a clean completion, which is the behavior that
+  // matters to a caller deciding whether to trust the run's output.
+  test("an unhandled finish reason names the shared ended_unexpectedly value", () => {
+    expect(toLastRunOutcome("ended_unexpectedly")).toBe("ended_unexpectedly");
+  });
 });
 
 /**
@@ -292,6 +314,9 @@ describe("the writer's vocabulary and get_session's reader never drift apart (#1
         exhaustedMaxSteps: false,
         headlessFuseTripped: false,
         headlessNoSandboxCapped: false,
+        truncationBoundExhausted: false,
+        awaitingToolApproval: false,
+        endedUnexpectedly: false,
       },
       {
         crashed: false,
@@ -300,6 +325,9 @@ describe("the writer's vocabulary and get_session's reader never drift apart (#1
         exhaustedMaxSteps: false,
         headlessFuseTripped: false,
         headlessNoSandboxCapped: false,
+        truncationBoundExhausted: false,
+        awaitingToolApproval: false,
+        endedUnexpectedly: false,
       },
       {
         crashed: true,
@@ -308,6 +336,9 @@ describe("the writer's vocabulary and get_session's reader never drift apart (#1
         exhaustedMaxSteps: false,
         headlessFuseTripped: false,
         headlessNoSandboxCapped: false,
+        truncationBoundExhausted: false,
+        awaitingToolApproval: false,
+        endedUnexpectedly: false,
       },
       {
         crashed: false,
@@ -316,6 +347,9 @@ describe("the writer's vocabulary and get_session's reader never drift apart (#1
         exhaustedMaxSteps: false,
         headlessFuseTripped: false,
         headlessNoSandboxCapped: false,
+        truncationBoundExhausted: false,
+        awaitingToolApproval: false,
+        endedUnexpectedly: false,
       },
       {
         crashed: false,
@@ -324,6 +358,9 @@ describe("the writer's vocabulary and get_session's reader never drift apart (#1
         exhaustedMaxSteps: true,
         headlessFuseTripped: false,
         headlessNoSandboxCapped: false,
+        truncationBoundExhausted: false,
+        awaitingToolApproval: false,
+        endedUnexpectedly: false,
       },
       {
         crashed: false,
@@ -332,6 +369,9 @@ describe("the writer's vocabulary and get_session's reader never drift apart (#1
         exhaustedMaxSteps: false,
         headlessFuseTripped: true,
         headlessNoSandboxCapped: false,
+        truncationBoundExhausted: false,
+        awaitingToolApproval: false,
+        endedUnexpectedly: false,
       },
       {
         crashed: false,
@@ -340,6 +380,43 @@ describe("the writer's vocabulary and get_session's reader never drift apart (#1
         exhaustedMaxSteps: false,
         headlessFuseTripped: false,
         headlessNoSandboxCapped: true,
+        truncationBoundExhausted: false,
+        awaitingToolApproval: false,
+        endedUnexpectedly: false,
+      },
+      // #1247: the three new deliberate-stop values.
+      {
+        crashed: false,
+        wasAborted: false,
+        stoppedForRepeatedToolFailure: false,
+        exhaustedMaxSteps: false,
+        headlessFuseTripped: false,
+        headlessNoSandboxCapped: false,
+        truncationBoundExhausted: true,
+        awaitingToolApproval: false,
+        endedUnexpectedly: false,
+      },
+      {
+        crashed: false,
+        wasAborted: false,
+        stoppedForRepeatedToolFailure: false,
+        exhaustedMaxSteps: false,
+        headlessFuseTripped: false,
+        headlessNoSandboxCapped: false,
+        truncationBoundExhausted: false,
+        awaitingToolApproval: true,
+        endedUnexpectedly: false,
+      },
+      {
+        crashed: false,
+        wasAborted: false,
+        stoppedForRepeatedToolFailure: false,
+        exhaustedMaxSteps: false,
+        headlessFuseTripped: false,
+        headlessNoSandboxCapped: false,
+        truncationBoundExhausted: false,
+        awaitingToolApproval: false,
+        endedUnexpectedly: true,
       },
     ];
 

@@ -40,8 +40,10 @@ export type WebAgentResponseTimeline = {
   workflowRunId: string;
   // #1241: mirrors workflowRuns.status, widened with four deliberate-stop
   // values so a stalled or step-capped run isn't reported identically to a
-  // crash. Nothing in this file's consumers switches on the literal value
-  // today — it is only ever displayed.
+  // crash. #1247 widened it again with "truncated" / "awaiting_tool_approval"
+  // / "ended_unexpectedly" — see the doc comment on `WorkflowRunStatus`
+  // (lib/chat/workflow-run-outcome.ts). Nothing in this file's consumers
+  // switches on the literal value today — it is only ever displayed.
   status:
     | "completed"
     | "aborted"
@@ -49,7 +51,10 @@ export type WebAgentResponseTimeline = {
     | "no_progress_fuse"
     | "no_sandbox_step_cap"
     | "max_steps"
-    | "repeated_tool_failure";
+    | "repeated_tool_failure"
+    | "truncated"
+    | "awaiting_tool_approval"
+    | "ended_unexpectedly";
   totalDurationMs: number;
   startedAt: string;
   finishedAt: string;

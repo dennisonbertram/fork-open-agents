@@ -1452,6 +1452,10 @@ describe("getSession lastRunOutcome (#1241)", () => {
     "no_sandbox_step_cap",
     "max_steps",
     "repeated_tool_failure",
+    // #1247
+    "truncated",
+    "awaiting_tool_approval",
+    "ended_unexpectedly",
   ] as const)(
     "reports %s through get_session with the writer's own vocabulary",
     async (status) => {
@@ -1507,6 +1511,10 @@ describe("getSession lastRunOutcome (#1241)", () => {
       "no_sandbox_step_cap",
       "max_steps",
       "repeated_tool_failure",
+      // #1247
+      "truncated",
+      "awaiting_tool_approval",
+      "ended_unexpectedly",
     ] as const) {
       getLatestWorkflowRunStatusBySessionId.mockImplementation(
         async () => status,
