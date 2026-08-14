@@ -256,6 +256,10 @@ let agentProviderMetadata: Record<string, unknown> | undefined;
 let agentInputMessages: unknown;
 let agentStreamOptions: unknown;
 let agentStreamTools: unknown;
+// One entry per webAgent.stream() call (i.e. per agent step) — lets a
+// multi-step test assert the SAME tool set was reused on every step, not
+// just inspect the last call's tools (which `agentStreamTools` overwrites).
+let agentStreamToolsCalls: unknown[] = [];
 let agentStreamError: Error | undefined;
 
 function buildAgentSteps() {
@@ -347,6 +351,7 @@ mock.module("@/app/config", () => ({
       agentInputMessages = messages;
       agentStreamOptions = options;
       agentStreamTools = tools;
+      agentStreamToolsCalls.push(tools);
       return {
         toUIMessageStream: (opts: {
           sendStart?: boolean;
@@ -733,6 +738,7 @@ beforeEach(() => {
   agentInputMessages = undefined;
   agentStreamOptions = undefined;
   agentStreamTools = undefined;
+  agentStreamToolsCalls = [];
   agentStreamError = undefined;
   streamOnFinishCallback = undefined;
   testSessionRecord = {
@@ -973,6 +979,53 @@ describe("runAgentWorkflow", () => {
         }),
       }),
     );
+  });
+
+  // TASK-1248: resolution must happen once for the whole run, not once per
+  // agent step. Production evidence (issue #1248) showed 24 resolutions for a
+  // 24-step run — each paying ~3 Composio HTTP round trips.
+  test("TASK-1248 BT-1: resolves Composio tools once for a multi-step run, not once per step", async () => {
+    agentFinishReason = "tool-calls";
+    agentRawFinishReason = "provider_tool_use";
+
+    await runAgentWorkflow(makeOptions({ maxSteps: 2 }));
+
+    expect(spies.resolveComposioToolsForChat).toHaveBeenCalledTimes(1);
+  });
+
+  test("TASK-1248 BT-2: reuses the same resolved Composio tool set across every step of a run", async () => {
+    // Each invocation returns a DIFFERENT tool set (keyed by call count) so
+    // this test can tell "resolved once and reused" apart from "resolved
+    // fresh every step but happened to return an identical value" — a mock
+    // that always returns the same object cannot distinguish those two.
+    let callCount = 0;
+    spies.resolveComposioToolsForChat.mockImplementation(async () => {
+      callCount += 1;
+      return {
+        status: "ready" as const,
+        tools: { [`COMPOSIO_TOOL_CALL_${callCount}`]: { description: "x" } },
+        profile: null,
+        composioSessionId: `composio-session-${callCount}`,
+        configHash: `hash-${callCount}`,
+        reusedSession: callCount > 1,
+      };
+    });
+    agentFinishReason = "tool-calls";
+    agentRawFinishReason = "provider_tool_use";
+
+    await runAgentWorkflow(makeOptions({ maxSteps: 2 }));
+
+    // Two agent steps ran (mirrors "records a 'progress' event for each step
+    // in a multi-step run" above) and BOTH must have received the FIRST
+    // resolution's tool set — proving the second step reused it instead of
+    // triggering its own (second, differently-keyed) resolution.
+    expect(agentStreamToolsCalls.length).toBe(2);
+    expect(agentStreamToolsCalls[0]).toEqual({
+      COMPOSIO_TOOL_CALL_1: { description: "x" },
+    });
+    expect(agentStreamToolsCalls[1]).toEqual({
+      COMPOSIO_TOOL_CALL_1: { description: "x" },
+    });
   });
 
   test("BT-CHAT-RP-001 (post-review, #799 contract gap): a partial repo-policy block on a READY outcome emits composio.repo_policy.blocked naming the dropped slug, tools still proceed", async () => {
