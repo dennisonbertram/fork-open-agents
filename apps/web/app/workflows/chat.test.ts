@@ -3964,6 +3964,82 @@ describe("runAgentWorkflow", () => {
       expect(workflowRun.stepTimings.length).toBeLessThan(12);
     }, 10_000);
 
+    // #1242 follow-up regression (observability angle, mirrors a9f20a61's
+    // discipline for the round-1 fix): distinct from the two behavioral
+    // tests above, which check the persisted workflowRun.status — this
+    // checks that the A/B/A/B cycle wedge emits the SAME observability
+    // trail a strict repeat does (workflow.failed + mcp.run.bounded
+    // reason "no_progress"), and that the message specifically says
+    // "repeating" rather than the stalled-tree wording. On the pre-cycle-
+    // detection code this run never stops at all (unbounded — no
+    // workflow.failed event, no "no_progress" log line ever fires), so this
+    // test would fail if the cycle-detection fix were reverted.
+    test("regression: an A/B/A/B cycle wedge emits the same observability trail as a strict repeat, with a distinct message (#1242)", async () => {
+      agentFinishReason = "tool-calls";
+      agentRawFinishReason = "provider_tool_use";
+      spies.probeHeadlessRunGitFingerprint.mockImplementation(
+        (): Promise<string | null> => Promise.resolve("frozen-fingerprint"),
+      );
+      let call = 0;
+      agentAssistantPartsFactory = () => {
+        call += 1;
+        return [
+          {
+            type: "tool-task",
+            toolCallId: `call-${call}`,
+            state: "output-available",
+            preliminary: false,
+            input: { file: call % 2 === 1 ? "A" : "B" },
+            output: { final: [] },
+          },
+        ];
+      };
+      const infoSpy = spyOn(console, "info").mockImplementation(
+        () => undefined,
+      );
+
+      await runAgentWorkflow(
+        makeOptions({
+          agentOptions: { unattended: true },
+          maxSteps: undefined,
+        }),
+      );
+
+      const emitted = (spies.emitSessionEvent.mock.calls as unknown[][]).map(
+        (call_) =>
+          call_[0] as {
+            eventName?: string;
+            payload?: Record<string, unknown>;
+          },
+      );
+      const failedEvent = emitted.findLast(
+        (event) => event.eventName === "workflow.failed",
+      );
+      expect(failedEvent?.payload).toMatchObject({
+        stopReason: "no_progress_fuse",
+      });
+
+      const boundedCall = infoSpy.mock.calls.find((args) =>
+        String(args[1]).includes('"event":"mcp.run.bounded"'),
+      );
+      expect(boundedCall).toBeDefined();
+      expect(String(boundedCall?.[1])).toContain('"reason":"no_progress"');
+
+      const textDeltas = writtenChunks
+        .filter(
+          (chunk): chunk is { type: "text-delta"; id: string; delta: string } =>
+            chunk.type === "text-delta",
+        )
+        .map((chunk) => chunk.delta)
+        .join("");
+      expect(textDeltas.toLowerCase()).toContain("repeating");
+      expect(textDeltas.toLowerCase()).not.toContain(
+        "no workspace changes or new tool-call activity",
+      );
+
+      infoSpy.mockRestore();
+    }, 10_000);
+
     // Real per-step cost (~150ms, see the note above) × 21 steps ≈ 3s —
     // comfortably under the default 5s timeout, but a generous explicit
     // timeout keeps this from flaking on a slower CI runner.
