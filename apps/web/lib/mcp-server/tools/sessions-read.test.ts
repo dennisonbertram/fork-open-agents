@@ -2229,4 +2229,25 @@ describe("session-state descriptions match what the fields actually do", () => {
       expect(tool.description).toContain("right now");
     }
   });
+
+  test("the get_session description tells a client to re-read when a freshly-idle session briefly reports an idle activity with a null lastRunOutcome", async () => {
+    // Transient observed 2026-08-14: `activity` comes from the run slot, which
+    // clears at turn end, while `lastRunOutcome` is written a moment later by
+    // the post-finish path. A client polling "wait until idle, then read the
+    // outcome" can catch that window and see idle + null — the same shapes as a
+    // session that has never run. The prose must not let a client read that
+    // combination as "never ran" without re-reading, or it decides a finished
+    // run was never started.
+    const { sessionReadTools } = await toolsModulePromise;
+    const getSessionDef = sessionReadTools.find(
+      (def) => def.name === "open_agents_get_session",
+    );
+    if (!getSessionDef) {
+      throw new Error("open_agents_get_session not registered");
+    }
+    expect(getSessionDef.description).toContain("`activity`");
+    expect(getSessionDef.description).toContain("`lastRunOutcome`");
+    expect(getSessionDef.description).toContain("re-read");
+    expect(getSessionDef.description).toMatch(/`idle`.+null/);
+  });
 });
