@@ -2155,6 +2155,35 @@ describe("runAgentWorkflow", () => {
       expect(workflowRun.stepTimings).toHaveLength(2);
       expect(workflowRun.status).toBe("truncated");
     });
+
+    // Regression: the length-continuation path reuses the normal loop body
+    // (it does not `continue` past the rest of the per-step checks), so the
+    // existing maxSteps safety net must still apply to a run that is
+    // continuing past truncated steps. If a future change made the "length"
+    // branch skip straight to the next iteration instead of falling through,
+    // this run would keep going past maxSteps instead of stopping at it.
+    test("maxSteps still bounds a run that is continuing past truncated steps", async () => {
+      agentFinishReason = "length";
+      agentRawFinishReason = "provider_length";
+      // Comfortably inside the default length-continuation budget (3), so
+      // maxSteps — not the truncation budget — must be what ends this run.
+      agentAssistantPartsFactory = () => [{ type: "text", text: "partial" }];
+
+      await runAgentWorkflow(makeOptions({ maxSteps: 2 }));
+
+      const rwCalls = spies.recordWorkflowUsage.mock.calls as unknown[][];
+      const workflowRun = rwCalls.at(-1)?.[5] as {
+        status: string;
+        stepTimings: Array<{ stepNumber: number; finishReason?: string }>;
+      };
+
+      expect(workflowRun.stepTimings).toHaveLength(2);
+      expect(workflowRun.status).toBe("max_steps");
+      // Every step was truncated — this was not a coincidental "stop".
+      expect(
+        workflowRun.stepTimings.every((step) => step.finishReason === "length"),
+      ).toBe(true);
+    });
   });
 
   // #1247: pausing for tool approval and the other unlabeled finish reasons

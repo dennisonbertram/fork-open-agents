@@ -159,4 +159,20 @@ describe("deriveWorkflowRunOutcomeStatus", () => {
       }),
     ).toBe("aborted");
   });
+
+  // Regression: if a user stops a run in the middle of a length-continuation
+  // sequence (the "length" step already counted toward the budget, then the
+  // abort lands before the next step starts), the run must be filed
+  // "aborted" — the user's own action — not "truncated". Reverting this
+  // precedence would misreport a run the user deliberately stopped as one
+  // that ran out of retries on its own.
+  test("a user-initiated abort takes priority over an exhausted truncation budget", () => {
+    expect(
+      deriveWorkflowRunOutcomeStatus({
+        ...base,
+        wasAborted: true,
+        truncationBoundExhausted: true,
+      }),
+    ).toBe("aborted");
+  });
 });
