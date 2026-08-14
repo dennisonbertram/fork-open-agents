@@ -10,16 +10,22 @@ import {
  * on a question nobody can ever answer. Excluding it from the allowlist
  * (rather than teaching MCP to answer it) is the deliberate design for #1230.
  */
-const HEADLESS_DENIED_TOOL_NAMES: ReadonlySet<string> = new Set([
+export const HEADLESS_DENIED_TOOL_NAMES: readonly string[] = [
   "ask_user_question",
-]);
+];
+
+const HEADLESS_DENIED_TOOL_NAME_SET: ReadonlySet<string> = new Set(
+  HEADLESS_DENIED_TOOL_NAMES,
+);
 
 /**
  * Built-in tool names an MCP-started (headless) run may use: every tool the
  * classic runtime normally offers, minus `ask_user_question`.
  */
 export const HEADLESS_ALLOWED_BUILTIN_TOOL_NAMES: readonly string[] =
-  OPEN_AGENT_TOOL_NAMES.filter((name) => !HEADLESS_DENIED_TOOL_NAMES.has(name));
+  OPEN_AGENT_TOOL_NAMES.filter(
+    (name) => !HEADLESS_DENIED_TOOL_NAME_SET.has(name),
+  );
 
 /**
  * Tells the agent (a) no human will ever answer a question, (b) a blocked
