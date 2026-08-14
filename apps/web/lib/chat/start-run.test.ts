@@ -300,6 +300,22 @@ describe("startChatRun: happy path with no active stream", () => {
     expect(args[0].agentOptions).toEqual(agentOptions);
   });
 
+  test("does not default maxSteps to 500 for a caller that omits it (#1231: headless MCP runs must not inherit the browser step cap)", async () => {
+    const { startChatRun } = await moduleUnderTestPromise;
+    const agentOptions = { unattended: true };
+
+    await startChatRun(baseInput({ agentOptions }));
+
+    expect(startWorkflow).toHaveBeenCalledTimes(1);
+    const [, args] = startWorkflow.mock.calls[0] as [
+      unknown,
+      [Record<string, unknown>],
+    ];
+    // Undefined, not 500 — the chat step loop treats undefined maxSteps as
+    // unbounded and a progress-based fuse takes over for headless runs.
+    expect(args[0].maxSteps).toBeUndefined();
+  });
+
   test("omits agentOptions from the workflow payload entirely when the caller does not set it — the browser chat route's shape", async () => {
     const { startChatRun } = await moduleUnderTestPromise;
 

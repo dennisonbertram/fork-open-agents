@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, mock, test } from "bun:test";
+import { beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import type { UIMessageChunk } from "ai";
 import type { AgentModelSelection } from "@open-agents/agent";
 
@@ -188,6 +188,13 @@ const spies = {
   recordGoalLedgerStart: mock(() => Promise.resolve("goal-test-abc123")),
   recordGoalLedgerEvent: mock(() => Promise.resolve()),
   recordGoalLedgerClose: mock(() => Promise.resolve()),
+  // #1231: headless-run progress fuse + turn-end hibernation.
+  hibernateHeadlessSandboxAtTurnEnd: mock(() =>
+    Promise.resolve({ action: "hibernated" as const }),
+  ),
+  probeHeadlessRunGitFingerprint: mock(
+    (): Promise<string | null> => Promise.resolve("fingerprint-const"),
+  ),
 };
 
 let testSessionRecord: {
@@ -323,6 +330,7 @@ mock.module("workflow/api", () => ({
 }));
 
 mock.module("./chat-post-finish", () => spies);
+mock.module("./headless-progress-fuse", () => spies);
 
 mock.module("@/app/config", () => ({
   webAgent: {
@@ -763,6 +771,12 @@ beforeEach(() => {
   spies.recordGoalLedgerStart.mockResolvedValue("goal-test-abc123");
   spies.recordGoalLedgerEvent.mockResolvedValue(undefined);
   spies.recordGoalLedgerClose.mockResolvedValue(undefined);
+  spies.hibernateHeadlessSandboxAtTurnEnd.mockImplementation(() =>
+    Promise.resolve({ action: "hibernated" as const }),
+  );
+  spies.probeHeadlessRunGitFingerprint.mockImplementation(
+    (): Promise<string | null> => Promise.resolve("fingerprint-const"),
+  );
   spies.createArtifact.mockImplementation(
     async (input: Record<string, unknown>) => ({
       id: `artifact-${String(input.kind ?? "unknown")}`,
@@ -3609,6 +3623,165 @@ describe("runAgentWorkflow", () => {
         .join("\n");
 
       expect(text).toContain("only");
+    });
+  });
+
+  // #1231: this describe block MUST stay before "recordGoalLedgerClose uses
+  // 'canceled' status when workflow is aborted" (below) and every other test
+  // that calls `mock.module("@/app/config", ...)`. Those calls permanently
+  // replace the module for the rest of this file's single test process — a
+  // test placed after one silently inherits its (often broken-on-purpose)
+  // agent mock instead of the default `webAgent.stream` set up at the top of
+  // this file. See "still clears stream and sends finish even on step error".
+  describe("headless MCP run bounding and hibernation (#1231)", () => {
+    // #1231 test-cost note: chat.ts's per-step `startStopMonitor` always
+    // waits out one real 150ms poll cycle before a step's `finally` block
+    // returns (see `runAgentStep`'s `await stopMonitor.done`), so a step loop
+    // costs roughly step-count × 150ms even fully mocked — actually driving
+    // this run to 501 steps would take over a minute. The behavioral proof
+    // that matters is split instead: `lib/chat/start-run.test.ts` proves
+    // headless callers no longer get the old hardcoded `maxSteps: 500`
+    // default, and this test proves the SEPARATE new mechanism (the
+    // no-progress fuse) does not stop a genuinely progressing run — it keeps
+    // going well past its own default stale-step budget, which is the only
+    // thing left that could bound a headless run now that the fixed cap is
+    // gone.
+    test("does not stop a headless run merely because it has taken more steps than the no-progress budget allows, as long as the workspace keeps changing", async () => {
+      const { DEFAULT_HEADLESS_RUN_MAX_STALE_STEPS } =
+        await import("@/lib/chat/headless-progress-budget");
+      agentFinishReason = "tool-calls";
+      agentRawFinishReason = "provider_tool_use";
+      const STOP_AT_STEP = DEFAULT_HEADLESS_RUN_MAX_STALE_STEPS + 10;
+      let call = 0;
+      agentAssistantPartsFactory = () => {
+        call += 1;
+        return [{ type: "text", text: `step ${call}` }];
+      };
+      // A fresh fingerprint on every probe — the workspace is always
+      // "changing", so the no-progress fuse never trips.
+      spies.probeHeadlessRunGitFingerprint.mockImplementation(
+        (): Promise<string | null> => {
+          const fingerprint = `fingerprint-${call}`;
+          if (call >= STOP_AT_STEP) {
+            agentFinishReason = "stop";
+          }
+          return Promise.resolve(fingerprint);
+        },
+      );
+
+      await runAgentWorkflow(
+        makeOptions({
+          agentOptions: { unattended: true },
+          maxSteps: undefined,
+        }),
+      );
+
+      const rwCalls = spies.recordWorkflowUsage.mock.calls as unknown[][];
+      const workflowRun = rwCalls.at(-1)?.[5] as {
+        stepTimings: Array<{ stepNumber: number }>;
+        status: string;
+      };
+      expect(workflowRun.stepTimings.length).toBeGreaterThan(
+        DEFAULT_HEADLESS_RUN_MAX_STALE_STEPS,
+      );
+      expect(workflowRun.status).toBe("completed");
+    }, 15_000);
+
+    // Real per-step cost (~150ms, see the note above) × 21 steps ≈ 3s —
+    // comfortably under the default 5s timeout, but a generous explicit
+    // timeout keeps this from flaking on a slower CI runner.
+    test("stops a headless run once the no-progress budget is exhausted, with a legible reason", async () => {
+      const { DEFAULT_HEADLESS_RUN_MAX_STALE_STEPS } =
+        await import("@/lib/chat/headless-progress-budget");
+      agentFinishReason = "tool-calls";
+      agentRawFinishReason = "provider_tool_use";
+      // The workspace never changes — every probe returns the same fingerprint.
+      spies.probeHeadlessRunGitFingerprint.mockImplementation(
+        (): Promise<string | null> => Promise.resolve("frozen-fingerprint"),
+      );
+      const infoSpy = spyOn(console, "info").mockImplementation(
+        () => undefined,
+      );
+
+      await runAgentWorkflow(
+        makeOptions({
+          agentOptions: { unattended: true },
+          maxSteps: undefined,
+        }),
+      );
+
+      const rwCalls = spies.recordWorkflowUsage.mock.calls as unknown[][];
+      const workflowRun = rwCalls.at(-1)?.[5] as {
+        stepTimings: Array<{ stepNumber: number }>;
+        status: string;
+      };
+      // The first probe seeds the fingerprint baseline (never itself stale);
+      // the fuse trips once DEFAULT_HEADLESS_RUN_MAX_STALE_STEPS consecutive
+      // probes after that see no change.
+      expect(workflowRun.stepTimings.length).toBe(
+        DEFAULT_HEADLESS_RUN_MAX_STALE_STEPS + 1,
+      );
+      expect(workflowRun.status).toBe("failed");
+
+      const emitted = (spies.emitSessionEvent.mock.calls as unknown[][]).map(
+        (call) =>
+          call[0] as {
+            eventName?: string;
+            payload?: Record<string, unknown>;
+          },
+      );
+      const failedEvent = emitted.findLast(
+        (event) => event.eventName === "workflow.failed",
+      );
+      expect(failedEvent?.payload).toMatchObject({
+        stopReason: "no_progress_fuse",
+      });
+
+      // The blocked/fused ending must be legible to a reading agent — a
+      // sentence, not a bare code.
+      const textDeltas = writtenChunks
+        .filter(
+          (chunk): chunk is { type: "text-delta"; id: string; delta: string } =>
+            chunk.type === "text-delta",
+        )
+        .map((chunk) => chunk.delta)
+        .join("");
+      expect(textDeltas.toLowerCase()).toContain("stopped");
+
+      // Observability: mcp.run.bounded with reason "no_progress".
+      const boundedCall = infoSpy.mock.calls.find((args) =>
+        String(args[1]).includes('"event":"mcp.run.bounded"'),
+      );
+      expect(boundedCall).toBeDefined();
+      expect(String(boundedCall?.[1])).toContain('"reason":"no_progress"');
+
+      infoSpy.mockRestore();
+    }, 10_000);
+
+    test("hibernates the sandbox only after the active-stream slot is released", async () => {
+      const callOrder: string[] = [];
+      spies.clearActiveStream.mockImplementationOnce(async () => {
+        callOrder.push("clearActiveStream");
+      });
+      spies.hibernateHeadlessSandboxAtTurnEnd.mockImplementationOnce(
+        async () => {
+          callOrder.push("hibernate");
+          return { action: "hibernated" as const };
+        },
+      );
+
+      await runAgentWorkflow(
+        makeOptions({
+          agentOptions: { unattended: true },
+          maxSteps: undefined,
+        }),
+      );
+
+      expect(callOrder).toEqual(["clearActiveStream", "hibernate"]);
+      expect(spies.hibernateHeadlessSandboxAtTurnEnd).toHaveBeenCalledWith({
+        sessionId: "session-1",
+        sandboxName: "session_session-1",
+      });
     });
   });
 
