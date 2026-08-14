@@ -55,6 +55,7 @@ mock.module("@/lib/sandbox/utils", () => ({
 const toolsModulePromise = import("./sessions-read");
 const registryModulePromise = import("../registry");
 const contextModulePromise = import("../context");
+const toolTraceModulePromise = import("../tool-trace");
 
 // Minimal literal matching McpToolContext's shape; avoids importing `any`.
 function makeCtx(overrides: {
@@ -970,14 +971,14 @@ describe("getMessages", () => {
     expect(result.chatId).toBe("chat-most-recent");
   });
 
-  test("truncates each preview to MESSAGE_PREVIEW_CHARS and flags tool calls", async () => {
-    const { getMessages, MESSAGE_PREVIEW_CHARS } = await toolsModulePromise;
+  test("returns each message's full text (no 280-char preview cap) and flags tool calls", async () => {
+    const { getMessages } = await toolsModulePromise;
     seedSession(buildSessionRow());
     getChatById.mockImplementation(async () => ({
       id: "chat-1",
       sessionId: "session-1",
     }));
-    const longText = "x".repeat(MESSAGE_PREVIEW_CHARS + 50);
+    const longText = "x".repeat(330);
     seedMessages([
       {
         id: "m1",
@@ -1009,10 +1010,11 @@ describe("getMessages", () => {
     });
 
     const [first, second] = result.messages;
-    expect(first?.preview.length).toBe(MESSAGE_PREVIEW_CHARS);
-    expect(first?.preview.endsWith("…")).toBe(true);
+    expect(first?.text).toBe(longText);
+    expect(first?.chars).toBe(330);
+    expect(first?.capped).toBe(false);
     expect(first?.hasToolCalls).toBe(false);
-    expect(second?.preview).toBe("short reply");
+    expect(second?.text).toBe("short reply");
     expect(second?.hasToolCalls).toBe(true);
   });
 
@@ -1096,6 +1098,269 @@ describe("getMessages", () => {
     expect((caught as InstanceType<typeof McpToolError>).errorKind).toBe(
       "not_found",
     );
+  });
+});
+
+// --- #1232: get_messages must return full text, an opt-in tool trace, and a
+// truthfully-reported response budget instead of a 280-char preview that
+// silently dropped every tool call. ---
+describe("getMessages full text and tool trace (#1232)", () => {
+  test("returns a message's full text even past the old 280-char preview cap", async () => {
+    const { getMessages } = await toolsModulePromise;
+    seedSession(buildSessionRow());
+    getChatById.mockImplementation(async () => ({
+      id: "chat-1",
+      sessionId: "session-1",
+    }));
+    const longText = "y".repeat(5000);
+    seedMessages([
+      {
+        id: "m1",
+        role: "assistant",
+        createdAt: new Date("2026-01-01T00:00:00Z"),
+        parts: [{ type: "text", text: longText }],
+      },
+    ]);
+
+    const result = await getMessages(makeCtx({}), {
+      sessionId: "session-1",
+      chatId: "chat-1",
+      limit: 20,
+    });
+
+    expect(result.messages[0]?.text).toBe(longText);
+    expect(result.messages[0]?.chars).toBe(5000);
+    expect(result.messages[0]?.capped).toBe(false);
+  });
+
+  test("caps text at messageCharLimit and flags it capped, while chars still reports the true length", async () => {
+    const { getMessages } = await toolsModulePromise;
+    seedSession(buildSessionRow());
+    getChatById.mockImplementation(async () => ({
+      id: "chat-1",
+      sessionId: "session-1",
+    }));
+    const text = "z".repeat(500);
+    seedMessages([
+      {
+        id: "m1",
+        role: "assistant",
+        createdAt: new Date("2026-01-01T00:00:00Z"),
+        parts: [{ type: "text", text }],
+      },
+    ]);
+
+    const result = await getMessages(makeCtx({}), {
+      sessionId: "session-1",
+      chatId: "chat-1",
+      limit: 20,
+      messageCharLimit: 200,
+    });
+
+    expect(result.messages[0]?.text).toBe(text.slice(0, 200));
+    expect(result.messages[0]?.text.length).toBe(200);
+    expect(result.messages[0]?.capped).toBe(true);
+    expect(result.messages[0]?.chars).toBe(500);
+  });
+
+  test("does not cap text when messageCharLimit is omitted", async () => {
+    const { getMessages } = await toolsModulePromise;
+    seedSession(buildSessionRow());
+    getChatById.mockImplementation(async () => ({
+      id: "chat-1",
+      sessionId: "session-1",
+    }));
+    seedMessages([
+      {
+        id: "m1",
+        role: "user",
+        createdAt: new Date("2026-01-01T00:00:00Z"),
+        parts: [{ type: "text", text: "hello there" }],
+      },
+    ]);
+
+    const result = await getMessages(makeCtx({}), {
+      sessionId: "session-1",
+      chatId: "chat-1",
+      limit: 20,
+    });
+
+    expect(result.messages[0]?.capped).toBe(false);
+    expect(result.messages[0]?.text).toBe("hello there");
+  });
+
+  test("returns an ordered, bounded tool trace only when includeToolTrace is true", async () => {
+    const { getMessages } = await toolsModulePromise;
+    const { TOOL_TRACE_FIELD_CHARS } = await toolTraceModulePromise;
+    seedSession(buildSessionRow());
+    getChatById.mockImplementation(async () => ({
+      id: "chat-1",
+      sessionId: "session-1",
+    }));
+    const bigOutput = { stdout: "x".repeat(TOOL_TRACE_FIELD_CHARS + 500) };
+    seedMessages([
+      {
+        id: "m1",
+        role: "assistant",
+        createdAt: new Date("2026-01-01T00:00:00Z"),
+        parts: [
+          { type: "text", text: "ran a command" },
+          {
+            type: "tool-bash",
+            toolCallId: "call-1",
+            state: "output-available",
+            input: { command: "ls" },
+            output: bigOutput,
+          },
+        ],
+      },
+    ]);
+
+    const withoutTrace = await getMessages(makeCtx({}), {
+      sessionId: "session-1",
+      chatId: "chat-1",
+      limit: 20,
+    });
+    expect(withoutTrace.messages[0]?.toolTrace).toBeUndefined();
+    expect(withoutTrace.messages[0]?.hasToolCalls).toBe(true);
+
+    const withTrace = await getMessages(makeCtx({}), {
+      sessionId: "session-1",
+      chatId: "chat-1",
+      limit: 20,
+      includeToolTrace: true,
+    });
+    const trace = withTrace.messages[0]?.toolTrace;
+    expect(trace).toHaveLength(1);
+    expect(trace?.[0]?.toolCallId).toBe("call-1");
+    expect(trace?.[0]?.name).toBe("bash");
+    expect(trace?.[0]?.state).toBe("output-available");
+    expect(trace?.[0]?.input).toBe(JSON.stringify({ command: "ls" }));
+    expect(trace?.[0]?.inputTruncated).toBe(false);
+    // The raw output is bigger than the per-field bound, so it must be cut
+    // AND flagged — never a silent shortening.
+    expect(trace?.[0]?.output.length ?? 0).toBe(TOOL_TRACE_FIELD_CHARS);
+    expect(trace?.[0]?.outputTruncated).toBe(true);
+  });
+
+  test("a response exceeding the character budget truthfully reports truncated and omitted, dropping nothing silently", async () => {
+    const { getMessages, RESPONSE_CHAR_BUDGET } = await toolsModulePromise;
+    seedSession(buildSessionRow());
+    getChatById.mockImplementation(async () => ({
+      id: "chat-1",
+      sessionId: "session-1",
+    }));
+    // Five messages whose combined text comfortably exceeds the budget, so
+    // the oldest ones cannot all survive intact.
+    const perMessageChars = Math.ceil(RESPONSE_CHAR_BUDGET / 2);
+    const rows = Array.from({ length: 5 }, (_, i) => ({
+      id: `m${i}`,
+      role: "assistant" as const,
+      createdAt: new Date(`2026-01-01T00:0${i}:00Z`),
+      parts: [{ type: "text", text: "a".repeat(perMessageChars) }],
+    }));
+    seedMessages(rows);
+
+    const result = await getMessages(makeCtx({}), {
+      sessionId: "session-1",
+      chatId: "chat-1",
+      limit: 5,
+    });
+
+    // Nothing was silently dropped: every row not fully present in
+    // `messages` is accounted for in `truncated` or `omitted`.
+    const returnedIds = new Set(result.messages.map((m) => m.id));
+    const accountedIds = new Set([...result.truncated, ...result.omitted]);
+    for (const row of rows) {
+      const fullyPresent = returnedIds.has(row.id) && !accountedIds.has(row.id);
+      const shortened = accountedIds.has(row.id);
+      expect(fullyPresent || shortened).toBe(true);
+    }
+    expect(result.omitted.length + result.truncated.length).toBeGreaterThan(0);
+    // Nothing reported as omitted also appears in the returned messages.
+    for (const id of result.omitted) {
+      expect(returnedIds.has(id)).toBe(false);
+    }
+    // The newest message survives — the whole point of a headless check-in.
+    expect(returnedIds.has("m4")).toBe(true);
+  });
+
+  test("does not trip the response budget for an ordinary small window", async () => {
+    const { getMessages } = await toolsModulePromise;
+    seedSession(buildSessionRow());
+    getChatById.mockImplementation(async () => ({
+      id: "chat-1",
+      sessionId: "session-1",
+    }));
+    seedMessages([
+      {
+        id: "m1",
+        role: "user",
+        createdAt: new Date("2026-01-01T00:00:00Z"),
+        parts: [{ type: "text", text: "hi" }],
+      },
+      {
+        id: "m2",
+        role: "assistant",
+        createdAt: new Date("2026-01-01T00:01:00Z"),
+        parts: [{ type: "text", text: "hello" }],
+      },
+    ]);
+
+    const result = await getMessages(makeCtx({}), {
+      sessionId: "session-1",
+      chatId: "chat-1",
+      limit: 20,
+    });
+
+    expect(result.truncated).toEqual([]);
+    expect(result.omitted).toEqual([]);
+    expect(result.messages).toHaveLength(2);
+  });
+
+  test("messages with malformed or non-array parts return without throwing", async () => {
+    const { getMessages } = await toolsModulePromise;
+    seedSession(buildSessionRow());
+    getChatById.mockImplementation(async () => ({
+      id: "chat-1",
+      sessionId: "session-1",
+    }));
+    seedMessages([
+      {
+        id: "m1",
+        role: "user",
+        createdAt: new Date("2026-01-01T00:00:00Z"),
+        parts: "not an array or an object with .parts",
+      },
+      {
+        id: "m2",
+        role: "assistant",
+        createdAt: new Date("2026-01-01T00:01:00Z"),
+        parts: null,
+      },
+      {
+        id: "m3",
+        role: "assistant",
+        createdAt: new Date("2026-01-01T00:02:00Z"),
+        parts: { foo: "bar" },
+      },
+    ]);
+
+    const result = await getMessages(makeCtx({}), {
+      sessionId: "session-1",
+      chatId: "chat-1",
+      limit: 20,
+      includeToolTrace: true,
+    });
+
+    expect(result.messages).toHaveLength(3);
+    for (const message of result.messages) {
+      expect(message.text).toBe("");
+      expect(message.chars).toBe(0);
+      expect(message.capped).toBe(false);
+      expect(message.hasToolCalls).toBe(false);
+      expect(message.toolTrace).toEqual([]);
+    }
   });
 });
 
