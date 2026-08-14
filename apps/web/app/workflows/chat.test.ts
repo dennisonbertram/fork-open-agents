@@ -2124,6 +2124,235 @@ describe("runAgentWorkflow", () => {
     ]);
   });
 
+  // #1247: a step whose finishReason is "length" was cut off by the
+  // provider's per-response output-token ceiling mid-work — the model had
+  // more to say. Continuing (rather than ending the run there) is the
+  // in-scope fix; these tests prove the loop keeps going, bounds how long it
+  // keeps going, and reports the truth once that bound runs out.
+  describe("length-truncation continuation (#1247)", () => {
+    test("continues past a truncated step instead of ending the run, and reports completed once it recovers", async () => {
+      agentFinishReason = "length";
+      agentRawFinishReason = "provider_length";
+      let call = 0;
+      agentAssistantPartsFactory = () => {
+        call += 1;
+        // Recovers with a clean "stop" on the third step — comfortably
+        // inside the default continuation budget.
+        if (call >= 2) {
+          agentFinishReason = "stop";
+          agentRawFinishReason = "provider_stop";
+        }
+        return [{ type: "text", text: `part ${call}` }];
+      };
+
+      await runAgentWorkflow(makeOptions({ maxSteps: 10 }));
+
+      const rwCalls = spies.recordWorkflowUsage.mock.calls as unknown[][];
+      const workflowRun = rwCalls.at(-1)?.[5] as {
+        status: string;
+        stepTimings: Array<{ stepNumber: number; finishReason?: string }>;
+      };
+
+      // The run took more than one step — proof the "length" step did not
+      // end it — and still finished cleanly.
+      expect(workflowRun.stepTimings.length).toBeGreaterThan(1);
+      expect(workflowRun.status).toBe("completed");
+      expect(workflowRun.stepTimings.at(0)?.finishReason).toBe("length");
+      expect(workflowRun.stepTimings.at(-1)?.finishReason).toBe("stop");
+    });
+
+    test("reports truncated once the length-continuation budget is exhausted, distinct from a clean completion", async () => {
+      const { DEFAULT_MAX_LENGTH_CONTINUATIONS } =
+        await import("@/lib/chat/length-continuation-budget");
+      agentFinishReason = "length";
+      agentRawFinishReason = "provider_length";
+      // Every step is truncated — the response never fits, however many
+      // steps it gets.
+      agentAssistantPartsFactory = () => [{ type: "text", text: "partial" }];
+
+      await runAgentWorkflow(makeOptions({ maxSteps: 20 }));
+
+      const rwCalls = spies.recordWorkflowUsage.mock.calls as unknown[][];
+      const workflowRun = rwCalls.at(-1)?.[5] as {
+        status: string;
+        stepTimings: Array<{ stepNumber: number; finishReason?: string }>;
+      };
+
+      // One initial truncated step plus the bounded number of continuations.
+      expect(workflowRun.stepTimings).toHaveLength(
+        DEFAULT_MAX_LENGTH_CONTINUATIONS + 1,
+      );
+      expect(workflowRun.status).toBe("truncated");
+
+      const emitted = (spies.emitSessionEvent.mock.calls as unknown[][]).map(
+        (call) =>
+          call[0] as {
+            eventName?: string;
+            payload?: Record<string, unknown>;
+          },
+      );
+      const failedEvent = emitted.findLast(
+        (event) => event.eventName === "workflow.failed",
+      );
+      expect(failedEvent?.payload).toMatchObject({
+        stopReason: "truncated",
+      });
+    });
+
+    test("does not auto-commit truncated work once the continuation budget is exhausted", async () => {
+      agentFinishReason = "length";
+      agentRawFinishReason = "provider_length";
+      agentAssistantPartsFactory = () => [{ type: "text", text: "partial" }];
+
+      await runAgentWorkflow(
+        makeOptions({
+          maxSteps: 20,
+          autoCommitEnabled: true,
+          autoCreatePrEnabled: true,
+          repoOwner: "acme",
+          repoName: "repo",
+        }),
+      );
+
+      expect(spies.runAutoCommitStep).not.toHaveBeenCalled();
+      expect(spies.runAutoCreatePrStep).not.toHaveBeenCalled();
+    });
+
+    test("honors CHAT_MAX_LENGTH_CONTINUATIONS to bound the continuation budget", async () => {
+      const envKey = "CHAT_MAX_LENGTH_CONTINUATIONS";
+      const original = process.env[envKey];
+      process.env[envKey] = "1";
+      agentFinishReason = "length";
+      agentRawFinishReason = "provider_length";
+      agentAssistantPartsFactory = () => [{ type: "text", text: "partial" }];
+
+      try {
+        await runAgentWorkflow(makeOptions({ maxSteps: 20 }));
+      } finally {
+        if (original === undefined) {
+          delete process.env[envKey];
+        } else {
+          process.env[envKey] = original;
+        }
+      }
+
+      const rwCalls = spies.recordWorkflowUsage.mock.calls as unknown[][];
+      const workflowRun = rwCalls.at(-1)?.[5] as {
+        status: string;
+        stepTimings: Array<{ stepNumber: number }>;
+      };
+
+      // 1 continuation configured: the initial step plus one continuation.
+      expect(workflowRun.stepTimings).toHaveLength(2);
+      expect(workflowRun.status).toBe("truncated");
+    });
+
+    // Regression: the length-continuation path reuses the normal loop body
+    // (it does not `continue` past the rest of the per-step checks), so the
+    // existing maxSteps safety net must still apply to a run that is
+    // continuing past truncated steps. If a future change made the "length"
+    // branch skip straight to the next iteration instead of falling through,
+    // this run would keep going past maxSteps instead of stopping at it.
+    test("maxSteps still bounds a run that is continuing past truncated steps", async () => {
+      agentFinishReason = "length";
+      agentRawFinishReason = "provider_length";
+      // Comfortably inside the default length-continuation budget (3), so
+      // maxSteps — not the truncation budget — must be what ends this run.
+      agentAssistantPartsFactory = () => [{ type: "text", text: "partial" }];
+
+      await runAgentWorkflow(makeOptions({ maxSteps: 2 }));
+
+      const rwCalls = spies.recordWorkflowUsage.mock.calls as unknown[][];
+      const workflowRun = rwCalls.at(-1)?.[5] as {
+        status: string;
+        stepTimings: Array<{ stepNumber: number; finishReason?: string }>;
+      };
+
+      expect(workflowRun.stepTimings).toHaveLength(2);
+      expect(workflowRun.status).toBe("max_steps");
+      // Every step was truncated — this was not a coincidental "stop".
+      expect(
+        workflowRun.stepTimings.every((step) => step.finishReason === "length"),
+      ).toBe(true);
+    });
+  });
+
+  // #1247: pausing for tool approval and the other unlabeled finish reasons
+  // (content-filter / error / other) used to fall through to "completed" too
+  // — the same defect as truncation, wearing different hats.
+  describe("other unlabeled finish reasons (#1247)", () => {
+    test("reports awaiting_tool_approval when the run pauses for tool interaction, not completed", async () => {
+      agentFinishReason = "tool-calls";
+      agentRawFinishReason = "provider_tool_use";
+      agentStreamParts = [
+        {
+          type: "finish-step",
+          finishReason: "tool-calls",
+          rawFinishReason: "provider_tool_use",
+          usage: agentTotalUsage,
+        },
+      ];
+
+      await runAgentWorkflow(
+        makeOptions({
+          messages: [
+            {
+              id: "assistant-1",
+              role: "assistant",
+              parts: [
+                {
+                  type: "tool-invocation",
+                  state: "approval-requested",
+                },
+              ],
+              metadata: {},
+            },
+          ],
+        }),
+      );
+
+      const rwCalls = spies.recordWorkflowUsage.mock.calls as unknown[][];
+      const workflowRun = rwCalls.at(-1)?.[5] as { status: string };
+      expect(workflowRun.status).toBe("awaiting_tool_approval");
+
+      // Not a failure: the workflow-level session event stays "completed",
+      // matching pre-#1247 behavior — only the fine-grained persisted status
+      // (asserted above) changes. Filing this as "failed" would misreport
+      // 16% of production runs (per the issue's own measurement) as broken.
+      const emitted = (spies.emitSessionEvent.mock.calls as unknown[][]).map(
+        (call) => call[0] as { eventName?: string },
+      );
+      expect(
+        emitted.some((event) => event.eventName === "workflow.completed"),
+      ).toBe(true);
+    });
+
+    test.each(["content-filter", "error", "other"] as const)(
+      "reports the shared ended_unexpectedly value for finishReason %s",
+      async (finishReason) => {
+        agentFinishReason = finishReason;
+        agentRawFinishReason = "provider_raw";
+
+        await runAgentWorkflow(makeOptions({ maxSteps: 5 }));
+
+        const rwCalls = spies.recordWorkflowUsage.mock.calls as unknown[][];
+        const workflowRun = rwCalls.at(-1)?.[5] as { status: string };
+        expect(workflowRun.status).toBe("ended_unexpectedly");
+      },
+    );
+
+    test("a run ending 'stop' is unchanged", async () => {
+      agentFinishReason = "stop";
+      agentRawFinishReason = "provider_stop";
+
+      await runAgentWorkflow(makeOptions({ maxSteps: 5 }));
+
+      const rwCalls = spies.recordWorkflowUsage.mock.calls as unknown[][];
+      const workflowRun = rwCalls.at(-1)?.[5] as { status: string };
+      expect(workflowRun.status).toBe("completed");
+    });
+  });
+
   test("logs full step diagnostics when the agent finishes with reason other", async () => {
     agentFinishReason = "other";
     agentRawFinishReason = "provider_other";
@@ -4202,6 +4431,37 @@ describe("runAgentWorkflow", () => {
 
       infoSpy.mockRestore();
     }, 10_000);
+
+    // #1247: "one vocabulary, three surfaces" — workflow_runs.status,
+    // lastRunOutcome, and mcp.run.bounded must all name a truncated run the
+    // same way.
+    test("mcp.run.bounded names a truncated headless run 'truncated', matching workflow_runs.status", async () => {
+      agentFinishReason = "length";
+      agentRawFinishReason = "provider_length";
+      agentAssistantPartsFactory = () => [{ type: "text", text: "partial" }];
+      const infoSpy = spyOn(console, "info").mockImplementation(
+        () => undefined,
+      );
+
+      await runAgentWorkflow(
+        makeOptions({
+          agentOptions: { unattended: true },
+          maxSteps: undefined,
+        }),
+      );
+
+      const rwCalls = spies.recordWorkflowUsage.mock.calls as unknown[][];
+      const workflowRun = rwCalls.at(-1)?.[5] as { status: string };
+      expect(workflowRun.status).toBe("truncated");
+
+      const boundedCall = infoSpy.mock.calls.find((args) =>
+        String(args[1]).includes('"event":"mcp.run.bounded"'),
+      );
+      expect(boundedCall).toBeDefined();
+      expect(String(boundedCall?.[1])).toContain('"reason":"truncated"');
+
+      infoSpy.mockRestore();
+    });
 
     test("hibernates the sandbox only after the active-stream slot is released", async () => {
       const callOrder: string[] = [];

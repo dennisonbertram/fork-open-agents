@@ -30,16 +30,24 @@ export type McpActivityState = "working" | "idle";
 /**
  * How the session's most recently recorded run ended — a third axis,
  * distinct from `state` (filing) and `activity` (is a run live right now).
- * Reuses `workflowRuns.status`'s own vocabulary (#1241), which itself reuses
- * `stopReason`'s vocabulary (#1231) rather than inventing a second one:
+ * Reuses `workflowRuns.status`'s own vocabulary (#1241, widened again by
+ * #1247), which itself reuses `stopReason`'s vocabulary (#1231) rather than
+ * inventing a second one:
  *
- *   `completed`              the run finished normally.
- *   `aborted`                the user stopped it.
- *   `failed`                 the workflow threw — a genuine crash.
- *   `no_progress_fuse`       the headless no-progress fuse ended the run.
- *   `no_sandbox_step_cap`    the headless no-sandbox step cap ended the run.
- *   `max_steps`              the run exhausted maxSteps.
- *   `repeated_tool_failure`  the run stopped on repeated tool failures.
+ *   `completed`               the run finished normally.
+ *   `aborted`                 the user stopped it.
+ *   `failed`                  the workflow threw — a genuine crash.
+ *   `no_progress_fuse`        the headless no-progress fuse ended the run.
+ *   `no_sandbox_step_cap`     the headless no-sandbox step cap ended the run.
+ *   `max_steps`               the run exhausted maxSteps.
+ *   `repeated_tool_failure`   the run stopped on repeated tool failures.
+ *   `truncated`               a step hit the provider's output-token ceiling
+ *                             and stayed truncated after every continuation
+ *                             the budget allowed (#1247).
+ *   `awaiting_tool_approval`  the run paused for the user to approve or
+ *                             supply tool input — not a failure (#1247).
+ *   `ended_unexpectedly`      the step ended with content-filter, error, or
+ *                             other (#1247).
  */
 export type McpLastRunOutcome =
   | "completed"
@@ -48,7 +56,10 @@ export type McpLastRunOutcome =
   | "no_progress_fuse"
   | "no_sandbox_step_cap"
   | "max_steps"
-  | "repeated_tool_failure";
+  | "repeated_tool_failure"
+  | "truncated"
+  | "awaiting_tool_approval"
+  | "ended_unexpectedly";
 
 const LAST_RUN_OUTCOMES: ReadonlySet<string> = new Set([
   "completed",
@@ -58,6 +69,9 @@ const LAST_RUN_OUTCOMES: ReadonlySet<string> = new Set([
   "no_sandbox_step_cap",
   "max_steps",
   "repeated_tool_failure",
+  "truncated",
+  "awaiting_tool_approval",
+  "ended_unexpectedly",
 ] satisfies McpLastRunOutcome[]);
 
 /**

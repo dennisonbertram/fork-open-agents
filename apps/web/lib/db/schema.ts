@@ -1920,6 +1920,13 @@ export const workflowRuns = pgTable(
     // app/workflows/chat.ts, #1231) is filed under its own name instead of
     // collapsing into "failed" alongside a genuine crash. `failed` keeps
     // meaning "the workflow threw"; the four new values are deliberate stops.
+    // #1247: widened a second time with "truncated" (a step hit the
+    // provider's output-token ceiling and stayed truncated after every
+    // continuation the budget allowed), "awaiting_tool_approval" (the run
+    // paused for the user, not a failure), and "ended_unexpectedly" (the
+    // content-filter/error/other finish reasons) — see the doc comment on
+    // `WorkflowRunStatus` (lib/chat/workflow-run-outcome.ts) for the full
+    // rationale, and the reader audit there for every consumer this touches.
     // Plain Postgres `text` with a TypeScript-level enum — no check
     // constraint, so this widening needs no migration (confirmed via
     // `db:generate`).
@@ -1932,6 +1939,9 @@ export const workflowRuns = pgTable(
         "no_sandbox_step_cap",
         "max_steps",
         "repeated_tool_failure",
+        "truncated",
+        "awaiting_tool_approval",
+        "ended_unexpectedly",
       ],
     }).notNull(),
     startedAt: timestamp("started_at").notNull(),
