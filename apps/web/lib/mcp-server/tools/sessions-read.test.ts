@@ -62,6 +62,18 @@ mock.module("@/lib/db/workflow-runs", () => ({
   getLatestWorkflowRunStatusBySessionId,
 }));
 
+// #1246: get_session's auto-commit/auto-PR failure signal. Records every
+// call's `eventNames` argument (in call order) so a test can tell the
+// auto-commit lookup apart from the auto-pr lookup without depending on
+// which one sessions-read.ts happens to call first.
+const getLatestSessionEventByNames = mock(
+  async (_params: { sessionId: string; eventNames: readonly string[] }) =>
+    null as unknown,
+);
+mock.module("@/lib/observability/session-event-lookup", () => ({
+  getLatestSessionEventByNames,
+}));
+
 const toolsModulePromise = import("./sessions-read");
 const registryModulePromise = import("../registry");
 const contextModulePromise = import("../context");
@@ -89,6 +101,7 @@ function buildSessionRow(overrides: Record<string, unknown> = {}) {
     repoOwner: "acme",
     repoName: "widgets",
     branch: "main",
+    baseBranch: null,
     linesAdded: 3,
     linesRemoved: 1,
     prNumber: null,
@@ -196,6 +209,8 @@ beforeEach(() => {
   isSandboxActive.mockClear();
   getLatestWorkflowRunStatusBySessionId.mockClear();
   getLatestWorkflowRunStatusBySessionId.mockImplementation(async () => null);
+  getLatestSessionEventByNames.mockClear();
+  getLatestSessionEventByNames.mockImplementation(async () => null);
 });
 
 afterEach(() => {
@@ -1262,6 +1277,150 @@ describe("getSession ownership", () => {
 
     expect(result.activity).toBe("idle");
     expect(result.isStreaming).toBe(true);
+  });
+
+  test("BT-1246-04: reports both fields null when no auto-commit/auto-PR event has ever been recorded for the session", async () => {
+    const { getSession } = await toolsModulePromise;
+    seedSession(buildSessionRow());
+
+    const result = await getSession(makeCtx({}), { sessionId: "session-1" });
+
+    expect(result.lastAutoCommitEvent).toBeNull();
+    expect(result.lastAutoPrEvent).toBeNull();
+  });
+
+  test("BT-1246-05: surfaces the latest auto-commit failure verbatim — the MCP-visible signal session_events already carried but no reader exposed", async () => {
+    // Reproduces the production defect (#1246): workflow.auto_commit.failed
+    // was recorded with the exact rejection reason, but get_session reported
+    // prNumber: null and nothing else — an MCP client had no way to learn the
+    // work was never saved.
+    const { getSession } = await toolsModulePromise;
+    seedSession(buildSessionRow());
+    getLatestSessionEventByNames.mockImplementation(async ({ eventNames }) => {
+      if (eventNames.includes("workflow.auto_commit.failed")) {
+        return {
+          id: "event-1",
+          sessionId: "session-1",
+          eventName: "workflow.auto_commit.failed",
+          status: "failed",
+          summary:
+            "Auto-commit failed: Changes must be made through a pull request. 3 of 3 required status checks are expected.",
+          createdAt: "2026-08-14T12:17:51.000Z",
+        };
+      }
+      return null;
+    });
+
+    const result = await getSession(makeCtx({}), { sessionId: "session-1" });
+
+    expect(result.lastAutoCommitEvent).toEqual({
+      eventName: "workflow.auto_commit.failed",
+      status: "failed",
+      summary:
+        "Auto-commit failed: Changes must be made through a pull request. 3 of 3 required status checks are expected.",
+      occurredAt: "2026-08-14T12:17:51.000Z",
+    });
+    expect(result.lastAutoPrEvent).toBeNull();
+  });
+
+  test("BT-1246-06: surfaces the latest auto-PR skip verbatim, independently of the auto-commit event", async () => {
+    const { getSession } = await toolsModulePromise;
+    seedSession(buildSessionRow());
+    getLatestSessionEventByNames.mockImplementation(async ({ eventNames }) => {
+      if (eventNames.includes("workflow.auto_pr.skipped")) {
+        return {
+          id: "event-2",
+          sessionId: "session-1",
+          eventName: "workflow.auto_pr.skipped",
+          status: "skipped",
+          summary:
+            "Auto-commit failed: Changes must be made through a pull request.",
+          createdAt: "2026-08-14T12:17:54.000Z",
+        };
+      }
+      return null;
+    });
+
+    const result = await getSession(makeCtx({}), { sessionId: "session-1" });
+
+    expect(result.lastAutoPrEvent).toEqual({
+      eventName: "workflow.auto_pr.skipped",
+      status: "skipped",
+      summary:
+        "Auto-commit failed: Changes must be made through a pull request.",
+      occurredAt: "2026-08-14T12:17:54.000Z",
+    });
+    expect(result.lastAutoCommitEvent).toBeNull();
+  });
+
+  test("regression: queries the auto-commit and auto-pr event-name sets separately, both scoped to the session id — a merged query would risk one masking the other's status", async () => {
+    const { getSession } = await toolsModulePromise;
+    seedSession(buildSessionRow({ id: "session-9" }));
+
+    await getSession(makeCtx({}), { sessionId: "session-9" });
+
+    expect(getLatestSessionEventByNames).toHaveBeenCalledTimes(2);
+    const calls = getLatestSessionEventByNames.mock.calls.map(
+      ([params]) =>
+        params as { sessionId: string; eventNames: readonly string[] },
+    );
+    for (const call of calls) {
+      expect(call.sessionId).toBe("session-9");
+    }
+    const commitCall = calls.find((call) =>
+      call.eventNames.includes("workflow.auto_commit.failed"),
+    );
+    const prCall = calls.find((call) =>
+      call.eventNames.includes("workflow.auto_pr.failed"),
+    );
+    expect(commitCall).toBeDefined();
+    expect(prCall).toBeDefined();
+    // The two sets must not overlap — otherwise a PR event could win the
+    // "most recent" comparison for the commit field, or vice versa.
+    for (const name of commitCall?.eventNames ?? []) {
+      expect(prCall?.eventNames).not.toContain(name);
+    }
+  });
+
+  test("regression: a failed git-automation event lookup degrades to null rather than failing the whole get_session call", async () => {
+    // get_session is the caller's primary read tool — a transient failure in
+    // this brand-new side lookup (a DB hiccup, a bad query) must not take the
+    // rest of the session detail down with it.
+    const { getSession } = await toolsModulePromise;
+    seedSession(buildSessionRow());
+    getLatestSessionEventByNames.mockImplementation(async ({ eventNames }) => {
+      if (eventNames.includes("workflow.auto_commit.failed")) {
+        throw new Error("db unavailable");
+      }
+      return null;
+    });
+
+    const result = await getSession(makeCtx({}), { sessionId: "session-1" });
+
+    expect(result.id).toBe("session-1");
+    expect(result.lastAutoCommitEvent).toBeNull();
+    expect(result.lastAutoPrEvent).toBeNull();
+  });
+
+  test("BT-1251-11: reports the session's baseBranch so a client can confirm what its slice actually started from", async () => {
+    const { getSession } = await toolsModulePromise;
+    seedSession(
+      buildSessionRow({ branch: "d/abc12345", baseBranch: "develop" }),
+    );
+
+    const result = await getSession(makeCtx({}), { sessionId: "session-1" });
+
+    expect(result.branch).toBe("d/abc12345");
+    expect(result.baseBranch).toBe("develop");
+  });
+
+  test("regression: a session with no recorded base branch reports baseBranch: null, not undefined", async () => {
+    const { getSession } = await toolsModulePromise;
+    seedSession(buildSessionRow({ baseBranch: null }));
+
+    const result = await getSession(makeCtx({}), { sessionId: "session-1" });
+
+    expect(result.baseBranch).toBeNull();
   });
 });
 

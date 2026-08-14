@@ -161,11 +161,23 @@ function buildSandboxSource(session: SessionRecord): SandboxState["source"] {
   const branchExistsOnOrigin = session.prNumber != null;
   const shouldCreateNewBranch = session.isNewBranch && !branchExistsOnOrigin;
 
+  if (shouldCreateNewBranch) {
+    return {
+      repo: session.cloneUrl,
+      newBranch: session.branch ?? undefined,
+      // #1251: clone at the base the caller asked to start from — see the
+      // matching comment in chat-sandbox-runtime.ts's own buildSandboxSource
+      // (this file duplicates that logic for its internal callers).
+      ...(session.baseBranch ? { branch: session.baseBranch } : {}),
+    };
+  }
+
   return {
     repo: session.cloneUrl,
-    ...(shouldCreateNewBranch
-      ? { newBranch: session.branch ?? undefined }
-      : { branch: session.branch ?? "main" }),
+    // ponytail: same deliberate "main" fallback as chat-sandbox-runtime.ts —
+    // see its comment for why this stays a literal rather than an async
+    // repository-default lookup.
+    branch: session.branch ?? "main",
   };
 }
 

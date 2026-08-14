@@ -27,6 +27,12 @@ export interface AutoCreatePrParams {
   sessionTitle: string;
   repoOwner: string;
   repoName: string;
+  // #1251: the branch the caller asked this session to start from. When set,
+  // the auto-created PR targets it instead of the repository's GitHub-
+  // configured default branch. Null/undefined (a pre-#1251 session, or one
+  // with no base recorded) preserves today's behavior exactly — the default
+  // branch is resolved and used, same as before this field existed.
+  baseBranch?: string | null;
 }
 
 export interface AutoCreatePrResult {
@@ -102,8 +108,15 @@ async function findExistingOpenPullRequest(params: {
 export async function performAutoCreatePr(
   params: AutoCreatePrParams,
 ): Promise<AutoCreatePrResult> {
-  const { sandbox, userId, sessionId, sessionTitle, repoOwner, repoName } =
-    params;
+  const {
+    sandbox,
+    userId,
+    sessionId,
+    sessionTitle,
+    repoOwner,
+    repoName,
+    baseBranch,
+  } = params;
   const cwd = sandbox.workingDirectory;
 
   const branchResult = await sandbox.exec(
@@ -151,14 +164,20 @@ export async function performAutoCreatePr(
     };
   }
 
-  const defaultBranch = await resolveDefaultBranch({
-    sandbox,
-    repoOwner,
-    repoName,
-    token: userToken,
-  });
+  // #1251: use the caller's base branch when the session recorded one,
+  // rather than always resolving the repository's own GitHub-configured
+  // default — skipping resolveDefaultBranch's GitHub API round trip entirely
+  // when it isn't needed.
+  const prBaseBranch =
+    baseBranch ??
+    (await resolveDefaultBranch({
+      sandbox,
+      repoOwner,
+      repoName,
+      token: userToken,
+    }));
 
-  if (!defaultBranch) {
+  if (!prBaseBranch) {
     return {
       created: false,
       syncedExisting: false,
@@ -167,7 +186,7 @@ export async function performAutoCreatePr(
     };
   }
 
-  if (!SAFE_BRANCH_PATTERN.test(defaultBranch)) {
+  if (!SAFE_BRANCH_PATTERN.test(prBaseBranch)) {
     return {
       created: false,
       syncedExisting: false,
@@ -176,7 +195,7 @@ export async function performAutoCreatePr(
     };
   }
 
-  if (branchName === defaultBranch) {
+  if (branchName === prBaseBranch) {
     return {
       created: false,
       syncedExisting: false,
@@ -213,7 +232,7 @@ export async function performAutoCreatePr(
       readToken.token,
       async () => {
         await sandbox.exec(
-          `git fetch origin ${defaultBranch}:refs/remotes/origin/${defaultBranch}`,
+          `git fetch origin ${prBaseBranch}:refs/remotes/origin/${prBaseBranch}`,
           cwd,
           30000,
         );
@@ -297,7 +316,7 @@ export async function performAutoCreatePr(
     sandbox,
     sessionId,
     sessionTitle,
-    baseBranch: defaultBranch,
+    baseBranch: prBaseBranch,
     branchName,
   });
 
@@ -325,7 +344,7 @@ export async function performAutoCreatePr(
     branchName,
     title: prContentResult.title,
     body: prContentResult.body,
-    baseBranch: defaultBranch,
+    baseBranch: prBaseBranch,
     token: userToken,
   });
 
