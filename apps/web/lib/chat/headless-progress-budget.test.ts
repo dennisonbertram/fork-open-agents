@@ -2,10 +2,16 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
   buildHeadlessNoSandboxCapMessage,
   buildHeadlessProgressFuseMessage,
+  DEFAULT_HEADLESS_RUN_CYCLE_REPEATS,
+  DEFAULT_HEADLESS_RUN_MAX_CYCLE_PERIOD,
   DEFAULT_HEADLESS_RUN_MAX_STALE_STEPS,
   DEFAULT_HEADLESS_RUN_NO_SANDBOX_STEP_CAP,
+  getHeadlessRunCycleRepeats,
+  getHeadlessRunMaxCyclePeriod,
   getHeadlessRunMaxStaleSteps,
   getHeadlessRunNoSandboxStepCap,
+  HEADLESS_RUN_CYCLE_REPEATS_CEILING,
+  HEADLESS_RUN_MAX_CYCLE_PERIOD_CEILING,
   HEADLESS_RUN_MAX_STALE_STEPS_CEILING,
   HEADLESS_RUN_NO_SANDBOX_STEP_CAP_CEILING,
 } from "./headless-progress-budget";
@@ -71,18 +77,120 @@ describe("getHeadlessRunMaxStaleSteps (#1231)", () => {
   });
 });
 
-describe("buildHeadlessProgressFuseMessage (#1231)", () => {
-  test("names the stale-step count and the configured limit", () => {
-    const message = buildHeadlessProgressFuseMessage(20, 20);
+describe("buildHeadlessProgressFuseMessage (#1231, #1242 follow-up)", () => {
+  test("stalled_tree names the stale-step count and the configured limit", () => {
+    const message = buildHeadlessProgressFuseMessage({
+      reason: "stalled_tree",
+      repeatCount: 20,
+      cycleLength: null,
+      maxStaleSteps: 20,
+    });
     expect(message).toContain("20");
     expect(message.toLowerCase()).toContain("progress");
   });
 
   test("is legible to a reading agent: states what happened and what to do next", () => {
-    const message = buildHeadlessProgressFuseMessage(5, 5);
+    const message = buildHeadlessProgressFuseMessage({
+      reason: "stalled_tree",
+      repeatCount: 5,
+      cycleLength: null,
+      maxStaleSteps: 5,
+    });
     // Must read as an explanation, not a bare code/enum value.
     expect(message.length).toBeGreaterThan(40);
     expect(message.toLowerCase()).toContain("stopped");
+  });
+
+  test("repeat names the repeated tool call, not 'workspace changes'", () => {
+    const message = buildHeadlessProgressFuseMessage({
+      reason: "repeat",
+      repeatCount: 20,
+      cycleLength: null,
+      maxStaleSteps: 20,
+    });
+    expect(message.toLowerCase()).toContain("same tool call");
+    expect(message).toContain("20");
+    expect(message.toLowerCase()).not.toContain("no workspace changes");
+  });
+
+  test("cycle names the repeating pattern and its length", () => {
+    const message = buildHeadlessProgressFuseMessage({
+      reason: "cycle",
+      repeatCount: 4,
+      cycleLength: 2,
+      maxStaleSteps: 20,
+    });
+    expect(message.toLowerCase()).toContain("repeating");
+    expect(message).toContain("2");
+    expect(message.toLowerCase()).not.toContain("no workspace changes");
+  });
+});
+
+describe("getHeadlessRunMaxCyclePeriod (#1242 follow-up)", () => {
+  const CYCLE_PERIOD_ENV_KEY = "HEADLESS_RUN_MAX_CYCLE_PERIOD";
+  afterEach(() => {
+    delete process.env[CYCLE_PERIOD_ENV_KEY];
+  });
+
+  test("defaults when the env var is unset", () => {
+    expect(getHeadlessRunMaxCyclePeriod()).toBe(
+      DEFAULT_HEADLESS_RUN_MAX_CYCLE_PERIOD,
+    );
+  });
+
+  test("reads a valid positive integer from the env var", () => {
+    process.env[CYCLE_PERIOD_ENV_KEY] = "5";
+    expect(getHeadlessRunMaxCyclePeriod()).toBe(5);
+  });
+
+  test("falls back to the default for a non-numeric or non-positive value", () => {
+    process.env[CYCLE_PERIOD_ENV_KEY] = "nope";
+    expect(getHeadlessRunMaxCyclePeriod()).toBe(
+      DEFAULT_HEADLESS_RUN_MAX_CYCLE_PERIOD,
+    );
+    process.env[CYCLE_PERIOD_ENV_KEY] = "0";
+    expect(getHeadlessRunMaxCyclePeriod()).toBe(
+      DEFAULT_HEADLESS_RUN_MAX_CYCLE_PERIOD,
+    );
+  });
+
+  test("clamps a value above the ceiling", () => {
+    process.env[CYCLE_PERIOD_ENV_KEY] = "999999";
+    expect(getHeadlessRunMaxCyclePeriod()).toBe(
+      HEADLESS_RUN_MAX_CYCLE_PERIOD_CEILING,
+    );
+  });
+});
+
+describe("getHeadlessRunCycleRepeats (#1242 follow-up)", () => {
+  const CYCLE_REPEATS_ENV_KEY = "HEADLESS_RUN_CYCLE_REPEATS";
+  afterEach(() => {
+    delete process.env[CYCLE_REPEATS_ENV_KEY];
+  });
+
+  test("defaults when the env var is unset", () => {
+    expect(getHeadlessRunCycleRepeats()).toBe(
+      DEFAULT_HEADLESS_RUN_CYCLE_REPEATS,
+    );
+  });
+
+  test("reads a valid positive integer from the env var", () => {
+    process.env[CYCLE_REPEATS_ENV_KEY] = "3";
+    expect(getHeadlessRunCycleRepeats()).toBe(3);
+  });
+
+  test("falls back to the default for a non-numeric or non-positive value", () => {
+    process.env[CYCLE_REPEATS_ENV_KEY] = "nope";
+    expect(getHeadlessRunCycleRepeats()).toBe(
+      DEFAULT_HEADLESS_RUN_CYCLE_REPEATS,
+    );
+  });
+
+  test("clamps a value above the ceiling", () => {
+    process.env[CYCLE_REPEATS_ENV_KEY] = "999999";
+    expect(getHeadlessRunCycleRepeats()).toBe(
+      HEADLESS_RUN_CYCLE_REPEATS_CEILING,
+    );
   });
 });
 

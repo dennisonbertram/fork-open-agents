@@ -42,22 +42,89 @@ export function getHeadlessRunMaxStaleSteps(): number {
 }
 
 /**
+ * #1242 follow-up: cycle-detection knobs for
+ * `app/workflows/headless-progress-detector.ts`, which catches an agent
+ * alternating between 2..N distinct tool calls with a frozen git tree (the
+ * adjacent-only comparison above only ever caught a STRICT repeat). Mirrors
+ * `detectRepetition`'s own defaults (`maxCyclePeriod: 3`, `cycleRepeats: 2`
+ * in `lib/background-agents/repetition-detector.ts`) rather than picking new
+ * numbers — those defaults already cover both required shapes (an A/B loop
+ * and a 3-call A/B/C loop) without searching arbitrarily long patterns that
+ * are unlikely to be a real wedge.
+ */
+export const DEFAULT_HEADLESS_RUN_MAX_CYCLE_PERIOD = 3;
+
+/** Same ceiling rationale as HEADLESS_RUN_MAX_STALE_STEPS_CEILING. A period
+ * this long is barely distinguishable from "always varying" — bounding it
+ * also bounds the per-step cost of the cycle search. */
+export const HEADLESS_RUN_MAX_CYCLE_PERIOD_CEILING = 10;
+
+/**
+ * Reads `HEADLESS_RUN_MAX_CYCLE_PERIOD`. Falls back to the default for a
+ * missing, non-numeric, or non-positive value; clamps to the ceiling above.
+ */
+export function getHeadlessRunMaxCyclePeriod(): number {
+  const raw = process.env.HEADLESS_RUN_MAX_CYCLE_PERIOD?.trim();
+  if (!raw) {
+    return DEFAULT_HEADLESS_RUN_MAX_CYCLE_PERIOD;
+  }
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return DEFAULT_HEADLESS_RUN_MAX_CYCLE_PERIOD;
+  }
+  return Math.min(parsed, HEADLESS_RUN_MAX_CYCLE_PERIOD_CEILING);
+}
+
+export const DEFAULT_HEADLESS_RUN_CYCLE_REPEATS = 2;
+
+/** Same ceiling rationale as HEADLESS_RUN_MAX_STALE_STEPS_CEILING. */
+export const HEADLESS_RUN_CYCLE_REPEATS_CEILING = 5;
+
+/**
+ * Reads `HEADLESS_RUN_CYCLE_REPEATS`. Falls back to the default for a
+ * missing, non-numeric, or non-positive value; clamps to the ceiling above.
+ */
+export function getHeadlessRunCycleRepeats(): number {
+  const raw = process.env.HEADLESS_RUN_CYCLE_REPEATS?.trim();
+  if (!raw) {
+    return DEFAULT_HEADLESS_RUN_CYCLE_REPEATS;
+  }
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return DEFAULT_HEADLESS_RUN_CYCLE_REPEATS;
+  }
+  return Math.min(parsed, HEADLESS_RUN_CYCLE_REPEATS_CEILING);
+}
+
+/**
  * The message a reading agent (there is no human watching a headless run)
  * sees when the no-progress fuse ends the turn. Must be legible on its own —
  * what was attempted is already in the transcript above this message; this
  * states why the run stopped and what to do next.
  *
- * #1242: names BOTH signals the fuse checks — the git working tree AND
- * tool-call activity (see `app/workflows/headless-activity-signal.ts`) — so
- * a read-only run is never told "no workspace changes" as if that alone
- * were the failure; the fuse only trips when neither signal moved.
+ * #1242 follow-up: names the SPECIFIC pattern the detector found, not a
+ * single generic sentence — a reading agent has to act on which one fired:
+ *  - "stalled_tree": the original #1231 shape, no workspace change and no
+ *    tool-call activity at all.
+ *  - "repeat": the identical tool call, called over and over.
+ *  - "cycle": a short repeating block of DISTINCT tool calls (e.g. A, B,
+ *    A, B) — the shape this follow-up adds detection for.
  */
-export function buildHeadlessProgressFuseMessage(
-  staleSteps: number,
-  maxStaleSteps: number,
-): string {
+export function buildHeadlessProgressFuseMessage(input: {
+  reason: "stalled_tree" | "repeat" | "cycle";
+  repeatCount: number;
+  cycleLength: number | null;
+  maxStaleSteps: number;
+}): string {
+  const { reason, repeatCount, cycleLength, maxStaleSteps } = input;
+  const lead =
+    reason === "cycle"
+      ? `Stopped: a repeating ${cycleLength}-call pattern of tool calls with no workspace change was detected, so this headless run is ending instead of continuing to burn steps with no progress.`
+      : reason === "repeat"
+        ? `Stopped: the same tool call was repeated ${repeatCount} times in a row with no workspace change, so this headless run is ending instead of continuing to burn steps with no progress.`
+        : `Stopped: no workspace changes or new tool-call activity were detected for ${repeatCount} consecutive steps (limit ${maxStaleSteps}), so this headless run is ending instead of continuing to burn steps with no progress.`;
   return [
-    `Stopped: no workspace changes or new tool-call activity were detected for ${staleSteps} consecutive steps (limit ${maxStaleSteps}), so this headless run is ending instead of continuing to burn steps with no progress.`,
+    lead,
     "",
     "If the goal is still valid, send a follow-up message with a narrower next step or the missing decision.",
   ].join("\n");

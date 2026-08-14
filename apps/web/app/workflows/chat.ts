@@ -65,15 +65,18 @@ import { probeHeadlessRunGitFingerprint } from "./headless-progress-fuse";
 import {
   buildHeadlessStepToolSignature,
   createHeadlessActivityState,
+  NO_TOOL_ACTIVITY_SIGNATURE,
 } from "./headless-activity-signal";
+import { createHeadlessProgressDetector } from "./headless-progress-detector";
 import { annotateAbandonedTurns } from "@/lib/chat/annotate-abandoned-turns";
 import {
   buildHeadlessNoSandboxCapMessage,
   buildHeadlessProgressFuseMessage,
+  getHeadlessRunCycleRepeats,
+  getHeadlessRunMaxCyclePeriod,
   getHeadlessRunMaxStaleSteps,
   getHeadlessRunNoSandboxStepCap,
 } from "@/lib/chat/headless-progress-budget";
-import { createProgressBudget } from "@/lib/progress-budget";
 import { dedupeMessageReasoning } from "@/lib/chat/dedupe-message-reasoning";
 import {
   buildProviderRejectionMessage,
@@ -2100,14 +2103,23 @@ export async function runAgentWorkflow(options: Options) {
     // it is the only signal available without a workspace to observe.
     const headlessHasSandbox = isHeadlessRun && sandboxState !== undefined;
     const headlessRunMaxStaleSteps = getHeadlessRunMaxStaleSteps();
-    const headlessProgressBudget = headlessHasSandbox
-      ? createProgressBudget({ maxStaleTurns: headlessRunMaxStaleSteps })
+    // #1242 follow-up: a window + detectRepetition (repeat AND cycle arms)
+    // instead of an adjacent-only comparison — see
+    // headless-progress-detector.ts's module doc for why an A/B/A/B loop
+    // with a frozen git tree needed this (an adjacent comparison never finds
+    // a repeating BLOCK, only a repeating single value).
+    const headlessProgressDetector = headlessHasSandbox
+      ? createHeadlessProgressDetector({
+          repeatThreshold: headlessRunMaxStaleSteps,
+          maxCyclePeriod: getHeadlessRunMaxCyclePeriod(),
+          cycleRepeats: getHeadlessRunCycleRepeats(),
+        })
       : null;
-    // #1242: a second signal folded into the same budget so a read-only run
-    // (never changes git, by definition) is not judged solely on git delta —
-    // see headless-activity-signal.ts's module doc for the full rationale
-    // and why assistant text was deliberately left out.
-    const headlessActivityState = headlessProgressBudget
+    // #1242: a second signal folded into the same fingerprint so a read-only
+    // run (never changes git, by definition) is not judged solely on git
+    // delta — see headless-activity-signal.ts's module doc for the full
+    // rationale and why assistant text was deliberately left out.
+    const headlessActivityState = headlessProgressDetector
       ? createHeadlessActivityState()
       : null;
     const headlessNoSandboxStepCap =
@@ -2259,7 +2271,7 @@ export async function runAgentWorkflow(options: Options) {
       // degrades to a null fingerprint, treated as "unknown, not stale"
       // rather than tripping the fuse — that is a transient hiccup, not the
       // structural no-sandbox case handled by the cap below.
-      if (headlessProgressBudget) {
+      if (headlessProgressDetector) {
         const gitFingerprint = sandboxState
           ? await probeHeadlessRunGitFingerprint(sandboxState)
           : null;
@@ -2279,16 +2291,18 @@ export async function runAgentWorkflow(options: Options) {
         const combinedFingerprint =
           gitFingerprint === null
             ? null
-            : `${gitFingerprint}::${toolSignature ?? "∅"}`;
-        const observation = headlessProgressBudget.observeTurn({
-          gitFingerprint: combinedFingerprint,
+            : `${gitFingerprint}::${toolSignature ?? NO_TOOL_ACTIVITY_SIGNATURE}`;
+        const observation = headlessProgressDetector.observeTurn({
+          fingerprint: combinedFingerprint,
         });
         if (observation.verdict === "stop") {
           headlessFuseTripped = true;
-          const fuseText = buildHeadlessProgressFuseMessage(
-            observation.staleTurns,
-            headlessRunMaxStaleSteps,
-          );
+          const fuseText = buildHeadlessProgressFuseMessage({
+            reason: observation.reason,
+            repeatCount: observation.repeatCount,
+            cycleLength: observation.cycleLength,
+            maxStaleSteps: headlessRunMaxStaleSteps,
+          });
           await sendTextMessage(
             writable,
             `${assistantId}:headless-progress-fuse`,

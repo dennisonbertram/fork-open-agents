@@ -3847,13 +3847,19 @@ describe("runAgentWorkflow", () => {
         stepTimings: Array<{ stepNumber: number }>;
         status: string;
       };
+      // A window+detectRepetition trailing-repeat check flags once the
+      // window holds DEFAULT_HEADLESS_RUN_MAX_STALE_STEPS identical
+      // fingerprints — no separate "seed the baseline" step, unlike the old
+      // adjacent-comparison budget.
       expect(workflowRun.stepTimings.length).toBe(
-        DEFAULT_HEADLESS_RUN_MAX_STALE_STEPS + 1,
+        DEFAULT_HEADLESS_RUN_MAX_STALE_STEPS,
       );
       expect(workflowRun.status).toBe("no_progress_fuse");
 
-      // The stop message must name BOTH signals it checked, not just
-      // "workspace changes" — this run never expected to touch the tree.
+      // The stop message must name the SPECIFIC pattern that fired — an
+      // identical tool call repeated, not the generic "workspace changes"
+      // wording, since this run's tool calls (not the git tree) are what
+      // stayed flat.
       const textDeltas = writtenChunks
         .filter(
           (chunk): chunk is { type: "text-delta"; id: string; delta: string } =>
@@ -3861,7 +3867,101 @@ describe("runAgentWorkflow", () => {
         )
         .map((chunk) => chunk.delta)
         .join("");
-      expect(textDeltas.toLowerCase()).toContain("tool-call activity");
+      expect(textDeltas.toLowerCase()).toContain("same tool call");
+    }, 10_000);
+
+    // #1242 follow-up wedge contract: alternating between two DISTINCT read
+    // calls ("read file A, read file B, repeat") produces a combined
+    // fingerprint that differs every step, so the adjacent-only comparison
+    // this closes never caught it — and for a headless run that is
+    // unbounded (maxSteps is undefined by design, #1231), so nothing else
+    // would stop it before the 90-minute sandbox ceiling.
+    test("stops a headless run alternating between two distinct tool calls (A/B/A/B cycle) (#1242)", async () => {
+      agentFinishReason = "tool-calls";
+      agentRawFinishReason = "provider_tool_use";
+      spies.probeHeadlessRunGitFingerprint.mockImplementation(
+        (): Promise<string | null> => Promise.resolve("frozen-fingerprint"),
+      );
+      let call = 0;
+      agentAssistantPartsFactory = () => {
+        call += 1;
+        return [
+          {
+            type: "tool-task",
+            toolCallId: `call-${call}`,
+            state: "output-available",
+            preliminary: false,
+            input: { file: call % 2 === 1 ? "A" : "B" },
+            output: { final: [] },
+          },
+        ];
+      };
+
+      await runAgentWorkflow(
+        makeOptions({
+          agentOptions: { unattended: true },
+          maxSteps: undefined,
+        }),
+      );
+
+      const rwCalls = spies.recordWorkflowUsage.mock.calls as unknown[][];
+      const workflowRun = rwCalls.at(-1)?.[5] as {
+        stepTimings: Array<{ stepNumber: number }>;
+        status: string;
+      };
+      expect(workflowRun.status).toBe("no_progress_fuse");
+      // Bounded well before the plain stale-step limit would have caught it
+      // (an alternating pair never repeats identically turn-to-turn).
+      expect(workflowRun.stepTimings.length).toBeLessThan(10);
+
+      const textDeltas = writtenChunks
+        .filter(
+          (chunk): chunk is { type: "text-delta"; id: string; delta: string } =>
+            chunk.type === "text-delta",
+        )
+        .map((chunk) => chunk.delta)
+        .join("");
+      expect(textDeltas.toLowerCase()).toContain("repeating");
+    }, 10_000);
+
+    // #1242 follow-up: the same wedge shape with a 3-call block (A/B/C
+    // repeating) — proves the cycle search isn't hardcoded to period 2.
+    test("stops a headless run cycling through a three-call pattern (#1242)", async () => {
+      agentFinishReason = "tool-calls";
+      agentRawFinishReason = "provider_tool_use";
+      spies.probeHeadlessRunGitFingerprint.mockImplementation(
+        (): Promise<string | null> => Promise.resolve("frozen-fingerprint"),
+      );
+      const files = ["A", "B", "C"];
+      let call = 0;
+      agentAssistantPartsFactory = () => {
+        call += 1;
+        return [
+          {
+            type: "tool-task",
+            toolCallId: `call-${call}`,
+            state: "output-available",
+            preliminary: false,
+            input: { file: files[(call - 1) % files.length] },
+            output: { final: [] },
+          },
+        ];
+      };
+
+      await runAgentWorkflow(
+        makeOptions({
+          agentOptions: { unattended: true },
+          maxSteps: undefined,
+        }),
+      );
+
+      const rwCalls = spies.recordWorkflowUsage.mock.calls as unknown[][];
+      const workflowRun = rwCalls.at(-1)?.[5] as {
+        stepTimings: Array<{ stepNumber: number }>;
+        status: string;
+      };
+      expect(workflowRun.status).toBe("no_progress_fuse");
+      expect(workflowRun.stepTimings.length).toBeLessThan(12);
     }, 10_000);
 
     // Real per-step cost (~150ms, see the note above) × 21 steps ≈ 3s —
@@ -3892,11 +3992,10 @@ describe("runAgentWorkflow", () => {
         stepTimings: Array<{ stepNumber: number }>;
         status: string;
       };
-      // The first probe seeds the fingerprint baseline (never itself stale);
-      // the fuse trips once DEFAULT_HEADLESS_RUN_MAX_STALE_STEPS consecutive
-      // probes after that see no change.
+      // The fuse trips once the trailing window holds
+      // DEFAULT_HEADLESS_RUN_MAX_STALE_STEPS identical combined fingerprints.
       expect(workflowRun.stepTimings.length).toBe(
-        DEFAULT_HEADLESS_RUN_MAX_STALE_STEPS + 1,
+        DEFAULT_HEADLESS_RUN_MAX_STALE_STEPS,
       );
       // #1241: filed under its own name, not the generic "failed" a crash
       // gets — get_session's lastRunOutcome depends on this distinction.
