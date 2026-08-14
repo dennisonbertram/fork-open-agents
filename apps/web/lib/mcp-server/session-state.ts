@@ -28,6 +28,69 @@ export type McpWorkspaceState =
 export type McpActivityState = "working" | "idle";
 
 /**
+ * How the session's most recently recorded run ended — a third axis,
+ * distinct from `state` (filing) and `activity` (is a run live right now).
+ * Reuses `workflowRuns.status`'s own vocabulary (#1241, widened again by
+ * #1247), which itself reuses `stopReason`'s vocabulary (#1231) rather than
+ * inventing a second one:
+ *
+ *   `completed`               the run finished normally.
+ *   `aborted`                 the user stopped it.
+ *   `failed`                  the workflow threw — a genuine crash.
+ *   `no_progress_fuse`        the headless no-progress fuse ended the run.
+ *   `no_sandbox_step_cap`     the headless no-sandbox step cap ended the run.
+ *   `max_steps`               the run exhausted maxSteps.
+ *   `repeated_tool_failure`   the run stopped on repeated tool failures.
+ *   `truncated`               a step hit the provider's output-token ceiling
+ *                             and stayed truncated after every continuation
+ *                             the budget allowed (#1247).
+ *   `awaiting_tool_approval`  the run paused for the user to approve or
+ *                             supply tool input — not a failure (#1247).
+ *   `ended_unexpectedly`      the step ended with content-filter, error, or
+ *                             other (#1247).
+ */
+export type McpLastRunOutcome =
+  | "completed"
+  | "aborted"
+  | "failed"
+  | "no_progress_fuse"
+  | "no_sandbox_step_cap"
+  | "max_steps"
+  | "repeated_tool_failure"
+  | "truncated"
+  | "awaiting_tool_approval"
+  | "ended_unexpectedly";
+
+const LAST_RUN_OUTCOMES: ReadonlySet<string> = new Set([
+  "completed",
+  "aborted",
+  "failed",
+  "no_progress_fuse",
+  "no_sandbox_step_cap",
+  "max_steps",
+  "repeated_tool_failure",
+  "truncated",
+  "awaiting_tool_approval",
+  "ended_unexpectedly",
+] satisfies McpLastRunOutcome[]);
+
+/**
+ * `status` is `workflow_runs.status` for the session's most recent run, or
+ * null when the session has no run yet. Null is also returned for a stored
+ * value outside the advertised vocabulary (a historical row, in principle)
+ * rather than echoing it back as a typed outcome the schema does not
+ * declare — retrofitting historical rows is explicitly out of scope (#1241).
+ */
+export function toLastRunOutcome(
+  status: string | null | undefined,
+): McpLastRunOutcome | null {
+  if (status && LAST_RUN_OUTCOMES.has(status)) {
+    return status as McpLastRunOutcome;
+  }
+  return null;
+}
+
+/**
  * How long a workspace may sit in a transitional state before the API stops
  * claiming it is still setting up.
  *

@@ -479,11 +479,128 @@ function makeManagedRuntimeSession(
 
 // ── Import the module under test (after all mocks are declared) ────────────────
 
-const { resolveChatSandboxRuntime } = await import("./chat-sandbox-runtime");
-const { DETERMINISTIC_SETUP_FAILURE_PHRASES } =
-  await import("./chat-sandbox-runtime-impl");
+const { resolveChatSandboxRuntime, buildSandboxState: buildOuterSandboxState } =
+  await import("./chat-sandbox-runtime");
+const {
+  DETERMINISTIC_SETUP_FAILURE_PHRASES,
+  buildSandboxState: buildImplSandboxState,
+} = await import("./chat-sandbox-runtime-impl");
 
 // ── Tests ──────────────────────────────────────────────────────────────────────
+
+/**
+ * #1251: a new working branch must be cut from the caller's base branch, not
+ * the repository's default HEAD. Both buildSandboxState implementations
+ * (the "use step" wrapper in chat-sandbox-runtime.ts, used by prewarm.ts;
+ * and chat-sandbox-runtime-impl.ts's own, used internally by
+ * resolveChatSandboxRuntime) independently compute SandboxState["source"]
+ * from a session-shaped object — this exercises both directly, with no
+ * sandbox/DB I/O, since the function itself is pure.
+ */
+describe("buildSandboxState source (#1251)", () => {
+  for (const [label, build] of [
+    ["chat-sandbox-runtime.ts (outer)", buildOuterSandboxState],
+    ["chat-sandbox-runtime-impl.ts", buildImplSandboxState],
+  ] as const) {
+    describe(label, () => {
+      test("BT-1251-05: a new-branch session with a base branch clones at the base AND creates the working branch from it", () => {
+        const session = {
+          id: "session-1",
+          cloneUrl: "https://github.com/acme/widgets",
+          isNewBranch: true,
+          branch: "d/abc12345",
+          baseBranch: "develop",
+          prNumber: null,
+          sandboxState: null,
+        } as never;
+
+        const state = build(session);
+
+        expect(state.source).toEqual({
+          repo: "https://github.com/acme/widgets",
+          newBranch: "d/abc12345",
+          branch: "develop",
+        });
+      });
+
+      test("BT-1251-06: no base branch supplied preserves today's behavior — newBranch only, no clone revision", () => {
+        const session = {
+          id: "session-1",
+          cloneUrl: "https://github.com/acme/widgets",
+          isNewBranch: true,
+          branch: "d/abc12345",
+          baseBranch: null,
+          prNumber: null,
+          sandboxState: null,
+        } as never;
+
+        const state = build(session);
+
+        expect(state.source).toEqual({
+          repo: "https://github.com/acme/widgets",
+          newBranch: "d/abc12345",
+        });
+      });
+
+      test("regression: an existing session row with no baseBranch column value (undefined) behaves exactly like null", () => {
+        // in-memory shape that never had the column at all
+        const session = {
+          id: "session-1",
+          cloneUrl: "https://github.com/acme/widgets",
+          isNewBranch: true,
+          branch: "d/abc12345",
+          prNumber: null,
+          sandboxState: null,
+        } as never;
+
+        const state = build(session);
+
+        expect(state.source).toEqual({
+          repo: "https://github.com/acme/widgets",
+          newBranch: "d/abc12345",
+        });
+      });
+
+      test("BT-1251-07: isNewBranch false is unchanged — works directly on branch, baseBranch ignored", () => {
+        const session = {
+          id: "session-1",
+          cloneUrl: "https://github.com/acme/widgets",
+          isNewBranch: false,
+          branch: "develop",
+          baseBranch: "should-never-be-read",
+          prNumber: null,
+          sandboxState: null,
+        } as never;
+
+        const state = build(session);
+
+        expect(state.source).toEqual({
+          repo: "https://github.com/acme/widgets",
+          branch: "develop",
+        });
+      });
+
+      test("a new-branch session whose PR already exists (branchExistsOnOrigin) works directly on branch, ignoring baseBranch — unchanged from before #1251", () => {
+        const session = {
+          id: "session-1",
+          cloneUrl: "https://github.com/acme/widgets",
+          isNewBranch: true,
+          branch: "d/abc12345",
+          baseBranch: "develop",
+          prNumber: 42,
+          sandboxState: null,
+        } as never;
+
+        const state = build(session);
+
+        expect(state.source).toEqual({
+          repo: "https://github.com/acme/widgets",
+          branch: "d/abc12345",
+        });
+      });
+    });
+  }
+});
 
 beforeEach(() => {
   connectSandboxSpy.mockClear();

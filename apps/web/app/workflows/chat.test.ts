@@ -1991,7 +1991,7 @@ describe("runAgentWorkflow", () => {
     });
   });
 
-  test("marks workflow run as failed when maxSteps is exhausted", async () => {
+  test("marks workflow run max_steps when maxSteps is exhausted (#1241)", async () => {
     agentFinishReason = "tool-calls";
     agentRawFinishReason = "provider_tool_use";
 
@@ -2014,7 +2014,9 @@ describe("runAgentWorkflow", () => {
     };
 
     expect(workflowRun.workflowRunId).toBe("wrun_test-123");
-    expect(workflowRun.status).toBe("failed");
+    // #1241: a deliberate stop is filed under its own name, distinct from a
+    // genuine crash, so get_session's lastRunOutcome can tell them apart.
+    expect(workflowRun.status).toBe("max_steps");
     expect(workflowRun.totalDurationMs).toBeGreaterThanOrEqual(0);
     expect(workflowRun.stepTimings).toHaveLength(2);
     expect(workflowRun.stepTimings).toEqual([
@@ -2029,6 +2031,235 @@ describe("runAgentWorkflow", () => {
         finishReason: "tool-calls",
       }),
     ]);
+  });
+
+  // #1247: a step whose finishReason is "length" was cut off by the
+  // provider's per-response output-token ceiling mid-work — the model had
+  // more to say. Continuing (rather than ending the run there) is the
+  // in-scope fix; these tests prove the loop keeps going, bounds how long it
+  // keeps going, and reports the truth once that bound runs out.
+  describe("length-truncation continuation (#1247)", () => {
+    test("continues past a truncated step instead of ending the run, and reports completed once it recovers", async () => {
+      agentFinishReason = "length";
+      agentRawFinishReason = "provider_length";
+      let call = 0;
+      agentAssistantPartsFactory = () => {
+        call += 1;
+        // Recovers with a clean "stop" on the third step — comfortably
+        // inside the default continuation budget.
+        if (call >= 2) {
+          agentFinishReason = "stop";
+          agentRawFinishReason = "provider_stop";
+        }
+        return [{ type: "text", text: `part ${call}` }];
+      };
+
+      await runAgentWorkflow(makeOptions({ maxSteps: 10 }));
+
+      const rwCalls = spies.recordWorkflowUsage.mock.calls as unknown[][];
+      const workflowRun = rwCalls.at(-1)?.[5] as {
+        status: string;
+        stepTimings: Array<{ stepNumber: number; finishReason?: string }>;
+      };
+
+      // The run took more than one step — proof the "length" step did not
+      // end it — and still finished cleanly.
+      expect(workflowRun.stepTimings.length).toBeGreaterThan(1);
+      expect(workflowRun.status).toBe("completed");
+      expect(workflowRun.stepTimings.at(0)?.finishReason).toBe("length");
+      expect(workflowRun.stepTimings.at(-1)?.finishReason).toBe("stop");
+    });
+
+    test("reports truncated once the length-continuation budget is exhausted, distinct from a clean completion", async () => {
+      const { DEFAULT_MAX_LENGTH_CONTINUATIONS } =
+        await import("@/lib/chat/length-continuation-budget");
+      agentFinishReason = "length";
+      agentRawFinishReason = "provider_length";
+      // Every step is truncated — the response never fits, however many
+      // steps it gets.
+      agentAssistantPartsFactory = () => [{ type: "text", text: "partial" }];
+
+      await runAgentWorkflow(makeOptions({ maxSteps: 20 }));
+
+      const rwCalls = spies.recordWorkflowUsage.mock.calls as unknown[][];
+      const workflowRun = rwCalls.at(-1)?.[5] as {
+        status: string;
+        stepTimings: Array<{ stepNumber: number; finishReason?: string }>;
+      };
+
+      // One initial truncated step plus the bounded number of continuations.
+      expect(workflowRun.stepTimings).toHaveLength(
+        DEFAULT_MAX_LENGTH_CONTINUATIONS + 1,
+      );
+      expect(workflowRun.status).toBe("truncated");
+
+      const emitted = (spies.emitSessionEvent.mock.calls as unknown[][]).map(
+        (call) =>
+          call[0] as {
+            eventName?: string;
+            payload?: Record<string, unknown>;
+          },
+      );
+      const failedEvent = emitted.findLast(
+        (event) => event.eventName === "workflow.failed",
+      );
+      expect(failedEvent?.payload).toMatchObject({
+        stopReason: "truncated",
+      });
+    });
+
+    test("does not auto-commit truncated work once the continuation budget is exhausted", async () => {
+      agentFinishReason = "length";
+      agentRawFinishReason = "provider_length";
+      agentAssistantPartsFactory = () => [{ type: "text", text: "partial" }];
+
+      await runAgentWorkflow(
+        makeOptions({
+          maxSteps: 20,
+          autoCommitEnabled: true,
+          autoCreatePrEnabled: true,
+          repoOwner: "acme",
+          repoName: "repo",
+        }),
+      );
+
+      expect(spies.runAutoCommitStep).not.toHaveBeenCalled();
+      expect(spies.runAutoCreatePrStep).not.toHaveBeenCalled();
+    });
+
+    test("honors CHAT_MAX_LENGTH_CONTINUATIONS to bound the continuation budget", async () => {
+      const envKey = "CHAT_MAX_LENGTH_CONTINUATIONS";
+      const original = process.env[envKey];
+      process.env[envKey] = "1";
+      agentFinishReason = "length";
+      agentRawFinishReason = "provider_length";
+      agentAssistantPartsFactory = () => [{ type: "text", text: "partial" }];
+
+      try {
+        await runAgentWorkflow(makeOptions({ maxSteps: 20 }));
+      } finally {
+        if (original === undefined) {
+          delete process.env[envKey];
+        } else {
+          process.env[envKey] = original;
+        }
+      }
+
+      const rwCalls = spies.recordWorkflowUsage.mock.calls as unknown[][];
+      const workflowRun = rwCalls.at(-1)?.[5] as {
+        status: string;
+        stepTimings: Array<{ stepNumber: number }>;
+      };
+
+      // 1 continuation configured: the initial step plus one continuation.
+      expect(workflowRun.stepTimings).toHaveLength(2);
+      expect(workflowRun.status).toBe("truncated");
+    });
+
+    // Regression: the length-continuation path reuses the normal loop body
+    // (it does not `continue` past the rest of the per-step checks), so the
+    // existing maxSteps safety net must still apply to a run that is
+    // continuing past truncated steps. If a future change made the "length"
+    // branch skip straight to the next iteration instead of falling through,
+    // this run would keep going past maxSteps instead of stopping at it.
+    test("maxSteps still bounds a run that is continuing past truncated steps", async () => {
+      agentFinishReason = "length";
+      agentRawFinishReason = "provider_length";
+      // Comfortably inside the default length-continuation budget (3), so
+      // maxSteps — not the truncation budget — must be what ends this run.
+      agentAssistantPartsFactory = () => [{ type: "text", text: "partial" }];
+
+      await runAgentWorkflow(makeOptions({ maxSteps: 2 }));
+
+      const rwCalls = spies.recordWorkflowUsage.mock.calls as unknown[][];
+      const workflowRun = rwCalls.at(-1)?.[5] as {
+        status: string;
+        stepTimings: Array<{ stepNumber: number; finishReason?: string }>;
+      };
+
+      expect(workflowRun.stepTimings).toHaveLength(2);
+      expect(workflowRun.status).toBe("max_steps");
+      // Every step was truncated — this was not a coincidental "stop".
+      expect(
+        workflowRun.stepTimings.every((step) => step.finishReason === "length"),
+      ).toBe(true);
+    });
+  });
+
+  // #1247: pausing for tool approval and the other unlabeled finish reasons
+  // (content-filter / error / other) used to fall through to "completed" too
+  // — the same defect as truncation, wearing different hats.
+  describe("other unlabeled finish reasons (#1247)", () => {
+    test("reports awaiting_tool_approval when the run pauses for tool interaction, not completed", async () => {
+      agentFinishReason = "tool-calls";
+      agentRawFinishReason = "provider_tool_use";
+      agentStreamParts = [
+        {
+          type: "finish-step",
+          finishReason: "tool-calls",
+          rawFinishReason: "provider_tool_use",
+          usage: agentTotalUsage,
+        },
+      ];
+
+      await runAgentWorkflow(
+        makeOptions({
+          messages: [
+            {
+              id: "assistant-1",
+              role: "assistant",
+              parts: [
+                {
+                  type: "tool-invocation",
+                  state: "approval-requested",
+                },
+              ],
+              metadata: {},
+            },
+          ],
+        }),
+      );
+
+      const rwCalls = spies.recordWorkflowUsage.mock.calls as unknown[][];
+      const workflowRun = rwCalls.at(-1)?.[5] as { status: string };
+      expect(workflowRun.status).toBe("awaiting_tool_approval");
+
+      // Not a failure: the workflow-level session event stays "completed",
+      // matching pre-#1247 behavior — only the fine-grained persisted status
+      // (asserted above) changes. Filing this as "failed" would misreport
+      // 16% of production runs (per the issue's own measurement) as broken.
+      const emitted = (spies.emitSessionEvent.mock.calls as unknown[][]).map(
+        (call) => call[0] as { eventName?: string },
+      );
+      expect(
+        emitted.some((event) => event.eventName === "workflow.completed"),
+      ).toBe(true);
+    });
+
+    test.each(["content-filter", "error", "other"] as const)(
+      "reports the shared ended_unexpectedly value for finishReason %s",
+      async (finishReason) => {
+        agentFinishReason = finishReason;
+        agentRawFinishReason = "provider_raw";
+
+        await runAgentWorkflow(makeOptions({ maxSteps: 5 }));
+
+        const rwCalls = spies.recordWorkflowUsage.mock.calls as unknown[][];
+        const workflowRun = rwCalls.at(-1)?.[5] as { status: string };
+        expect(workflowRun.status).toBe("ended_unexpectedly");
+      },
+    );
+
+    test("a run ending 'stop' is unchanged", async () => {
+      agentFinishReason = "stop";
+      agentRawFinishReason = "provider_stop";
+
+      await runAgentWorkflow(makeOptions({ maxSteps: 5 }));
+
+      const rwCalls = spies.recordWorkflowUsage.mock.calls as unknown[][];
+      const workflowRun = rwCalls.at(-1)?.[5] as { status: string };
+      expect(workflowRun.status).toBe("completed");
+    });
   });
 
   test("logs full step diagnostics when the agent finishes with reason other", async () => {
@@ -3687,6 +3918,357 @@ describe("runAgentWorkflow", () => {
       expect(workflowRun.status).toBe("completed");
     }, 15_000);
 
+    // #1242 regression against the production incident: a read-only run
+    // (analysis, review, search, reporting) never changes the git tree by
+    // definition, so the fuse must not judge it on git delta alone. Distinct
+    // tool-call activity every step (varying input — "review a different PR
+    // each time") is a second signal that keeps the run alive well past the
+    // old git-only budget.
+    test("does not stop a headless run with no git delta as long as tool-call activity keeps varying (#1242)", async () => {
+      const { DEFAULT_HEADLESS_RUN_MAX_STALE_STEPS } =
+        await import("@/lib/chat/headless-progress-budget");
+      agentFinishReason = "tool-calls";
+      agentRawFinishReason = "provider_tool_use";
+      // The workspace never changes — this run is read-only.
+      spies.probeHeadlessRunGitFingerprint.mockImplementation(
+        (): Promise<string | null> => Promise.resolve("frozen-fingerprint"),
+      );
+      const STOP_AT_STEP = DEFAULT_HEADLESS_RUN_MAX_STALE_STEPS + 10;
+      let call = 0;
+      agentAssistantPartsFactory = () => {
+        call += 1;
+        if (call >= STOP_AT_STEP) {
+          agentFinishReason = "stop";
+        }
+        return [
+          {
+            type: "tool-task",
+            toolCallId: `call-${call}`,
+            state: "output-available",
+            preliminary: false,
+            input: { task: `Review PR #${call}` },
+            output: { final: [] },
+          },
+        ];
+      };
+
+      await runAgentWorkflow(
+        makeOptions({
+          agentOptions: { unattended: true },
+          maxSteps: undefined,
+        }),
+      );
+
+      const rwCalls = spies.recordWorkflowUsage.mock.calls as unknown[][];
+      const workflowRun = rwCalls.at(-1)?.[5] as {
+        stepTimings: Array<{ stepNumber: number }>;
+        status: string;
+      };
+      expect(workflowRun.stepTimings.length).toBeGreaterThan(
+        DEFAULT_HEADLESS_RUN_MAX_STALE_STEPS,
+      );
+      expect(workflowRun.status).toBe("completed");
+    }, 15_000);
+
+    // #1242 regression (observability angle): the issue requires "a log
+    // line, the transcript, and the API read must never disagree about why
+    // a run ended". Distinct from the behavioral test above (which checks
+    // the persisted workflowRun.status) — this checks that a read-only run
+    // NEVER emits the fuse's `workflow.failed`/no-progress observability
+    // trail at all, and that `mcp.run.bounded` logs "completed", not
+    // "no_progress". On the pre-fix (git-delta-only) fuse this run trips at
+    // DEFAULT_HEADLESS_RUN_MAX_STALE_STEPS and both of these would fire —
+    // this test would fail if the #1242 fix were reverted.
+    test("regression: a read-only run with varying tool-call activity never emits the no-progress fuse's observability trail (#1242)", async () => {
+      const { DEFAULT_HEADLESS_RUN_MAX_STALE_STEPS } =
+        await import("@/lib/chat/headless-progress-budget");
+      agentFinishReason = "tool-calls";
+      agentRawFinishReason = "provider_tool_use";
+      spies.probeHeadlessRunGitFingerprint.mockImplementation(
+        (): Promise<string | null> => Promise.resolve("frozen-fingerprint"),
+      );
+      const STOP_AT_STEP = DEFAULT_HEADLESS_RUN_MAX_STALE_STEPS + 10;
+      let call = 0;
+      agentAssistantPartsFactory = () => {
+        call += 1;
+        if (call >= STOP_AT_STEP) {
+          agentFinishReason = "stop";
+        }
+        return [
+          {
+            type: "tool-task",
+            toolCallId: `call-${call}`,
+            state: "output-available",
+            preliminary: false,
+            input: { task: `Review PR #${call}` },
+            output: { final: [] },
+          },
+        ];
+      };
+      const infoSpy = spyOn(console, "info").mockImplementation(
+        () => undefined,
+      );
+
+      await runAgentWorkflow(
+        makeOptions({
+          agentOptions: { unattended: true },
+          maxSteps: undefined,
+        }),
+      );
+
+      const emitted = (spies.emitSessionEvent.mock.calls as unknown[][]).map(
+        (call_) =>
+          call_[0] as {
+            eventName?: string;
+            payload?: Record<string, unknown>;
+          },
+      );
+      expect(
+        emitted.find((event) => event.eventName === "workflow.failed"),
+      ).toBeUndefined();
+
+      const boundedCall = infoSpy.mock.calls.find((args) =>
+        String(args[1]).includes('"event":"mcp.run.bounded"'),
+      );
+      expect(boundedCall).toBeDefined();
+      expect(String(boundedCall?.[1])).toContain('"reason":"completed"');
+      expect(String(boundedCall?.[1])).not.toContain('"reason":"no_progress"');
+
+      infoSpy.mockRestore();
+    }, 15_000);
+
+    // #1242 wedge contract: a run that keeps calling the SAME tool with the
+    // SAME input (no git delta, no varying activity) is the genuine wedge
+    // the fuse must still bound — the epic's read-only use case must not
+    // reopen the runaway-cost risk #1231 closed.
+    test("stops a headless run that repeats an identical tool call with no varying activity (#1242)", async () => {
+      const { DEFAULT_HEADLESS_RUN_MAX_STALE_STEPS } =
+        await import("@/lib/chat/headless-progress-budget");
+      agentFinishReason = "tool-calls";
+      agentRawFinishReason = "provider_tool_use";
+      spies.probeHeadlessRunGitFingerprint.mockImplementation(
+        (): Promise<string | null> => Promise.resolve("frozen-fingerprint"),
+      );
+      let call = 0;
+      agentAssistantPartsFactory = () => {
+        call += 1;
+        return [
+          {
+            type: "tool-task",
+            toolCallId: `call-${call}`,
+            state: "output-available",
+            preliminary: false,
+            input: { task: "List repository files" },
+            output: { final: [] },
+          },
+        ];
+      };
+
+      await runAgentWorkflow(
+        makeOptions({
+          agentOptions: { unattended: true },
+          maxSteps: undefined,
+        }),
+      );
+
+      const rwCalls = spies.recordWorkflowUsage.mock.calls as unknown[][];
+      const workflowRun = rwCalls.at(-1)?.[5] as {
+        stepTimings: Array<{ stepNumber: number }>;
+        status: string;
+      };
+      // A window+detectRepetition trailing-repeat check flags once the
+      // window holds DEFAULT_HEADLESS_RUN_MAX_STALE_STEPS identical
+      // fingerprints — no separate "seed the baseline" step, unlike the old
+      // adjacent-comparison budget.
+      expect(workflowRun.stepTimings.length).toBe(
+        DEFAULT_HEADLESS_RUN_MAX_STALE_STEPS,
+      );
+      expect(workflowRun.status).toBe("no_progress_fuse");
+
+      // The stop message must name the SPECIFIC pattern that fired — an
+      // identical tool call repeated, not the generic "workspace changes"
+      // wording, since this run's tool calls (not the git tree) are what
+      // stayed flat.
+      const textDeltas = writtenChunks
+        .filter(
+          (chunk): chunk is { type: "text-delta"; id: string; delta: string } =>
+            chunk.type === "text-delta",
+        )
+        .map((chunk) => chunk.delta)
+        .join("");
+      expect(textDeltas.toLowerCase()).toContain("same tool call");
+    }, 10_000);
+
+    // #1242 follow-up wedge contract: alternating between two DISTINCT read
+    // calls ("read file A, read file B, repeat") produces a combined
+    // fingerprint that differs every step, so the adjacent-only comparison
+    // this closes never caught it — and for a headless run that is
+    // unbounded (maxSteps is undefined by design, #1231), so nothing else
+    // would stop it before the 90-minute sandbox ceiling.
+    test("stops a headless run alternating between two distinct tool calls (A/B/A/B cycle) (#1242)", async () => {
+      agentFinishReason = "tool-calls";
+      agentRawFinishReason = "provider_tool_use";
+      spies.probeHeadlessRunGitFingerprint.mockImplementation(
+        (): Promise<string | null> => Promise.resolve("frozen-fingerprint"),
+      );
+      let call = 0;
+      agentAssistantPartsFactory = () => {
+        call += 1;
+        return [
+          {
+            type: "tool-task",
+            toolCallId: `call-${call}`,
+            state: "output-available",
+            preliminary: false,
+            input: { file: call % 2 === 1 ? "A" : "B" },
+            output: { final: [] },
+          },
+        ];
+      };
+
+      await runAgentWorkflow(
+        makeOptions({
+          agentOptions: { unattended: true },
+          maxSteps: undefined,
+        }),
+      );
+
+      const rwCalls = spies.recordWorkflowUsage.mock.calls as unknown[][];
+      const workflowRun = rwCalls.at(-1)?.[5] as {
+        stepTimings: Array<{ stepNumber: number }>;
+        status: string;
+      };
+      expect(workflowRun.status).toBe("no_progress_fuse");
+      // Bounded well before the plain stale-step limit would have caught it
+      // (an alternating pair never repeats identically turn-to-turn).
+      expect(workflowRun.stepTimings.length).toBeLessThan(10);
+
+      const textDeltas = writtenChunks
+        .filter(
+          (chunk): chunk is { type: "text-delta"; id: string; delta: string } =>
+            chunk.type === "text-delta",
+        )
+        .map((chunk) => chunk.delta)
+        .join("");
+      expect(textDeltas.toLowerCase()).toContain("repeating");
+    }, 10_000);
+
+    // #1242 follow-up: the same wedge shape with a 3-call block (A/B/C
+    // repeating) — proves the cycle search isn't hardcoded to period 2.
+    test("stops a headless run cycling through a three-call pattern (#1242)", async () => {
+      agentFinishReason = "tool-calls";
+      agentRawFinishReason = "provider_tool_use";
+      spies.probeHeadlessRunGitFingerprint.mockImplementation(
+        (): Promise<string | null> => Promise.resolve("frozen-fingerprint"),
+      );
+      const files = ["A", "B", "C"];
+      let call = 0;
+      agentAssistantPartsFactory = () => {
+        call += 1;
+        return [
+          {
+            type: "tool-task",
+            toolCallId: `call-${call}`,
+            state: "output-available",
+            preliminary: false,
+            input: { file: files[(call - 1) % files.length] },
+            output: { final: [] },
+          },
+        ];
+      };
+
+      await runAgentWorkflow(
+        makeOptions({
+          agentOptions: { unattended: true },
+          maxSteps: undefined,
+        }),
+      );
+
+      const rwCalls = spies.recordWorkflowUsage.mock.calls as unknown[][];
+      const workflowRun = rwCalls.at(-1)?.[5] as {
+        stepTimings: Array<{ stepNumber: number }>;
+        status: string;
+      };
+      expect(workflowRun.status).toBe("no_progress_fuse");
+      expect(workflowRun.stepTimings.length).toBeLessThan(12);
+    }, 10_000);
+
+    // #1242 follow-up regression (observability angle, mirrors a9f20a61's
+    // discipline for the round-1 fix): distinct from the two behavioral
+    // tests above, which check the persisted workflowRun.status — this
+    // checks that the A/B/A/B cycle wedge emits the SAME observability
+    // trail a strict repeat does (workflow.failed + mcp.run.bounded
+    // reason "no_progress"), and that the message specifically says
+    // "repeating" rather than the stalled-tree wording. On the pre-cycle-
+    // detection code this run never stops at all (unbounded — no
+    // workflow.failed event, no "no_progress" log line ever fires), so this
+    // test would fail if the cycle-detection fix were reverted.
+    test("regression: an A/B/A/B cycle wedge emits the same observability trail as a strict repeat, with a distinct message (#1242)", async () => {
+      agentFinishReason = "tool-calls";
+      agentRawFinishReason = "provider_tool_use";
+      spies.probeHeadlessRunGitFingerprint.mockImplementation(
+        (): Promise<string | null> => Promise.resolve("frozen-fingerprint"),
+      );
+      let call = 0;
+      agentAssistantPartsFactory = () => {
+        call += 1;
+        return [
+          {
+            type: "tool-task",
+            toolCallId: `call-${call}`,
+            state: "output-available",
+            preliminary: false,
+            input: { file: call % 2 === 1 ? "A" : "B" },
+            output: { final: [] },
+          },
+        ];
+      };
+      const infoSpy = spyOn(console, "info").mockImplementation(
+        () => undefined,
+      );
+
+      await runAgentWorkflow(
+        makeOptions({
+          agentOptions: { unattended: true },
+          maxSteps: undefined,
+        }),
+      );
+
+      const emitted = (spies.emitSessionEvent.mock.calls as unknown[][]).map(
+        (call_) =>
+          call_[0] as {
+            eventName?: string;
+            payload?: Record<string, unknown>;
+          },
+      );
+      const failedEvent = emitted.findLast(
+        (event) => event.eventName === "workflow.failed",
+      );
+      expect(failedEvent?.payload).toMatchObject({
+        stopReason: "no_progress_fuse",
+      });
+
+      const boundedCall = infoSpy.mock.calls.find((args) =>
+        String(args[1]).includes('"event":"mcp.run.bounded"'),
+      );
+      expect(boundedCall).toBeDefined();
+      expect(String(boundedCall?.[1])).toContain('"reason":"no_progress"');
+
+      const textDeltas = writtenChunks
+        .filter(
+          (chunk): chunk is { type: "text-delta"; id: string; delta: string } =>
+            chunk.type === "text-delta",
+        )
+        .map((chunk) => chunk.delta)
+        .join("");
+      expect(textDeltas.toLowerCase()).toContain("repeating");
+      expect(textDeltas.toLowerCase()).not.toContain(
+        "no workspace changes or new tool-call activity",
+      );
+
+      infoSpy.mockRestore();
+    }, 10_000);
+
     // Real per-step cost (~150ms, see the note above) × 21 steps ≈ 3s —
     // comfortably under the default 5s timeout, but a generous explicit
     // timeout keeps this from flaking on a slower CI runner.
@@ -3715,13 +4297,14 @@ describe("runAgentWorkflow", () => {
         stepTimings: Array<{ stepNumber: number }>;
         status: string;
       };
-      // The first probe seeds the fingerprint baseline (never itself stale);
-      // the fuse trips once DEFAULT_HEADLESS_RUN_MAX_STALE_STEPS consecutive
-      // probes after that see no change.
+      // The fuse trips once the trailing window holds
+      // DEFAULT_HEADLESS_RUN_MAX_STALE_STEPS identical combined fingerprints.
       expect(workflowRun.stepTimings.length).toBe(
-        DEFAULT_HEADLESS_RUN_MAX_STALE_STEPS + 1,
+        DEFAULT_HEADLESS_RUN_MAX_STALE_STEPS,
       );
-      expect(workflowRun.status).toBe("failed");
+      // #1241: filed under its own name, not the generic "failed" a crash
+      // gets — get_session's lastRunOutcome depends on this distinction.
+      expect(workflowRun.status).toBe("no_progress_fuse");
 
       const emitted = (spies.emitSessionEvent.mock.calls as unknown[][]).map(
         (call) =>
@@ -3757,6 +4340,37 @@ describe("runAgentWorkflow", () => {
 
       infoSpy.mockRestore();
     }, 10_000);
+
+    // #1247: "one vocabulary, three surfaces" — workflow_runs.status,
+    // lastRunOutcome, and mcp.run.bounded must all name a truncated run the
+    // same way.
+    test("mcp.run.bounded names a truncated headless run 'truncated', matching workflow_runs.status", async () => {
+      agentFinishReason = "length";
+      agentRawFinishReason = "provider_length";
+      agentAssistantPartsFactory = () => [{ type: "text", text: "partial" }];
+      const infoSpy = spyOn(console, "info").mockImplementation(
+        () => undefined,
+      );
+
+      await runAgentWorkflow(
+        makeOptions({
+          agentOptions: { unattended: true },
+          maxSteps: undefined,
+        }),
+      );
+
+      const rwCalls = spies.recordWorkflowUsage.mock.calls as unknown[][];
+      const workflowRun = rwCalls.at(-1)?.[5] as { status: string };
+      expect(workflowRun.status).toBe("truncated");
+
+      const boundedCall = infoSpy.mock.calls.find((args) =>
+        String(args[1]).includes('"event":"mcp.run.bounded"'),
+      );
+      expect(boundedCall).toBeDefined();
+      expect(String(boundedCall?.[1])).toContain('"reason":"truncated"');
+
+      infoSpy.mockRestore();
+    });
 
     test("hibernates the sandbox only after the active-stream slot is released", async () => {
       const callOrder: string[] = [];
@@ -3828,7 +4442,8 @@ describe("runAgentWorkflow", () => {
         status: string;
       };
       expect(workflowRun.stepTimings).toHaveLength(3);
-      expect(workflowRun.status).toBe("failed");
+      // #1241: distinct from "no_progress_fuse" and from a genuine crash.
+      expect(workflowRun.status).toBe("no_sandbox_step_cap");
 
       const emitted = (spies.emitSessionEvent.mock.calls as unknown[][]).map(
         (call) =>
@@ -3876,9 +4491,13 @@ describe("runAgentWorkflow", () => {
         stepTimings: Array<{ stepNumber: number }>;
         status: string;
       };
-      // Unchanged from before #1231: maxSteps:2 still exhausts and fails.
+      // Unchanged from before #1231: maxSteps:2 still exhausts the run.
       expect(workflowRun.stepTimings).toHaveLength(2);
-      expect(workflowRun.status).toBe("failed");
+      // #1241: workflowRuns.status now names the specific stop reason
+      // instead of the generic "failed" — this run is a browser-started
+      // regression case, not headless, but maxSteps exhaustion applies
+      // either way.
+      expect(workflowRun.status).toBe("max_steps");
 
       const emitted = (spies.emitSessionEvent.mock.calls as unknown[][]).map(
         (call) =>

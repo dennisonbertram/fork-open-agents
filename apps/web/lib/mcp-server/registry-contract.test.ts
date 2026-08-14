@@ -21,6 +21,10 @@ const dbStub = {
 };
 mock.module("@/lib/db/sessions", () => dbStub);
 mock.module("@/lib/sandbox/utils", () => ({ isSandboxActive: () => false }));
+// #1241: get_session's lastRunOutcome lookup.
+mock.module("@/lib/db/workflow-runs", () => ({
+  getLatestWorkflowRunStatusBySessionId: async () => null,
+}));
 
 const registryPromise = import("./registry");
 

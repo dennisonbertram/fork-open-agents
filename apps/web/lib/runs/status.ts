@@ -28,6 +28,10 @@ const WAITING_STATUSES = new Set([
   "paused",
   "waiting",
   "waiting_on_user",
+  // #1247: a chat_workflow run paused for the user to approve or supply
+  // tool input. Not a failure — the run is waiting on the user, the same
+  // shape every other source already reports through this set.
+  "awaiting_tool_approval",
 ]);
 
 function activeStatus(
@@ -111,7 +115,31 @@ export function normalizeRunStatus(
     };
   }
 
-  if (nativeStatus === "failed") {
+  // #1241: workflowRuns.status widened with four deliberate-stop values
+  // (no_progress_fuse, no_sandbox_step_cap, max_steps, repeated_tool_failure)
+  // that used to all be persisted as "failed". Keep treating them the same
+  // way here so a chat_workflow run doesn't silently fall through to
+  // "unknown" the moment the writer starts persisting the more specific
+  // value — get_session's `lastRunOutcome` is where the finer distinction is
+  // surfaced instead.
+  //
+  // #1247: two more deliberate-stop values — a run truncated by the
+  // provider's output-token ceiling even after every continuation the
+  // budget allowed, and a run that ended for an unhandled provider-side
+  // reason (content-filter/error/other). Both mean the work is incomplete or
+  // untrustworthy, so they get the same "failed, needs attention" treatment
+  // as the #1241 values, for the same reason: without this branch they would
+  // silently degrade to "unknown" the moment the writer starts persisting
+  // them, exactly the class of bug #1241 fixed for the first four.
+  if (
+    nativeStatus === "failed" ||
+    nativeStatus === "no_progress_fuse" ||
+    nativeStatus === "no_sandbox_step_cap" ||
+    nativeStatus === "max_steps" ||
+    nativeStatus === "repeated_tool_failure" ||
+    nativeStatus === "truncated" ||
+    nativeStatus === "ended_unexpectedly"
+  ) {
     return terminalStatus("failed");
   }
 

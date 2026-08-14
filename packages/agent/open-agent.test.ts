@@ -453,6 +453,51 @@ describe("built-in tool allowlist (allowedBuiltinToolNames)", () => {
   });
 });
 
+// REGRESSION (#1243): production evidence showed a headless run whose
+// allowlist denied `ask_user_question` still received a system prompt that
+// named the tool and instructed the agent to use it -- the prompt and the
+// actual tool set were two independently-maintained sources of truth. This
+// exercises the real prepareCall integration point (not buildSystemPrompt in
+// isolation, which the behavioral tests above already cover) to prove the
+// prompt returned to the model loop and the tools returned to the model loop
+// stay in sync for the same call. If open-agent.ts ever stops threading the
+// resolved tool policy into buildSystemPrompt, or system-prompt.ts regresses
+// to a hand-maintained tool list, this test fails.
+describe("prepareCall keeps the prompt and the tool set in sync (#1243 regression)", () => {
+  test("a call with ask_user_question excluded from allowedBuiltinToolNames returns a prompt naming no denied tool, matching the tools actually returned", () => {
+    const result = prepareCall({
+      options: {
+        sandbox: {},
+        model: { id: "anthropic/claude-opus-4.6" },
+        allowedBuiltinToolNames: OPEN_AGENT_TOOL_NAMES.filter(
+          (name) => name !== "ask_user_question",
+        ),
+      },
+    }) as { instructions: string; tools: Record<string, unknown> };
+
+    const returnedToolNames = Object.keys(result.tools);
+    expect(returnedToolNames).not.toContain("ask_user_question");
+    expect(returnedToolNames).toContain("read");
+
+    expect(result.instructions).not.toContain("`ask_user_question`");
+    expect(result.instructions).not.toContain(
+      "Use `ask_user_question` to clarify requirements or let users choose between approaches",
+    );
+  });
+
+  test("an unrestricted call (allowedBuiltinToolNames omitted) still names ask_user_question in both the prompt and the tools", () => {
+    const result = prepareCall({
+      options: {
+        sandbox: {},
+        model: { id: "anthropic/claude-opus-4.6" },
+      },
+    }) as { instructions: string; tools: Record<string, unknown> };
+
+    expect(Object.keys(result.tools)).toContain("ask_user_question");
+    expect(result.instructions).toContain("`ask_user_question`");
+  });
+});
+
 // Unattended runs have no human approver: web_fetch (a tool-level approval
 // gate) is pre-approved by virtue of being exposed via the allowlist.
 describe("web_fetch approval in unattended mode", () => {

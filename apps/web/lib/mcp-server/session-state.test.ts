@@ -1,7 +1,9 @@
 import { describe, expect, test } from "bun:test";
+import { deriveWorkflowRunOutcomeStatus } from "@/lib/chat/workflow-run-outcome";
 import {
   RUN_SLOT_STALE_MS,
   toActivityState,
+  toLastRunOutcome,
   toWorkspaceState,
   WORKSPACE_SETUP_STALL_MS,
 } from "./session-state";
@@ -218,4 +220,213 @@ describe("toActivityState", () => {
       }),
     ).toBe("working");
   });
+});
+
+/**
+ * #1241: `lastRunOutcome` is a third, distinct axis from `state` (filing) and
+ * `activity` (is a run live right now) — it answers "how did the last
+ * completed run end". Before this, a stalled run, a step-capped run, and a
+ * genuinely finished run all reported the same thing through get_session,
+ * because nothing downstream of `workflow_runs.status` distinguished them.
+ */
+describe("toLastRunOutcome", () => {
+  test("a session with no run yet reports null, not a made-up status", () => {
+    expect(toLastRunOutcome(null)).toBeNull();
+    expect(toLastRunOutcome(undefined)).toBeNull();
+  });
+
+  test("a finished run reports completed", () => {
+    expect(toLastRunOutcome("completed")).toBe("completed");
+  });
+
+  test("a user-stopped run reports aborted", () => {
+    expect(toLastRunOutcome("aborted")).toBe("aborted");
+  });
+
+  test("a crash reports failed, distinguishable from every deliberate stop", () => {
+    expect(toLastRunOutcome("failed")).toBe("failed");
+  });
+
+  test("the no-progress fuse names itself", () => {
+    expect(toLastRunOutcome("no_progress_fuse")).toBe("no_progress_fuse");
+  });
+
+  test("the no-sandbox step cap names itself, distinct from the fuse", () => {
+    expect(toLastRunOutcome("no_sandbox_step_cap")).toBe("no_sandbox_step_cap");
+  });
+
+  test("exhausting maxSteps names itself", () => {
+    expect(toLastRunOutcome("max_steps")).toBe("max_steps");
+  });
+
+  test("repeated tool failure names itself", () => {
+    expect(toLastRunOutcome("repeated_tool_failure")).toBe(
+      "repeated_tool_failure",
+    );
+  });
+
+  test("an unrecognized stored value reports null rather than inventing a status", () => {
+    // Defensive: a historical or corrupted row must never be echoed back as a
+    // typed outcome the schema does not advertise.
+    expect(toLastRunOutcome("some-legacy-value")).toBeNull();
+  });
+
+  // #1247: a step cut off by the provider's output-token ceiling
+  // (finishReason "length") used to be filed identically to a clean finish.
+  test("a truncated run names itself, distinct from a clean finish", () => {
+    expect(toLastRunOutcome("truncated")).toBe("truncated");
+  });
+
+  // #1247: a run paused for tool approval used to be filed identically to a
+  // clean finish too — the same defect as truncation, wearing a different
+  // hat.
+  test("a run awaiting tool approval names itself, distinct from completed and from truncated", () => {
+    expect(toLastRunOutcome("awaiting_tool_approval")).toBe(
+      "awaiting_tool_approval",
+    );
+  });
+
+  // #1247: content-filter / error / other finish reasons share one value —
+  // still distinct from a clean completion, which is the behavior that
+  // matters to a caller deciding whether to trust the run's output.
+  test("an unhandled finish reason names the shared ended_unexpectedly value", () => {
+    expect(toLastRunOutcome("ended_unexpectedly")).toBe("ended_unexpectedly");
+  });
+});
+
+/**
+ * Regression: the writer (deriveWorkflowRunOutcomeStatus, lib/chat/workflow-run-outcome.ts)
+ * and the reader (toLastRunOutcome, above) each carry their own copy of the
+ * same 7-value vocabulary. If a future change adds a new persisted status
+ * without teaching the reader about it — or renames one on either side — a
+ * real run would silently report `lastRunOutcome: null` through get_session
+ * instead of the value it actually has. Driving every writer output through
+ * the reader, rather than asserting the two lists match, catches that drift
+ * exactly where it would surface: get_session's response.
+ */
+describe("the writer's vocabulary and get_session's reader never drift apart (#1241 regression)", () => {
+  const scenarios: Array<Parameters<typeof deriveWorkflowRunOutcomeStatus>[0]> =
+    [
+      {
+        crashed: false,
+        wasAborted: false,
+        stoppedForRepeatedToolFailure: false,
+        exhaustedMaxSteps: false,
+        headlessFuseTripped: false,
+        headlessNoSandboxCapped: false,
+        truncationBoundExhausted: false,
+        awaitingToolApproval: false,
+        endedUnexpectedly: false,
+      },
+      {
+        crashed: false,
+        wasAborted: true,
+        stoppedForRepeatedToolFailure: false,
+        exhaustedMaxSteps: false,
+        headlessFuseTripped: false,
+        headlessNoSandboxCapped: false,
+        truncationBoundExhausted: false,
+        awaitingToolApproval: false,
+        endedUnexpectedly: false,
+      },
+      {
+        crashed: true,
+        wasAborted: false,
+        stoppedForRepeatedToolFailure: false,
+        exhaustedMaxSteps: false,
+        headlessFuseTripped: false,
+        headlessNoSandboxCapped: false,
+        truncationBoundExhausted: false,
+        awaitingToolApproval: false,
+        endedUnexpectedly: false,
+      },
+      {
+        crashed: false,
+        wasAborted: false,
+        stoppedForRepeatedToolFailure: true,
+        exhaustedMaxSteps: false,
+        headlessFuseTripped: false,
+        headlessNoSandboxCapped: false,
+        truncationBoundExhausted: false,
+        awaitingToolApproval: false,
+        endedUnexpectedly: false,
+      },
+      {
+        crashed: false,
+        wasAborted: false,
+        stoppedForRepeatedToolFailure: false,
+        exhaustedMaxSteps: true,
+        headlessFuseTripped: false,
+        headlessNoSandboxCapped: false,
+        truncationBoundExhausted: false,
+        awaitingToolApproval: false,
+        endedUnexpectedly: false,
+      },
+      {
+        crashed: false,
+        wasAborted: false,
+        stoppedForRepeatedToolFailure: false,
+        exhaustedMaxSteps: false,
+        headlessFuseTripped: true,
+        headlessNoSandboxCapped: false,
+        truncationBoundExhausted: false,
+        awaitingToolApproval: false,
+        endedUnexpectedly: false,
+      },
+      {
+        crashed: false,
+        wasAborted: false,
+        stoppedForRepeatedToolFailure: false,
+        exhaustedMaxSteps: false,
+        headlessFuseTripped: false,
+        headlessNoSandboxCapped: true,
+        truncationBoundExhausted: false,
+        awaitingToolApproval: false,
+        endedUnexpectedly: false,
+      },
+      // #1247: the three new deliberate-stop values.
+      {
+        crashed: false,
+        wasAborted: false,
+        stoppedForRepeatedToolFailure: false,
+        exhaustedMaxSteps: false,
+        headlessFuseTripped: false,
+        headlessNoSandboxCapped: false,
+        truncationBoundExhausted: true,
+        awaitingToolApproval: false,
+        endedUnexpectedly: false,
+      },
+      {
+        crashed: false,
+        wasAborted: false,
+        stoppedForRepeatedToolFailure: false,
+        exhaustedMaxSteps: false,
+        headlessFuseTripped: false,
+        headlessNoSandboxCapped: false,
+        truncationBoundExhausted: false,
+        awaitingToolApproval: true,
+        endedUnexpectedly: false,
+      },
+      {
+        crashed: false,
+        wasAborted: false,
+        stoppedForRepeatedToolFailure: false,
+        exhaustedMaxSteps: false,
+        headlessFuseTripped: false,
+        headlessNoSandboxCapped: false,
+        truncationBoundExhausted: false,
+        awaitingToolApproval: false,
+        endedUnexpectedly: true,
+      },
+    ];
+
+  test.each(scenarios)(
+    "writer output round-trips to the same, non-null get_session outcome",
+    (params) => {
+      const written = deriveWorkflowRunOutcomeStatus(params);
+      const read = toLastRunOutcome(written);
+      expect(read).not.toBeNull();
+      expect(read).toBe(written);
+    },
+  );
 });

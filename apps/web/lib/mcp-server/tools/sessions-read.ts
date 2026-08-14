@@ -18,6 +18,8 @@ import {
   // reason.
   type SessionsSort,
 } from "@/lib/db/sessions";
+import { getLatestWorkflowRunStatusBySessionId } from "@/lib/db/workflow-runs";
+import { getLatestSessionEventByNames } from "@/lib/observability/session-event-lookup";
 import {
   buildChatUrl,
   buildSessionUrl,
@@ -28,9 +30,11 @@ import type { McpScope } from "../context";
 import {
   isResumable,
   type McpActivityState,
+  type McpLastRunOutcome,
   type McpSessionState,
   type McpWorkspaceState,
   toActivityState,
+  toLastRunOutcome,
   toSessionState,
   toWorkspaceState,
 } from "../session-state";
@@ -131,6 +135,46 @@ export type McpChatSummary = {
   url: string;
 };
 
+// Exact event names app/workflows/chat.ts emits for auto-commit / auto-PR
+// outcomes (#1246). Re-declared here by hand rather than imported — chat.ts
+// is a Next.js workflow route module, not a library this package can import
+// from, and re-declaring is how the rest of this file already handles the
+// analogous SESSION_SORTS drift risk (see its comment above). Reusing these
+// literal strings, instead of a new enum, is the "keep the event vocabulary"
+// instruction from #1246: session_events already carries the exact reason an
+// auto-commit or auto-PR attempt failed or was skipped; get_session below
+// only adds a read path for it.
+const AUTO_COMMIT_EVENT_NAMES = [
+  "workflow.auto_commit.started",
+  "workflow.auto_commit.succeeded",
+  "workflow.auto_commit.failed",
+  "workflow.auto_commit.skipped",
+] as const;
+const AUTO_PR_EVENT_NAMES = [
+  "workflow.auto_pr.started",
+  "workflow.auto_pr.succeeded",
+  "workflow.auto_pr.failed",
+  "workflow.auto_pr.skipped",
+] as const;
+
+// Mirrors sessionEvents.status (apps/web/lib/db/schema.ts) exactly — the
+// point of this field is to expose that same vocabulary, not a new one.
+export type McpGitAutomationEventStatus =
+  | "started"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "blocked"
+  | "skipped"
+  | "info";
+
+export type McpGitAutomationEvent = {
+  eventName: string;
+  status: McpGitAutomationEventStatus;
+  summary: string | null;
+  occurredAt: string;
+};
+
 export type McpSessionDetail = {
   id: string;
   title: string;
@@ -138,8 +182,30 @@ export type McpSessionDetail = {
   workspace: McpWorkspaceState;
   resumable: boolean;
   activity: McpActivityState;
+  /** How the session's most recently recorded run ended, or null when it has
+   * no run yet. A third axis, distinct from `state` and `activity` — see
+   * `toLastRunOutcome` in session-state.ts. */
+  lastRunOutcome: McpLastRunOutcome | null;
+  /** The most recently recorded auto-commit attempt for this session (start,
+   * success, failure, or "no changes to commit"), or null when auto-commit
+   * has never run. `status: "failed"` is the #1246 signal: session_events
+   * already carried the exact push-rejection reason, but nothing surfaced it
+   * to an MCP client — a run could complete while its work was never saved. */
+  lastAutoCommitEvent: McpGitAutomationEvent | null;
+  /** The most recently recorded auto-PR attempt, same shape and same
+   * null-when-never-run rule as `lastAutoCommitEvent`. `status: "skipped"`
+   * covers both a benign skip (nothing to open a PR for) and a downstream
+   * skip caused by a failed auto-commit — check `lastAutoCommitEvent` first
+   * to tell them apart. */
+  lastAutoPrEvent: McpGitAutomationEvent | null;
   repo: string | null;
   branch: string | null;
+  /** The branch a new working `branch` was cut from (#1251), or null when
+   * either this session doesn't work on a new branch (`isNewBranch: false`)
+   * or no base was recorded (a session created before this field existed, or
+   * one where neither the caller nor repo settings named a starting
+   * branch — the repository default applied instead). */
+  baseBranch: string | null;
   url: string;
   createdAt: string;
   updatedAt: string;
@@ -331,6 +397,45 @@ function toRepo(
   repoName: string | null,
 ): string | null {
   return repoOwner && repoName ? `${repoOwner}/${repoName}` : null;
+}
+
+function toGitAutomationEvent(
+  event: Awaited<ReturnType<typeof getLatestSessionEventByNames>>,
+): McpGitAutomationEvent | null {
+  if (!event) {
+    return null;
+  }
+  return {
+    eventName: event.eventName,
+    status: event.status,
+    summary: event.summary,
+    occurredAt: event.createdAt,
+  };
+}
+
+/**
+ * get_session's primary job — session state, chats, workspace — must not go
+ * down because this side lookup did. A transient DB error here degrades to
+ * "no recorded event" rather than failing the whole get_session call.
+ */
+async function safeLatestGitAutomationEvent(params: {
+  sessionId: string;
+  eventNames: readonly string[];
+}): Promise<Awaited<ReturnType<typeof getLatestSessionEventByNames>>> {
+  try {
+    return await getLatestSessionEventByNames(params);
+  } catch (error) {
+    console.error(
+      "[mcp-server] failed to load git-automation event",
+      JSON.stringify({
+        service: "mcp-server",
+        event: "mcp.get_session.git_automation_lookup_failed",
+        sessionId: params.sessionId,
+        message: error instanceof Error ? error.message : String(error),
+      }),
+    );
+    return null;
+  }
 }
 
 function toSessionSummary(row: SessionWithUnreadRow): McpSessionSummary {
@@ -717,9 +822,26 @@ export async function getSession(
   input: GetSessionInput,
 ): Promise<McpSessionDetail> {
   const record = await requireOwnedSessionMetadata(ctx, input.sessionId);
-  const chatRows = await getChatSummariesBySessionId(record.id, ctx.userId);
+  // Independent lookups: a merged query filtered on both event-name sets at
+  // once would let a more recent auto-PR row win "most recent" over an
+  // older, still-relevant auto-commit failure (or vice versa) — see the
+  // regression test for this in sessions-read.test.ts.
+  const [chatRows, lastAutoCommitEvent, lastAutoPrEvent] = await Promise.all([
+    getChatSummariesBySessionId(record.id, ctx.userId),
+    safeLatestGitAutomationEvent({
+      sessionId: record.id,
+      eventNames: AUTO_COMMIT_EVENT_NAMES,
+    }),
+    safeLatestGitAutomationEvent({
+      sessionId: record.id,
+      eventNames: AUTO_PR_EVENT_NAMES,
+    }),
+  ]);
   const chats = chatRows.map((chat) => toChatSummary(record.id, chat));
   const state = toSessionState(record.status);
+  // get_session only, never list_sessions — see getLatestWorkflowRunStatusBySessionId's
+  // own doc comment for why this single lookup doesn't become an N+1.
+  const lastRunStatus = await getLatestWorkflowRunStatusBySessionId(record.id);
 
   return {
     id: record.id,
@@ -731,6 +853,9 @@ export async function getSession(
       lifecycleUpdatedAt: record.updatedAt,
     }),
     resumable: isResumable(state),
+    lastRunOutcome: toLastRunOutcome(lastRunStatus),
+    lastAutoCommitEvent: toGitAutomationEvent(lastAutoCommitEvent),
+    lastAutoPrEvent: toGitAutomationEvent(lastAutoPrEvent),
     // Bounded per chat: a run slot last touched longer ago than any run can
     // live is stale, not live work.
     activity: chatRows.some(
@@ -744,6 +869,7 @@ export async function getSession(
       : "idle",
     repo: toRepo(record.repoOwner, record.repoName),
     branch: record.branch,
+    baseBranch: record.baseBranch,
     url: buildSessionUrl(record.id),
     createdAt: toIsoString(record.createdAt) ?? "",
     updatedAt: toIsoString(record.updatedAt) ?? "",
@@ -882,7 +1008,37 @@ const workspaceStateOutputSchema = z.enum([
   "none",
 ]);
 const activityStateOutputSchema = z.enum(["working", "idle"]);
+const lastRunOutcomeOutputSchema = z
+  .enum([
+    "completed",
+    "aborted",
+    "failed",
+    "no_progress_fuse",
+    "no_sandbox_step_cap",
+    "max_steps",
+    "repeated_tool_failure",
+    "truncated",
+    "awaiting_tool_approval",
+    "ended_unexpectedly",
+  ])
+  .nullable();
 const prStatusOutputSchema = z.enum(["open", "merged", "closed"]).nullable();
+const gitAutomationEventOutputSchema = z
+  .object({
+    eventName: z.string(),
+    status: z.enum([
+      "started",
+      "running",
+      "succeeded",
+      "failed",
+      "blocked",
+      "skipped",
+      "info",
+    ]),
+    summary: z.string().nullable(),
+    occurredAt: z.string(),
+  })
+  .nullable();
 
 const sessionSummaryOutputSchema = z.object({
   id: z.string(),
@@ -965,8 +1121,12 @@ const getSessionOutputSchema = z.object({
   workspace: workspaceStateOutputSchema,
   resumable: z.boolean(),
   activity: activityStateOutputSchema,
+  lastRunOutcome: lastRunOutcomeOutputSchema,
+  lastAutoCommitEvent: gitAutomationEventOutputSchema,
+  lastAutoPrEvent: gitAutomationEventOutputSchema,
   repo: z.string().nullable(),
   branch: z.string().nullable(),
+  baseBranch: z.string().nullable(),
   url: z.string(),
   createdAt: z.string(),
   updatedAt: z.string(),
@@ -1032,7 +1192,7 @@ export const sessionReadTools: readonly AnyMcpToolDefinition[] = [
     name: "open_agents_get_session",
     title: "Get Open Agents Session",
     description:
-      "Get full detail for one Open Agents coding session (Open Agents' own session record, not the caller's MCP session) that the caller owns, including its `chats`, `state`, `workspace`, `resumable`, and `activity`, without transcripts or diff bodies. `workspace` reports ready only while a sandbox is live right now; hibernated is the normal resting state and is restored automatically on the next message. `resumable` is true for every non-archived session, whatever its `workspace` says, and `activity` is working only while a run is genuinely live.",
+      "Get full detail for one Open Agents coding session (Open Agents' own session record, not the caller's MCP session) that the caller owns, including its `chats`, `state`, `workspace`, `resumable`, `activity`, and `lastRunOutcome`, without transcripts or diff bodies. `workspace` reports ready only while a sandbox is live right now; hibernated is the normal resting state and is restored automatically on the next message. `resumable` is true for every non-archived session, whatever its `workspace` says, and `activity` is working only while a run is genuinely live. `lastRunOutcome` is a third, distinct axis from `state` (filing) and `activity` (is a run live right now): it reports how the session's most recently recorded run ended — `completed`, `aborted` (user-stopped), `failed` (a genuine crash), one of four deliberate headless stops (`no_progress_fuse`, `no_sandbox_step_cap`, `max_steps`, `repeated_tool_failure`), `truncated` (the model hit the provider's output-token limit and stayed truncated after every automatic continuation was tried — the recorded assistant message is incomplete), `awaiting_tool_approval` (the run is paused waiting for this caller to approve or supply tool input — not a failure), or `ended_unexpectedly` (the model stopped for an unusual provider-side reason: a content filter, a provider error, or an unclassified reason) — or null when the session has no run yet. A stalled run and a finished run are never the same value. `lastAutoCommitEvent` and `lastAutoPrEvent` report the most recently recorded outcome of this session's auto-commit and auto-PR steps (or null if that step has never run) — `status: \"failed\"` on either means a run finished without its work actually being saved to the branch or a pull request, which `prNumber`/`prStatus` alone would not reveal. `baseBranch` reports the branch a new working `branch` was cut from (null when this session works directly on `branch`, or when no base was recorded) — the sandbox was cloned at it and, when this session auto-creates a PR, that PR targets it.",
     scope: SESSION_READ_SCOPE,
     inputSchema: getSessionInputSchema,
     outputSchema: getSessionOutputSchema,

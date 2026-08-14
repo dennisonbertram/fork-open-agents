@@ -1,3 +1,4 @@
+import { APICallError, RetryError } from "ai";
 import { describe, expect, test } from "bun:test";
 import {
   buildProviderRejectionMessage,
@@ -121,6 +122,98 @@ describe("getProviderErrorDetails", () => {
       statusCode: null,
       responseBody: '{"message":"invalid api key"}',
     });
+  });
+});
+
+// TASK-1249: the hand-rolled shapes above mirror the AI SDK's error classes
+// by hand. That can silently drift from the real thing. These tests build
+// error instances from the actually-installed `ai` package (ai@6.0.168) —
+// the same classes that construct the errors on the real request path — to
+// prove or disprove the wrapped-400 hypothesis in issue #1249 without relying
+// on a hand-copied shape.
+function realApiCallError(statusCode: number, responseBody?: string) {
+  return new APICallError({
+    message: "Bad Request",
+    url: "https://api.example.com/v1/chat/completions",
+    requestBodyValues: { messages: [{ role: "user", content: "secret" }] },
+    statusCode,
+    responseBody,
+  });
+}
+
+describe("getProviderErrorDetails (real ai@6.0.168 error instances)", () => {
+  test("a bare real APICallError with statusCode 400", () => {
+    expect(
+      getProviderErrorDetails(
+        realApiCallError(400, '{"message":"unsupported field"}'),
+      ),
+    ).toEqual({
+      statusCode: 400,
+      responseBody: '{"message":"unsupported field"}',
+    });
+  });
+
+  test("the same 400 wrapped in a real RetryError as .lastError", () => {
+    const last = realApiCallError(400, '{"message":"unsupported field"}');
+    const wrapped = new RetryError({
+      message: `Failed after 1 attempts with non-retryable error: '${last.message}'`,
+      reason: "errorNotRetryable",
+      errors: [last],
+    });
+
+    expect(getProviderErrorDetails(wrapped)).toEqual({
+      statusCode: 400,
+      responseBody: '{"message":"unsupported field"}',
+    });
+  });
+
+  test("a real RetryError whose attempts were all 429", () => {
+    const attempts = [
+      realApiCallError(429, '{"message":"rate limited"}'),
+      realApiCallError(429, '{"message":"rate limited"}'),
+      realApiCallError(429, '{"message":"rate limited"}'),
+    ];
+    const wrapped = new RetryError({
+      message: "Failed after 3 attempts. Last error: Too Many Requests",
+      reason: "maxRetriesExceeded",
+      errors: attempts,
+    });
+
+    expect(getProviderErrorDetails(wrapped)).toEqual({
+      statusCode: 429,
+      responseBody: '{"message":"rate limited"}',
+    });
+  });
+});
+
+describe("isNonRetryableProviderError (real ai@6.0.168 error instances)", () => {
+  test("a bare real APICallError with statusCode 400 is non-retryable", () => {
+    expect(isNonRetryableProviderError(realApiCallError(400))).toBe(true);
+  });
+
+  test("the same 400 wrapped in a real RetryError is still non-retryable", () => {
+    const last = realApiCallError(400);
+    const wrapped = new RetryError({
+      message: `Failed after 1 attempts with non-retryable error: '${last.message}'`,
+      reason: "errorNotRetryable",
+      errors: [last],
+    });
+
+    expect(isNonRetryableProviderError(wrapped)).toBe(true);
+  });
+
+  test("a real RetryError whose attempts were all 429 stays retryable (not fast-failed)", () => {
+    const wrapped = new RetryError({
+      message: "Failed after 3 attempts. Last error: Too Many Requests",
+      reason: "maxRetriesExceeded",
+      errors: [
+        realApiCallError(429),
+        realApiCallError(429),
+        realApiCallError(429),
+      ],
+    });
+
+    expect(isNonRetryableProviderError(wrapped)).toBe(false);
   });
 });
 

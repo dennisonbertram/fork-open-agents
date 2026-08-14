@@ -1,8 +1,38 @@
+import { desc, eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
+// #1241: the type and the pure mapping function live in lib/chat — that
+// module must stay free of `lib/db/` imports so app/workflows/chat.ts (which
+// runs inside the workflow VM) can import the function without dragging
+// `postgres`/`nanoid` into the workflow bundle. Re-exported here so every
+// existing importer of these two names from this module keeps working.
+import {
+  deriveWorkflowRunOutcomeStatus,
+  type WorkflowRunStatus,
+} from "@/lib/chat/workflow-run-outcome";
 import { db } from "./client";
 import { workflowRuns, workflowRunSteps } from "./schema";
 
-export type WorkflowRunStatus = "completed" | "aborted" | "failed";
+export { deriveWorkflowRunOutcomeStatus };
+export type { WorkflowRunStatus };
+
+/**
+ * The most recent run's raw status for a session, or null if the session has
+ * never had a run recorded. Backs get_session's `lastRunOutcome` only — never
+ * list_sessions, so this single indexed lookup (`workflow_runs_session_id_idx`)
+ * never becomes an N+1 across a page of sessions.
+ */
+export async function getLatestWorkflowRunStatusBySessionId(
+  sessionId: string,
+): Promise<string | null> {
+  const [run] = await db
+    .select({ status: workflowRuns.status })
+    .from(workflowRuns)
+    .where(eq(workflowRuns.sessionId, sessionId))
+    .orderBy(desc(workflowRuns.createdAt))
+    .limit(1);
+
+  return run?.status ?? null;
+}
 
 export type WorkflowRunStepTiming = {
   stepNumber: number;
