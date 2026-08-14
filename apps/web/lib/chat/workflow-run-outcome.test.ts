@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { deriveWorkflowRunOutcomeStatus } from "./workflow-runs";
+import { deriveWorkflowRunOutcomeStatus } from "./workflow-run-outcome";
 
 /**
  * #1241: workflowRuns.status used to collapse four distinct deliberate stops

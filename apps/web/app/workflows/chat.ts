@@ -92,11 +92,16 @@ import { getModelSystemPromptForSelection } from "@/lib/model-system-prompts";
 import type { InferenceRoute } from "@/lib/inference/types";
 import type { RecordSessionEventInput } from "@/lib/observability/events";
 import type { Session as AuthSession } from "@/lib/session/types";
+// #1241: the value import comes from lib/chat, NOT lib/db/workflow-runs —
+// this file runs inside the workflow VM, and lib/db/workflow-runs
+// transitively imports `postgres`/`nanoid`, which the workflow VM build
+// rejects. `WorkflowRunStepTiming` is fine to import type-only from lib/db;
+// type-only imports are erased and carry no runtime dependency.
 import {
   deriveWorkflowRunOutcomeStatus,
   type WorkflowRunStatus,
-  type WorkflowRunStepTiming,
-} from "@/lib/db/workflow-runs";
+} from "@/lib/chat/workflow-run-outcome";
+import type { WorkflowRunStepTiming } from "@/lib/db/workflow-runs";
 import {
   extractManagedRuntimeWorkersFromParts,
   summarizeManagedRuntimeDirectToolUse,

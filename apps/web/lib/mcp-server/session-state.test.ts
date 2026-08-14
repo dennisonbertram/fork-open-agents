@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { deriveWorkflowRunOutcomeStatus } from "@/lib/db/workflow-runs";
+import { deriveWorkflowRunOutcomeStatus } from "@/lib/chat/workflow-run-outcome";
 import {
   RUN_SLOT_STALE_MS,
   toActivityState,
@@ -273,7 +273,7 @@ describe("toLastRunOutcome", () => {
 });
 
 /**
- * Regression: the writer (deriveWorkflowRunOutcomeStatus, lib/db/workflow-runs.ts)
+ * Regression: the writer (deriveWorkflowRunOutcomeStatus, lib/chat/workflow-run-outcome.ts)
  * and the reader (toLastRunOutcome, above) each carry their own copy of the
  * same 7-value vocabulary. If a future change adds a new persisted status
  * without teaching the reader about it — or renames one on either side — a
