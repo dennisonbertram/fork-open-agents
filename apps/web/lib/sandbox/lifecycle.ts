@@ -31,7 +31,15 @@ export type SandboxLifecycleReason =
   | "snapshot-restored"
   | "reconnect"
   | "manual-stop"
-  | "status-check-overdue";
+  | "status-check-overdue"
+  // #1231: a headless MCP run's turn ended. The caller forces
+  // `hibernateAfter` to now before calling this function — see
+  // `hibernateHeadlessSandboxAtTurnEnd` in chat-post-finish-impl.ts — so this
+  // reason always evaluates as immediately due, on the existing hibernation
+  // path (no bypass). The race protection below (recheck for an active
+  // stream right before stopping) applies to this reason exactly like every
+  // other one.
+  | "headless-turn-end";
 
 export interface SandboxLifecycleEvaluationResult {
   action: "skipped" | "hibernated" | "failed";

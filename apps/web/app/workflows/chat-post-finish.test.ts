@@ -37,6 +37,12 @@ const spies = {
   recordUsage: mock(() => Promise.resolve()),
   buildActiveLifecycleUpdate: mock(() => ({})),
   buildLifecycleActivityUpdate: mock(() => ({})),
+  evaluateSandboxLifecycle: mock(
+    (): Promise<{
+      action: "hibernated" | "skipped" | "failed";
+      reason?: string;
+    }> => Promise.resolve({ action: "hibernated" }),
+  ),
   connectSandbox: mock(() =>
     Promise.resolve({
       workingDirectory: "/vercel/sandbox",
@@ -74,6 +80,7 @@ mock.module("@/lib/db/usage", () => ({
 mock.module("@/lib/sandbox/lifecycle", () => ({
   buildActiveLifecycleUpdate: spies.buildActiveLifecycleUpdate,
   buildLifecycleActivityUpdate: spies.buildLifecycleActivityUpdate,
+  evaluateSandboxLifecycle: spies.evaluateSandboxLifecycle,
 }));
 
 mock.module("@open-agents/sandbox", () => ({
@@ -102,6 +109,7 @@ const {
   hasAutoCommitChangesStep,
   runAutoCommitStep,
   runAutoCreatePrStep,
+  hibernateHeadlessSandboxAtTurnEnd,
 } = await import("./chat-post-finish");
 
 // ── Helpers ────────────────────────────────────────────────────────
@@ -470,5 +478,51 @@ describe("runAutoCreatePrStep", () => {
       repoName: "repo",
       sandboxState: { type: "vercel" } as never,
     });
+  });
+});
+
+describe("hibernateHeadlessSandboxAtTurnEnd (#1231)", () => {
+  test("forces hibernateAfter to now and drives the existing lifecycle path with the headless-turn-end reason", async () => {
+    const result = await hibernateHeadlessSandboxAtTurnEnd({
+      sessionId: "session-1",
+      sandboxName: "session_session-1",
+    });
+
+    expect(result).toEqual({ action: "hibernated" });
+    expect(spies.updateSession).toHaveBeenCalledWith(
+      "session-1",
+      expect.objectContaining({ hibernateAfter: expect.any(Date) }),
+    );
+    expect(spies.evaluateSandboxLifecycle).toHaveBeenCalledWith(
+      "session-1",
+      "headless-turn-end",
+    );
+  });
+
+  test("does not hibernate when the lifecycle path reports an active workflow (resume must win the race)", async () => {
+    spies.evaluateSandboxLifecycle.mockImplementationOnce(() =>
+      Promise.resolve({ action: "skipped", reason: "active-workflow" }),
+    );
+
+    const result = await hibernateHeadlessSandboxAtTurnEnd({
+      sessionId: "session-1",
+      sandboxName: "session_session-1",
+    });
+
+    expect(result).toEqual({ action: "skipped", reason: "active-workflow" });
+  });
+
+  test("never throws when the lifecycle path fails, and reports failed with a reason", async () => {
+    spies.evaluateSandboxLifecycle.mockImplementationOnce(() =>
+      Promise.reject(new Error("lifecycle evaluation exploded")),
+    );
+
+    const result = await hibernateHeadlessSandboxAtTurnEnd({
+      sessionId: "session-1",
+      sandboxName: "session_session-1",
+    });
+
+    expect(result.action).toBe("failed");
+    expect(result.reason).toContain("lifecycle evaluation exploded");
   });
 });

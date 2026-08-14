@@ -611,3 +611,83 @@ export async function runAutoCreatePrStep(params: {
     };
   }
 }
+
+export type HibernateHeadlessTurnEndResult = {
+  action: "hibernated" | "skipped" | "failed";
+  reason?: string;
+};
+
+/**
+ * Hibernates a headless MCP run's sandbox immediately when its turn ends,
+ * instead of waiting out the inactivity window (#1231).
+ *
+ * Drives the EXISTING lifecycle path rather than a new bypass: forces
+ * `hibernateAfter` to now (so `evaluateSandboxLifecycle`'s due-check reads
+ * "due immediately") and calls it with the "headless-turn-end" reason. That
+ * function already re-checks for an active stream right before stopping the
+ * sandbox — the same protection every other hibernation reason gets — so a
+ * `send_message` that claims the active-stream slot in the race window still
+ * wins and this becomes a no-op "skipped" result.
+ *
+ * Never throws: a failure here must not fail the chat turn. Callers should
+ * treat "failed" as informational — the ordinary inactivity timer still
+ * reclaims the sandbox later.
+ */
+export async function hibernateHeadlessSandboxAtTurnEnd(params: {
+  sessionId: string;
+  sandboxName: string | null;
+}): Promise<HibernateHeadlessTurnEndResult> {
+  "use step";
+  try {
+    const { evaluateSandboxLifecycle } =
+      await import("@/lib/sandbox/lifecycle");
+    await updateSession(params.sessionId, { hibernateAfter: new Date() });
+    const result = await evaluateSandboxLifecycle(
+      params.sessionId,
+      "headless-turn-end",
+    );
+
+    if (result.action === "hibernated") {
+      console.info(
+        "[mcp-server] headless sandbox hibernated",
+        JSON.stringify({
+          service: "mcp-server",
+          event: "mcp.sandbox.hibernated",
+          sessionId: params.sessionId,
+          sandboxName: params.sandboxName,
+          trigger: "turn_end",
+        }),
+      );
+    } else if (result.action === "failed") {
+      console.warn(
+        "[mcp-server] headless sandbox hibernate failed",
+        JSON.stringify({
+          service: "mcp-server",
+          event: "mcp.sandbox.hibernate_failed",
+          sessionId: params.sessionId,
+          sandboxName: params.sandboxName,
+          errorKind: "lifecycle_evaluation_failed",
+          detail: result.reason ?? null,
+          note: "the inactivity timer will still reclaim the sandbox",
+        }),
+      );
+    }
+
+    return result;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(
+      "[mcp-server] headless sandbox hibernate failed",
+      JSON.stringify({
+        service: "mcp-server",
+        event: "mcp.sandbox.hibernate_failed",
+        sessionId: params.sessionId,
+        sandboxName: params.sandboxName,
+        errorKind: error instanceof Error ? error.name : "unknown",
+        detail: message,
+        note: "the inactivity timer will still reclaim the sandbox",
+      }),
+    );
+    return { action: "failed", reason: message };
+  }
+}
