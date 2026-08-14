@@ -267,6 +267,11 @@ const startSessionInputSchema = z
     // workflow plumbing needed.
     autoCommit: z.boolean().optional(),
     autoCreatePr: z.boolean().optional(),
+    // Explicit model to run this session's chat on, overriding the account's
+    // default model for this session. A plain provider model id, or a
+    // "user-profile:<profileId>:<modelId>" composite. Omitting it uses the
+    // user's default model (and default inference profile) exactly as before.
+    model: z.string().min(1).optional(),
     // Free-text tag to group a fan-out batch of sessions started together
     // (e.g. "auth-refactor-2026-08-14"). Not a state, not a status, carries
     // no behavior — forwarded to createSessionCore, persisted, and returned
@@ -384,6 +389,7 @@ export async function startSession(
     runtimeMode: input.runtimeMode,
     autoCommitPush: input.autoCommit,
     autoCreatePr: input.autoCreatePr,
+    model: input.model,
     label: input.label,
     scheduleBackgroundWork: scheduleAfterResponse,
   });
@@ -641,7 +647,7 @@ export const sessionWriteTools: readonly AnyMcpToolDefinition[] = [
     name: "open_agents_start_session",
     title: "Start Open Agents Session",
     description:
-      "Open Agents: create a new Open Agents session against a GitHub repo — provisions a fresh cloud sandbox and starts a billed agent run with the given prompt. Not idempotent: every call spins up a new sandbox and a new run, even with identical inputs. Returns immediately, before the sandbox finishes provisioning; poll `open_agents_get_session` until its `workspace` field reports ready before assuming the sandbox is usable. Defaults to working on a freshly created branch rather than `branch` itself, because auto-commit pushing straight onto a protected branch fails silently: pass `isNewBranch: false` only when `branch` is known to accept direct pushes. With the default, `branch` means the branch to start FROM — the sandbox is cloned at it and the auto-created PR targets it — not the branch the agent works on; `open_agents_get_session`'s `baseBranch` field confirms what a session actually started from.",
+      "Open Agents: create a new Open Agents session against a GitHub repo — provisions a fresh cloud sandbox and starts a billed agent run with the given prompt. Not idempotent: every call spins up a new sandbox and a new run, even with identical inputs. Returns immediately, before the sandbox finishes provisioning; poll `open_agents_get_session` until its `workspace` field reports ready before assuming the sandbox is usable. Defaults to working on a freshly created branch rather than `branch` itself, because auto-commit pushing straight onto a protected branch fails silently: pass `isNewBranch: false` only when `branch` is known to accept direct pushes. With the default, `branch` means the branch to start FROM — the sandbox is cloned at it and the auto-created PR targets it — not the branch the agent works on; `open_agents_get_session`'s `baseBranch` field confirms what a session actually started from. Optional `model` selects which model this session's chat runs on (a plain provider model id, or a `user-profile:<profileId>:<modelId>` composite); omitting it runs on the account's default model. This model is fixed for the session at creation, so it applies to later `open_agents_send_message` turns on the same session too.",
     scope: SESSION_WRITE_SCOPE,
     inputSchema: startSessionInputSchema,
     outputSchema: startSessionOutputSchema,

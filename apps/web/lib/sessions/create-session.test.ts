@@ -31,9 +31,14 @@ mock.module("@/lib/db/composio", () => ({
 }));
 
 const capturedSessionInserts: Record<string, unknown>[] = [];
+const capturedChatInserts: Record<string, unknown>[] = [];
 const createSessionWithInitialChat = mock(
-  async (input: { session: Record<string, unknown> }) => {
+  async (input: {
+    session: Record<string, unknown>;
+    initialChat: Record<string, unknown>;
+  }) => {
     capturedSessionInserts.push(input.session);
+    capturedChatInserts.push(input.initialChat);
     return {
       session: { id: "session-1", ...input.session },
       chat: { id: "chat-1", sessionId: "session-1" },
@@ -122,6 +127,40 @@ describe("resolveSessionBranches", () => {
 
     expect(result.baseBranch).toBeNull();
     expect(result.branch).toBe("develop");
+  });
+});
+
+describe("createSessionCore model selection", () => {
+  test("an explicit model is applied to the initial chat, overriding the user's default model", async () => {
+    capturedChatInserts.length = 0;
+    repoDefaultsResult = null;
+
+    await createSessionCore({
+      userId: "user-1",
+      username: "dennison",
+      repoOwner: "acme",
+      repoName: "widgets",
+      model: "claude-sonnet-4-5",
+    });
+
+    const inserted = capturedChatInserts[0];
+    expect(inserted?.modelId).toBe("claude-sonnet-4-5");
+  });
+
+  test("omitting model keeps the user's default model — nothing else changes", async () => {
+    capturedChatInserts.length = 0;
+    repoDefaultsResult = null;
+
+    await createSessionCore({
+      userId: "user-1",
+      username: "dennison",
+      repoOwner: "acme",
+      repoName: "widgets",
+    });
+
+    const inserted = capturedChatInserts[0];
+    expect(inserted?.modelId).toBe("test-model");
+    expect(inserted?.modelId).not.toBeUndefined();
   });
 });
 

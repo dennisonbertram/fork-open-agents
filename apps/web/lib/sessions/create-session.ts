@@ -32,6 +32,12 @@ export interface CreateSessionCoreInput {
   managedRuntimeProfileId?: string;
   autoCommitPush?: boolean;
   autoCreatePr?: boolean;
+  // Explicit model the calling agent wants this session's chat to run on,
+  // overriding the user's default model. A plain provider model id, or a
+  // UI-transport composite ("user-profile:<profileId>:<modelId>") that
+  // splitModelSelection decodes. Omitted/undefined falls through to the
+  // user's default model, so every existing caller keeps working unchanged.
+  model?: string;
   // Callers that already resolved a Vercel project link (the browser route)
   // pass it through; callers that don't have Vercel project selection at all
   // (an MCP caller) can omit it and get a no-Vercel-project session.
@@ -178,6 +184,21 @@ export async function createSessionCore(
     repoDefaults?.managedRuntimeProfileId ??
     preferences.defaultManagedRuntimeProfileId;
 
+  // Model precedence: explicit caller model > user default model. When a
+  // caller passes an explicit model it may be a UI-composite carrying its own
+  // inference profile; pass null for the explicit profile so splitModelSelection
+  // decodes that composite (or leaves profile null for a plain model id), rather
+  // than silently forcing the user's default profile onto a model it wasn't
+  // paired with. Omitting `model` is byte-identical to today: default model +
+  // default profile.
+  const modelSelection =
+    input.model !== undefined
+      ? splitModelSelection(input.model, null)
+      : splitModelSelection(
+          preferences.defaultModelId,
+          preferences.defaultInferenceProfileId,
+        );
+
   const resolvedVercelProject = input.resolvedVercelProject ?? null;
 
   const defaultComposioProfileId =
@@ -227,10 +248,7 @@ export async function createSessionCore(
     initialChat: {
       id: nanoid(),
       title: "New chat",
-      ...splitModelSelection(
-        preferences.defaultModelId,
-        preferences.defaultInferenceProfileId,
-      ),
+      ...modelSelection,
       composioSelection: {
         mainProfileId:
           defaultComposioProfileId && composioPolicy.allowed
