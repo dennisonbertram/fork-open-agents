@@ -101,6 +101,7 @@ function buildSessionRow(overrides: Record<string, unknown> = {}) {
     repoOwner: "acme",
     repoName: "widgets",
     branch: "main",
+    baseBranch: null,
     linesAdded: 3,
     linesRemoved: 1,
     prNumber: null,
@@ -1399,6 +1400,27 @@ describe("getSession ownership", () => {
     expect(result.id).toBe("session-1");
     expect(result.lastAutoCommitEvent).toBeNull();
     expect(result.lastAutoPrEvent).toBeNull();
+  });
+
+  test("BT-1251-11: reports the session's baseBranch so a client can confirm what its slice actually started from", async () => {
+    const { getSession } = await toolsModulePromise;
+    seedSession(
+      buildSessionRow({ branch: "d/abc12345", baseBranch: "develop" }),
+    );
+
+    const result = await getSession(makeCtx({}), { sessionId: "session-1" });
+
+    expect(result.branch).toBe("d/abc12345");
+    expect(result.baseBranch).toBe("develop");
+  });
+
+  test("regression: a session with no recorded base branch reports baseBranch: null, not undefined", async () => {
+    const { getSession } = await toolsModulePromise;
+    seedSession(buildSessionRow({ baseBranch: null }));
+
+    const result = await getSession(makeCtx({}), { sessionId: "session-1" });
+
+    expect(result.baseBranch).toBeNull();
   });
 });
 

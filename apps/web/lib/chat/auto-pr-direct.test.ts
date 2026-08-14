@@ -370,6 +370,92 @@ describe("performAutoCreatePr", () => {
     });
   });
 
+  test("BT-1251-08: an explicit baseBranch targets the PR at it, skipping the repository-default lookup", async () => {
+    const result = await performAutoCreatePr({
+      ...makeParams(),
+      baseBranch: "develop",
+    });
+
+    expect(result).toEqual({
+      created: true,
+      syncedExisting: false,
+      skipped: false,
+      prNumber: 42,
+      prUrl: "https://github.com/acme/repo/pull/42",
+    } satisfies AutoCreatePrResult);
+    // #1251: the caller's base branch is used directly — no GitHub API round
+    // trip to resolve the repository's own default branch.
+    expect(fetchGitHubBranchesSpy).not.toHaveBeenCalled();
+    expect(generatePullRequestContentFromSandboxSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ baseBranch: "develop" }),
+    );
+    expect(openPullRequestSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ baseBranch: "develop" }),
+    );
+  });
+
+  test("BT-1251-09: no baseBranch supplied preserves today's behavior — resolves and targets the repository default", async () => {
+    const result = await performAutoCreatePr({
+      ...makeParams(),
+      baseBranch: undefined,
+    });
+
+    expect(result.created).toBe(true);
+    expect(fetchGitHubBranchesSpy).toHaveBeenCalledTimes(1);
+    expect(openPullRequestSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ baseBranch: "main" }),
+    );
+  });
+
+  test("regression: a null baseBranch (e.g. a pre-#1251 session row) behaves exactly like omitting it", async () => {
+    const result = await performAutoCreatePr({
+      ...makeParams(),
+      baseBranch: null,
+    });
+
+    expect(result.created).toBe(true);
+    expect(fetchGitHubBranchesSpy).toHaveBeenCalledTimes(1);
+    expect(openPullRequestSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ baseBranch: "main" }),
+    );
+  });
+
+  test("skips when the current branch matches the explicit base branch", async () => {
+    execResults.set("git symbolic-ref --short HEAD", {
+      success: true,
+      stdout: "develop",
+    });
+
+    const result = await performAutoCreatePr({
+      ...makeParams(),
+      baseBranch: "develop",
+    });
+
+    expect(result).toEqual({
+      created: false,
+      syncedExisting: false,
+      skipped: true,
+      skipReason: "Current branch matches the default branch",
+    } satisfies AutoCreatePrResult);
+    expect(openPullRequestSpy).not.toHaveBeenCalled();
+  });
+
+  test("regression: an unsafe caller-supplied baseBranch is rejected the same way an unsafe resolved default is", async () => {
+    const result = await performAutoCreatePr({
+      ...makeParams(),
+      baseBranch: 'main" && echo nope && "',
+    });
+
+    expect(result).toEqual({
+      created: false,
+      syncedExisting: false,
+      skipped: true,
+      skipReason: "Default branch name is not supported for auto PR creation",
+    } satisfies AutoCreatePrResult);
+    expect(fetchGitHubBranchesSpy).not.toHaveBeenCalled();
+    expect(openPullRequestSpy).not.toHaveBeenCalled();
+  });
+
   test("returns an error when PR content generation fails unexpectedly", async () => {
     prContentResult = {
       success: false,
