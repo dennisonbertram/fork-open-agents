@@ -921,6 +921,56 @@ describe("listSessions label filter", () => {
       sort: "created_desc",
     });
   });
+
+  test("regression: a non-empty filtered page never triggers a second count query — label reuses #1184's single-query total", async () => {
+    // #1184 established that `total` must come from the page query's own
+    // COUNT(*) OVER() rather than a second COUNT — two separate queries can
+    // observe two different snapshots, and a client stopping at
+    // offset + returned >= total then silently skips a row inserted between
+    // them. That guarantee is only as good as every filter staying inside
+    // the one query. A future edit that special-cases the label filter into
+    // its own COUNT (easy to reach for, since `label` is new) would
+    // reintroduce exactly the bug #1184 fixed, just for filtered callers
+    // instead of all of them — and every other label test here mocks
+    // `countSessionsByUserId` to return a harmless value, so none of them
+    // would catch it. This is the one that does: it fails loudly if the
+    // count function is called at all on a non-empty labeled page.
+    const { listSessions } = await toolsModulePromise;
+    getSessionsWithUnreadByUserId.mockImplementation(async () => [
+      {
+        id: "session-1",
+        title: "Fix bug",
+        status: "running",
+        lifecycleState: null,
+        sandboxExpiresAt: null,
+        updatedAt: new Date("2026-01-01T00:00:00Z"),
+        repoOwner: null,
+        repoName: null,
+        branch: null,
+        linesAdded: 0,
+        linesRemoved: 0,
+        prNumber: null,
+        prStatus: null,
+        createdAt: new Date("2026-01-01T00:00:00Z"),
+        hasUnread: false,
+        hasStreaming: false,
+        latestChatId: null,
+        lastActivityAt: new Date("2026-01-01T00:00:00Z"),
+        label: "auth-refactor-2026-08-14",
+        totalCount: 5,
+      },
+    ]);
+
+    const result = await listSessions(makeCtx({}), {
+      status: "all",
+      limit: 20,
+      offset: 0,
+      label: "auth-refactor-2026-08-14",
+    });
+
+    expect(result.total).toBe(5);
+    expect(countSessionsByUserId).not.toHaveBeenCalled();
+  });
 });
 
 describe("listSessions sort", () => {

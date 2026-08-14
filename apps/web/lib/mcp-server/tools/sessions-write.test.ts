@@ -936,6 +936,38 @@ describe("archiveSession", () => {
       infoSpy.mockRestore();
     }
   });
+
+  test("regression: the scheduleBackgroundWork it passes defers work, rather than running it inline like archive-session.ts's own fire-and-forget default", async () => {
+    // archiveSession's sandbox teardown (stopping the sandbox, refreshing
+    // git/PR state) is real I/O that can take seconds — the same class of
+    // problem #1230 already fixed for the sandbox prewarm kick. Passing
+    // SOME function through (asserted elsewhere in this file) is not enough:
+    // if `scheduleAfterResponse` is ever replaced with a callback that just
+    // invokes its argument immediately, `archiveSession` (this tool) would
+    // still call it and still forward a "function", but the deferral this
+    // exists for would be silently gone. This calls the captured
+    // scheduleBackgroundWork with a probe and proves the probe does not run
+    // synchronously within it.
+    const { archiveSession: archiveSessionTool } = await toolsModulePromise;
+    seedSession(buildSessionRow({ status: "running" }));
+    let capturedSchedule: ((cb: () => Promise<void>) => void) | undefined;
+    archiveSession.mockImplementation(async (_sessionId, options) => {
+      capturedSchedule = (options as Record<string, unknown>)
+        .scheduleBackgroundWork as (cb: () => Promise<void>) => void;
+      return {
+        session: { id: "session-1", userId: "user-1", status: "archived" },
+        archiveTriggered: true,
+      };
+    });
+
+    await archiveSessionTool(makeCtx({}), { sessionId: "session-1" });
+
+    let ranSynchronously = false;
+    capturedSchedule?.(async () => {
+      ranSynchronously = true;
+    });
+    expect(ranSynchronously).toBe(false);
+  });
 });
 
 describe("regression: #1230 headless-run design decisions", () => {

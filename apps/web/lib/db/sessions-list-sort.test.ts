@@ -111,3 +111,34 @@ describe("buildSessionsOrderBy", () => {
     }
   });
 });
+
+describe("regression: buildSessionsOrderBy default-branch guard", () => {
+  test("an unrecognized sort value still gets the created_desc id-tiebroken fallback, not an unordered query", async () => {
+    // `buildSessionsOrderBy`'s switch has a `default:` case rather than one
+    // explicit case per SESSION_SORTS entry (an oxlint no-useless-switch-case
+    // rule forbids a redundant "created_desc" case that duplicates default).
+    // If a future edit removes that default (e.g. while "cleaning up" the
+    // switch, or while adding a 5th sort and forgetting to handle it), a
+    // caller passing an unrecognized value gets `undefined` back — spread
+    // into `.orderBy()` as `.orderBy(...undefined)`, throwing at the type
+    // level, or worse, silently producing an unordered query at the SQL
+    // level, which fails the paging invariant for every caller of that sort.
+    // This exercises the exact fallback path with a value outside the
+    // declared union (cast, since TS itself would already catch a real call
+    // site) to prove the safety net is still there.
+    const { db } = await dbModulePromise;
+    const { sessions } = await schemaModulePromise;
+    const { buildSessionsOrderBy } = await sessionsModulePromise;
+
+    const orderBy = buildSessionsOrderBy(
+      "not-a-real-sort" as Parameters<typeof buildSessionsOrderBy>[0],
+    );
+    const query = db
+      .select({ id: sessions.id })
+      .from(sessions)
+      .orderBy(...orderBy);
+
+    const clause = orderByClause(query.toSQL().sql);
+    expect(clause).toBe('"sessions"."created_at" desc, "sessions"."id" asc');
+  });
+});
