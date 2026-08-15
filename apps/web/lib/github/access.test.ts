@@ -37,6 +37,20 @@ let mockScopedOctokitFailStatus = 404;
 let mockScopedOctokitFailMessage = "App repo access error";
 let mockServiceRepoGrant: { repositoryId: number } | null = null;
 
+// Resync collaborators (issue #791). By default, resync is never reached in
+// the pre-existing tests because mockInstallationRow is populated; the new
+// "installation resync" describe block below overrides these per test.
+let mockUserToken: string | null = "user-token";
+let mockUsername: string | null = "octocat";
+let mockSyncUserInstallations: (
+  userId: string,
+  userToken: string,
+  personalAccountLogin: string,
+) => Promise<number> = async () => 0;
+let mockInstallationRowAfterResync: { installationId: number } | undefined;
+let syncUserInstallationsCallCount = 0;
+let getInstallationByAccountLoginCallCount = 0;
+
 // ── Module mocks ───────────────────────────────────────────────────────────────
 
 mock.module("@/lib/github/client", () => ({
@@ -47,7 +61,37 @@ mock.module("@/lib/db/installations", () => ({
   getInstallationByAccountLogin: async (
     _userId: string,
     _accountLogin: string,
-  ) => mockInstallationRow,
+  ) => {
+    getInstallationByAccountLoginCallCount += 1;
+    // First call always returns the "current" row; once a resync has
+    // succeeded, subsequent calls return the post-resync row.
+    if (
+      getInstallationByAccountLoginCallCount > 1 &&
+      mockInstallationRowAfterResync !== undefined
+    ) {
+      return mockInstallationRowAfterResync;
+    }
+    return mockInstallationRow;
+  },
+}));
+
+mock.module("@/lib/github/token", () => ({
+  getUserGitHubToken: async (_userId: string) => mockUserToken,
+}));
+
+mock.module("@/lib/github/users", () => ({
+  getGitHubUsername: async (_userId: string) => mockUsername,
+}));
+
+mock.module("@/lib/github/sync", () => ({
+  syncUserInstallations: async (
+    userId: string,
+    userToken: string,
+    personalAccountLogin: string,
+  ) => {
+    syncUserInstallationsCallCount += 1;
+    return mockSyncUserInstallations(userId, userToken, personalAccountLogin);
+  },
 }));
 
 mock.module("@/lib/db/service-identities", () => ({
@@ -146,6 +190,12 @@ function resetToDefaults() {
   mockScopedOctokitFailStatus = 404;
   mockScopedOctokitFailMessage = "App repo access error";
   mockServiceRepoGrant = null;
+  mockUserToken = "user-token";
+  mockUsername = "octocat";
+  mockSyncUserInstallations = async () => 0;
+  mockInstallationRowAfterResync = undefined;
+  syncUserInstallationsCallCount = 0;
+  getInstallationByAccountLoginCallCount = 0;
 }
 
 beforeEach(resetToDefaults);
@@ -501,5 +551,110 @@ describe("verifyRepoAccess — credential and rate-limit errors", () => {
     expect(getRepoAccessErrorStatus("no_user_token")).toBe(401);
     expect(getRepoAccessErrorStatus("rate_limited")).toBe(429);
     expect(getRepoAccessErrorStatus("user_no_access")).toBe(403);
+  });
+});
+
+describe("verifyRepoAccess — installation resync (#791)", () => {
+  test("installation missing, resync finds it, proceeds to app-access check", async () => {
+    mockInstallationRow = undefined;
+    mockInstallationRowAfterResync = { installationId: 77 };
+    mockSyncUserInstallations = async () => 1;
+
+    const result = await verifyRepoAccess({
+      userId: "user-1",
+      owner: "acme",
+      repo: "my-repo",
+    });
+
+    expect(syncUserInstallationsCallCount).toBe(1);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.installationId).toBe(77);
+    }
+  });
+
+  test("installation missing, resync also finds nothing, returns typed still-missing result", async () => {
+    mockInstallationRow = undefined;
+    mockInstallationRowAfterResync = undefined;
+    mockSyncUserInstallations = async () => 0;
+
+    const result = await verifyRepoAccess({
+      userId: "user-1",
+      owner: "acme",
+      repo: "my-repo",
+    });
+
+    expect(syncUserInstallationsCallCount).toBe(1);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toBe("no_installation");
+    }
+  });
+
+  test("installation missing, resync throws, returns typed still-missing result without throwing", async () => {
+    mockInstallationRow = undefined;
+    mockInstallationRowAfterResync = undefined;
+    mockSyncUserInstallations = async () => {
+      throw new Error("network error");
+    };
+
+    const result = await verifyRepoAccess({
+      userId: "user-1",
+      owner: "acme",
+      repo: "my-repo",
+    });
+
+    expect(syncUserInstallationsCallCount).toBe(1);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toBe("no_installation");
+    }
+  });
+
+  test("installation missing, no user token available for resync, skips resync and returns no_installation", async () => {
+    mockInstallationRow = undefined;
+    mockUserToken = null;
+
+    const result = await verifyRepoAccess({
+      userId: "user-1",
+      owner: "acme",
+      repo: "my-repo",
+    });
+
+    expect(syncUserInstallationsCallCount).toBe(0);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toBe("no_installation");
+    }
+  });
+
+  test("installation missing, no GitHub username available for resync, skips resync and returns no_installation", async () => {
+    mockInstallationRow = undefined;
+    mockUsername = null;
+
+    const result = await verifyRepoAccess({
+      userId: "user-1",
+      owner: "acme",
+      repo: "my-repo",
+    });
+
+    expect(syncUserInstallationsCallCount).toBe(0);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toBe("no_installation");
+    }
+  });
+
+  test("installation present on first read never triggers a resync call", async () => {
+    mockInstallationRow = { installationId: 42 };
+
+    const result = await verifyRepoAccess({
+      userId: "user-1",
+      owner: "acme",
+      repo: "my-repo",
+    });
+
+    expect(syncUserInstallationsCallCount).toBe(0);
+    expect(result.ok).toBe(true);
   });
 });
