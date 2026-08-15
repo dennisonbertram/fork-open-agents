@@ -1941,6 +1941,11 @@ export const workflowRuns = pgTable(
     // content-filter/error/other finish reasons) — see the doc comment on
     // `WorkflowRunStatus` (lib/chat/workflow-run-outcome.ts) for the full
     // rationale, and the reader audit there for every consumer this touches.
+    // #1288: widened a third time with "no_file_changes" (a run declared
+    // `expectFileChanges: true` produced no diff after the allowance),
+    // "step_ceiling" (the far outer step-count backstop), and
+    // "diff_violation" (the final diff touched a path outside a declared
+    // `expectedFiles` list) — same rationale, same reader audit.
     // Plain Postgres `text` with a TypeScript-level enum — no check
     // constraint, so this widening needs no migration (confirmed via
     // `db:generate`).
@@ -1956,6 +1961,9 @@ export const workflowRuns = pgTable(
         "truncated",
         "awaiting_tool_approval",
         "ended_unexpectedly",
+        "no_file_changes",
+        "step_ceiling",
+        "diff_violation",
       ],
     }).notNull(),
     startedAt: timestamp("started_at").notNull(),

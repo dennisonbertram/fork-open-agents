@@ -1,0 +1,117 @@
+/**
+ * Configuration and messaging for #1288: the declared-expectation circling
+ * detector, the far-outer step ceiling, and the diff acceptance check.
+ *
+ * Pure, workflow-safe module (no DB, no Node built-ins) — reached from
+ * `app/workflows/chat.ts`, a `"use workflow"` function, via a static import,
+ * same precedent as `headless-progress-budget.ts`.
+ */
+
+/**
+ * How many consecutive steps a run declared `expectFileChanges: true` may go
+ * without an actual git-tree change before it is stopped as producing no
+ * output. Same order of magnitude as DEFAULT_HEADLESS_RUN_MAX_STALE_STEPS —
+ * independently tunable, since the two bound different things (tool-call
+ * repetition vs. a declared-but-unmet expectation) and may need different
+ * values later.
+ */
+export const DEFAULT_HEADLESS_RUN_MAX_STEPS_WITHOUT_DIFF = 20;
+
+/** Same ceiling rationale as HEADLESS_RUN_MAX_STALE_STEPS_CEILING. */
+export const HEADLESS_RUN_MAX_STEPS_WITHOUT_DIFF_CEILING = 100;
+
+/**
+ * Reads `HEADLESS_RUN_MAX_STEPS_WITHOUT_DIFF`. Falls back to the default for
+ * a missing, non-numeric, or non-positive value; clamps to the ceiling above.
+ */
+export function getHeadlessRunMaxStepsWithoutDiff(): number {
+  const raw = process.env.HEADLESS_RUN_MAX_STEPS_WITHOUT_DIFF?.trim();
+  if (!raw) {
+    return DEFAULT_HEADLESS_RUN_MAX_STEPS_WITHOUT_DIFF;
+  }
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return DEFAULT_HEADLESS_RUN_MAX_STEPS_WITHOUT_DIFF;
+  }
+  return Math.min(parsed, HEADLESS_RUN_MAX_STEPS_WITHOUT_DIFF_CEILING);
+}
+
+/**
+ * The far outer step ceiling (#1288 design decision, option 3): a generous,
+ * env-tunable backstop under EVERY run, headless or browser — not the
+ * primary bound. It only ever fires when nothing more specific already
+ * stopped the run (the no-progress fuse, the no-sandbox cap, the declared-
+ * expectation circling check, or an explicit `maxSteps`), which is why the
+ * default sits comfortably above the browser chat route's own 500-step
+ * default: for a bounded run this is simply never reached.
+ */
+export const DEFAULT_RUN_OUTER_STEP_CEILING = 1000;
+
+/** Generous upper clamp so a misconfigured env var cannot defeat the point
+ * of a backstop by effectively disabling it. */
+export const RUN_OUTER_STEP_CEILING_CEILING = 5000;
+
+/**
+ * Reads `RUN_OUTER_STEP_CEILING`. Falls back to the default for a missing,
+ * non-numeric, or non-positive value; clamps to the ceiling above.
+ */
+export function getRunOuterStepCeiling(): number {
+  const raw = process.env.RUN_OUTER_STEP_CEILING?.trim();
+  if (!raw) {
+    return DEFAULT_RUN_OUTER_STEP_CEILING;
+  }
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return DEFAULT_RUN_OUTER_STEP_CEILING;
+  }
+  return Math.min(parsed, RUN_OUTER_STEP_CEILING_CEILING);
+}
+
+/**
+ * The message a reading agent sees when the declared-expectation circling
+ * check ends the turn — distinct wording from the generic no-progress fuse
+ * message, since the cause is different (a DECLARED expectation went unmet,
+ * not tool-call repetition) and a reader debugging logs should not conflate
+ * the two.
+ */
+export function buildHeadlessNoFileChangesMessage(
+  stepsWithoutChange: number,
+  allowance: number,
+): string {
+  return [
+    `Stopped: this run was declared to change files, but ${stepsWithoutChange} consecutive steps produced no workspace change (limit ${allowance}), so it is ending instead of continuing to burn steps with no output.`,
+    "",
+    "If the goal is still valid, send a follow-up message with a narrower next step or the missing decision.",
+  ].join("\n");
+}
+
+/**
+ * The message a reading agent sees when the far-outer step ceiling ends the
+ * turn — named as a backstop, not a normal completion, so a reader does not
+ * mistake it for the run's own budgets (the no-progress fuse, the no-sandbox
+ * cap, or the declared-expectation check) having done their job.
+ */
+export function buildRunOuterStepCeilingMessage(ceiling: number): string {
+  return [
+    `Stopped: this run reached the outer step ceiling (${ceiling}) — a hard backstop, not the primary bound. None of this run's other budgets ended it first, which is unusual and worth reviewing.`,
+    "",
+    "If the goal is still valid, send a follow-up message with a narrower next step.",
+  ].join("\n");
+}
+
+/**
+ * The message a reading agent (and a human reviewer reading the transcript
+ * afterward) sees when the final diff touched a file outside the caller's
+ * declared `expectedFiles` list. Informational, not a mid-run stop: by the
+ * time this fires the run has already finished, so it is appended to the
+ * already-final assistant response rather than breaking a loop.
+ */
+export function buildDiffAcceptanceViolationMessage(
+  offendingPaths: string[],
+): string {
+  return [
+    `Stopped: this run's diff touched ${offendingPaths.length} file(s) outside the declared file list: ${offendingPaths.join(", ")}.`,
+    "",
+    "Review the diff before trusting or merging this run's output.",
+  ].join("\n");
+}

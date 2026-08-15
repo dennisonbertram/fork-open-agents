@@ -277,6 +277,16 @@ const startSessionInputSchema = z
     // no behavior — forwarded to createSessionCore, persisted, and returned
     // by the read tools. Omitting it leaves the session unlabeled.
     label: z.string().min(1).optional(),
+    // #1288: the declared expectation — see the design decision recorded on
+    // issue #1288. Both optional; omitting both behaves exactly as before
+    // (no circling detection beyond the existing no-progress fuse, and no
+    // acceptance check against the diff). `expectFileChanges: true` bounds a
+    // run that produces no workspace change for too long, independent of how
+    // varied its tool calls look. `expectedFiles`, if set, is compared
+    // against this run's actual diff at the end; a path outside the list is
+    // reported as a violation with the offending paths.
+    expectFileChanges: z.boolean().optional(),
+    expectedFiles: z.array(z.string().min(1)).min(1).optional(),
   })
   .strict();
 
@@ -403,6 +413,8 @@ export async function startSession(
     requestId: ctx.requestId,
     authSession: null,
     agentOptions: buildHeadlessAgentOptions(),
+    expectFileChanges: input.expectFileChanges,
+    expectedFiles: input.expectedFiles,
   });
   const workflowRunId = requireFreshlyStartedRun(result, chat.id);
   logMcpRunStarted({
@@ -647,7 +659,7 @@ export const sessionWriteTools: readonly AnyMcpToolDefinition[] = [
     name: "open_agents_start_session",
     title: "Start Open Agents Session",
     description:
-      "Open Agents: create a new Open Agents session against a GitHub repo — provisions a fresh cloud sandbox and starts a billed agent run with the given prompt. Not idempotent: every call spins up a new sandbox and a new run, even with identical inputs. Returns immediately, before the sandbox finishes provisioning; poll `open_agents_get_session` until its `workspace` field reports ready before assuming the sandbox is usable. Defaults to working on a freshly created branch rather than `branch` itself, because auto-commit pushing straight onto a protected branch fails silently: pass `isNewBranch: false` only when `branch` is known to accept direct pushes. With the default, `branch` means the branch to start FROM — the sandbox is cloned at it and the auto-created PR targets it — not the branch the agent works on; `open_agents_get_session`'s `baseBranch` field confirms what a session actually started from. Optional `model` selects which model this session's chat runs on (a plain provider model id, or a `user-profile:<profileId>:<modelId>` composite); omitting it runs on the account's default model. This model is fixed for the session at creation, so it applies to later `open_agents_send_message` turns on the same session too.",
+      "Open Agents: create a new Open Agents session against a GitHub repo — provisions a fresh cloud sandbox and starts a billed agent run with the given prompt. Not idempotent: every call spins up a new sandbox and a new run, even with identical inputs. Returns immediately, before the sandbox finishes provisioning; poll `open_agents_get_session` until its `workspace` field reports ready before assuming the sandbox is usable. Defaults to working on a freshly created branch rather than `branch` itself, because auto-commit pushing straight onto a protected branch fails silently: pass `isNewBranch: false` only when `branch` is known to accept direct pushes. With the default, `branch` means the branch to start FROM — the sandbox is cloned at it and the auto-created PR targets it — not the branch the agent works on; `open_agents_get_session`'s `baseBranch` field confirms what a session actually started from. Optional `model` selects which model this session's chat runs on (a plain provider model id, or a `user-profile:<profileId>:<modelId>` composite); omitting it runs on the account's default model. This model is fixed for the session at creation, so it applies to later `open_agents_send_message` turns on the same session too. Optional `expectFileChanges: true` declares that this run is expected to change files: if it produces no workspace change for too long — however varied its tool calls look — it stops itself and `open_agents_get_session`'s `lastRunOutcome` reports `no_file_changes`, rather than burning steps unattended. Omit it (or set it to false) for a read-only run (analysis, review, reporting); that keeps today's behavior exactly. Optional `expectedFiles` names the only paths this run may change: at the end of the run its actual diff is compared against that list, and a path outside it is reported as `lastRunOutcome: \"diff_violation\"` — check the run's diff before trusting or merging it. Every run also stops at a far outer, generous step ceiling (`lastRunOutcome: \"step_ceiling\"`) if nothing else already ended it — a backstop, not something a normal run should ever reach.",
     scope: SESSION_WRITE_SCOPE,
     inputSchema: startSessionInputSchema,
     outputSchema: startSessionOutputSchema,

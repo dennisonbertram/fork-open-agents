@@ -292,6 +292,24 @@ describe("toLastRunOutcome", () => {
   test("an unhandled finish reason names the shared ended_unexpectedly value", () => {
     expect(toLastRunOutcome("ended_unexpectedly")).toBe("ended_unexpectedly");
   });
+
+  // #1288: a run declared `expectFileChanges: true` that produced no diff —
+  // distinct from the generic no-progress fuse, which judges tool-call
+  // variety rather than a declared expectation.
+  test("the declared-expectation circling stop names itself", () => {
+    expect(toLastRunOutcome("no_file_changes")).toBe("no_file_changes");
+  });
+
+  // #1288: the far outer step ceiling — a backstop under everything.
+  test("the outer step ceiling names itself, distinct from max_steps", () => {
+    expect(toLastRunOutcome("step_ceiling")).toBe("step_ceiling");
+  });
+
+  // #1288: the acceptance check — the diff touched a file outside the
+  // declared list.
+  test("a diff-acceptance violation names itself", () => {
+    expect(toLastRunOutcome("diff_violation")).toBe("diff_violation");
+  });
 });
 
 /**
@@ -417,6 +435,43 @@ describe("the writer's vocabulary and get_session's reader never drift apart (#1
         truncationBoundExhausted: false,
         awaitingToolApproval: false,
         endedUnexpectedly: true,
+      },
+      // #1288: the three new deliberate-stop/report values.
+      {
+        crashed: false,
+        wasAborted: false,
+        stoppedForRepeatedToolFailure: false,
+        exhaustedMaxSteps: false,
+        headlessFuseTripped: false,
+        headlessNoSandboxCapped: false,
+        truncationBoundExhausted: false,
+        awaitingToolApproval: false,
+        endedUnexpectedly: false,
+        headlessNoDiffCapped: true,
+      },
+      {
+        crashed: false,
+        wasAborted: false,
+        stoppedForRepeatedToolFailure: false,
+        exhaustedMaxSteps: false,
+        headlessFuseTripped: false,
+        headlessNoSandboxCapped: false,
+        truncationBoundExhausted: false,
+        awaitingToolApproval: false,
+        endedUnexpectedly: false,
+        outerStepCeilingReached: true,
+      },
+      {
+        crashed: false,
+        wasAborted: false,
+        stoppedForRepeatedToolFailure: false,
+        exhaustedMaxSteps: false,
+        headlessFuseTripped: false,
+        headlessNoSandboxCapped: false,
+        truncationBoundExhausted: false,
+        awaitingToolApproval: false,
+        endedUnexpectedly: false,
+        diffAcceptanceViolated: true,
       },
     ];
 

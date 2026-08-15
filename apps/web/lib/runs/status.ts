@@ -131,6 +131,10 @@ export function normalizeRunStatus(
   // as the #1241 values, for the same reason: without this branch they would
   // silently degrade to "unknown" the moment the writer starts persisting
   // them, exactly the class of bug #1241 fixed for the first four.
+  //
+  // #1288: a third widening — a declared-to-change-files run that produced
+  // no diff, the far outer step ceiling, and a diff that violated the
+  // caller's declared file list. Same hazard, same fix.
   if (
     nativeStatus === "failed" ||
     nativeStatus === "no_progress_fuse" ||
@@ -138,7 +142,10 @@ export function normalizeRunStatus(
     nativeStatus === "max_steps" ||
     nativeStatus === "repeated_tool_failure" ||
     nativeStatus === "truncated" ||
-    nativeStatus === "ended_unexpectedly"
+    nativeStatus === "ended_unexpectedly" ||
+    nativeStatus === "no_file_changes" ||
+    nativeStatus === "step_ceiling" ||
+    nativeStatus === "diff_violation"
   ) {
     return terminalStatus("failed");
   }

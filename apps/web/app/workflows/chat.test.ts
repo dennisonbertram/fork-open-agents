@@ -199,6 +199,12 @@ const spies = {
   probeHeadlessRunGitFingerprint: mock(
     (): Promise<string | null> => Promise.resolve("fingerprint-const"),
   ),
+  // #1288: the diff-acceptance probe. Defaults to "nothing changed" so every
+  // existing test (which never declares `expectedFiles`) is unaffected —
+  // the workflow only calls this at all when `options.expectedFiles` is set.
+  probeChangedFilePaths: mock(
+    (): Promise<string[] | null> => Promise.resolve([]),
+  ),
 };
 
 let testSessionRecord: {
@@ -339,6 +345,7 @@ mock.module("workflow/api", () => ({
 
 mock.module("./chat-post-finish", () => spies);
 mock.module("./headless-progress-fuse", () => spies);
+mock.module("./headless-diff-acceptance", () => spies);
 
 mock.module("@/app/config", () => ({
   webAgent: {
@@ -788,6 +795,9 @@ beforeEach(() => {
   );
   spies.probeHeadlessRunGitFingerprint.mockImplementation(
     (): Promise<string | null> => Promise.resolve("fingerprint-const"),
+  );
+  spies.probeChangedFilePaths.mockImplementation(
+    (): Promise<string[] | null> => Promise.resolve([]),
   );
   spies.createArtifact.mockImplementation(
     async (input: Record<string, unknown>) => ({
@@ -4580,6 +4590,283 @@ describe("runAgentWorkflow", () => {
       );
       expect(failedEvent?.payload).toMatchObject({ stopReason: "max_steps" });
     });
+  });
+
+  // #1288: the declared-expectation circling detector, the far outer step
+  // ceiling, and the diff-acceptance check. See the design decision recorded
+  // on issue #1288.
+  describe("declared expectation (#1288)", () => {
+    // BT-1: a slice declared to change files, with no diff after the
+    // allowance, stops and names that reason — distinct from the generic
+    // no-progress fuse. This is the SAME fixture as the #1242 regression
+    // test below (frozen git tree, varying tool-call input every step, so
+    // the combined-fingerprint fuse never trips) — only `expectFileChanges`
+    // differs, proving the new check is what catches it.
+    test("stops a run declared to change files that produces no diff, even with varied tool-call activity", async () => {
+      const { DEFAULT_HEADLESS_RUN_MAX_STEPS_WITHOUT_DIFF } =
+        await import("@/lib/chat/declared-expectation-budget");
+      agentFinishReason = "tool-calls";
+      agentRawFinishReason = "provider_tool_use";
+      // The workspace never changes — this run never actually writes a file,
+      // despite being asked to.
+      spies.probeHeadlessRunGitFingerprint.mockImplementation(
+        (): Promise<string | null> => Promise.resolve("frozen-fingerprint"),
+      );
+      let call = 0;
+      agentAssistantPartsFactory = () => {
+        call += 1;
+        return [
+          {
+            type: "tool-task",
+            toolCallId: `call-${call}`,
+            state: "output-available",
+            preliminary: false,
+            input: { task: `Look for the bug, attempt #${call}` },
+            output: { final: [] },
+          },
+        ];
+      };
+
+      await runAgentWorkflow(
+        makeOptions({
+          agentOptions: { unattended: true },
+          maxSteps: undefined,
+          expectFileChanges: true,
+        }),
+      );
+
+      const rwCalls = spies.recordWorkflowUsage.mock.calls as unknown[][];
+      const workflowRun = rwCalls.at(-1)?.[5] as {
+        stepTimings: Array<{ stepNumber: number }>;
+        status: string;
+      };
+      expect(workflowRun.status).toBe("no_file_changes");
+      expect(workflowRun.stepTimings.length).toBe(
+        DEFAULT_HEADLESS_RUN_MAX_STEPS_WITHOUT_DIFF,
+      );
+
+      const textDeltas = writtenChunks
+        .filter(
+          (chunk): chunk is { type: "text-delta"; id: string; delta: string } =>
+            chunk.type === "text-delta",
+        )
+        .map((chunk) => chunk.delta)
+        .join("");
+      expect(textDeltas.toLowerCase()).toContain("declared");
+    }, 10_000);
+
+    // BT-2: a slice declared read-only (`expectFileChanges: false`) with
+    // varied tool calls and no diff runs past the allowance untouched —
+    // #1242's behaviour must be proven intact, now that a second detector
+    // exists alongside the original fuse.
+    test("an explicitly read-only declaration (expectFileChanges: false) does not trip the new circling check", async () => {
+      const { DEFAULT_HEADLESS_RUN_MAX_STEPS_WITHOUT_DIFF } =
+        await import("@/lib/chat/declared-expectation-budget");
+      agentFinishReason = "tool-calls";
+      agentRawFinishReason = "provider_tool_use";
+      spies.probeHeadlessRunGitFingerprint.mockImplementation(
+        (): Promise<string | null> => Promise.resolve("frozen-fingerprint"),
+      );
+      const STOP_AT_STEP = DEFAULT_HEADLESS_RUN_MAX_STEPS_WITHOUT_DIFF + 10;
+      let call = 0;
+      agentAssistantPartsFactory = () => {
+        call += 1;
+        if (call >= STOP_AT_STEP) {
+          agentFinishReason = "stop";
+        }
+        return [
+          {
+            type: "tool-task",
+            toolCallId: `call-${call}`,
+            state: "output-available",
+            preliminary: false,
+            input: { task: `Review PR #${call}` },
+            output: { final: [] },
+          },
+        ];
+      };
+
+      await runAgentWorkflow(
+        makeOptions({
+          agentOptions: { unattended: true },
+          maxSteps: undefined,
+          expectFileChanges: false,
+        }),
+      );
+
+      const rwCalls = spies.recordWorkflowUsage.mock.calls as unknown[][];
+      const workflowRun = rwCalls.at(-1)?.[5] as {
+        stepTimings: Array<{ stepNumber: number }>;
+        status: string;
+      };
+      expect(workflowRun.stepTimings.length).toBeGreaterThan(
+        DEFAULT_HEADLESS_RUN_MAX_STEPS_WITHOUT_DIFF,
+      );
+      expect(workflowRun.status).toBe("completed");
+    }, 15_000);
+
+    // BT-3: a slice with no declaration at all behaves exactly as today —
+    // the new fields are optional, and an ordinary single-step run must be
+    // completely unaffected by their absence.
+    test("a run with no expectFileChanges/expectedFiles declaration behaves exactly as today", async () => {
+      await runAgentWorkflow(makeOptions());
+
+      const rwCalls = spies.recordWorkflowUsage.mock.calls as unknown[][];
+      const workflowRun = rwCalls.at(-1)?.[5] as { status: string };
+      expect(workflowRun.status).toBe("completed");
+      expect(spies.probeChangedFilePaths).not.toHaveBeenCalled();
+    });
+
+    // BT-4: a diff touching a file outside a declared list is reported with
+    // the offending paths.
+    test("reports a diff-acceptance violation naming the offending paths", async () => {
+      agentFinishReason = "stop";
+      spies.probeChangedFilePaths.mockImplementation(
+        (): Promise<string[] | null> =>
+          Promise.resolve(["src/a.ts", "unexpected/evil.ts"]),
+      );
+
+      await runAgentWorkflow(
+        makeOptions({
+          maxSteps: 1,
+          expectedFiles: ["src/a.ts"],
+        }),
+      );
+
+      const rwCalls = spies.recordWorkflowUsage.mock.calls as unknown[][];
+      const workflowRun = rwCalls.at(-1)?.[5] as { status: string };
+      expect(workflowRun.status).toBe("diff_violation");
+
+      const textDeltas = writtenChunks
+        .filter(
+          (chunk): chunk is { type: "text-delta"; id: string; delta: string } =>
+            chunk.type === "text-delta",
+        )
+        .map((chunk) => chunk.delta)
+        .join("");
+      expect(textDeltas).toContain("unexpected/evil.ts");
+    });
+
+    // Regression: a diff that stays fully within the declared list is never
+    // reported as a violation.
+    test("does not report a violation when the diff stays within the declared file list", async () => {
+      agentFinishReason = "stop";
+      spies.probeChangedFilePaths.mockImplementation(
+        (): Promise<string[] | null> => Promise.resolve(["src/a.ts"]),
+      );
+
+      await runAgentWorkflow(
+        makeOptions({
+          maxSteps: 1,
+          expectedFiles: ["src/a.ts", "src/b.ts"],
+        }),
+      );
+
+      const rwCalls = spies.recordWorkflowUsage.mock.calls as unknown[][];
+      const workflowRun = rwCalls.at(-1)?.[5] as { status: string };
+      expect(workflowRun.status).toBe("completed");
+    });
+
+    // BT-5: the outer step ceiling fires only when nothing else has, and
+    // reports distinctly — never as `completed`.
+    test("the far outer step ceiling stops a run that outran every other budget", async () => {
+      const OUTER_CEILING_ENV_KEY = "RUN_OUTER_STEP_CEILING";
+      const original = process.env[OUTER_CEILING_ENV_KEY];
+      process.env[OUTER_CEILING_ENV_KEY] = "5";
+      try {
+        agentFinishReason = "tool-calls";
+        agentRawFinishReason = "provider_tool_use";
+        // A fresh fingerprint on every probe, and no declared expectation —
+        // neither the no-progress fuse nor the (unused) circling check can
+        // ever stop this run; only the outer ceiling can.
+        let call = 0;
+        spies.probeHeadlessRunGitFingerprint.mockImplementation(
+          (): Promise<string | null> => {
+            call += 1;
+            return Promise.resolve(`fingerprint-${call}`);
+          },
+        );
+
+        await runAgentWorkflow(
+          makeOptions({
+            agentOptions: { unattended: true },
+            maxSteps: undefined,
+          }),
+        );
+
+        const rwCalls = spies.recordWorkflowUsage.mock.calls as unknown[][];
+        const workflowRun = rwCalls.at(-1)?.[5] as {
+          stepTimings: Array<{ stepNumber: number }>;
+          status: string;
+        };
+        expect(workflowRun.stepTimings.length).toBe(5);
+        expect(workflowRun.status).toBe("step_ceiling");
+        expect(workflowRun.status).not.toBe("completed");
+      } finally {
+        if (original === undefined) {
+          delete process.env[OUTER_CEILING_ENV_KEY];
+        } else {
+          process.env[OUTER_CEILING_ENV_KEY] = original;
+        }
+      }
+    }, 10_000);
+
+    // Regression: the outer ceiling must not preempt a more specific stop —
+    // proves it only fires when "nothing else has" by setting the ceiling
+    // higher than the no-progress fuse's own default budget and confirming
+    // the fuse still wins.
+    test("regression: a lower, more specific budget still wins over a higher outer ceiling", async () => {
+      const { DEFAULT_HEADLESS_RUN_MAX_STALE_STEPS } =
+        await import("@/lib/chat/headless-progress-budget");
+      const OUTER_CEILING_ENV_KEY = "RUN_OUTER_STEP_CEILING";
+      const original = process.env[OUTER_CEILING_ENV_KEY];
+      // Comfortably above the no-progress fuse's own default budget.
+      process.env[OUTER_CEILING_ENV_KEY] = "500";
+      try {
+        agentFinishReason = "tool-calls";
+        agentRawFinishReason = "provider_tool_use";
+        spies.probeHeadlessRunGitFingerprint.mockImplementation(
+          (): Promise<string | null> => Promise.resolve("frozen-fingerprint"),
+        );
+        let call = 0;
+        agentAssistantPartsFactory = () => {
+          call += 1;
+          return [
+            {
+              type: "tool-task",
+              toolCallId: `call-${call}`,
+              state: "output-available",
+              preliminary: false,
+              input: { task: "List repository files" },
+              output: { final: [] },
+            },
+          ];
+        };
+
+        await runAgentWorkflow(
+          makeOptions({
+            agentOptions: { unattended: true },
+            maxSteps: undefined,
+          }),
+        );
+
+        const rwCalls = spies.recordWorkflowUsage.mock.calls as unknown[][];
+        const workflowRun = rwCalls.at(-1)?.[5] as {
+          stepTimings: Array<{ stepNumber: number }>;
+          status: string;
+        };
+        expect(workflowRun.status).toBe("no_progress_fuse");
+        expect(workflowRun.stepTimings.length).toBe(
+          DEFAULT_HEADLESS_RUN_MAX_STALE_STEPS,
+        );
+      } finally {
+        if (original === undefined) {
+          delete process.env[OUTER_CEILING_ENV_KEY];
+        } else {
+          process.env[OUTER_CEILING_ENV_KEY] = original;
+        }
+      }
+    }, 10_000);
   });
 
   test("recordGoalLedgerClose uses 'canceled' status when workflow is aborted", async () => {
