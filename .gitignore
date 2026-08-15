@@ -45,3 +45,7 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 # open-agents dev server artifacts
 .open-agents-dev-server-state.json
 .open-agents-dev-server-*.pid
+
+# any other dotenv file — apps/web/.gitignore already does this; the root
+# did not, so a stray .env.production or .env.backup was committable
+.env*
