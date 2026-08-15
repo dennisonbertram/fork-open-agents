@@ -307,6 +307,32 @@ describe("startChatRun: existing active stream", () => {
         null,
       );
     });
+
+    // Regression: the money-safety invariant this whole handshake exists for.
+    // If a future change makes isWorkflowRunAlreadyRecorded too eager (e.g.
+    // matching on chatId instead of the specific run id, or ignoring the
+    // "no row yet" case), a genuinely still-executing run would have its slot
+    // ripped out from under it and a second, concurrent, billable run would
+    // start alongside it. This test fails if that guard is ever loosened.
+    test("regression: a genuinely still-live run (status running, no recorded outcome yet) still resumes, not started — the double-run guard holds", async () => {
+      const { startChatRun } = await moduleUnderTestPromise;
+      runStatusByRunId.set("run-live", "running");
+      // workflowRunRecordResult stays undefined (default): no row exists yet
+      // for a run that has not finished its own execution — exactly the
+      // state of a run that is still mid-turn, e.g. a live interactive
+      // approve-in-browser resume.
+      getChatById.mockImplementation(async () => ({
+        id: "chat-1",
+        activeStreamId: "run-live",
+      }));
+
+      const result = await startChatRun(baseInput());
+
+      expect(result).toEqual({ status: "resumed", runId: "run-live" });
+      expect(startWorkflow).not.toHaveBeenCalled();
+      expect(compareAndSetChatActiveStreamId).not.toHaveBeenCalled();
+      expect(findFirstWorkflowRun).toHaveBeenCalledTimes(1);
+    });
   });
 });
 
