@@ -320,7 +320,10 @@ describe("getChatSummariesBySessionId (#1269 activeRunSource)", () => {
     expect(lastSelectColumns).toMatchObject({
       activeRunSource: expect.anything(),
     });
-    expect(rows).toEqual([
+    // toMatchObject, not toEqual: `rows` is typed with the query's full column
+    // set, so an exact-equality literal cannot satisfy the overload. The claim
+    // under test is that a null source passes through untouched.
+    expect(rows).toMatchObject([
       { id: "chat-1", activeRunSource: null, isStreaming: false },
     ]);
   });

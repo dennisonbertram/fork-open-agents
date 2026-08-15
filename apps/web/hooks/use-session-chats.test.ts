@@ -21,6 +21,7 @@ function createChat(
     inferenceProfileId: null,
     composioSelection: defaultChatComposioSelection,
     activeStreamId: null,
+    activeRunSource: null,
     lastAssistantMessageAt: null,
     createdAt: now,
     updatedAt: now,
