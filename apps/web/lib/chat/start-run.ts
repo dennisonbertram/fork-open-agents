@@ -1,8 +1,11 @@
 import type { OpenAgentCallOptions } from "@open-agents/agent";
+import { eq } from "drizzle-orm";
 import { start } from "workflow/api";
 import type { WebAgentUIMessage } from "@/app/types";
 import { runAgentWorkflow } from "@/app/workflows/chat";
+import { db } from "@/lib/db/client";
 import type { ActiveRunSource } from "@/lib/db/schema";
+import { workflowRuns } from "@/lib/db/schema";
 import {
   claimChatActiveStreamId,
   compareAndSetChatActiveStreamId,
@@ -81,6 +84,37 @@ type ReconcileResult =
   | { action: "ready" };
 
 /**
+ * Whether this specific workflow run has already recorded its own terminal
+ * outcome in `workflowRuns` — the row `recordWorkflowRun` writes once, at the
+ * very end of that run's own execution (see `recordWorkflowUsage` in
+ * chat-post-finish-impl.ts), including the deliberate non-failure
+ * `awaiting_tool_approval` outcome (#1247).
+ *
+ * The workflow platform's own run-status vocabulary (pending / running /
+ * completed / failed / cancelled — see `@workflow/world`'s
+ * `WorkflowRunStatusSchema`) has no separate state for "the agent turn ended
+ * because it is waiting on a tool approval". A run that finished by pausing
+ * for approval still returns normally from `runAgentWorkflow`, same as any
+ * other finish, but the platform can still report its status as "running"
+ * (#1275) — `reconcileExistingActiveStream` must not take that read as proof
+ * of a still-live interactive resume forever.
+ *
+ * This is the app-owned, definitive fallback signal: the row can only exist
+ * once that run's own `finally` block has genuinely completed, so a run that
+ * is still in flight can never produce a false "finished" here — the
+ * double-run guard is unaffected for a genuinely live run.
+ */
+async function isWorkflowRunAlreadyRecorded(
+  workflowRunId: string,
+): Promise<boolean> {
+  const recorded = await db.query.workflowRuns.findFirst({
+    where: eq(workflowRuns.id, workflowRunId),
+    columns: { id: true },
+  });
+  return recorded !== undefined;
+}
+
+/**
  * Resolves an existing `chats.active_stream_id` against the workflow
  * runtime: resumes it when it is still live, clears it (via CAS) and reports
  * "ready" to start a new run when it is stale/unknown, or reports "conflict"
@@ -102,7 +136,18 @@ async function reconcileExistingActiveStream(
       const existingRun = getRun(currentStreamId);
       const status = await existingRun.status;
       if (status === "running" || status === "pending") {
-        return { action: "resume", runId: currentStreamId };
+        // The platform reports this run as live — but confirm against this
+        // app's own record before trusting it forever (#1275): a run that
+        // paused for tool approval reads "running" here too.
+        const alreadyRecorded = await isWorkflowRunAlreadyRecorded(
+          currentStreamId,
+        ).catch(() => false);
+        if (!alreadyRecorded) {
+          return { action: "resume", runId: currentStreamId };
+        }
+        // Otherwise fall through: this app's own record shows the run's
+        // finally block already completed, so treat the slot as stale and
+        // clear it below, exactly like the "terminal status" case.
       }
     } catch {
       // Workflow not found or inaccessible — try to clear the stale stream ID.
