@@ -165,6 +165,10 @@ const spies = {
   resolveComposioToolsForChat: mock(
     async (): Promise<unknown> => ({ status: "off" as const }),
   ),
+  resolveComposioConfigForChat: mock(
+    async (): Promise<unknown> => ({ status: "off" as const }),
+  ),
+  buildComposioToolsFromConfig: mock(async (): Promise<unknown> => ({})),
   resolveGitHubToolsForChat: mock(
     async (): Promise<unknown> => ({
       status: "off" as const,
@@ -257,6 +261,10 @@ let agentInputMessages: unknown;
 let agentStreamOptions: unknown;
 let agentStreamTools: unknown;
 let agentStreamError: Error | undefined;
+// Per-stream-call snapshot of the tools handed to the agent. The stream mock
+// overwrites `agentStreamTools` on every call, so #1248's per-step capture
+// needs this array to assert the SAME tool set reached every step.
+let agentStreamToolsByCall: unknown[] = [];
 
 function buildAgentSteps() {
   return [
@@ -347,6 +355,7 @@ mock.module("@/app/config", () => ({
       agentInputMessages = messages;
       agentStreamOptions = options;
       agentStreamTools = tools;
+      agentStreamToolsByCall.push(tools);
       return {
         toUIMessageStream: (opts: {
           sendStart?: boolean;
@@ -517,6 +526,8 @@ mock.module("@/lib/observability/events", () => ({
 
 mock.module("@/lib/composio/session", () => ({
   resolveComposioToolsForChat: spies.resolveComposioToolsForChat,
+  resolveComposioConfigForChat: spies.resolveComposioConfigForChat,
+  buildComposioToolsFromConfig: spies.buildComposioToolsFromConfig,
 }));
 
 mock.module("@/lib/github/tools", () => ({
@@ -733,6 +744,7 @@ beforeEach(() => {
   agentInputMessages = undefined;
   agentStreamOptions = undefined;
   agentStreamTools = undefined;
+  agentStreamToolsByCall = [];
   agentStreamError = undefined;
   streamOnFinishCallback = undefined;
   testSessionRecord = {
@@ -913,25 +925,25 @@ describe("runAgentWorkflow", () => {
     expect(types[types.length - 1]).toBe("finish");
   });
 
-  test("resolves Composio for the main agent without passing tools when off", async () => {
+  test("resolves Composio config once for the main agent and passes no tools when off", async () => {
     await runAgentWorkflow(makeOptions());
 
-    expect(spies.resolveComposioToolsForChat).toHaveBeenCalledWith({
+    expect(spies.resolveComposioConfigForChat).toHaveBeenCalledWith({
       userId: "user-1",
       chatId: "chat-1",
       agentKey: "main",
       runtimeMode: "classic",
     });
+    expect(spies.buildComposioToolsFromConfig).not.toHaveBeenCalled();
     expect(agentStreamTools).toBeUndefined();
   });
 
-  test("passes selected Composio tools into the agent stream with evidence", async () => {
+  test("resolves Composio config ONCE and rebuilds the same tool set on every step (#1248)", async () => {
     const composioTools = {
       COMPOSIO_GITHUB_CREATE_ISSUE: { description: "Create an issue" },
     };
-    spies.resolveComposioToolsForChat.mockImplementationOnce(async () => ({
+    spies.resolveComposioConfigForChat.mockImplementationOnce(async () => ({
       status: "ready" as const,
-      tools: composioTools,
       profile: {
         id: "profile-1",
         name: "GitHub",
@@ -940,7 +952,65 @@ describe("runAgentWorkflow", () => {
       composioSessionId: "composio-session-1",
       configHash: "hash-1",
       reusedSession: false,
+      toolCount: 1,
     }));
+    spies.buildComposioToolsFromConfig.mockImplementation(
+      async () => composioTools,
+    );
+    agentFinishReason = "tool-calls";
+    agentRawFinishReason = "provider_tool_use";
+
+    await runAgentWorkflow(makeOptions({ maxSteps: 3 }));
+
+    // #1248 regression signal: resolveComposioToolsForChat used to run inside
+    // the step, so a 3-step run resolved three times (three profile.selected
+    // events). After the fix the resolution happens once per run.
+    expect(spies.resolveComposioConfigForChat).toHaveBeenCalledTimes(1);
+    // The cheap object-rebuild still happens once per step.
+    expect(spies.buildComposioToolsFromConfig).toHaveBeenCalledTimes(3);
+    // Every step receives the identical tool set.
+    expect(agentStreamToolsByCall).toHaveLength(3);
+    for (const tools of agentStreamToolsByCall) {
+      expect(tools).toEqual(composioTools);
+    }
+    // The events fire ONCE per run, not once per step — the regression signal.
+    const selectedEvents = (
+      spies.emitSessionEvent.mock.calls as unknown[][]
+    ).filter(
+      ([input]) =>
+        (input as { eventName?: string }).eventName ===
+        "composio.profile.selected",
+    );
+    expect(selectedEvents).toHaveLength(1);
+    const createdEvents = (
+      spies.emitSessionEvent.mock.calls as unknown[][]
+    ).filter(
+      ([input]) =>
+        (input as { eventName?: string }).eventName ===
+        "composio.session.created",
+    );
+    expect(createdEvents).toHaveLength(1);
+  });
+
+  test("emits selected/created events with evidence for a ready resolution", async () => {
+    const composioTools = {
+      COMPOSIO_GITHUB_CREATE_ISSUE: { description: "Create an issue" },
+    };
+    spies.resolveComposioConfigForChat.mockImplementationOnce(async () => ({
+      status: "ready" as const,
+      profile: {
+        id: "profile-1",
+        name: "GitHub",
+        toolkitSlugs: ["github"],
+      },
+      composioSessionId: "composio-session-1",
+      configHash: "hash-1",
+      reusedSession: false,
+      toolCount: 1,
+    }));
+    spies.buildComposioToolsFromConfig.mockImplementation(
+      async () => composioTools,
+    );
 
     await runAgentWorkflow(makeOptions());
 
@@ -979,15 +1049,18 @@ describe("runAgentWorkflow", () => {
     const composioTools = {
       COMPOSIO_SLACK_SEND_MESSAGE: { description: "Send a Slack message" },
     };
-    spies.resolveComposioToolsForChat.mockImplementationOnce(async () => ({
+    spies.resolveComposioConfigForChat.mockImplementationOnce(async () => ({
       status: "ready" as const,
-      tools: composioTools,
       profile: null,
       composioSessionId: "composio-session-rp-1",
       configHash: "hash-rp-1",
       reusedSession: false,
+      toolCount: 1,
       repoPolicyBlocked: [{ slug: "gmail", reason: "repo_policy_blocked" }],
     }));
+    spies.buildComposioToolsFromConfig.mockImplementation(
+      async () => composioTools,
+    );
 
     await runAgentWorkflow(makeOptions());
 
@@ -1008,7 +1081,7 @@ describe("runAgentWorkflow", () => {
   });
 
   test("BT-CHAT-RP-002 (post-review, #799 contract gap): an all-blocked OFF outcome emits composio.repo_policy.blocked naming every dropped slug", async () => {
-    spies.resolveComposioToolsForChat.mockImplementationOnce(async () => ({
+    spies.resolveComposioConfigForChat.mockImplementationOnce(async () => ({
       status: "off" as const,
       repoPolicyBlocked: [
         { slug: "gmail", reason: "repo_policy_blocked" },
@@ -1037,7 +1110,7 @@ describe("runAgentWorkflow", () => {
   });
 
   test("BT-CHAT-RP-003 (post-review, #799 contract gap): no repo_policy_blocked event when repoPolicyBlocked is absent (ordinary off, never configured)", async () => {
-    spies.resolveComposioToolsForChat.mockImplementationOnce(async () => ({
+    spies.resolveComposioConfigForChat.mockImplementationOnce(async () => ({
       status: "off" as const,
     }));
 
@@ -1050,126 +1123,56 @@ describe("runAgentWorkflow", () => {
     );
   });
 
-  test("surfaces Composio setup failures before model invocation", async () => {
+  test("a Composio resolution failure is non-fatal: session.failed is emitted once and the run continues with built-in tools", async () => {
     const setupError = new Error(
       "Composio tools are selected, but COMPOSIO_API_KEY is not configured.",
     );
     setupError.name = "ComposioSetupError";
-    spies.resolveComposioToolsForChat.mockImplementationOnce(async () => {
+    spies.resolveComposioConfigForChat.mockImplementationOnce(async () => {
       throw setupError;
     });
 
-    await expect(runAgentWorkflow(makeOptions())).rejects.toThrow(
-      "Composio tools are selected",
-    );
+    // Must NOT reject — the run survives the resolution failure.
+    await runAgentWorkflow(makeOptions());
 
-    expect(agentInputMessages).toBeUndefined();
-    expect(writtenChunks).toEqual(
-      expect.arrayContaining([
-        {
-          type: "text-delta",
-          id: "setup-error",
-          delta:
-            "Composio tools are selected, but COMPOSIO_API_KEY is not configured. Add the key in your deployment environment, then retry, or turn Tools off for this chat.",
-        },
-      ]),
-    );
+    expect(spies.resolveComposioConfigForChat).toHaveBeenCalledTimes(1);
+    expect(spies.buildComposioToolsFromConfig).not.toHaveBeenCalled();
+    // No Composio tools reached the model; built-in tools still ran (the model
+    // was still invoked).
+    expect(agentStreamTools).toBeUndefined();
+    expect(agentInputMessages).toBeDefined();
+    // The failure is still recorded for observability.
     expect(spies.emitSessionEvent).toHaveBeenCalledWith(
       expect.objectContaining({
         eventName: "composio.session.failed",
         status: "failed",
-        summary:
-          "Composio tools are selected, but COMPOSIO_API_KEY is not configured. Add the key in your deployment environment, then retry, or turn Tools off for this chat.",
       }),
     );
+    // No fatal setup-error chunk — the chat did not die.
+    expect(JSON.stringify(writtenChunks)).not.toContain("setup-error");
   });
 
-  test("surfaces wrapped invalid Composio API key errors as actionable chat text", async () => {
+  test("a failed resolution still fires composio.session.failed only once per run", async () => {
     const setupError = new Error(
-      'FatalError: Step failed after 3 retries: 401 {"error":{"message":"Invalid API key: ak_invalid","code":10401,"suggested_fix":"Please check you are using a valid API key."}}',
-    );
-    spies.resolveComposioToolsForChat.mockImplementationOnce(async () => {
-      throw setupError;
-    });
-
-    await expect(runAgentWorkflow(makeOptions())).rejects.toThrow(
-      "Invalid API key",
-    );
-
-    expect(agentInputMessages).toBeUndefined();
-    expect(writtenChunks).toEqual(
-      expect.arrayContaining([
-        {
-          type: "text-delta",
-          id: "setup-error",
-          delta:
-            "Composio tools could not start because COMPOSIO_API_KEY is invalid. Update the key in your deployment environment, then retry, or turn Tools off for this chat.",
-        },
-      ]),
-    );
-    expect(JSON.stringify(writtenChunks)).not.toContain("ak_invalid");
-  });
-
-  test("surfaces an already-final ComposioSetupError message verbatim, without double-wrapping it in generic setup copy", async () => {
-    const setupError = new Error("Blocked toolkit for this repository: gmail.");
-    setupError.name = "ComposioSetupError";
-    spies.resolveComposioToolsForChat.mockImplementationOnce(async () => {
-      throw setupError;
-    });
-
-    await expect(runAgentWorkflow(makeOptions())).rejects.toThrow(
-      "Blocked toolkit for this repository: gmail.",
-    );
-
-    expect(agentInputMessages).toBeUndefined();
-    expect(writtenChunks).toEqual(
-      expect.arrayContaining([
-        {
-          type: "text-delta",
-          id: "setup-error",
-          delta: "Blocked toolkit for this repository: gmail.",
-        },
-      ]),
-    );
-    // Regression guard: the old code re-ran this final message through
-    // getComposioUserFacingError's generic "unknown" branch, which appends
-    // "Fix the Composio setup, then retry, or turn Tools off for this chat."
-    // That must NOT happen when the error already carries a final message.
-    expect(JSON.stringify(writtenChunks)).not.toContain(
-      "Fix the Composio setup",
-    );
-  });
-
-  test("surfaces a ComposioSetupError whose message falls outside the 6 specific errorKind branches verbatim, not re-wrapped with generic 'Fix the Composio setup' copy", async () => {
-    // This message is a real ComposioSetupError text (from db/composio.ts's
-    // profile-lookup path) that getComposioErrorKind classifies as
-    // "composio_unknown" — proving the fix operates at the getSetupErrorMessage
-    // level (name === "ComposioSetupError" short-circuit), not merely as a side
-    // effect of a specific errorKind's copy already passing through as-is.
-    const setupError = new Error(
-      "The selected Composio profile no longer exists.",
+      "Composio tools are selected, but COMPOSIO_API_KEY is not configured.",
     );
     setupError.name = "ComposioSetupError";
-    spies.resolveComposioToolsForChat.mockImplementationOnce(async () => {
+    spies.resolveComposioConfigForChat.mockImplementation(async () => {
       throw setupError;
     });
+    agentFinishReason = "tool-calls";
+    agentRawFinishReason = "provider_tool_use";
 
-    await expect(runAgentWorkflow(makeOptions())).rejects.toThrow(
-      "The selected Composio profile no longer exists.",
-    );
+    await runAgentWorkflow(makeOptions({ maxSteps: 3 }));
 
-    expect(writtenChunks).toEqual(
-      expect.arrayContaining([
-        {
-          type: "text-delta",
-          id: "setup-error",
-          delta: "The selected Composio profile no longer exists.",
-        },
-      ]),
+    const failedEvents = (
+      spies.emitSessionEvent.mock.calls as unknown[][]
+    ).filter(
+      ([input]) =>
+        (input as { eventName?: string }).eventName ===
+        "composio.session.failed",
     );
-    expect(JSON.stringify(writtenChunks)).not.toContain(
-      "Fix the Composio setup",
-    );
+    expect(failedEvents).toHaveLength(1);
   });
 
   test("passes managed runtime mode into agent options", async () => {
