@@ -591,3 +591,60 @@ describe("classifyToolApproval — browser tools", () => {
     expect(decision.category).toBe("browser-navigation");
   });
 });
+
+// #1272: an unattended run (background agent / agent-loop step) has no human to
+// answer a browser-tool approval prompt. Browser effects stay inside the
+// ephemeral per-session sandbox, so an unattended run auto-approves every
+// browser tool rather than wedging on its first call. An attended run keeps
+// requiring approval, unchanged.
+describe("#1272 unattended browser approval policy", () => {
+  const attendedContext = makeContext();
+  const unattendedContext = makeContext({ unattended: true });
+
+  type ToolFactory = () => { needsApproval?: unknown };
+
+  async function approvalResult(
+    factory: ToolFactory,
+    args: unknown,
+    experimental_context: unknown,
+  ): Promise<boolean> {
+    const { needsApproval } = factory();
+    if (typeof needsApproval !== "function") {
+      return Boolean(needsApproval ?? false);
+    }
+    return await (
+      needsApproval as (
+        a: unknown,
+        o: { experimental_context?: unknown },
+      ) => boolean | Promise<boolean>
+    )(args, executionOptions(experimental_context));
+  }
+
+  test("unattended run auto-approves every browser tool call", async () => {
+    const cases: Array<[ToolFactory, unknown]> = [
+      [browserNavigateTool, { url: "https://example.com/" }],
+      [browserClickTool, { selector: "button" }],
+      [browserTypeTool, { selector: "input", text: "hello" }],
+      [browserExtractTool, { selector: "body" }],
+      [browserScreenshotTool, {}],
+    ];
+    for (const [factory, args] of cases) {
+      const result = await approvalResult(factory, args, unattendedContext);
+      expect(result).toBe(false);
+    }
+  });
+
+  test("attended run still requires approval for every browser tool call", async () => {
+    const cases: Array<[ToolFactory, unknown]> = [
+      [browserNavigateTool, { url: "https://example.com/" }],
+      [browserClickTool, { selector: "button" }],
+      [browserTypeTool, { selector: "input", text: "hello" }],
+      [browserExtractTool, { selector: "body" }],
+      [browserScreenshotTool, {}],
+    ];
+    for (const [factory, args] of cases) {
+      const result = await approvalResult(factory, args, attendedContext);
+      expect(result).toBe(true);
+    }
+  });
+});

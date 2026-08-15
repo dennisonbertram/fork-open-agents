@@ -1,0 +1,1 @@
+ALTER TABLE "chats" ADD COLUMN "active_run_source" text;

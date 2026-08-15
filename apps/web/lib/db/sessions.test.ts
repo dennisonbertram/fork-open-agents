@@ -6,8 +6,13 @@ let upsertMode: UpsertMode = "inserted";
 let lastInsertValue: unknown;
 let lastUpdateSetValue: unknown;
 
-// Rows returned by the fakeDb select() chain (used by getUsedSessionTitles)
-let fakeSelectRows: { title: string }[] = [];
+// Rows returned by the fakeDb select() chain (used by getUsedSessionTitles
+// and getChatSummariesBySessionId)
+let fakeSelectRows: Array<Record<string, unknown>> = [];
+
+// Columns object passed to `db.select({…})`, captured so tests can assert the
+// read path's projection (e.g. that `activeRunSource` is selected).
+let lastSelectColumns: unknown;
 
 const fakeInsertedMessage = {
   id: "message-1",
@@ -18,11 +23,33 @@ const fakeInsertedMessage = {
 };
 
 const fakeDb = {
-  // Fluent select chain: db.select({…}).from(table).where(condition)
-  select: (_columns: unknown) => ({
-    from: (_table: unknown) => ({
-      where: async (_condition: unknown) => fakeSelectRows,
-    }),
+  // Fluent select chain: db.select({…}).from(table).where(condition) and, for
+  // getChatSummariesBySessionId, .from(table).leftJoin(…).where(…).orderBy(…).
+  select: (_columns: unknown) => {
+    lastSelectColumns = _columns;
+    return {
+      from: (_table: unknown) => ({
+        where: async (_condition: unknown) => fakeSelectRows,
+        leftJoin: (_table2: unknown, _condition: unknown) => ({
+          where: () => ({
+            orderBy: async () => fakeSelectRows,
+          }),
+        }),
+      }),
+    };
+  },
+
+  // Top-level fluent update chain (used by claimChatActiveStreamId and
+  // compareAndSetChatActiveStreamId).
+  update: (_table: unknown) => ({
+    set: (input: unknown) => {
+      lastUpdateSetValue = input;
+      return {
+        where: () => ({
+          returning: async () => [{ id: "chat-1" }],
+        }),
+      };
+    },
   }),
 
   transaction: async <T>(
@@ -239,5 +266,65 @@ describe("upsertChatMessageScoped", () => {
         parts: [{ text: "hash input: model\\u0000cache" }],
       },
     });
+  });
+});
+
+describe("claimChatActiveStreamId (#1269 activeRunSource)", () => {
+  test("records activeRunSource alongside the claim when a source is provided", async () => {
+    const { claimChatActiveStreamId } = await sessionsModulePromise;
+    lastUpdateSetValue = undefined;
+
+    await claimChatActiveStreamId("chat-1", "run-1", "mcp");
+
+    expect(lastUpdateSetValue).toMatchObject({
+      activeStreamId: "run-1",
+      activeRunSource: "mcp",
+    });
+  });
+
+  test("does not touch activeRunSource when no source is provided (workflow self-claim path)", async () => {
+    const { claimChatActiveStreamId } = await sessionsModulePromise;
+    lastUpdateSetValue = undefined;
+
+    await claimChatActiveStreamId("chat-1", "run-1");
+
+    expect(lastUpdateSetValue).not.toHaveProperty("activeRunSource");
+  });
+});
+
+describe("compareAndSetChatActiveStreamId (#1269 activeRunSource)", () => {
+  test("clears activeRunSource to null when clearing the stream id to null", async () => {
+    const { compareAndSetChatActiveStreamId } = await sessionsModulePromise;
+    lastUpdateSetValue = undefined;
+
+    await compareAndSetChatActiveStreamId("chat-1", "run-1", null);
+
+    expect(lastUpdateSetValue).toMatchObject({
+      activeStreamId: null,
+      activeRunSource: null,
+    });
+  });
+});
+
+describe("getChatSummariesBySessionId (#1269 activeRunSource)", () => {
+  test("selects activeRunSource so a null source passes through unchanged on the read path", async () => {
+    const { getChatSummariesBySessionId } = await sessionsModulePromise;
+    lastSelectColumns = undefined;
+    fakeSelectRows = [
+      { id: "chat-1", activeRunSource: null, isStreaming: false },
+    ];
+
+    const rows = await getChatSummariesBySessionId("session-1", "user-1");
+
+    // The live-run source is exposed on the chat payload alongside isStreaming.
+    expect(lastSelectColumns).toMatchObject({
+      activeRunSource: expect.anything(),
+    });
+    // toMatchObject, not toEqual: `rows` is typed with the query's full column
+    // set, so an exact-equality literal cannot satisfy the overload. The claim
+    // under test is that a null source passes through untouched.
+    expect(rows).toMatchObject([
+      { id: "chat-1", activeRunSource: null, isStreaming: false },
+    ]);
   });
 });

@@ -717,6 +717,8 @@ describe("/api/chat route", () => {
     expect(claimChatActiveStreamIdSpy).toHaveBeenCalledWith(
       "chat-1",
       "wrun_test-123",
+      // #1269: the browser route claims the slot as a "browser" run.
+      "browser",
     );
   });
 
@@ -738,6 +740,8 @@ describe("/api/chat route", () => {
     expect(claimChatActiveStreamIdSpy).toHaveBeenCalledWith(
       "chat-1",
       "wrun_test-123",
+      // #1269: the browser route claims the slot as a "browser" run.
+      "browser",
     );
   });
 
@@ -751,6 +755,8 @@ describe("/api/chat route", () => {
     expect(claimChatActiveStreamIdSpy).toHaveBeenCalledWith(
       "chat-1",
       "wrun_test-123",
+      // #1269: the browser route claims the slot as a "browser" run.
+      "browser",
     );
   });
 

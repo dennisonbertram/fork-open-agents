@@ -424,6 +424,15 @@ export const sessions = pgTable(
   ],
 );
 
+/**
+ * Which kind of client started a chat's currently-live run (#1269). "mcp"
+ * means the live run was started by an MCP client (a headless run with no
+ * human attached); "browser" means it was started from the web UI. Null means
+ * no live run, or a run started before this column existed — treated exactly
+ * as today's behavior.
+ */
+export type ActiveRunSource = "browser" | "mcp";
+
 export const chats = pgTable(
   "chats",
   {
@@ -442,6 +451,11 @@ export const chats = pgTable(
       .notNull()
       .default(defaultChatComposioSelection),
     activeStreamId: text("active_stream_id"),
+    // Written alongside active_stream_id when the run slot is claimed; cleared
+    // to null whenever active_stream_id is cleared (#1269).
+    activeRunSource: text("active_run_source", {
+      enum: ["browser", "mcp"],
+    }),
     lastAssistantMessageAt: timestamp("last_assistant_message_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
