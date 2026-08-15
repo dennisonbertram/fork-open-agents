@@ -253,7 +253,12 @@ async function main(): Promise<void> {
   let offset = 0;
   let total = -1;
   let duplicates = 0;
-  for (let page = 0; page < 60; page += 1) {
+  let stalled = false;
+  // The walk runs until the server says it is done — offset reaching total, or
+  // an empty page. A fixed page bound would report a false pagination failure
+  // as soon as the account outgrew it. The only bound here is a no-progress
+  // guard, which is a real defect rather than an arbitrary ceiling.
+  while (true) {
     const result = (await callTool("open_agents_list_sessions", {
       status: "all",
       sort: "created_desc",
@@ -271,15 +276,24 @@ async function main(): Promise<void> {
       }
       seen.add(session.id);
     }
+    if (result.returned === 0) {
+      break;
+    }
+    // A page that returns rows without advancing the offset would loop for
+    // ever. Stop and fail the check instead.
+    if (result.returned < 0 || result.returned > pageSize) {
+      stalled = true;
+      break;
+    }
     offset += result.returned;
-    if (result.returned === 0 || offset >= result.total) {
+    if (offset >= result.total) {
       break;
     }
   }
   record(
     "a full paged walk collects every session once",
-    seen.size === total && duplicates === 0,
-    `collected ${seen.size} of ${total}, ${duplicates} duplicates`,
+    seen.size === total && duplicates === 0 && !stalled,
+    `collected ${seen.size} of ${total}, ${duplicates} duplicates${stalled ? ", page size violated" : ""}`,
   );
 
   // 3. A headless slice runs a policy-gated command to completion.
@@ -327,6 +341,10 @@ async function main(): Promise<void> {
       messages: {
         role: string;
         text: string;
+        // The true length, reported even when `text` itself was cut. The
+        // two agreeing is what proves the text came back whole.
+        chars: number;
+        capped?: boolean;
         toolTrace?: { name: string; state: string; input: string }[];
       }[];
     };
@@ -358,25 +376,23 @@ async function main(): Promise<void> {
     //    asks for 400+ characters precisely so this check has something to bite
     //    on; anything at or under the old cap fails rather than passing quietly.
     const OLD_TRANSCRIPT_CAP = 280;
-    type AssistantMessage = { text: string; chars: number };
-    let longest: AssistantMessage | undefined;
+    let longest: (typeof transcript.messages)[number] | undefined;
     for (const message of transcript.messages) {
       if (message.role !== "assistant") {
         continue;
       }
-      const candidate = message as unknown as AssistantMessage;
-      if (!longest || candidate.chars > longest.chars) {
-        longest = candidate;
+      if (!longest || message.chars > longest.chars) {
+        longest = message;
       }
     }
     record(
       "transcripts return full text and a tool trace",
-      Boolean(longest) &&
-        longest !== undefined &&
+      longest !== undefined &&
         longest.chars > OLD_TRANSCRIPT_CAP &&
         longest.text.length === longest.chars &&
+        longest.capped !== true &&
         trace.length > 0,
-      `chars=${longest?.chars} textLength=${longest?.text.length} (must exceed ${OLD_TRANSCRIPT_CAP}) toolCalls=${trace.length}`,
+      `chars=${longest?.chars} textLength=${longest?.text.length} capped=${longest?.capped ?? false} (chars must exceed ${OLD_TRANSCRIPT_CAP}) toolCalls=${trace.length}`,
     );
 
     // 5. The batch is findable by label, the path a second device would use.
