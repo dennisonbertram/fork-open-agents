@@ -71,6 +71,38 @@ mock.module("@/lib/db/sessions", () => ({
   claimChatActiveStreamId,
 }));
 
+// --- @/lib/db/schema + @/lib/db/client (#1275: reconcileChatRunSlot's own
+// app-owned "has this run already recorded a terminal outcome" check) ---
+// Minimal stub schema, same pattern as session-event-lookup.test.ts: a plain
+// string stand-in for the column is enough for `eq()` to build a filter
+// object without needing the real drizzle-orm column shape, since `db`
+// itself is fully mocked below and never actually executes SQL.
+mock.module("@/lib/db/schema", () => ({
+  workflowRuns: {
+    id: "id",
+  },
+}));
+
+// Controls whether the currently-reconciled run already has a recorded
+// terminal outcome row (written once, at the very end of that run's own
+// execution — see recordWorkflowRun in chat-post-finish-impl.ts). undefined
+// (the default) means "no row yet", matching a genuinely still-live run.
+let workflowRunRecordResult: { id: string } | undefined;
+const findFirstWorkflowRun = mock(async (_opts: unknown) => {
+  void _opts;
+  return workflowRunRecordResult;
+});
+
+mock.module("@/lib/db/client", () => ({
+  db: {
+    query: {
+      workflowRuns: {
+        findFirst: findFirstWorkflowRun,
+      },
+    },
+  },
+}));
+
 const moduleUnderTestPromise = import("./start-run");
 
 function userMessage(text: string, id = "msg-1"): WebAgentUIMessage {
@@ -137,6 +169,8 @@ beforeEach(() => {
   compareAndSetChatActiveStreamId.mockImplementation(async () => true);
   claimChatActiveStreamId.mockClear();
   claimChatActiveStreamId.mockImplementation(async () => true);
+  workflowRunRecordResult = undefined;
+  findFirstWorkflowRun.mockClear();
 });
 
 describe("startChatRun: existing active stream", () => {
@@ -236,6 +270,43 @@ describe("startChatRun: existing active stream", () => {
     // Bounded: exactly 3 attempts, not unbounded polling.
     expect(compareAndSetChatActiveStreamId).toHaveBeenCalledTimes(3);
     expect(getRun).toHaveBeenCalledTimes(3);
+  });
+
+  // #1275: a run that ended by pausing for tool approval returns normally
+  // from runAgentWorkflow, same as any other finish — but the workflow
+  // platform's own status vocabulary (pending/running/completed/failed/
+  // cancelled, see @workflow/world's WorkflowRunStatusSchema) has no separate
+  // state for "paused for approval", and can still read "running" for such a
+  // run. reconcileExistingActiveStream must not take that read at face value
+  // forever: once this app's own workflowRuns row for the SAME run id exists
+  // (only ever written at the very end of that run's own execution), the run
+  // is definitively finished regardless of what the platform reports.
+  describe("a run reported 'running' by the platform but already finished per this app's own record (#1275)", () => {
+    test("clears the slot and starts a new run instead of resuming", async () => {
+      const { startChatRun } = await moduleUnderTestPromise;
+      runStatusByRunId.set("run-paused", "running");
+      workflowRunRecordResult = { id: "run-paused" };
+      getChatById.mockImplementation(async () => ({
+        id: "chat-1",
+        activeStreamId: "run-paused",
+      }));
+      compareAndSetChatActiveStreamId.mockImplementation(
+        async (_chatId: string, expected: string | null) =>
+          expected === "run-paused",
+      );
+
+      const result = await startChatRun(baseInput());
+
+      // Accepted, not refused as a conflict and not silently resumed onto a
+      // dead run — a fresh turn (e.g. the user's approval answer, or a
+      // headless caller's next send_message) starts cleanly.
+      expect(result).toMatchObject({ status: "started", runId: "run-new" });
+      expect(compareAndSetChatActiveStreamId).toHaveBeenCalledWith(
+        "chat-1",
+        "run-paused",
+        null,
+      );
+    });
   });
 });
 
