@@ -82,6 +82,37 @@ pull requests out of four on another. Pass `model` to
 `open_agents_start_session` deliberately; do not inherit whatever the account
 default happens to be.
 
+## The dispatcher owns integration
+
+Scoped delegation guarantees a class of gap. A slice told to touch only its
+assigned files is doing the right thing — that scoping is what lets several
+slices run at once without colliding. But a change that widens a shared type or
+a shared function signature breaks callers the slice was never allowed to open.
+
+Both happened in one slice: adding a required field to the chat type broke its
+optimistic constructors in a hook, and adding an argument to
+`claimChatActiveStreamId` broke the browser route's existing assertions. Two CI
+rounds, two fixes, neither the slice's fault.
+
+Do not widen the scope to fix this — that reintroduces collisions. Expect
+integration work, and treat it as the dispatcher's job.
+
+## Verify the push, not your own success message
+
+A push that fails and a script that prints "done" regardless will cost you a
+CI cycle and a wrong diagnosis. After pushing a fix onto a slice's branch,
+read the remote back and confirm the change is actually there.
+
+## Handed-down diagnoses are leads, not conclusions
+
+A slice produced a careful, plausible root-cause analysis; it was endorsed and
+fed back as confirmation; it was wrong. The real cause was one layer out, and
+a later agent found it by writing a probe test instead of trusting the
+analysis.
+
+Treat an inherited diagnosis the way you would treat a slice's own claim of
+success: as something to verify cheaply before building on it.
+
 ## When to stay local
 
 Dogfooding is the default, not a rule to follow off a cliff:

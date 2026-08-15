@@ -92,6 +92,41 @@ export type ResolvedComposioTools =
     };
 
 /**
+ * The result of `resolveComposioConfigForChat`: every piece of the resolution
+ * that is *serializable data*, with the live `ToolSet` (a record of tools
+ * holding `execute` closures) deliberately removed.
+ *
+ * This is the shape that may cross a `"use step"` boundary (see
+ * apps/web/lib/workflow-guards/step-return-serializable.ts for the guard that
+ * enforces this). Workflow steps persist their return values, and a `ToolSet`
+ * cannot be persisted — issue #1248's prior attempt shipped exactly that and
+ * killed every run at step zero. The workflow resolves this config ONCE per
+ * run, keeps it in its own local scope, and rebuilds the tool objects from it
+ * inside each step via `buildComposioToolsFromConfig`.
+ *
+ * `toolCount` is carried here (instead of being reconstructed later) so the
+ * once-per-run `composio.profile.selected` observability event can report the
+ * number of tools without rebuilding the set at resolution time.
+ */
+export type ResolvedComposioRunConfig =
+  | {
+      status: "off";
+      /** Present when every requested direct-list slug was dropped by repo policy. */
+      repoPolicyBlocked?: RepoToolkitPolicyBlockedSlug[];
+    }
+  | {
+      status: "ready";
+      profile: ComposioToolProfile | null;
+      composioSessionId: string;
+      configHash: string;
+      reusedSession: boolean;
+      toolCount: number;
+      disconnectedToolkits?: string[];
+      expiredToolkits?: string[];
+      repoPolicyBlocked?: RepoToolkitPolicyBlockedSlug[];
+    };
+
+/**
  * Groups the full-status connected-account list (from the shared helper) by
  * toolkit slug, so both the ACTIVE-only ids map and the expired-only slug set
  * can be derived from the SAME single SDK fetch.
@@ -227,12 +262,12 @@ async function resolveRepoSelectedSlugs(params: {
   return { slugs: effective.length > 0 ? effective : null, explicit };
 }
 
-export async function resolveComposioToolsForChat(params: {
+export async function resolveComposioConfigForChat(params: {
   userId: string;
   chatId: string;
   agentKey?: ComposioAgentKey;
   runtimeMode?: "classic" | "managed_runtime";
-}): Promise<ResolvedComposioTools> {
+}): Promise<ResolvedComposioRunConfig> {
   const chat = await getChatById(params.chatId);
   if (!chat) {
     throw new ComposioSetupError("Chat not found for Composio tool setup.");
@@ -436,10 +471,17 @@ export async function resolveComposioToolsForChat(params: {
       const disconnectedToolkits = (resolved.disconnectedToolkits ?? []).filter(
         (slug) => !expiredSet.has(slug),
       );
+      // Deliberately drops `resolved.tools` (a ToolSet of `execute` closures)
+      // — only serializable data may cross back into the workflow scope (#1248).
       return {
-        ...resolved,
+        status: "ready",
+        profile: resolved.profile,
+        composioSessionId: resolved.composioSessionId,
+        configHash: resolved.configHash,
+        reusedSession: resolved.reusedSession,
         disconnectedToolkits,
         expiredToolkits,
+        toolCount: Object.keys(resolved.tools).length,
         ...(repoPolicyBlocked.length > 0 ? { repoPolicyBlocked } : {}),
       };
     } catch (error) {
@@ -511,11 +553,13 @@ export async function resolveComposioToolsForChat(params: {
       await touchComposioAgentSession(existingSession.id);
       return {
         status: "ready",
-        tools,
         profile,
         composioSessionId: existingSession.composioSessionId,
         configHash,
         reusedSession: true,
+        // Only the serializable resolution data returns; the ToolSet is rebuilt
+        // per step from the session id (#1248).
+        toolCount: Object.keys(tools).length,
       };
     }
 
@@ -535,13 +579,83 @@ export async function resolveComposioToolsForChat(params: {
 
     return {
       status: "ready",
-      tools,
       profile,
       composioSessionId: session.sessionId,
       configHash,
       reusedSession: false,
+      toolCount: Object.keys(tools).length,
     };
   } catch (error) {
     throw toSetupError(error);
   }
+}
+
+/**
+ * Rebuilds the live `ToolSet` for a ready `ResolvedComposioRunConfig` inside a
+ * workflow step. This is the cheap half of the #1248 split: the expensive
+ * resolution (chat/agent/repo selection, connected-accounts lookup, session
+ * create/use, config-hash cache) happened once per run in
+ * `resolveComposioConfigForChat`; here we only attach to the already-resolved
+ * session and fetch its tools.
+ *
+ * The caller runs this inside a `"use step"` function and returns only the
+ * `ToolSet`'s *use* (feeding the model) — never the `ToolSet` itself across the
+ * step boundary.
+ *
+ * Throws `ComposioSetupError` when the config is not ready. Callers that want
+ * non-fatal degradation (the chat continues without Composio tools — see
+ * chat.ts's "Swallow" precedent for GitHub tools) must catch at their call
+ * site.
+ */
+export async function buildComposioToolsFromConfig(
+  config: ResolvedComposioRunConfig,
+): Promise<ToolSet> {
+  if (config.status !== "ready") {
+    throw new ComposioSetupError(
+      "Composio tools are not available for this run.",
+    );
+  }
+  const session = await getComposioClient().use(config.composioSessionId);
+  const tools = await session.tools();
+  return tools;
+}
+
+/**
+ * Legacy one-shot entry point: resolves the Composio config AND builds the
+ * live `ToolSet`, returning the full `ResolvedComposioTools`.
+ *
+ * The chat workflow does NOT use this (it calls `resolveComposioConfigForChat`
+ * once per run plus `buildComposioToolsFromConfig` per step so the expensive
+ * resolution round-trip is not repeated — #1248). This is retained for the
+ * direct-list regression tests and any one-shot consumer that genuinely wants
+ * the whole result in a single call.
+ */
+export async function resolveComposioToolsForChat(params: {
+  userId: string;
+  chatId: string;
+  agentKey?: ComposioAgentKey;
+  runtimeMode?: "classic" | "managed_runtime";
+}): Promise<ResolvedComposioTools> {
+  const config = await resolveComposioConfigForChat(params);
+  if (config.status !== "ready") {
+    return config;
+  }
+  const tools = await buildComposioToolsFromConfig(config);
+  return {
+    status: "ready",
+    tools,
+    profile: config.profile,
+    composioSessionId: config.composioSessionId,
+    configHash: config.configHash,
+    reusedSession: config.reusedSession,
+    ...(config.disconnectedToolkits
+      ? { disconnectedToolkits: config.disconnectedToolkits }
+      : {}),
+    ...(config.expiredToolkits
+      ? { expiredToolkits: config.expiredToolkits }
+      : {}),
+    ...(config.repoPolicyBlocked
+      ? { repoPolicyBlocked: config.repoPolicyBlocked }
+      : {}),
+  };
 }
