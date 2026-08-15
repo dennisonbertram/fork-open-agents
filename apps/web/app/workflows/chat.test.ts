@@ -2236,6 +2236,55 @@ describe("runAgentWorkflow", () => {
       ).toBe(true);
     });
 
+    // Regression (#1275): the run slot must be released the same way a
+    // normal finish releases it, for both a browser-started run and a
+    // headless MCP run — a stuck slot after an approval pause is exactly the
+    // production defect this covers. If a future change adds an early return
+    // between the approval-pause `break` and the workflow's tail (skipping
+    // clearActiveStream for this exit only), this test fails.
+    test.each([
+      ["a browser-started run", undefined],
+      ["a headless MCP run", { unattended: true }],
+    ] as const)(
+      "releases the active-stream slot when %s pauses for tool approval",
+      async (_label, agentOptions) => {
+        agentFinishReason = "tool-calls";
+        agentRawFinishReason = "provider_tool_use";
+        agentStreamParts = [
+          {
+            type: "finish-step",
+            finishReason: "tool-calls",
+            rawFinishReason: "provider_tool_use",
+            usage: agentTotalUsage,
+          },
+        ];
+
+        await runAgentWorkflow(
+          makeOptions({
+            ...(agentOptions ? { agentOptions } : {}),
+            messages: [
+              {
+                id: "assistant-1",
+                role: "assistant",
+                parts: [
+                  {
+                    type: "tool-invocation",
+                    state: "approval-requested",
+                  },
+                ],
+                metadata: {},
+              },
+            ],
+          }),
+        );
+
+        expect(spies.clearActiveStream).toHaveBeenCalledWith(
+          "chat-1",
+          "wrun_test-123",
+        );
+      },
+    );
+
     test.each(["content-filter", "error", "other"] as const)(
       "reports the shared ended_unexpectedly value for finishReason %s",
       async (finishReason) => {
