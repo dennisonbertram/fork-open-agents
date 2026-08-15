@@ -123,6 +123,8 @@ type StartChatRunInput = {
   authSession: unknown;
   maxSteps?: number;
   agentOptions?: Record<string, unknown>;
+  expectFileChanges?: boolean;
+  expectedFiles?: string[];
 };
 
 function baseInput(
@@ -381,6 +383,42 @@ describe("startChatRun: happy path with no active stream", () => {
       "run-new",
       "browser",
     );
+  });
+
+  // #1288: the declared expectation set on open_agents_start_session must
+  // reach the workflow's own Options so the circling detector and the
+  // acceptance check can act on it.
+  test("forwards expectFileChanges and expectedFiles to the workflow payload when the caller sets them (#1288)", async () => {
+    const { startChatRun } = await moduleUnderTestPromise;
+
+    await startChatRun(
+      baseInput({
+        expectFileChanges: true,
+        expectedFiles: ["src/a.ts", "src/b.ts"],
+      }),
+    );
+
+    expect(startWorkflow).toHaveBeenCalledTimes(1);
+    const [, args] = startWorkflow.mock.calls[0] as [
+      unknown,
+      [Record<string, unknown>],
+    ];
+    expect(args[0].expectFileChanges).toBe(true);
+    expect(args[0].expectedFiles).toEqual(["src/a.ts", "src/b.ts"]);
+  });
+
+  test("omits expectFileChanges/expectedFiles from the workflow payload when the caller does not set them — every existing caller is unaffected (#1288)", async () => {
+    const { startChatRun } = await moduleUnderTestPromise;
+
+    await startChatRun(baseInput());
+
+    expect(startWorkflow).toHaveBeenCalledTimes(1);
+    const [, args] = startWorkflow.mock.calls[0] as [
+      unknown,
+      [Record<string, unknown>],
+    ];
+    expect(args[0].expectFileChanges).toBeUndefined();
+    expect(args[0].expectedFiles).toBeUndefined();
   });
 
   test("forwards agentOptions to the workflow payload when the caller sets it (#1230: MCP headless runs)", async () => {

@@ -73,6 +73,9 @@ import {
   NO_TOOL_ACTIVITY_SIGNATURE,
 } from "./headless-activity-signal";
 import { createHeadlessProgressDetector } from "./headless-progress-detector";
+import { createHeadlessDiffExpectationDetector } from "./headless-diff-expectation-detector";
+import { checkDiffAcceptance } from "./headless-diff-acceptance-check";
+import { probeChangedFilePaths } from "./headless-diff-acceptance";
 import { annotateAbandonedTurns } from "@/lib/chat/annotate-abandoned-turns";
 import {
   buildHeadlessNoSandboxCapMessage,
@@ -82,6 +85,13 @@ import {
   getHeadlessRunMaxStaleSteps,
   getHeadlessRunNoSandboxStepCap,
 } from "@/lib/chat/headless-progress-budget";
+import {
+  buildDiffAcceptanceViolationMessage,
+  buildHeadlessNoFileChangesMessage,
+  buildRunOuterStepCeilingMessage,
+  getHeadlessRunMaxStepsWithoutDiff,
+  getRunOuterStepCeiling,
+} from "@/lib/chat/declared-expectation-budget";
 import { getMaxLengthContinuations } from "@/lib/chat/length-continuation-budget";
 import { dedupeMessageReasoning } from "@/lib/chat/dedupe-message-reasoning";
 import {
@@ -143,6 +153,12 @@ type Options = {
   maxSteps?: number;
   autoCommitEnabled?: boolean;
   autoCreatePrEnabled?: boolean;
+  // #1288: the declared expectation from `open_agents_start_session` — see
+  // the design decision recorded on issue #1288. Both optional; undefined
+  // (today's behavior for every existing caller) disables the circling
+  // detector and the acceptance check entirely.
+  expectFileChanges?: boolean;
+  expectedFiles?: string[];
 };
 
 type ChatModelRuntimeAgentOptions = Omit<
@@ -1874,6 +1890,19 @@ export async function runAgentWorkflow(options: Options) {
   // #1231: set when a headless run with no sandbox (nothing to probe) hits
   // the fixed fallback step cap instead.
   let headlessNoSandboxCapped = false;
+  // #1288: set when a run declared `expectFileChanges: true` produced no
+  // workspace change for longer than the configured allowance — distinct
+  // from headlessFuseTripped, which judges tool-call variety, not a
+  // declared expectation.
+  let headlessNoDiffCapped = false;
+  // #1288: set when the far outer, generous step-count backstop fires —
+  // only ever reached when nothing more specific already stopped the run.
+  let outerStepCeilingReached = false;
+  // #1288: set when the run's final diff touched a path outside the
+  // caller's declared `expectedFiles` list. Computed once, after the loop,
+  // never mid-run.
+  let diffAcceptanceViolated = false;
+  let diffAcceptanceOffendingPaths: string[] = [];
   // #1247: a step whose finishReason is "length" continues the run instead
   // of ending it — see the loop below. `consecutiveLengthContinuations`
   // counts how many such steps have happened in a row (reset by any other
@@ -2320,6 +2349,26 @@ export async function runAgentWorkflow(options: Options) {
     // above — applies to every run, not only headless ones, since a step can
     // be truncated in a browser chat just as easily as an MCP one.
     const maxLengthContinuations = getMaxLengthContinuations();
+    // #1288: the declared-expectation circling detector — only active when
+    // the caller declared `expectFileChanges: true` on a run that has a
+    // sandbox to probe. Reuses the SAME git-only fingerprint the
+    // no-progress fuse above already probes each step; no extra sandbox
+    // call. A run with no declaration (the default for every existing
+    // caller) or one declared read-only behaves exactly as before —
+    // `headlessDiffExpectationDetector` stays null and is never consulted.
+    const expectFileChanges = options.expectFileChanges === true;
+    const headlessDiffExpectationDetector =
+      headlessHasSandbox && expectFileChanges
+        ? createHeadlessDiffExpectationDetector({
+            allowance: getHeadlessRunMaxStepsWithoutDiff(),
+          })
+        : null;
+    // #1288: option 3 — a far outer, generous step-count backstop under
+    // EVERY run (headless or browser), read once per run. In practice this
+    // only ever matters for a headless run: a browser run's own maxSteps
+    // (500 by default) already stops it first, since the ceiling default
+    // sits well above that.
+    const runOuterStepCeiling = getRunOuterStepCeiling();
 
     for (
       let step = 0;
@@ -2545,6 +2594,39 @@ export async function runAgentWorkflow(options: Options) {
           };
           break;
         }
+
+        // #1288: the declared-expectation circling check — only consulted
+        // when the caller declared `expectFileChanges: true`. Reuses the
+        // git-only half of the fingerprint just probed above (not the
+        // combined git+tool one the no-progress fuse uses), so a run doing
+        // genuinely varied tool calls with a frozen tree — which the fuse
+        // above deliberately lets run per #1242 — still gets caught here
+        // when it was declared to produce a diff.
+        if (headlessDiffExpectationDetector) {
+          const diffObservation = headlessDiffExpectationDetector.observeTurn({
+            fingerprint: gitFingerprint,
+          });
+          if (diffObservation.verdict === "stop") {
+            headlessNoDiffCapped = true;
+            const noDiffText = buildHeadlessNoFileChangesMessage(
+              diffObservation.stepsWithoutChange,
+              getHeadlessRunMaxStepsWithoutDiff(),
+            );
+            await sendTextMessage(
+              writable,
+              `${assistantId}:headless-no-file-changes`,
+              noDiffText,
+            );
+            pendingAssistantResponse = {
+              ...pendingAssistantResponse,
+              parts: [
+                ...pendingAssistantResponse.parts,
+                { type: "text", text: noDiffText },
+              ],
+            };
+            break;
+          }
+        }
       } else if (headlessNoSandboxStepCap !== undefined) {
         // No sandbox to probe — the fuse above cannot run at all. Bound the
         // run by step count instead, since that is the only signal
@@ -2572,6 +2654,30 @@ export async function runAgentWorkflow(options: Options) {
 
       if (options.maxSteps !== undefined && step + 1 >= options.maxSteps) {
         exhaustedMaxSteps = true;
+        break;
+      }
+
+      // #1288: the far outer step ceiling — checked last, so it only ever
+      // fires when nothing more specific above already broke the loop this
+      // iteration. A generous default keeps this a no-op for a bounded run
+      // (options.maxSteps already stops it first); it only matters for an
+      // otherwise-unbounded headless run that outran every other budget.
+      if (step + 1 >= runOuterStepCeiling) {
+        outerStepCeilingReached = true;
+        const ceilingText =
+          buildRunOuterStepCeilingMessage(runOuterStepCeiling);
+        await sendTextMessage(
+          writable,
+          `${assistantId}:run-outer-step-ceiling`,
+          ceilingText,
+        );
+        pendingAssistantResponse = {
+          ...pendingAssistantResponse,
+          parts: [
+            ...pendingAssistantResponse.parts,
+            { type: "text", text: ceilingText },
+          ],
+        };
         break;
       }
     }
@@ -2841,6 +2947,47 @@ export async function runAgentWorkflow(options: Options) {
       }
     }
 
+    // #1288: the acceptance check — only when the caller declared
+    // `expectedFiles` and the run reached a genuine terminal state (not
+    // aborted, not paused waiting on the user, in which case there is no
+    // "final" diff yet to grade). Computed once, after auto-commit/auto-PR
+    // so it sees any changes those steps just made, never mid-loop.
+    if (
+      sandboxState &&
+      options.expectedFiles &&
+      options.expectedFiles.length > 0 &&
+      !wasAborted &&
+      !awaitingToolApproval
+    ) {
+      const changedPaths = await probeChangedFilePaths(sandboxState);
+      if (changedPaths !== null) {
+        const acceptance = checkDiffAcceptance(
+          changedPaths,
+          options.expectedFiles,
+        );
+        if (acceptance.violated) {
+          diffAcceptanceViolated = true;
+          diffAcceptanceOffendingPaths = acceptance.offendingPaths;
+          const violationText = buildDiffAcceptanceViolationMessage(
+            acceptance.offendingPaths,
+          );
+          await sendTextMessage(
+            writable,
+            `${assistantId}:diff-acceptance-violation`,
+            violationText,
+          );
+          pendingAssistantResponse = {
+            ...pendingAssistantResponse,
+            parts: [
+              ...pendingAssistantResponse.parts,
+              { type: "text", text: violationText },
+            ],
+          };
+          didUpdateGitData = true;
+        }
+      }
+    }
+
     if (didUpdateGitData) {
       await persistAssistantMessage(options.chatId, pendingAssistantResponse);
     }
@@ -2857,8 +3004,11 @@ export async function runAgentWorkflow(options: Options) {
       : exhaustedMaxSteps ||
           stoppedForRepeatedToolFailure ||
           headlessFuseTripped ||
+          headlessNoDiffCapped ||
           headlessNoSandboxCapped ||
+          outerStepCeilingReached ||
           truncationBoundExhausted ||
+          diffAcceptanceViolated ||
           endedUnexpectedly
         ? "failed"
         : "completed";
@@ -2872,6 +3022,9 @@ export async function runAgentWorkflow(options: Options) {
       truncationBoundExhausted,
       awaitingToolApproval,
       endedUnexpectedly,
+      headlessNoDiffCapped,
+      outerStepCeilingReached,
+      diffAcceptanceViolated,
     });
 
     if (
@@ -2951,6 +3104,9 @@ export async function runAgentWorkflow(options: Options) {
       truncationBoundExhausted,
       awaitingToolApproval,
       endedUnexpectedly,
+      headlessNoDiffCapped,
+      outerStepCeilingReached,
+      diffAcceptanceViolated,
     });
     caughtError = error;
 
@@ -3011,11 +3167,12 @@ export async function runAgentWorkflow(options: Options) {
             sessionId: options.sessionId,
             chatId: options.chatId,
             workflowRunId,
-            // #1247: the reason must name a bounded run with the exact same
-            // literal as workflowRunOutcomeStatus/lastRunOutcome — "one
+            // #1247/#1288: the reason must name a bounded run with the exact
+            // same literal as workflowRunOutcomeStatus/lastRunOutcome — "one
             // vocabulary, three surfaces" — including the headless
-            // "no_progress_fuse"/"no_sandbox_step_cap" values so a log line
-            // and an API read never disagree about why a run ended.
+            // "no_progress_fuse"/"no_sandbox_step_cap"/"no_file_changes"/
+            // "step_ceiling"/"diff_violation" values so a log line and an
+            // API read never disagree about why a run ended.
             reason: truncationBoundExhausted
               ? "truncated"
               : awaitingToolApproval
@@ -3024,9 +3181,15 @@ export async function runAgentWorkflow(options: Options) {
                   ? "ended_unexpectedly"
                   : headlessFuseTripped
                     ? "no_progress_fuse"
-                    : headlessNoSandboxCapped
-                      ? "no_sandbox_step_cap"
-                      : "completed",
+                    : headlessNoDiffCapped
+                      ? "no_file_changes"
+                      : headlessNoSandboxCapped
+                        ? "no_sandbox_step_cap"
+                        : outerStepCeilingReached
+                          ? "step_ceiling"
+                          : diffAcceptanceViolated
+                            ? "diff_violation"
+                            : "completed",
             turns: headlessProbeCount,
             steps: stepTimings.length,
           }),
@@ -3106,15 +3269,26 @@ export async function runAgentWorkflow(options: Options) {
               ? "max_steps"
               : headlessFuseTripped
                 ? "no_progress_fuse"
-                : headlessNoSandboxCapped
-                  ? "no_sandbox_step_cap"
-                  : truncationBoundExhausted
-                    ? "truncated"
-                    : awaitingToolApproval
-                      ? "awaiting_tool_approval"
-                      : endedUnexpectedly
-                        ? "ended_unexpectedly"
-                        : null,
+                : headlessNoDiffCapped
+                  ? "no_file_changes"
+                  : headlessNoSandboxCapped
+                    ? "no_sandbox_step_cap"
+                    : outerStepCeilingReached
+                      ? "step_ceiling"
+                      : truncationBoundExhausted
+                        ? "truncated"
+                        : diffAcceptanceViolated
+                          ? "diff_violation"
+                          : awaitingToolApproval
+                            ? "awaiting_tool_approval"
+                            : endedUnexpectedly
+                              ? "ended_unexpectedly"
+                              : null,
+          // #1288: the offending paths when a diff-acceptance violation
+          // fired — never surfaced when there was no violation.
+          diffAcceptanceOffendingPaths: diffAcceptanceViolated
+            ? diffAcceptanceOffendingPaths
+            : null,
         },
       });
 

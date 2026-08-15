@@ -36,6 +36,13 @@ export type StartChatRunInput = {
   // unattended/allowlist/instructions — see lib/mcp-server/headless-run-options.ts).
   // Undefined = today's behavior; the browser chat route never sets this.
   agentOptions?: Omit<OpenAgentCallOptions, "sandbox" | "skills">;
+  // #1288: the declared expectation from `open_agents_start_session` — see
+  // the design decision recorded on issue #1288. Both optional; undefined =
+  // today's behavior, forwarded straight through to the workflow's own
+  // `Options` (app/workflows/chat.ts), which is where the circling detector
+  // and the acceptance check actually live.
+  expectFileChanges?: boolean;
+  expectedFiles?: string[];
   // Set by a caller (the chat route) that already called
   // `reconcileChatRunSlot` for this request and confirmed the slot is
   // "ready" — skips a redundant reconcile here. MCP tool callers, which
@@ -309,6 +316,14 @@ export async function startChatRun(
       // omitted entirely, not `agentOptions: undefined`, so the browser chat
       // route's payload shape is byte-identical to before #1230.
       ...(input.agentOptions ? { agentOptions: input.agentOptions } : {}),
+      // #1288: same "omit rather than pass undefined" treatment — only
+      // present when `open_agents_start_session` set them.
+      ...(input.expectFileChanges !== undefined
+        ? { expectFileChanges: input.expectFileChanges }
+        : {}),
+      ...(input.expectedFiles !== undefined
+        ? { expectedFiles: input.expectedFiles }
+        : {}),
     },
   ]);
 

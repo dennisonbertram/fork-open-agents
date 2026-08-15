@@ -422,6 +422,57 @@ describe("startSession", () => {
     expect(typeof capturedAgentOptions?.customInstructions).toBe("string");
   });
 
+  // #1288: the declared expectation — see the design decision recorded on
+  // issue #1288. Both optional; forwarded straight into startChatRun so the
+  // workflow's circling detector and acceptance check can act on them.
+  test("forwards expectFileChanges and expectedFiles straight into startChatRun (#1288)", async () => {
+    const { startSession } = await toolsModulePromise;
+    let received: Record<string, unknown> | undefined;
+    startChatRun.mockImplementation(async (input) => {
+      received = input as Record<string, unknown>;
+      return { status: "started", runId: "run-new" };
+    });
+
+    await startSession(makeCtx({}), {
+      repoOwner: "acme",
+      repoName: "widgets",
+      prompt: "build the thing",
+      expectFileChanges: true,
+      expectedFiles: ["src/a.ts", "src/b.ts"],
+    });
+
+    expect(received?.expectFileChanges).toBe(true);
+    expect(received?.expectedFiles).toEqual(["src/a.ts", "src/b.ts"]);
+  });
+
+  test("omits expectFileChanges/expectedFiles when the caller does not declare them — every existing caller is unaffected (#1288)", async () => {
+    const { startSession } = await toolsModulePromise;
+    let received: Record<string, unknown> | undefined;
+    startChatRun.mockImplementation(async (input) => {
+      received = input as Record<string, unknown>;
+      return { status: "started", runId: "run-new" };
+    });
+
+    await startSession(makeCtx({}), {
+      repoOwner: "acme",
+      repoName: "widgets",
+      prompt: "build the thing",
+    });
+
+    expect(received?.expectFileChanges).toBeUndefined();
+    expect(received?.expectedFiles).toBeUndefined();
+  });
+
+  test(".strict() still accepts start_session without expectFileChanges/expectedFiles (backward compatible)", async () => {
+    const { startSession } = await toolsModulePromise;
+    const result = await startSession(makeCtx({}), {
+      repoOwner: "acme",
+      repoName: "widgets",
+      prompt: "build the thing",
+    });
+    expect(result.sessionId).toBeDefined();
+  });
+
   test("forwards autoCommit/autoCreatePr straight into createSessionCore — not into the workflow (#1230)", async () => {
     // Per the session-level override design: createSessionCore already
     // resolves autoCommitPush/autoCreatePr precedence (body > repo defaults >
