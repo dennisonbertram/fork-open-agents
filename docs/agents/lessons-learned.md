@@ -2,6 +2,35 @@
 
 Hard-won knowledge from building this codebase. When you make a mistake or discover a non-obvious behavior, add it here.
 
+## Index
+
+Standing topics:
+
+- [General / Tooling](#general--tooling)
+- [Auth / OAuth](#auth--oauth)
+- [Next.js](#nextjs)
+- [Sandbox Lifecycle](#sandbox-lifecycle)
+- [Sandbox UI State](#sandbox-ui-state)
+- [Chat / Streaming UI](#chat--streaming-ui)
+- [GitHub App / PR Flows](#github-app--pr-flows)
+- [Vercel Workflow DevKit](#vercel-workflow-devkit)
+- [Bun Test Isolation — mock.module First-Win Behavior](#bun-test-isolation--mockmodule-first-win-behavior)
+
+Dated epic and sweep sections:
+
+- [Agent Loops Epic #761 (2026-07-02)](#agent-loops-epic-761-2026-07-02)
+- [Managed Runtime profiles epic #807 (2026-07-02)](#managed-runtime-profiles-epic-807-2026-07-02)
+- [First-run Onboarding Epic #779 (2026-07-03)](#first-run-onboarding-epic-779-2026-07-03)
+- [DOM test infra spike #858 (2026-07-03)](#dom-test-infra-spike-858-2026-07-03)
+- [Per-turn heartbeats and UTC timestamp parity (#863, 2026-07-03)](#per-turn-heartbeats-and-utc-timestamp-parity-863-2026-07-03)
+- [Stranded reviewed fixes (#859, 2026-07-03)](#stranded-reviewed-fixes-859-2026-07-03)
+- [No-progress (git-delta) turn budget, Task 1 (#914, 2026-07-05)](#no-progress-git-delta-turn-budget-task-1-914-2026-07-05)
+- [Deployed Feature Proof Standard (#868, 2026-07-03)](#deployed-feature-proof-standard-868-2026-07-03)
+- [Delegated-worker failure diagnosis and loop stop conditions (#1140–#1143, 2026-08-07)](#delegated-worker-failure-diagnosis-and-loop-stop-conditions-11401143-2026-08-07)
+- [Preview shared the production database (#1167, 2026-08-08)](#preview-shared-the-production-database-1167-2026-08-08)
+- [Composite model ids, and errors that hide behind a generic message (#1191/#1196, 2026-08-11)](#composite-model-ids-and-errors-that-hide-behind-a-generic-message-11911196-2026-08-11)
+- [MCP fan-out loop — a day of production dogfooding](#mcp-fan-out-loop--a-day-of-production-dogfooding)
+
 ## General / Tooling
 
 - For Open Agents self-hosting, verify deployment requirements from current code and `apps/web/.env.example`; older Open Harness-era notes can mention stale `JWE_SECRET`, `ENCRYPTION_KEY`, or pre-Better Auth callback routes that no longer match the app.
@@ -185,6 +214,16 @@ When adding a new export to a shared store/module, grep for all `mock.module` fa
 - **`develop` AND `main` are `strict` + `enforce_admins`, so `--admin` does NOT bypass.** Merges require the branch up-to-date, the 3 required checks (`lint-and-typecheck`, `build`, `guards`) green on the *current* head, AND all review threads resolved ("All comments must be resolved" blocks the merge). With heavy concurrent multi-agent traffic on develop, each `update-branch` restarts CI and develop often moves again before checks finish — livelock. The robust pattern: `update-branch` → poll until the 3 required checks are green on the new head → merge immediately → retry only on "behind". Never `update-branch` a develop→main release blindly expecting `--admin` to force it; it syncs main's release-merge commit into develop (that's fine/expected) but you still wait for green.
 - **`isolation:'worktree'` sub-agents leave their worktree behind (not auto-cleaned when it has commits) and keep the feature branch checked out**, so the coordinator can't `git worktree add` that branch again for a follow-up fix. Either operate in the existing leftover worktree in place, or `git worktree remove <path> --force` first. Clean them up after each wave's merges.
 - **Level-2 live-sandbox proof is unreachable locally without valid Vercel OIDC/sandbox creds** — the dev demo route fails with "Could not get credentials from OIDC context." Per the managed-runtime proof standard, record it as `blocked-by-configuration` with the exact error and lean on Level-1 deterministic evidence + a real-HTTP activation chain; do not mint tokens to force it.
+
+## First-run Onboarding Epic #779 (2026-07-03)
+
+- **One query param carrying two meanings breaks the moment a second producer appears.** `step=github` historically meant "force the reconnect flow"; when status-carrying redirects also began appending it (for auto-open), success returns rendered the reconnect UI and retry CTAs looped. Make intent explicit (`reconnect=1` emitted only by `buildGitHubReconnectUrl`) and let the ambient param keep exactly one job. Grep for every producer of a param before adding a second meaning.
+- **Hidden must mean inert.** `opacity-0` + `pointer-events-none` leaves a control in the accessibility tree and tab order — keyboard users can focus an invisible button, and a11y-tree-driven automation (agent-browser snapshots) will "click" it and report a dead CTA. Use `visibility: hidden` (`invisible`) + `aria-hidden` for hidden interactive clusters. Triage recipe that settled three phases of confusion: `elementFromPoint` at the control's center + computed `pointerEvents`, and `form.requestSubmit()` to distinguish overlay-intercepted clicks from genuinely dead handlers.
+- **better-auth's client resolves API errors as `{ data, error }` — it does not reject.** Any wrapper that treats a resolved promise as success (e.g. leaving a pending spinner up "until navigation") hangs forever on API-level failures. Inspect the resolved value for a truthy `error` and route it through the same failure path as a rejection.
+- **Making an API stop lying is only half a fix — grep the consumers.** After `connection-status` stopped reporting `"connected"` on unknown validation failures, the settings UI still mapped everything non-reconnect to a green "Connected" pill, so the false success survived one layer up. When introducing a new status value, trace every consumer branch (`status === ...`) and prove the new value renders visibly, not just type-checks.
+- **Serial merge trains on a hot `develop` need automation, not patience.** With strict branch protection and sibling missions merging continuously, PRs go `BEHIND` faster than a manual update-merge cycle completes. Arm `gh pr merge --auto`, drive `gh pr update-branch` serially from a monitor script, and expect semantic conflicts *between same-epic PRs* (e.g. state validation vs status rerouting in one route file) — resolve at the train with tests asserting the union behavior, and add fixtures the later PR made mandatory (state cookies) to the earlier PR's tests.
+- **A local dev toolbar overlay (styles-module `toolbar`/`buttonWrapper` classes) floats over the bottom-right of every page under `next dev` and swallows clicks** — including the chat composer's Send button. Browser walkers must prefer direct URL navigation and treat silent dead clicks in that region as suspect; `NEXT_PUBLIC_DISABLE_AGENTATION=1` does not remove it.
+- **Naive-walk findings need a directed-verification pass before ticketing.** Three evidence streams (parallel code readers with file:line proof, an outside-model review of the repomix-packed paths, and goal-based naive walks) converged on the same blockers with near-zero false positives — but the walks alone also produced artifact findings (dev-overlay dead clicks, stale test-user data). The cheap discipline that kept the ticket set clean: every walk blocker gets reproduced by the lead (or a directed verifier with exact URLs) before it becomes a ticket.
 
 ## DOM test infra spike #858 (2026-07-03)
 
