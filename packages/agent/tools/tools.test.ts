@@ -628,6 +628,63 @@ describe("tools execute behavior", () => {
     expect(safeGitStatus).toBe(false);
   });
 
+  // #1272: an unattended run (background agent / agent-loop step) has no human
+  // to answer an approval prompt. Split on blast radius, not tool identity:
+  //   - local bash effects (bashPolicy: rm -rf on scratch paths, .env) stay
+  //     inside the ephemeral per-session sandbox -> auto-approve to avoid
+  //     wedging the run on a never-approved tool call.
+  //   - the git-push family (gitPushPolicy: force-push / reset --hard /
+  //     clean -fd) mutates state that outlives the sandbox -> deny.
+  describe("bashTool unattended approval policy (#1272)", () => {
+    const attendedContext = {
+      sandbox: { workingDirectory: "/repo" },
+      model: "test-model",
+    };
+    const unattendedContext = {
+      ...attendedContext,
+      unattended: true,
+    };
+
+    test("unattended run does NOT require approval for a policy-gated local bash command", async () => {
+      // A dangerous rm/find command and a sensitive-file command are both gated
+      // by bashPolicy but their effect is local to the sandbox.
+      for (const command of ["rm -rf tmp", "cat .env.local"]) {
+        const result = await getNeedsApprovalResult(
+          bashTool().needsApproval,
+          { command },
+          unattendedContext,
+        );
+        expect(result).toBe(false);
+      }
+    });
+
+    test("unattended run DOES refuse a git-push-family command (effect leaves the sandbox)", async () => {
+      for (const command of [
+        "git push --force origin main",
+        "git reset --hard HEAD~1",
+        "git clean -fd",
+      ]) {
+        const result = await getNeedsApprovalResult(
+          bashTool().needsApproval,
+          { command },
+          unattendedContext,
+        );
+        expect(result).toBe(true);
+      }
+    });
+
+    test("attended run still requires approval for local and git-push-family bash commands", async () => {
+      for (const command of ["rm -rf tmp", "git push --force origin main"]) {
+        const result = await getNeedsApprovalResult(
+          bashTool().needsApproval,
+          { command },
+          attendedContext,
+        );
+        expect(result).toBe(true);
+      }
+    });
+  });
+
   test("webFetchTool needsApproval gates attended network egress", async () => {
     const baseContext = {
       sandbox: { workingDirectory: "/repo" },
