@@ -1488,6 +1488,10 @@ describe("getSession lastRunOutcome (#1241)", () => {
     "truncated",
     "awaiting_tool_approval",
     "ended_unexpectedly",
+    // #1288
+    "no_file_changes",
+    "step_ceiling",
+    "diff_violation",
   ] as const)(
     "reports %s through get_session with the writer's own vocabulary",
     async (status) => {
@@ -1547,6 +1551,10 @@ describe("getSession lastRunOutcome (#1241)", () => {
       "truncated",
       "awaiting_tool_approval",
       "ended_unexpectedly",
+      // #1288
+      "no_file_changes",
+      "step_ceiling",
+      "diff_violation",
     ] as const) {
       getLatestWorkflowRunStatusBySessionId.mockImplementation(
         async () => status,

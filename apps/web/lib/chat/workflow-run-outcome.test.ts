@@ -175,4 +175,65 @@ describe("deriveWorkflowRunOutcomeStatus", () => {
       }),
     ).toBe("aborted");
   });
+
+  // #1288: a run declared `expectFileChanges: true` that produced no diff
+  // after the configured allowance — distinct from the generic no-progress
+  // fuse, which judges tool-call variety, not a declared expectation.
+  test("the declared-expectation circling stop reports its own value", () => {
+    expect(
+      deriveWorkflowRunOutcomeStatus({
+        ...base,
+        headlessNoDiffCapped: true,
+      }),
+    ).toBe("no_file_changes");
+  });
+
+  // #1288: option 3 — a far outer step ceiling, a backstop under everything.
+  test("the outer step ceiling reports its own value, distinct from max_steps", () => {
+    expect(
+      deriveWorkflowRunOutcomeStatus({
+        ...base,
+        outerStepCeilingReached: true,
+      }),
+    ).toBe("step_ceiling");
+  });
+
+  // #1288: the acceptance check — the final diff touched a file outside the
+  // caller's declared list.
+  test("a diff-acceptance violation reports its own value", () => {
+    expect(
+      deriveWorkflowRunOutcomeStatus({
+        ...base,
+        diffAcceptanceViolated: true,
+      }),
+    ).toBe("diff_violation");
+  });
+
+  // Existing callers (chat.ts's two call sites, and every existing test in
+  // this file) omit the three new #1288 fields entirely — they must default
+  // to "not set" rather than becoming a required-field type error or an
+  // unintended stop reason.
+  test("omitting the three new #1288 fields behaves exactly like passing them false", () => {
+    expect(deriveWorkflowRunOutcomeStatus(base)).toBe("completed");
+  });
+
+  test("a crash reports failed even if the declared-expectation circling flag was set", () => {
+    expect(
+      deriveWorkflowRunOutcomeStatus({
+        ...base,
+        crashed: true,
+        headlessNoDiffCapped: true,
+      }),
+    ).toBe("failed");
+  });
+
+  test("a user-initiated abort takes priority over the outer step ceiling", () => {
+    expect(
+      deriveWorkflowRunOutcomeStatus({
+        ...base,
+        wasAborted: true,
+        outerStepCeilingReached: true,
+      }),
+    ).toBe("aborted");
+  });
 });
