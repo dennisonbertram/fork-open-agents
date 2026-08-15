@@ -96,6 +96,13 @@ describe("normalized run status", () => {
     // as needing attention.
     "truncated",
     "ended_unexpectedly",
+    // #1288: a third widening — the declared-expectation circling stop, the
+    // outer step ceiling, and the diff-acceptance violation. Same hazard,
+    // same fix: without this branch each one would silently degrade to
+    // "unknown" the moment the writer starts persisting it.
+    "no_file_changes",
+    "step_ceiling",
+    "diff_violation",
   ])(
     "chat_workflow keeps treating %s as a failure needing attention",
     (nativeStatus) => {

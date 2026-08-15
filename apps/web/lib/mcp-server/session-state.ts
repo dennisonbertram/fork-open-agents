@@ -48,6 +48,19 @@ export type McpActivityState = "working" | "idle";
  *                             supply tool input — not a failure (#1247).
  *   `ended_unexpectedly`      the step ended with content-filter, error, or
  *                             other (#1247).
+ *   `no_file_changes`         (#1288) the caller declared `expectFileChanges:
+ *                             true` at `open_agents_start_session`, and the
+ *                             run produced no workspace change for longer
+ *                             than the configured allowance — distinct from
+ *                             `no_progress_fuse`, which judges tool-call
+ *                             variety, not a declared expectation.
+ *   `step_ceiling`            (#1288) the far outer, generous step-count
+ *                             backstop fired — never the primary bound, only
+ *                             fires when nothing more specific already
+ *                             stopped the run.
+ *   `diff_violation`          (#1288) the caller declared `expectedFiles`,
+ *                             and the run's final diff touched a path
+ *                             outside that list.
  */
 export type McpLastRunOutcome =
   | "completed"
@@ -59,7 +72,10 @@ export type McpLastRunOutcome =
   | "repeated_tool_failure"
   | "truncated"
   | "awaiting_tool_approval"
-  | "ended_unexpectedly";
+  | "ended_unexpectedly"
+  | "no_file_changes"
+  | "step_ceiling"
+  | "diff_violation";
 
 const LAST_RUN_OUTCOMES: ReadonlySet<string> = new Set([
   "completed",
@@ -72,6 +88,9 @@ const LAST_RUN_OUTCOMES: ReadonlySet<string> = new Set([
   "truncated",
   "awaiting_tool_approval",
   "ended_unexpectedly",
+  "no_file_changes",
+  "step_ceiling",
+  "diff_violation",
 ] satisfies McpLastRunOutcome[]);
 
 /**
