@@ -92,7 +92,8 @@ describe("GetStartedFlow - reconnect intent is explicit (#781)", () => {
 
     expect(html.toLowerCase()).not.toContain("reconnect your github account");
     expect(html.toLowerCase()).not.toContain("reconnect github");
-    expect(html.toLowerCase()).toContain("connect your github account");
+    expect(html.toLowerCase()).toContain("first you");
+    expect(html.toLowerCase()).toContain("verify your identity");
   });
 });
 
@@ -217,5 +218,47 @@ describe("GitHubConnectStep — pending/error/retry (#786)", () => {
     expect(flowModule.GITHUB_LINK_ERROR_MESSAGE).toBe(
       "Couldn't connect GitHub. Try again.",
     );
+  });
+});
+
+describe("GetStartedFlow - residual polish (#842)", () => {
+  test("finding 1: not-linked copy describes the GitHub sub-steps in words, not a bare 'step 1 of 2' ordinal under a numbered card", async () => {
+    searchParamValues = {};
+    sessionState = { hasGitHubAccount: false, hasGitHubInstallations: false };
+    const { GetStartedFlow } = await flowModulePromise;
+
+    const html = renderToStaticMarkup(<GetStartedFlow />);
+
+    expect(html.toLowerCase()).not.toContain("step 1 of 2");
+  });
+
+  test("finding 4: arriving with an explicit next param (onboarding gate redirect) shows a one-line reason", async () => {
+    searchParamValues = { next: "/sessions" };
+    sessionState = { hasGitHubAccount: false, hasGitHubInstallations: false };
+    const { GetStartedFlow } = await flowModulePromise;
+
+    const html = renderToStaticMarkup(<GetStartedFlow />);
+
+    expect(html.toLowerCase()).toContain("finish setup to continue");
+  });
+
+  test("finding 4: a direct visit without a next param shows no arrival reason", async () => {
+    searchParamValues = {};
+    sessionState = { hasGitHubAccount: false, hasGitHubInstallations: false };
+    const { GetStartedFlow } = await flowModulePromise;
+
+    const html = renderToStaticMarkup(<GetStartedFlow />);
+
+    expect(html.toLowerCase()).not.toContain("finish setup to continue");
+  });
+
+  test("finding 5: the step heading does not duplicate the 'Connect GitHub' button label", async () => {
+    searchParamValues = {};
+    sessionState = { hasGitHubAccount: false, hasGitHubInstallations: false };
+    const { GetStartedFlow } = await flowModulePromise;
+
+    const html = renderToStaticMarkup(<GetStartedFlow />);
+
+    expect(html).not.toContain(">Connect GitHub</h2>");
   });
 });

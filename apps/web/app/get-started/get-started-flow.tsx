@@ -64,6 +64,11 @@ export function GetStartedFlow() {
     searchParams.get("next"),
     "/sessions",
   );
+  // Issue #842 (finding 4): the onboarding gate (requireOnboarded) redirects
+  // here with an explicit `next` param, so a user bounced off /sessions lands
+  // on a bare setup flow with no explanation. Show a one-line reason whenever
+  // `next` is present.
+  const arrivedFromGate = searchParams.get("next") !== null;
   return (
     <div className="flex min-h-screen flex-col md:flex-row">
       {/* left panel */}
@@ -86,9 +91,16 @@ export function GetStartedFlow() {
       {/* right panel */}
       <div className="flex flex-1 flex-col bg-zinc-950 px-6 py-8 md:px-10 md:py-10">
         <div className="flex w-full flex-1 flex-col">
-          <h1 className="mb-6 text-2xl font-semibold tracking-tight text-white">
+          <h1 className="mb-2 text-2xl font-semibold tracking-tight text-white">
             Get Started
           </h1>
+          {arrivedFromGate ? (
+            <p className="mb-4 text-sm text-zinc-500">
+              Finish setup to continue to your sessions.
+            </p>
+          ) : (
+            <div className="mb-6" />
+          )}
 
           <div className="flex-1 space-y-6">
             <section aria-labelledby="auth-prerequisite-heading">
@@ -115,8 +127,12 @@ export function GetStartedFlow() {
             >
               <div className="flex items-center gap-3 text-white">
                 <span className="text-sm tabular-nums">1.</span>
+                {/* Issue #842 (finding 5): the heading, description, and action
+                    button must not all repeat "Connect GitHub" — the heading
+                    uses the plain account name while the button carries the
+                    verb. */}
                 <h2 id="github-step-heading" className="text-sm font-medium">
-                  Connect GitHub
+                  GitHub
                 </h2>
               </div>
               <div className="pt-4">
@@ -312,7 +328,7 @@ function GitHubConnectStep({
       <p className="text-xs text-zinc-500">
         {forceReconnect
           ? "Reconnect your GitHub account to restore repository and installation access."
-          : "Connect your GitHub account to verify your identity (step 1 of 2). Next you'll install the Open Agents GitHub App and choose which repositories it can access."}
+          : "First you'll verify your identity, then install the Open Agents GitHub App and choose which repositories it can access."}
       </p>
       <Button
         variant="outline"
