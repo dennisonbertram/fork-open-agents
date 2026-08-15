@@ -2217,6 +2217,8 @@ describe("runAgentWorkflow", () => {
 
       await runAgentWorkflow(
         makeOptions({
+          expectFileChanges: true,
+          expectedFiles: ["src/a.ts"],
           messages: [
             {
               id: "assistant-1",
@@ -2236,6 +2238,7 @@ describe("runAgentWorkflow", () => {
       const rwCalls = spies.recordWorkflowUsage.mock.calls as unknown[][];
       const workflowRun = rwCalls.at(-1)?.[5] as { status: string };
       expect(workflowRun.status).toBe("awaiting_tool_approval");
+      expect(spies.probeChangedFilePaths).not.toHaveBeenCalled();
 
       // Not a failure: the workflow-level session event stays "completed",
       // matching pre-#1247 behavior — only the fine-grained persisted status
@@ -4717,6 +4720,40 @@ describe("runAgentWorkflow", () => {
       expect(spies.probeChangedFilePaths).not.toHaveBeenCalled();
     });
 
+    test("grades an empty final diff as no_file_changes for expectFileChanges", async () => {
+      agentFinishReason = "stop";
+      spies.probeChangedFilePaths.mockResolvedValue([]);
+
+      await runAgentWorkflow(
+        makeOptions({
+          maxSteps: 1,
+          expectFileChanges: true,
+        }),
+      );
+
+      const rwCalls = spies.recordWorkflowUsage.mock.calls as unknown[][];
+      const workflowRun = rwCalls.at(-1)?.[5] as { status: string };
+      expect(workflowRun.status).toBe("no_file_changes");
+      expect(spies.probeChangedFilePaths).toHaveBeenCalledTimes(1);
+    });
+
+    test("keeps a run completed when expectFileChanges produces a changed file", async () => {
+      agentFinishReason = "stop";
+      spies.probeChangedFilePaths.mockResolvedValue(["src/a.ts"]);
+
+      await runAgentWorkflow(
+        makeOptions({
+          maxSteps: 1,
+          expectFileChanges: true,
+        }),
+      );
+
+      const rwCalls = spies.recordWorkflowUsage.mock.calls as unknown[][];
+      const workflowRun = rwCalls.at(-1)?.[5] as { status: string };
+      expect(workflowRun.status).toBe("completed");
+      expect(spies.probeChangedFilePaths).toHaveBeenCalledTimes(1);
+    });
+
     // BT-4: a diff touching a file outside a declared list is reported with
     // the offending paths.
     test("reports a diff-acceptance violation naming the offending paths", async () => {
@@ -4904,13 +4941,19 @@ describe("runAgentWorkflow", () => {
     const { runAgentWorkflow: abortRun } = await import("./chat");
 
     // Aborted workflow does not rethrow — it completes with "aborted" status.
-    await abortRun(makeOptions());
+    await abortRun(
+      makeOptions({
+        expectFileChanges: true,
+        expectedFiles: ["src/a.ts"],
+      }),
+    );
 
     expect(spies.recordGoalLedgerClose).toHaveBeenCalledWith(
       expect.objectContaining({
         terminalStatus: "canceled",
       }),
     );
+    expect(spies.probeChangedFilePaths).not.toHaveBeenCalled();
   });
 
   test("runAgentWorkflow completes normally even when recordGoalLedgerStart rejects", async () => {

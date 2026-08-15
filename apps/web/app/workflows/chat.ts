@@ -2948,42 +2948,48 @@ export async function runAgentWorkflow(options: Options) {
     }
 
     // #1288: the acceptance check — only when the caller declared
-    // `expectedFiles` and the run reached a genuine terminal state (not
-    // aborted, not paused waiting on the user, in which case there is no
-    // "final" diff yet to grade). Computed once, after auto-commit/auto-PR
-    // so it sees any changes those steps just made, never mid-loop.
+    // `expectedFiles` or `expectFileChanges: true` and the run reached a
+    // genuine terminal state (not aborted, not paused waiting on the user,
+    // in which case there is no "final" diff yet to grade). Computed once,
+    // after auto-commit/auto-PR so it sees any changes those steps just made,
+    // never mid-loop.
     if (
       sandboxState &&
-      options.expectedFiles &&
-      options.expectedFiles.length > 0 &&
+      ((options.expectedFiles && options.expectedFiles.length > 0) ||
+        options.expectFileChanges === true) &&
       !wasAborted &&
       !awaitingToolApproval
     ) {
       const changedPaths = await probeChangedFilePaths(sandboxState);
       if (changedPaths !== null) {
-        const acceptance = checkDiffAcceptance(
-          changedPaths,
-          options.expectedFiles,
-        );
-        if (acceptance.violated) {
-          diffAcceptanceViolated = true;
-          diffAcceptanceOffendingPaths = acceptance.offendingPaths;
-          const violationText = buildDiffAcceptanceViolationMessage(
-            acceptance.offendingPaths,
+        if (options.expectFileChanges === true && changedPaths.length === 0) {
+          headlessNoDiffCapped = true;
+        }
+        if (options.expectedFiles && options.expectedFiles.length > 0) {
+          const acceptance = checkDiffAcceptance(
+            changedPaths,
+            options.expectedFiles,
           );
-          await sendTextMessage(
-            writable,
-            `${assistantId}:diff-acceptance-violation`,
-            violationText,
-          );
-          pendingAssistantResponse = {
-            ...pendingAssistantResponse,
-            parts: [
-              ...pendingAssistantResponse.parts,
-              { type: "text", text: violationText },
-            ],
-          };
-          didUpdateGitData = true;
+          if (acceptance.violated) {
+            diffAcceptanceViolated = true;
+            diffAcceptanceOffendingPaths = acceptance.offendingPaths;
+            const violationText = buildDiffAcceptanceViolationMessage(
+              acceptance.offendingPaths,
+            );
+            await sendTextMessage(
+              writable,
+              `${assistantId}:diff-acceptance-violation`,
+              violationText,
+            );
+            pendingAssistantResponse = {
+              ...pendingAssistantResponse,
+              parts: [
+                ...pendingAssistantResponse.parts,
+                { type: "text", text: violationText },
+              ],
+            };
+            didUpdateGitData = true;
+          }
         }
       }
     }
