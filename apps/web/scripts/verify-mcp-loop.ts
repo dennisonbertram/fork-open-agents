@@ -286,141 +286,183 @@ async function main(): Promise<void> {
   //    Before #1272 this stalled forever on an approval nobody could answer,
   //    and the stall then wedged the session (#1275).
   const label = `verify-mcp-loop-${Date.now()}`;
-  const started = await callTool("open_agents_start_session", {
-    repoOwner: REPO_OWNER,
-    repoName: REPO_NAME,
-    branch: BASE_BRANCH,
-    label,
-    autoCommit: false,
-    autoCreatePr: false,
-    prompt: [
-      "This is a platform test. Do NOT modify any tracked file in the repository.",
-      "",
-      "Run exactly these commands with the bash tool, in order:",
-      "  1. mkdir -p /tmp/verifyloop && echo ok > /tmp/verifyloop/a.txt && cat /tmp/verifyloop/a.txt",
-      "  2. rm -rf /tmp/verifyloop",
-      "",
-      "Command 2 is gated by the tool-approval policy. A headless run must not be asked to approve it.",
-      "",
-      "Then reply with exactly this one line and nothing else:",
-      "  VERIFY_OK <exit status of command 1> <exit status of command 2>",
-      "",
-      "If anything asks for approval, stop and reply with a line beginning BLOCKED:.",
-    ].join("\n"),
-  });
-  const sessionId = started.sessionId as string;
+  let createdSessionId: string | undefined;
+  try {
+    const started = await callTool("open_agents_start_session", {
+      repoOwner: REPO_OWNER,
+      repoName: REPO_NAME,
+      branch: BASE_BRANCH,
+      label,
+      autoCommit: false,
+      autoCreatePr: false,
+      prompt: [
+        "This is a platform test. Do NOT modify any tracked file in the repository.",
+        "",
+        "Run exactly these commands with the bash tool, in order:",
+        "  1. mkdir -p /tmp/verifyloop && echo ok > /tmp/verifyloop/a.txt && cat /tmp/verifyloop/a.txt",
+        "  2. rm -rf /tmp/verifyloop",
+        "",
+        "Command 2 is gated by the tool-approval policy. A headless run must not be asked to approve it.",
+        "",
+        "Then reply with this line first:",
+        "  VERIFY_OK <exit status of command 1> <exit status of command 2>",
+        "",
+        // The transcript check below is only meaningful against a message longer
+        // than the old 280-character cap. A terse answer would let a capped
+        // transcript pass unnoticed, so ask for length deliberately.
+        "Then, after that line, describe in at least 400 characters what each command did and what its exit status means. The length is deliberate: it exercises full-text transcript retrieval.",
+        "",
+        "If anything asks for approval, stop and reply with a line beginning BLOCKED:.",
+      ].join("\n"),
+    });
+    const sessionId = started.sessionId as string;
+    createdSessionId = sessionId;
 
-  const finished = await waitForRecordedOutcome(sessionId, 10 * 60 * 1000);
-  const transcript = (await callTool("open_agents_get_messages", {
-    sessionId,
-    limit: 4,
-    includeToolTrace: true,
-  })) as {
-    messages: {
-      role: string;
-      text: string;
-      toolTrace?: { name: string; state: string; input: string }[];
-    }[];
-  };
-  const assistant = transcript.messages.findLast(
-    (message) => message.role === "assistant",
-  );
-  const trace = assistant?.toolTrace ?? [];
-  const gatedRan = trace.some(
-    (entry) => /rm -rf/.test(entry.input) && entry.state === "output-available",
-  );
-  const stalled = trace.filter(
-    (entry) =>
-      entry.state === "approval-requested" || entry.state === "input-available",
-  );
-  record(
-    "a headless slice runs a gated command unattended",
-    finished.lastRunOutcome === "completed" &&
-      gatedRan &&
-      stalled.length === 0 &&
-      /VERIFY_OK/.test(assistant?.text ?? ""),
-    `outcome=${finished.lastRunOutcome} gatedRan=${gatedRan} stalled=${stalled.length} answer=${JSON.stringify((assistant?.text ?? "").trim().slice(0, 80))}`,
-  );
-
-  // 4. The transcript is readable in full, with the tool trace.
-  //    It was capped at 280 characters with tool calls dropped entirely.
-  const longest = transcript.messages
-    .filter((message) => message.role === "assistant")
-    .reduce<{ text: string; chars: number } | undefined>(
-      (best, message) =>
-        ((message as { chars?: number }).chars ?? (best?.chars ?? 0) < 0)
-          ? (message as unknown as { text: string; chars: number })
-          : best,
-      undefined,
-    );
-  record(
-    "transcripts return full text and a tool trace",
-    Boolean(longest) &&
-      longest?.text.length === longest?.chars &&
-      trace.length > 0,
-    `chars=${longest?.chars} textLength=${longest?.text.length} toolCalls=${trace.length}`,
-  );
-
-  // 5. The batch is findable by label, the path a second device would use.
-  const byLabel = (await callTool("open_agents_list_sessions", {
-    status: "all",
-    label,
-    limit: 10,
-  })) as { sessions: { id: string }[]; total: number };
-  record(
-    "a batch is findable by label alone",
-    byLabel.sessions.some((session) => session.id === sessionId),
-    `label=${label} total=${byLabel.total}`,
-  );
-
-  // 6. get_updates answers "what finished while I was away" (#1270).
-  if (toolNames.includes("open_agents_get_updates")) {
-    const since = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-    const updates = (await callTool("open_agents_get_updates", {
-      since,
-      limit: 25,
+    const finished = await waitForRecordedOutcome(sessionId, 10 * 60 * 1000);
+    const transcript = (await callTool("open_agents_get_messages", {
+      sessionId,
+      limit: 4,
+      includeToolTrace: true,
     })) as {
-      cursor: string;
-      count: number;
-      changes: { sessionId?: string }[];
-      note: string | null;
+      messages: {
+        role: string;
+        text: string;
+        toolTrace?: { name: string; state: string; input: string }[];
+      }[];
     };
+    const assistant = transcript.messages.findLast(
+      (message) => message.role === "assistant",
+    );
+    const trace = assistant?.toolTrace ?? [];
+    const gatedRan = trace.some(
+      (entry) =>
+        /rm -rf/.test(entry.input) && entry.state === "output-available",
+    );
+    const stalled = trace.filter(
+      (entry) =>
+        entry.state === "approval-requested" ||
+        entry.state === "input-available",
+    );
     record(
-      "get_updates reports the run that just finished",
-      updates.count > 0 &&
+      "a headless slice runs a gated command unattended",
+      finished.lastRunOutcome === "completed" &&
+        gatedRan &&
+        stalled.length === 0 &&
+        /VERIFY_OK/.test(assistant?.text ?? ""),
+      `outcome=${finished.lastRunOutcome} gatedRan=${gatedRan} stalled=${stalled.length} answer=${JSON.stringify((assistant?.text ?? "").trim().slice(0, 80))}`,
+    );
+
+    // 4. The transcript is readable in full, with the tool trace.
+    //    It was capped at 280 characters with tool calls dropped entirely, so a
+    //    short message would let a regression pass unnoticed. The prompt above
+    //    asks for 400+ characters precisely so this check has something to bite
+    //    on; anything at or under the old cap fails rather than passing quietly.
+    const OLD_TRANSCRIPT_CAP = 280;
+    type AssistantMessage = { text: string; chars: number };
+    let longest: AssistantMessage | undefined;
+    for (const message of transcript.messages) {
+      if (message.role !== "assistant") {
+        continue;
+      }
+      const candidate = message as unknown as AssistantMessage;
+      if (!longest || candidate.chars > longest.chars) {
+        longest = candidate;
+      }
+    }
+    record(
+      "transcripts return full text and a tool trace",
+      Boolean(longest) &&
+        longest !== undefined &&
+        longest.chars > OLD_TRANSCRIPT_CAP &&
+        longest.text.length === longest.chars &&
+        trace.length > 0,
+      `chars=${longest?.chars} textLength=${longest?.text.length} (must exceed ${OLD_TRANSCRIPT_CAP}) toolCalls=${trace.length}`,
+    );
+
+    // 5. The batch is findable by label, the path a second device would use.
+    const byLabel = (await callTool("open_agents_list_sessions", {
+      status: "all",
+      label,
+      limit: 10,
+    })) as { sessions: { id: string }[]; total: number };
+    record(
+      "a batch is findable by label alone",
+      byLabel.sessions.some((session) => session.id === sessionId),
+      `label=${label} total=${byLabel.total}`,
+    );
+
+    // 6. get_updates answers "what finished while I was away" (#1270).
+    if (toolNames.includes("open_agents_get_updates")) {
+      const since = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+      // Scoped to this run's own label. An unscoped query counts whatever else
+      // happens to be running in the account, which would make the assertion
+      // depend on unrelated traffic — the exact flakiness this file exists to
+      // avoid.
+      const updates = (await callTool("open_agents_get_updates", {
+        since,
+        label,
+        limit: 25,
+      })) as {
+        cursor: string;
+        count: number;
+        changes: { sessionId?: string }[];
+        note: string | null;
+      };
+      record(
+        "get_updates reports the run that just finished",
         updates.changes.some((change) => change.sessionId === sessionId),
-      `count=${updates.count} cursor=${updates.cursor}`,
-    );
+        `count=${updates.count} (label-scoped) cursor=${updates.cursor}`,
+      );
 
-    const future = (await callTool("open_agents_get_updates", {
-      since: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
-    })) as { count: number; note: string | null };
+      const future = (await callTool("open_agents_get_updates", {
+        since: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+      })) as { count: number; note: string | null };
+      record(
+        "get_updates says 'nothing changed' explicitly",
+        future.count === 0 &&
+          typeof future.note === "string" &&
+          future.note.length > 0,
+        `count=${future.count} note=${JSON.stringify(future.note)}`,
+      );
+    } else {
+      record(
+        "get_updates is available",
+        false,
+        "tool not registered in this environment",
+      );
+    }
+
+    // 7. Archive is idempotent. The archive itself also runs from a finally
+    //    block below, so a failure in any earlier check cannot leave this run's
+    //    session live and burning sandbox time.
+    const archived = await callTool("open_agents_archive_session", {
+      sessionId,
+    });
+    const archivedAgain = await callTool("open_agents_archive_session", {
+      sessionId,
+    });
     record(
-      "get_updates says 'nothing changed' explicitly",
-      future.count === 0 &&
-        typeof future.note === "string" &&
-        future.note.length > 0,
-      `count=${future.count} note=${JSON.stringify(future.note)}`,
+      "archive works and is idempotent",
+      archived.alreadyArchived === false &&
+        archivedAgain.alreadyArchived === true,
+      `first=${archived.alreadyArchived} second=${archivedAgain.alreadyArchived}`,
     );
-  } else {
-    record(
-      "get_updates is available",
-      false,
-      "tool not registered in this environment",
-    );
+  } finally {
+    // A failure in any check above must not leave a live session burning
+    // sandbox time. Archive is idempotent, so doing it here is safe even when
+    // check 7 already archived successfully.
+    if (createdSessionId) {
+      try {
+        await callTool("open_agents_archive_session", {
+          sessionId: createdSessionId,
+        });
+      } catch (error) {
+        console.log(
+          `      (cleanup) could not archive ${createdSessionId}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
   }
-
-  // 7. Archive is idempotent and cleans up after this run.
-  const archived = await callTool("open_agents_archive_session", { sessionId });
-  const archivedAgain = await callTool("open_agents_archive_session", {
-    sessionId,
-  });
-  record(
-    "archive works and is idempotent",
-    archived.alreadyArchived === false &&
-      archivedAgain.alreadyArchived === true,
-    `first=${archived.alreadyArchived} second=${archivedAgain.alreadyArchived}`,
-  );
 
   const failed = checks.filter((check) => !check.pass);
   console.log(
