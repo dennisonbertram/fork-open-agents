@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 
 let getSessionCalls = 0;
+let linkedAccounts: Array<{ providerId: string }> = [];
 let authSession:
   | {
       session: { createdAt: Date };
@@ -15,6 +16,27 @@ let authSession:
   | undefined;
 
 mock.module("server-only", () => ({}));
+
+const accountQuery = {
+  from: () => accountQuery,
+  where: () => accountQuery,
+  orderBy: () => accountQuery,
+  limit: async () => linkedAccounts,
+};
+
+mock.module("@/lib/db/client", () => ({
+  db: {
+    select: () => accountQuery,
+  },
+}));
+
+mock.module("@/lib/db/schema", () => ({
+  accounts: {
+    userId: "userId",
+    providerId: "providerId",
+    updatedAt: "updatedAt",
+  },
+}));
 
 mock.module("@/lib/auth/config", () => ({
   auth: {
@@ -42,6 +64,7 @@ function headers(values: Record<string, string | undefined>) {
 describe("resolveSessionFromHeaders", () => {
   beforeEach(() => {
     getSessionCalls = 0;
+    linkedAccounts = [];
     authSession = undefined;
     delete process.env.OPEN_AGENTS_ENABLE_TEST_AUTH;
   });
@@ -66,7 +89,8 @@ describe("resolveSessionFromHeaders", () => {
     expect(getSessionCalls).toBe(0);
   });
 
-  test("delegates to Better Auth when cookie credentials are present", async () => {
+  test("resolves a Vercel-authenticated session as vercel", async () => {
+    linkedAccounts = [{ providerId: "vercel" }];
     authSession = {
       session: { createdAt: new Date("2026-01-01T00:00:00.000Z") },
       user: {
@@ -92,6 +116,39 @@ describe("resolveSessionFromHeaders", () => {
         avatar: "https://example.com/avatar.png",
       },
     });
+  });
+
+  test("resolves a GitHub-authenticated session as github", async () => {
+    linkedAccounts = [{ providerId: "github" }];
+    authSession = {
+      session: { createdAt: new Date("2026-01-01T00:00:00.000Z") },
+      user: {
+        id: "user-1",
+        name: "GitHub User",
+      },
+    };
+
+    const session = await resolveSessionFromHeaders(
+      headers({ cookie: "better-auth.session_token=value" }),
+    );
+
+    expect(session?.authProvider).toBe("github");
+  });
+
+  test("keeps the Vercel provider when the linked account is unavailable", async () => {
+    authSession = {
+      session: { createdAt: new Date("2026-01-01T00:00:00.000Z") },
+      user: {
+        id: "user-1",
+        name: "Unknown User",
+      },
+    };
+
+    const session = await resolveSessionFromHeaders(
+      headers({ cookie: "better-auth.session_token=value" }),
+    );
+
+    expect(session?.authProvider).toBe("vercel");
   });
 
   test("delegates to Better Auth when authorization credentials are present", async () => {
