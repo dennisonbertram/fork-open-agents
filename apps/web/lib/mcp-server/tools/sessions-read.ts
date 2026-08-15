@@ -39,6 +39,7 @@ import {
   toWorkspaceState,
 } from "../session-state";
 import { toIsoString } from "../timestamps";
+import { toRunUpdate, type McpRunUpdate } from "./session-updates";
 import {
   buildToolTrace,
   type McpToolTraceEntry,
@@ -81,7 +82,7 @@ export const MAX_DIFF_FILES = 100;
 
 const SESSION_READ_SCOPE: McpScope = "sessions:read";
 
-// All five tools in this file only read Open Agents data — none of them can
+// All six tools in this file only read Open Agents data — none of them can
 // mutate a session, so every one gets the same read-only annotation pair.
 const READ_ONLY_ANNOTATIONS: McpToolAnnotations = {
   readOnlyHint: true,
@@ -1002,6 +1003,108 @@ export async function getDiffSummary(
   };
 }
 
+const getUpdatesInputSchema = z
+  .object({
+    // ISO 8601 timestamp. Everything after this counts as "new since the last
+    // poll"; pass back the previous call's `cursor` here.
+    since: z
+      .string()
+      .min(1)
+      .refine((value) => Number.isFinite(new Date(value).getTime()), {
+        message: "since must be an ISO 8601 timestamp",
+      }),
+    // Exact match against the free-text batch label, same as list_sessions and
+    // start_session's `label` — narrows the answer to one fan-out batch.
+    label: z.string().min(1).optional(),
+    // Same default and ceiling as the other list tools in this file.
+    limit: z
+      .number()
+      .int()
+      .min(1)
+      .max(MAX_SESSION_LIMIT)
+      .default(DEFAULT_SESSION_LIMIT),
+  })
+  .strict();
+
+export type GetUpdatesInput = z.infer<typeof getUpdatesInputSchema>;
+
+export type GetUpdatesResult = {
+  /** The server's own "as of" timestamp. Pass this back as `since` on the next
+   * poll rather than computing a boundary from the rows — the server picks a
+   * monotonically-safe moment so nothing that finishes after it is re-asked for
+   * and nothing already reported is silently repeated. */
+  cursor: string;
+  /** How many sessions' runs finished in the window, independent of any cap:
+   * this is the true window count (COUNT(*) OVER()), so a caller for whom
+   * `count > changes.length` knows the response was capped and can re-poll.
+   * An explicit count (plus `note`) is what keeps an empty result unambiguous. */
+  count: number;
+  changes: McpRunUpdate[];
+  /** A plainly-worded no-changes indication, non-null exactly when nothing
+   * finished in the window — so an empty `changes` array is never ambiguous
+   * against "the query failed". */
+  note: string | null;
+};
+
+/**
+ * Report which of the caller's sessions had a run finish since `since` — the
+ * "what changed while I was away" read (#1270). MCP cannot push to a client, so
+ * this is a cheap read the client polls; the caller passes the previous
+ * response's `cursor` as the next `since`.
+ *
+ * Source of truth is `workflowRuns` filtered by the calling user and
+ * `finishedAt > since` — deliberately NOT `session_events`, which fire
+ * throughout a run and would report activity rather than completion.
+ */
+export async function getUpdates(
+  ctx: ToolCallerContext,
+  input: GetUpdatesInput,
+): Promise<GetUpdatesResult> {
+  // The server's "as of" moment, captured before the query so the window it
+  // anchors never needs a client-computed boundary.
+  const cursor = new Date().toISOString();
+  // Loaded lazily (not a static import): this module is imported by registry
+  // tests that mock `@/lib/db/workflow-runs` to just
+  // getLatestWorkflowRunStatusBySessionId, and a static value import of the new
+  // query would blow up their module graph at load time. Only the handler —
+  // which those tests never invoke — touches it.
+  const { getWorkflowRunsFinishedSince } =
+    await import("@/lib/db/workflow-runs");
+  const rows = await getWorkflowRunsFinishedSince({
+    userId: ctx.userId,
+    since: new Date(input.since),
+    limit: input.limit,
+    ...(input.label ? { label: input.label } : {}),
+  });
+
+  // Independent lookups, so a more recent auto-commit row can't mask an older
+  // auto-PR outcome or vice versa — same rule as get_session.
+  const changes = await Promise.all(
+    rows.map(async (row) => {
+      const [autoCommitEvent, autoPrEvent] = await Promise.all([
+        safeLatestGitAutomationEvent({
+          sessionId: row.sessionId,
+          eventNames: AUTO_COMMIT_EVENT_NAMES,
+        }),
+        safeLatestGitAutomationEvent({
+          sessionId: row.sessionId,
+          eventNames: AUTO_PR_EVENT_NAMES,
+        }),
+      ]);
+      return toRunUpdate(row, {
+        lastAutoCommitEvent: toGitAutomationEvent(autoCommitEvent),
+        lastAutoPrEvent: toGitAutomationEvent(autoPrEvent),
+      });
+    }),
+  );
+
+  const count = rows[0]?.totalCount ?? 0;
+  const note =
+    count === 0 ? `No sessions finished since ${input.since}.` : null;
+
+  return { cursor, count, changes, note };
+}
+
 const sessionStateOutputSchema = z.enum(["active", "archived"]);
 const workspaceStateOutputSchema = z.enum([
   "ready",
@@ -1169,6 +1272,28 @@ const getDiffSummaryOutputSchema = z.object({
   truncated: z.boolean(),
 });
 
+const runUpdateOutputSchema = z.object({
+  sessionId: z.string(),
+  title: z.string(),
+  label: z.string().nullable(),
+  lastRunOutcome: lastRunOutcomeOutputSchema,
+  branch: z.string().nullable(),
+  baseBranch: z.string().nullable(),
+  prNumber: z.number().nullable(),
+  prStatus: prStatusOutputSchema,
+  lastAutoCommitEvent: gitAutomationEventOutputSchema,
+  lastAutoPrEvent: gitAutomationEventOutputSchema,
+  url: z.string(),
+  finishedAt: z.string(),
+});
+
+const getUpdatesOutputSchema = z.object({
+  cursor: z.string(),
+  count: z.number(),
+  changes: z.array(runUpdateOutputSchema),
+  note: z.string().nullable(),
+});
+
 export const sessionReadTools: readonly AnyMcpToolDefinition[] = [
   defineTool({
     name: "open_agents_whoami",
@@ -1224,5 +1349,16 @@ export const sessionReadTools: readonly AnyMcpToolDefinition[] = [
     outputSchema: getDiffSummaryOutputSchema,
     annotations: READ_ONLY_ANNOTATIONS,
     handler: getDiffSummary,
+  }),
+  defineTool({
+    name: "open_agents_get_updates",
+    title: "Get Open Agents Session Updates",
+    description:
+      "Report which of the caller's Open Agents coding sessions (Open Agents' own session records, not the caller's MCP session) had a run finish since a given `since` timestamp — the 'what changed while I was away' read. Pass the ISO 8601 `since`; pass the previous response's `cursor` back as the next `since` to advance one safe, monotonic step. Pass `label` to narrow the answer to one fan-out batch. Each `changes` entry is a status read, never a transcript: the session's id, `title`, `label`, `lastRunOutcome` (reusing get_session's own vocabulary — `completed`, `aborted`, `failed`, the deliberate headless stops, etc.), `branch`, `baseBranch`, `prNumber`, `prStatus`, the latest auto-commit and auto-PR event status, the session URL, and when the run `finishedAt`. The answer is scoped to the caller — another user's runs never appear. `count` is the true number of sessions whose run finished in the window (independent of `limit`, so `count > changes.length` means the response was capped); `note` is non-null with a plain 'no sessions finished' message exactly when nothing changed, so an empty result is never ambiguous against a failed query. A still-running session reports nothing here: the query reads the workflow-runs table, which is written once at the true end of a run, so this reports completion, not activity.",
+    scope: SESSION_READ_SCOPE,
+    inputSchema: getUpdatesInputSchema,
+    outputSchema: getUpdatesOutputSchema,
+    annotations: READ_ONLY_ANNOTATIONS,
+    handler: getUpdates,
   }),
 ];

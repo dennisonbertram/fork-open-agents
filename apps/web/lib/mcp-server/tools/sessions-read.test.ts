@@ -58,8 +58,16 @@ mock.module("@/lib/sandbox/utils", () => ({
 const getLatestWorkflowRunStatusBySessionId = mock(
   async (_sessionId: string) => null as string | null,
 );
+// #1270: open_agents_get_updates. The handler loads this lazily via a dynamic
+// import (so the static import graph stays free of it — registry tests mock
+// this module with only getLatestWorkflowRunStatusBySessionId), but the mock
+// must still export it for the dynamic import inside the handler to resolve.
+const getWorkflowRunsFinishedSince = mock(
+  async (_input: unknown) => [] as unknown[],
+);
 mock.module("@/lib/db/workflow-runs", () => ({
   getLatestWorkflowRunStatusBySessionId,
+  getWorkflowRunsFinishedSince,
 }));
 
 // #1246: get_session's auto-commit/auto-PR failure signal. Records every
@@ -144,12 +152,34 @@ function buildSessionDiffRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
+// #1270: the shape getWorkflowRunsFinishedSince returns — a finished run joined
+// to its session's summary columns. The query itself is what enforces
+// "finished since" and caller scope, so these fixtures represent already-
+// filtered rows (a still-running session has no finished run row at all).
+function buildFinishedRunRow(overrides: Record<string, unknown> = {}) {
+  return {
+    runId: "run-1",
+    sessionId: "session-1",
+    status: "completed",
+    finishedAt: new Date("2026-01-01T00:05:00Z"),
+    title: "Fix the bug",
+    label: null,
+    branch: "main",
+    baseBranch: null,
+    prNumber: null,
+    prStatus: null,
+    totalCount: 1,
+    ...overrides,
+  };
+}
+
 const TOOL_NAMES = [
   "open_agents_whoami",
   "open_agents_list_sessions",
   "open_agents_get_session",
   "open_agents_get_messages",
   "open_agents_get_diff_summary",
+  "open_agents_get_updates",
 ];
 
 /**
@@ -209,6 +239,8 @@ beforeEach(() => {
   isSandboxActive.mockClear();
   getLatestWorkflowRunStatusBySessionId.mockClear();
   getLatestWorkflowRunStatusBySessionId.mockImplementation(async () => null);
+  getWorkflowRunsFinishedSince.mockClear();
+  getWorkflowRunsFinishedSince.mockImplementation(async () => []);
   getLatestSessionEventByNames.mockClear();
   getLatestSessionEventByNames.mockImplementation(async () => null);
 });
@@ -2194,6 +2226,201 @@ describe("ownership projection avoids loading cached diff bodies (perf fix F2)",
     expect(getSessionMetadataById).not.toHaveBeenCalled();
     expect(getSessionById).not.toHaveBeenCalled();
     expect(result.hasCachedDiff).toBe(true);
+  });
+});
+
+// --- #1270: open_agents_get_updates: which sessions finished while the client
+// was away. A read over `workflowRuns`, never session_events (those fire all
+// through a run and would report activity, not completion). ---
+describe("getUpdates (#1270)", () => {
+  test("reports exactly one change for a batch with one finished and one still-running session, since a timestamp before both started", async () => {
+    const { getUpdates } = await toolsModulePromise;
+    // A still-running session has NO finished workflow run row (its run has not
+    // ended), so it is structurally absent from the query result. The one
+    // finished session is the only row.
+    getWorkflowRunsFinishedSince.mockImplementation(async () => [
+      buildFinishedRunRow({ sessionId: "session-finished" }),
+    ]);
+
+    const result = await getUpdates(makeCtx({}), {
+      since: "2025-12-31T00:00:00Z",
+      limit: 20,
+    });
+
+    expect(result.changes).toHaveLength(1);
+    expect(result.count).toBe(1);
+    expect(result.changes[0]?.sessionId).toBe("session-finished");
+    // The still-running session must never surface as a change.
+    expect(result.changes.some((c) => c.sessionId === "session-running")).toBe(
+      false,
+    );
+  });
+
+  test("a session that ended on a blocker is distinguishable from one that completed", async () => {
+    const { getUpdates } = await toolsModulePromise;
+    getWorkflowRunsFinishedSince.mockImplementation(async () => [
+      // #1247: awaiting_tool_approval is the vocabulary for a run that ended
+      // paused on something this caller must supply — a blocker.
+      buildFinishedRunRow({
+        sessionId: "session-blocked",
+        status: "awaiting_tool_approval",
+      }),
+      buildFinishedRunRow({ sessionId: "session-done", status: "completed" }),
+    ]);
+
+    const result = await getUpdates(makeCtx({}), {
+      since: "2025-12-31T00:00:00Z",
+      limit: 20,
+    });
+
+    const blocked = result.changes.find(
+      (c) => c.sessionId === "session-blocked",
+    );
+    const done = result.changes.find((c) => c.sessionId === "session-done");
+    expect(blocked?.lastRunOutcome).toBe("awaiting_tool_approval");
+    expect(done?.lastRunOutcome).toBe("completed");
+    expect(blocked?.lastRunOutcome).not.toBe(done?.lastRunOutcome);
+  });
+
+  test("nothing changed since T returns the explicit no-changes answer, not a bare empty list", async () => {
+    const { getUpdates } = await toolsModulePromise;
+    getWorkflowRunsFinishedSince.mockImplementation(async () => []);
+
+    const result = await getUpdates(makeCtx({}), {
+      since: "2026-01-01T00:00:00Z",
+      limit: 20,
+    });
+
+    expect(result.changes).toEqual([]);
+    expect(result.count).toBe(0);
+    // The response is never ambiguous: an explicit, plainly-worded note exists
+    // whenever there is nothing to report, so a client can tell "nothing
+    // finished" apart from "the query failed".
+    expect(result.note).toMatch(/[Nn]o sessions finished/);
+    expect(result.note).toContain("2026-01-01T00:00:00Z");
+  });
+
+  test("another user's finished run never appears — the query is scoped to the caller", async () => {
+    const { getUpdates } = await toolsModulePromise;
+    getWorkflowRunsFinishedSince.mockImplementation(async (input: unknown) => {
+      const query = input as { userId: string };
+      // Simulate the query's own ownership filter: only rows owned by the
+      // caller come back. An implementation that hardcoded a userId, dropped
+      // the caller scoping, or looked up by sessionId without the user would
+      // let a foreign row through here and fail the assertion.
+      expect(query.userId).toBe("user-1");
+      return [
+        buildFinishedRunRow({ sessionId: "session-1", userId: "user-1" }),
+      ];
+    });
+
+    const result = await getUpdates(makeCtx({}), {
+      since: "2026-01-01T00:00:00Z",
+      limit: 20,
+    });
+
+    expect(getWorkflowRunsFinishedSince).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: "user-1" }),
+    );
+    expect(result.changes).toHaveLength(1);
+    expect(result.changes.every((c) => c.sessionId === "session-1")).toBe(true);
+  });
+
+  test("forwards an optional label so the answer scopes to one batch", async () => {
+    const { getUpdates } = await toolsModulePromise;
+
+    await getUpdates(makeCtx({}), {
+      since: "2026-01-01T00:00:00Z",
+      label: "auth-refactor-2026-08-14",
+      limit: 20,
+    });
+
+    expect(getWorkflowRunsFinishedSince).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: "user-1",
+        label: "auth-refactor-2026-08-14",
+      }),
+    );
+  });
+
+  test("returns a cursor (the server's as-of time) and an explicit count alongside the changes", async () => {
+    const { getUpdates } = await toolsModulePromise;
+    const before = Date.now();
+    getWorkflowRunsFinishedSince.mockImplementation(async () => [
+      buildFinishedRunRow(),
+    ]);
+
+    const result = await getUpdates(makeCtx({}), {
+      since: "2026-01-01T00:00:00Z",
+      limit: 20,
+    });
+
+    // The cursor is a server-side "as of" timestamp, at least as recent as the
+    // start of this call — the caller passes it back as `since` next poll.
+    const cursorMs = new Date(result.cursor).getTime();
+    expect(cursorMs).toBeGreaterThanOrEqual(before);
+    expect(Number.isNaN(cursorMs)).toBe(false);
+    expect(result.count).toBe(1);
+    expect(result.changes).toHaveLength(1);
+  });
+
+  test("the returned shape conforms to the advertised outputSchema, including each change's git-automation events", async () => {
+    const { getUpdates, sessionReadTools } = await toolsModulePromise;
+    const def = sessionReadTools.find(
+      (d) => d.name === "open_agents_get_updates",
+    );
+    if (!def) {
+      throw new Error("open_agents_get_updates not registered");
+    }
+
+    getWorkflowRunsFinishedSince.mockImplementation(async () => [
+      buildFinishedRunRow({
+        sessionId: "session-1",
+        branch: "d/abc",
+        baseBranch: "main",
+        prNumber: 7,
+        prStatus: "merged",
+      }),
+    ]);
+    // Two sessions' worth of distinct auto-commit / auto-PR outcomes, so the
+    // event fields get real (non-null) values in the parse.
+    getLatestSessionEventByNames.mockImplementation(
+      async ({ eventNames }: { eventNames: readonly string[] }) => {
+        if (eventNames.includes("workflow.auto_commit.failed")) {
+          return {
+            id: "e1",
+            sessionId: "session-1",
+            eventName: "workflow.auto_commit.failed",
+            status: "failed",
+            summary: "push rejected",
+            createdAt: "2026-01-01T00:04:00.000Z",
+          };
+        }
+        if (eventNames.includes("workflow.auto_pr.succeeded")) {
+          return {
+            id: "e2",
+            sessionId: "session-1",
+            eventName: "workflow.auto_pr.succeeded",
+            status: "succeeded",
+            summary: "PR opened",
+            createdAt: "2026-01-01T00:04:30.000Z",
+          };
+        }
+        return null;
+      },
+    );
+
+    const result = await getUpdates(makeCtx({}), {
+      since: "2026-01-01T00:00:00Z",
+      limit: 20,
+    });
+
+    // Every field the tool returns must be accepted by the schema it
+    // advertises, or the SDK rejects every call.
+    const parsed = def.outputSchema.safeParse(result);
+    expect(parsed.success).toBe(true);
+    expect(result.changes[0]?.lastAutoCommitEvent?.status).toBe("failed");
+    expect(result.changes[0]?.lastAutoPrEvent?.status).toBe("succeeded");
   });
 });
 
