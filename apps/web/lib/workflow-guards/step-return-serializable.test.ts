@@ -89,6 +89,13 @@ describe("findStepReturnViolations", () => {
   // chat.ts, which is out of scope here). This asserts everything else in
   // the tree is clean; step-return-serializable.regression.test.ts asserts
   // the baseline itself only ever shrinks.
+  //
+  // Timeout bumped to 20s (default 5s): building one ts.Program over every
+  // real workflow file (chat.ts and friends) plus their transitive imports
+  // is heavier than the fixture checks above, and under parallel
+  // `--isolate` load this can exceed bun's default test timeout without
+  // actually hanging (observed: ~5.2s). Bumped, not removed, so a genuine
+  // hang (broken termination) still fails.
   test("the real apps/web/app/workflows tree has no NEW violations today", () => {
     const violations = findStepReturnViolations(realWorkflowStepFiles());
     const known = resolveKnownPreExistingViolations(WORKFLOWS_DIR);
@@ -101,5 +108,5 @@ describe("findStepReturnViolations", () => {
       );
 
     expect(violations.filter((v) => !isKnown(v))).toEqual([]);
-  });
+  }, 20_000);
 });

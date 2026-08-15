@@ -61,6 +61,8 @@ describe("findStepReturnViolations — regression coverage", () => {
   // either someone fixed chat.ts (update the baseline) or the checker
   // regressed and stopped detecting it (a real bug). Either way this must
   // fail loudly instead of the baseline silently going stale.
+  // Same real-tree Program cost as step-return-serializable.test.ts's
+  // equivalent test; see that file's comment on the 20s timeout.
   test("the known pre-existing baseline is still detected", () => {
     const violations = findStepReturnViolations(realWorkflowStepFiles());
     const known = resolveKnownPreExistingViolations(WORKFLOWS_DIR);
@@ -68,5 +70,5 @@ describe("findStepReturnViolations — regression coverage", () => {
     for (const expectedViolation of known) {
       expect(violations).toContainEqual(expectedViolation);
     }
-  });
+  }, 20_000);
 });
