@@ -279,7 +279,11 @@ describe("startChatRun: happy path with no active stream", () => {
       messages: [message],
     });
 
-    expect(claimChatActiveStreamId).toHaveBeenCalledWith("chat-1", "run-new");
+    expect(claimChatActiveStreamId).toHaveBeenCalledWith(
+      "chat-1",
+      "run-new",
+      "browser",
+    );
   });
 
   test("forwards agentOptions to the workflow payload when the caller sets it (#1230: MCP headless runs)", async () => {
@@ -298,6 +302,30 @@ describe("startChatRun: happy path with no active stream", () => {
       [Record<string, unknown>],
     ];
     expect(args[0].agentOptions).toEqual(agentOptions);
+  });
+
+  test('#1269: claims the slot with source "mcp" for an unattended (MCP headless) run', async () => {
+    const { startChatRun } = await moduleUnderTestPromise;
+
+    await startChatRun(baseInput({ agentOptions: { unattended: true } }));
+
+    expect(claimChatActiveStreamId).toHaveBeenCalledWith(
+      "chat-1",
+      "run-new",
+      "mcp",
+    );
+  });
+
+  test('#1269: claims the slot with source "browser" for a run without unattended options', async () => {
+    const { startChatRun } = await moduleUnderTestPromise;
+
+    await startChatRun(baseInput());
+
+    expect(claimChatActiveStreamId).toHaveBeenCalledWith(
+      "chat-1",
+      "run-new",
+      "browser",
+    );
   });
 
   test("does not default maxSteps to 500 for a caller that omits it (#1231: headless MCP runs must not inherit the browser step cap)", async () => {

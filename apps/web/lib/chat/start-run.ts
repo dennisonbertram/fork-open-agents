@@ -2,6 +2,7 @@ import type { OpenAgentCallOptions } from "@open-agents/agent";
 import { start } from "workflow/api";
 import type { WebAgentUIMessage } from "@/app/types";
 import { runAgentWorkflow } from "@/app/workflows/chat";
+import type { ActiveRunSource } from "@/lib/db/schema";
 import {
   claimChatActiveStreamId,
   compareAndSetChatActiveStreamId,
@@ -269,7 +270,16 @@ export async function startChatRun(
   // Idempotently claim the activeStreamId slot for the workflow we just
   // started. This succeeds both when the slot is still null and when the
   // workflow already self-claimed it from inside its first step.
-  const claimed = await claimChatActiveStreamId(input.chatId, run.runId);
+  //
+  // #1269: record which client kind started this run — "mcp" for a headless
+  // MCP run (agentOptions.unattended === true), "browser" for everything else,
+  // including the browser chat route which never sets agentOptions.
+  const source: ActiveRunSource = isHeadlessCaller ? "mcp" : "browser";
+  const claimed = await claimChatActiveStreamId(
+    input.chatId,
+    run.runId,
+    source,
+  );
 
   if (!claimed) {
     // Another request or workflow run owns the slot — cancel our duplicate.

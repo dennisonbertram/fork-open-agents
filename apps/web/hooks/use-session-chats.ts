@@ -502,6 +502,9 @@ export function useSessionChats(
       inferenceProfileId: null,
       composioSelection: defaultChatComposioSelection,
       activeStreamId: null,
+      // #1269: no run is live on an optimistically-created chat, so it has no
+      // client source yet. The server fills this in when a run claims the slot.
+      activeRunSource: null,
       lastAssistantMessageAt: null,
       createdAt: now,
       updatedAt: now,
@@ -597,6 +600,9 @@ export function useSessionChats(
       inferenceProfileId: sourceChat.inferenceProfileId,
       composioSelection: sourceChat.composioSelection,
       activeStreamId: null,
+      // #1269: no run is live on an optimistically-created chat, so it has no
+      // client source yet. The server fills this in when a run claims the slot.
+      activeRunSource: null,
       lastAssistantMessageAt: null,
       createdAt: now,
       updatedAt: now,

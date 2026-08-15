@@ -18,6 +18,7 @@ import {
   chatMessages,
   chatReads,
   chats,
+  type ActiveRunSource,
   type NewChat,
   type NewChatMessage,
   type NewChatRead,
@@ -580,6 +581,7 @@ export async function getChatSummariesBySessionId(
         END
       `,
       isStreaming: sql<boolean>`${chats.activeStreamId} IS NOT NULL`,
+      activeRunSource: chats.activeRunSource,
     })
     .from(chats)
     .leftJoin(
@@ -654,7 +656,15 @@ export async function compareAndSetChatActiveStreamId(
 
   const [updated] = await db
     .update(chats)
-    .set({ activeStreamId: nextStreamId })
+    .set(
+      // When the slot is cleared (nextStreamId null), clear activeRunSource
+      // alongside it (#1269). This is the single clearing choke-point every
+      // live-run clear goes through (clearActiveStream in the workflow, the
+      // stop route, the stream/message routes).
+      nextStreamId === null
+        ? { activeStreamId: null, activeRunSource: null }
+        : { activeStreamId: nextStreamId },
+    )
     .where(and(eq(chats.id, chatId), activeStreamMatch))
     .returning({ id: chats.id });
 
@@ -672,14 +682,24 @@ export async function compareAndSetChatActiveStreamId(
  * `activeStreamId` is recorded as long as the workflow itself is running —
  * even if the HTTP handler that started it was killed before its own CAS
  * write completed.
+ *
+ * When `activeRunSource` is provided (a run started with a known client kind,
+ * e.g. "mcp" for a headless MCP run), it is recorded alongside the claim.
+ * When omitted (the workflow's own first-step self-claim, which has no client
+ * context), activeRunSource is left untouched so the caller that does know it
+ * (startChatRun) can still write it on its re-claim of the same slot.
  */
 export async function claimChatActiveStreamId(
   chatId: string,
   workflowRunId: string,
+  activeRunSource?: ActiveRunSource,
 ): Promise<boolean> {
   const [updated] = await db
     .update(chats)
-    .set({ activeStreamId: workflowRunId })
+    .set({
+      activeStreamId: workflowRunId,
+      ...(activeRunSource ? { activeRunSource } : {}),
+    })
     .where(
       and(
         eq(chats.id, chatId),
