@@ -17,6 +17,7 @@ or detailed procedures here; put that material in `docs/agents`,
 - [Local Development Setup](docs/process/local-development.md)
 - [Development Workflow](docs/process/development-workflow.md)
 - [Guard Integrity](docs/process/guard-integrity.md)
+- [Reviewing What Tests Cannot See](docs/process/reviewing-what-tests-cannot-see.md)
 - [Dogfood The Cloud Loop](docs/process/dogfood-cloud-fanout.md)
 - [Behavior-First TDD](docs/process/behavior-tdd.md)
 - [Authenticated Local UI Smoke](docs/process/development-workflow.md#authenticated-local-ui-smoke)
@@ -106,6 +107,17 @@ shipped four guards that were green and inert. Exercise the refusal through the
 real entry point, check its exit code without a pipe, prove the allow paths, and
 confirm every input the guard reads actually reaches it in Turbo's env
 allowlist, in every Vercel environment, and in `.env.example`.
+
+When **reviewing** a change, a green suite is only evidence about code the suite
+can reach. Follow
+[Reviewing What Tests Cannot See](docs/process/reviewing-what-tests-cannot-see.md):
+ask what the harness structurally cannot observe — lines needing live
+infrastructure, option combinations tested only in isolation, behavior decided
+in YAML or environment variables, and which environment your evidence came
+from — then read those places. Three defects on 2026-08-16 were found that way
+in a repository with thousands of passing tests. Where a line cannot be executed
+under test, guard it from the source text, and mutation-test the guard before
+trusting it.
 
 For managed runtime, sandbox, workflow, browser, deploy, auth, or GitHub App
 changes, include observability evidence: user-visible status, runtime/sandbox
