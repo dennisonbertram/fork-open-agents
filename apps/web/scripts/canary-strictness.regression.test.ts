@@ -31,6 +31,45 @@ async function workflowSource(): Promise<string> {
   return await Bun.file(WORKFLOW_PATH).text();
 }
 
+/**
+ * Returns just the YAML of one step, so an assertion binds to the step that
+ * actually has to carry the setting.
+ *
+ * Searching the whole file would pass on a stray comment, or on another job
+ * that happens to contain the string — review of this guard raised exactly
+ * that. Slicing from the step's own `id:` (or an explicit heading) to the
+ * next step boundary makes the assertion mean what it claims.
+ */
+async function stepBlock(
+  stepId: string,
+  options?: { from?: string },
+): Promise<string> {
+  const source = await workflowSource();
+  const marker = options?.from ? `- name: ${options.from}` : `id: ${stepId}`;
+  const start = source.indexOf(marker);
+  if (start === -1) {
+    throw new Error(
+      `Step "${options?.from ?? stepId}" not found in ${WORKFLOW_PATH}. The guard cannot assert on a step that does not exist — rename it here too.`,
+    );
+  }
+  const next = source.indexOf("\n      - name:", start + marker.length);
+  return source.slice(start, next === -1 ? undefined : next);
+}
+
+/**
+ * True when the step sets this env key to this value as real YAML.
+ *
+ * A plain substring search passes on `# KEY: "true"`, which sets nothing —
+ * verified by mutation, and the reason this helper exists instead of
+ * `toContain`. Requires a line whose trimmed form is exactly the assignment,
+ * so a commented-out flag reads as absent, which is what it is.
+ */
+function setsEnv(block: string, key: string, value: string): boolean {
+  return block
+    .split("\n")
+    .some((line) => line.trim() === `${key}: ${JSON.stringify(value)}`);
+}
+
 describe("authenticated production canary is strict", () => {
   test("the workflow file is where this guard expects it", async () => {
     // A moved or renamed workflow would make every assertion below vacuous.
@@ -38,24 +77,28 @@ describe("authenticated production canary is strict", () => {
   });
 
   test("the agent-loop journey proof requires a succeeded run", async () => {
-    expect(await workflowSource()).toContain(
-      'LOOP_JOURNEY_PROOF_REQUIRE_SUCCEEDED: "true"',
+    const block = await stepBlock("loops_journey");
+    expect(setsEnv(block, "LOOP_JOURNEY_PROOF_REQUIRE_SUCCEEDED", "true")).toBe(
+      true,
     );
   });
 
   test("the background-agent journey proof requires a succeeded run", async () => {
-    expect(await workflowSource()).toContain(
-      'BACKGROUND_AGENT_PROOF_REQUIRE_SUCCEEDED: "true"',
-    );
+    const block = await stepBlock("background_journey");
+    expect(
+      setsEnv(block, "BACKGROUND_AGENT_PROOF_REQUIRE_SUCCEEDED", "true"),
+    ).toBe(true);
   });
 
   test("the workflow still fails when a journey does not pass", async () => {
-    const source = await workflowSource();
+    const gate = await stepBlock("aggregate", {
+      from: "Fail workflow unless all authenticated journeys passed",
+    });
     // The final gate turns the aggregated classification into a non-zero
     // exit. Without it the job stays green no matter what the journeys say,
     // which is the same class of defect one layer up.
-    expect(source).toContain('if [ "$ALL_PASSED" != "true" ]; then');
-    expect(source).toContain("exit 1");
+    expect(gate).toContain('if [ "$ALL_PASSED" != "true" ]; then');
+    expect(gate).toContain("exit 1");
   });
 });
 
