@@ -12,13 +12,37 @@ import { TEST_AUTH_COOKIE, TEST_AUTH_USER_ID } from "@/lib/session/test-auth";
  * default). For a protected Vercel preview, also set
  * VERCEL_AUTOMATION_BYPASS_SECRET so requests pass deployment protection.
  *
- * Without CONTRACT_BASE_URL the suites skip, so `bun run ci` stays green.
+ * Without CONTRACT_BASE_URL the suites skip, so `bun run ci` stays green. Set
+ * CONTRACT_REQUIRED=1 when the suite is required proof; missing capabilities
+ * then fail before any suite can skip.
  */
 export const CONTRACT_BASE_URL = (process.env.CONTRACT_BASE_URL ?? "").replace(
   /\/$/,
   "",
 );
 export const contractEnabled = CONTRACT_BASE_URL.length > 0;
+export const contractRequired = process.env.CONTRACT_REQUIRED === "1";
+
+export type ContractConfiguration = {
+  required: boolean;
+  baseUrl: string;
+};
+
+export function assertContractConfiguration({
+  required,
+  baseUrl,
+}: ContractConfiguration): void {
+  if (required && baseUrl.length === 0) {
+    throw new Error(
+      "contract_target_missing: CONTRACT_BASE_URL is required when CONTRACT_REQUIRED=1; set it to a reachable contract-test target",
+    );
+  }
+}
+
+assertContractConfiguration({
+  required: contractRequired,
+  baseUrl: CONTRACT_BASE_URL,
+});
 
 const authCookie = `${TEST_AUTH_COOKIE}=${encodeURIComponent(TEST_AUTH_USER_ID)}`;
 // Bypasses Vercel deployment protection on protected previews. Sent on every
@@ -130,3 +154,9 @@ async function probeAuthAvailable(): Promise<boolean> {
 }
 
 export const authAvailable = await probeAuthAvailable();
+
+if (contractRequired && !authAvailable) {
+  throw new Error(
+    "test_auth_unavailable: CONTRACT_REQUIRED=1 requires the target to accept the fixed test-auth identity",
+  );
+}

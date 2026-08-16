@@ -2121,6 +2121,27 @@ describe("runAgentWorkflow", () => {
       });
     });
 
+    // A truncated run can also finish with an empty diff. `no_file_changes`
+    // outranks `truncated` in deriveWorkflowRunOutcomeStatus, so declaring
+    // `expectFileChanges: true` used to overwrite the real stop reason with a
+    // wrong one — reported by review on #1313 and reproduced before this
+    // guard existed. The whole point of grading the declaration is outcome
+    // honesty; masking a more specific reason defeats it.
+    test("a truncated run with an empty diff still reports truncated, not no_file_changes", async () => {
+      agentFinishReason = "length";
+      agentRawFinishReason = "provider_length";
+      agentAssistantPartsFactory = () => [{ type: "text", text: "partial" }];
+      spies.probeChangedFilePaths.mockImplementation(async () => []);
+
+      await runAgentWorkflow(
+        makeOptions({ maxSteps: 20, expectFileChanges: true }),
+      );
+
+      const rwCalls = spies.recordWorkflowUsage.mock.calls as unknown[][];
+      const workflowRun = rwCalls.at(-1)?.[5] as { status: string };
+      expect(workflowRun.status).toBe("truncated");
+    });
+
     test("does not auto-commit truncated work once the continuation budget is exhausted", async () => {
       agentFinishReason = "length";
       agentRawFinishReason = "provider_length";
@@ -2217,6 +2238,8 @@ describe("runAgentWorkflow", () => {
 
       await runAgentWorkflow(
         makeOptions({
+          expectFileChanges: true,
+          expectedFiles: ["src/a.ts"],
           messages: [
             {
               id: "assistant-1",
@@ -2236,6 +2259,7 @@ describe("runAgentWorkflow", () => {
       const rwCalls = spies.recordWorkflowUsage.mock.calls as unknown[][];
       const workflowRun = rwCalls.at(-1)?.[5] as { status: string };
       expect(workflowRun.status).toBe("awaiting_tool_approval");
+      expect(spies.probeChangedFilePaths).not.toHaveBeenCalled();
 
       // Not a failure: the workflow-level session event stays "completed",
       // matching pre-#1247 behavior — only the fine-grained persisted status
@@ -2767,6 +2791,33 @@ describe("runAgentWorkflow", () => {
     await runAgentWorkflow(makeOptions());
 
     expect(spies.refreshDiffCache).toHaveBeenCalledTimes(1);
+  });
+
+  // A run working directly on the default branch (isNewBranch: false) with
+  // auto-commit pushes to that branch. The push advances the local
+  // origin/<default> tracking ref to HEAD, and probeChangedFilePaths resolves
+  // its base ref from refs/remotes/origin/HEAD and runs AFTER the push — so it
+  // diffs HEAD against HEAD and returns []. Grading that as no_file_changes
+  // calls a run that committed and pushed "produced nothing". Reported by
+  // review on #1313.
+  test("a run that auto-committed is never graded no_file_changes, even when the post-push diff is empty", async () => {
+    spies.runAutoCommitStep.mockImplementationOnce(() =>
+      Promise.resolve({ committed: true, pushed: true }),
+    );
+    spies.probeChangedFilePaths.mockImplementation(async () => []);
+
+    await runAgentWorkflow(
+      makeOptions({
+        autoCommitEnabled: true,
+        expectFileChanges: true,
+        repoOwner: "acme",
+        repoName: "repo",
+      }),
+    );
+
+    const rwCalls = spies.recordWorkflowUsage.mock.calls as unknown[][];
+    const workflowRun = rwCalls.at(-1)?.[5] as { status: string };
+    expect(workflowRun.status).not.toBe("no_file_changes");
   });
 
   test("runs auto-commit when enabled and not aborted", async () => {
@@ -4717,6 +4768,40 @@ describe("runAgentWorkflow", () => {
       expect(spies.probeChangedFilePaths).not.toHaveBeenCalled();
     });
 
+    test("grades an empty final diff as no_file_changes for expectFileChanges", async () => {
+      agentFinishReason = "stop";
+      spies.probeChangedFilePaths.mockResolvedValue([]);
+
+      await runAgentWorkflow(
+        makeOptions({
+          maxSteps: 1,
+          expectFileChanges: true,
+        }),
+      );
+
+      const rwCalls = spies.recordWorkflowUsage.mock.calls as unknown[][];
+      const workflowRun = rwCalls.at(-1)?.[5] as { status: string };
+      expect(workflowRun.status).toBe("no_file_changes");
+      expect(spies.probeChangedFilePaths).toHaveBeenCalledTimes(1);
+    });
+
+    test("keeps a run completed when expectFileChanges produces a changed file", async () => {
+      agentFinishReason = "stop";
+      spies.probeChangedFilePaths.mockResolvedValue(["src/a.ts"]);
+
+      await runAgentWorkflow(
+        makeOptions({
+          maxSteps: 1,
+          expectFileChanges: true,
+        }),
+      );
+
+      const rwCalls = spies.recordWorkflowUsage.mock.calls as unknown[][];
+      const workflowRun = rwCalls.at(-1)?.[5] as { status: string };
+      expect(workflowRun.status).toBe("completed");
+      expect(spies.probeChangedFilePaths).toHaveBeenCalledTimes(1);
+    });
+
     // BT-4: a diff touching a file outside a declared list is reported with
     // the offending paths.
     test("reports a diff-acceptance violation naming the offending paths", async () => {
@@ -4904,13 +4989,19 @@ describe("runAgentWorkflow", () => {
     const { runAgentWorkflow: abortRun } = await import("./chat");
 
     // Aborted workflow does not rethrow — it completes with "aborted" status.
-    await abortRun(makeOptions());
+    await abortRun(
+      makeOptions({
+        expectFileChanges: true,
+        expectedFiles: ["src/a.ts"],
+      }),
+    );
 
     expect(spies.recordGoalLedgerClose).toHaveBeenCalledWith(
       expect.objectContaining({
         terminalStatus: "canceled",
       }),
     );
+    expect(spies.probeChangedFilePaths).not.toHaveBeenCalled();
   });
 
   test("runAgentWorkflow completes normally even when recordGoalLedgerStart rejects", async () => {
