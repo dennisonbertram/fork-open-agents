@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import {
+  createRedisClient,
   getRedisConnectionOptions,
   getRedisUrl,
   isRedisConfigured,
@@ -7,6 +8,8 @@ import {
 
 const originalRedisUrl = process.env.REDIS_URL;
 const originalKvUrl = process.env.KV_URL;
+const originalNodeEnv = process.env.NODE_ENV;
+const nodeEnvKey = "NODE_ENV" as keyof NodeJS.ProcessEnv;
 
 afterEach(() => {
   if (originalRedisUrl === undefined) {
@@ -20,6 +23,8 @@ afterEach(() => {
   } else {
     process.env.KV_URL = originalKvUrl;
   }
+
+  process.env[nodeEnvKey] = originalNodeEnv;
 });
 
 describe("getRedisConnectionOptions", () => {
@@ -96,10 +101,36 @@ describe("redis configuration", () => {
   });
 
   test("falls back to KV_URL when REDIS_URL is blank", () => {
+    process.env[nodeEnvKey] = "production";
     process.env.REDIS_URL = " ";
     process.env.KV_URL = "redis://localhost:6379";
 
     expect(getRedisUrl()).toBe("redis://localhost:6379");
     expect(isRedisConfigured()).toBe(true);
+  });
+
+  test("refuses a live REDIS_URL when running under test", () => {
+    process.env[nodeEnvKey] = "test";
+    process.env.REDIS_URL = "redis://127.0.0.1:6379";
+    delete process.env.KV_URL;
+
+    // No client is created: the suite must stay hermetic even when the
+    // developer's environment points at a real Redis (#1132).
+    expect(getRedisUrl()).toBeNull();
+    expect(isRedisConfigured()).toBe(false);
+    expect(() => createRedisClient()).toThrow(
+      "REDIS_URL or KV_URL environment variable is required",
+    );
+  });
+
+  test("creates a client from REDIS_URL outside test", () => {
+    process.env[nodeEnvKey] = "production";
+    process.env.REDIS_URL = "redis://127.0.0.1:6379";
+    delete process.env.KV_URL;
+
+    expect(getRedisUrl()).toBe("redis://127.0.0.1:6379");
+    expect(isRedisConfigured()).toBe(true);
+    const client = createRedisClient();
+    client.disconnect();
   });
 });

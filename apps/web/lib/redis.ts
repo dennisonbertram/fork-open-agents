@@ -58,6 +58,15 @@ function applyRedisQueryOptions(
 }
 
 export function getRedisUrl(): string | null {
+  // `bun test` sets NODE_ENV=test: never open a live Redis connection from the
+  // test suite, even when the developer's env has a real REDIS_URL/KV_URL — a
+  // shared live rate limiter makes unrelated test files fail with 429 (#1132).
+  // rate-limit.test.ts opts back into the client path by setting
+  // NODE_ENV=production.
+  if (process.env.NODE_ENV === "test") {
+    return null;
+  }
+
   const redisUrl = process.env.REDIS_URL?.trim();
   if (redisUrl) return redisUrl;
 
