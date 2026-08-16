@@ -10,12 +10,23 @@
 /**
  * How many consecutive steps a run declared `expectFileChanges: true` may go
  * without an actual git-tree change before it is stopped as producing no
- * output. Same order of magnitude as DEFAULT_HEADLESS_RUN_MAX_STALE_STEPS —
- * independently tunable, since the two bound different things (tool-call
- * repetition vs. a declared-but-unmet expectation) and may need different
- * values later.
+ * output.
+ *
+ * Raised from 20 to 40 on 2026-08-16. Measured cost of 20: three dispatched
+ * slices out of roughly seven that day were stopped by it while doing
+ * legitimate work — reading the files they had been instructed to match
+ * conventions with, before writing anything. In each case the analysis in the
+ * transcript was correct and the slice simply never reached its first edit.
+ * One had already traced every consumer of the module it was sent to change.
+ *
+ * 40 is not a measured optimum and should not be presented as one. It is
+ * double a value with three observed false stops, still far below the
+ * ceiling, and callers who know their task's shape can now override it
+ * per-run via `resolveStepsWithoutDiffAllowance`, which is the real fix — a
+ * single global number cannot serve both a read-heavy refactor and a
+ * one-line change.
  */
-export const DEFAULT_HEADLESS_RUN_MAX_STEPS_WITHOUT_DIFF = 20;
+export const DEFAULT_HEADLESS_RUN_MAX_STEPS_WITHOUT_DIFF = 40;
 
 /** Same ceiling rationale as HEADLESS_RUN_MAX_STALE_STEPS_CEILING. */
 export const HEADLESS_RUN_MAX_STEPS_WITHOUT_DIFF_CEILING = 100;
@@ -34,6 +45,47 @@ export function getHeadlessRunMaxStepsWithoutDiff(): number {
     return DEFAULT_HEADLESS_RUN_MAX_STEPS_WITHOUT_DIFF;
   }
   return Math.min(parsed, HEADLESS_RUN_MAX_STEPS_WITHOUT_DIFF_CEILING);
+}
+
+/**
+ * What a caller may declare for `expectFileChanges`.
+ *
+ * `true` takes the configured default. A number sets this run's own
+ * allowance, because the dispatcher knows things the server cannot: a slice
+ * told to match existing conventions has to read several files before it
+ * writes anything, while a slice told to change one line should stop almost
+ * immediately. The env var cannot express that — it is global, and those two
+ * runs sit side by side.
+ */
+export type DeclaredFileChangeExpectation = boolean | number;
+
+/**
+ * Resolves the no-diff allowance for one run.
+ *
+ * Returns null when the fuse is not armed (`false`/omitted) — a read-only run
+ * is unaffected, which is the #1242 behaviour that must not regress.
+ *
+ * A non-positive or non-finite number falls back to the default rather than
+ * disabling the fuse. Letting `0` mean "never stop" would convert a cost
+ * control into an unbounded run, which is exactly what it exists to prevent.
+ * Fractional values floor to at least 1.
+ */
+export function resolveStepsWithoutDiffAllowance(
+  declared: DeclaredFileChangeExpectation | undefined,
+): number | null {
+  if (declared === undefined || declared === false) {
+    return null;
+  }
+  if (declared === true) {
+    return getHeadlessRunMaxStepsWithoutDiff();
+  }
+  if (!Number.isFinite(declared) || declared <= 0) {
+    return getHeadlessRunMaxStepsWithoutDiff();
+  }
+  return Math.min(
+    Math.max(1, Math.floor(declared)),
+    HEADLESS_RUN_MAX_STEPS_WITHOUT_DIFF_CEILING,
+  );
 }
 
 /**
