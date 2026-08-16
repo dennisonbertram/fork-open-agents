@@ -28,6 +28,9 @@ Start here:
 - [Guard Integrity](guard-integrity.md) - why guards that pass their own tests
   still do nothing in production, and the checks required before claiming one
   works.
+- [Reviewing What Tests Cannot See](reviewing-what-tests-cannot-see.md) - the
+  four blind spots a green suite has, how to instruct a reviewer to look in
+  them, and why a review finding is a lead rather than a verdict.
 - [Behavior TDD](behavior-tdd.md) - behavior-first TDD for user and operator
   paths.
 - [Regression Discipline](regression-discipline.md) - bug-to-regression rules.

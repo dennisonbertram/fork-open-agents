@@ -2,6 +2,36 @@
 
 Hard-won knowledge from building this codebase. When you make a mistake or discover a non-obvious behavior, add it here.
 
+## Index
+
+Standing topics:
+
+- [General / Tooling](#general--tooling)
+- [Auth / OAuth](#auth--oauth)
+- [Next.js](#nextjs)
+- [Sandbox Lifecycle](#sandbox-lifecycle)
+- [Sandbox UI State](#sandbox-ui-state)
+- [Chat / Streaming UI](#chat--streaming-ui)
+- [GitHub App / PR Flows](#github-app--pr-flows)
+- [Vercel Workflow DevKit](#vercel-workflow-devkit)
+- [Bun Test Isolation — mock.module First-Win Behavior](#bun-test-isolation--mockmodule-first-win-behavior)
+
+Dated epic and sweep sections:
+
+- [Agent Loops Epic #761 (2026-07-02)](#agent-loops-epic-761-2026-07-02)
+- [Managed Runtime profiles epic #807 (2026-07-02)](#managed-runtime-profiles-epic-807-2026-07-02)
+- [First-run Onboarding Epic #779 (2026-07-03)](#first-run-onboarding-epic-779-2026-07-03)
+- [DOM test infra spike #858 (2026-07-03)](#dom-test-infra-spike-858-2026-07-03)
+- [Per-turn heartbeats and UTC timestamp parity (#863, 2026-07-03)](#per-turn-heartbeats-and-utc-timestamp-parity-863-2026-07-03)
+- [Stranded reviewed fixes (#859, 2026-07-03)](#stranded-reviewed-fixes-859-2026-07-03)
+- [No-progress (git-delta) turn budget, Task 1 (#914, 2026-07-05)](#no-progress-git-delta-turn-budget-task-1-914-2026-07-05)
+- [Deployed Feature Proof Standard (#868, 2026-07-03)](#deployed-feature-proof-standard-868-2026-07-03)
+- [Delegated-worker failure diagnosis and loop stop conditions (#1140–#1143, 2026-08-07)](#delegated-worker-failure-diagnosis-and-loop-stop-conditions-11401143-2026-08-07)
+- [Preview shared the production database (#1167, 2026-08-08)](#preview-shared-the-production-database-1167-2026-08-08)
+- [Composite model ids, and errors that hide behind a generic message (#1191/#1196, 2026-08-11)](#composite-model-ids-and-errors-that-hide-behind-a-generic-message-11911196-2026-08-11)
+- [MCP fan-out loop — a day of production dogfooding](#mcp-fan-out-loop--a-day-of-production-dogfooding)
+- [Monitors that cannot fail (#1314, 2026-08-16)](#monitors-that-cannot-fail-1314-2026-08-16)
+
 ## General / Tooling
 
 - For Open Agents self-hosting, verify deployment requirements from current code and `apps/web/.env.example`; older Open Harness-era notes can mention stale `JWE_SECRET`, `ENCRYPTION_KEY`, or pre-Better Auth callback routes that no longer match the app.
@@ -186,6 +216,16 @@ When adding a new export to a shared store/module, grep for all `mock.module` fa
 - **`isolation:'worktree'` sub-agents leave their worktree behind (not auto-cleaned when it has commits) and keep the feature branch checked out**, so the coordinator can't `git worktree add` that branch again for a follow-up fix. Either operate in the existing leftover worktree in place, or `git worktree remove <path> --force` first. Clean them up after each wave's merges.
 - **Level-2 live-sandbox proof is unreachable locally without valid Vercel OIDC/sandbox creds** — the dev demo route fails with "Could not get credentials from OIDC context." Per the managed-runtime proof standard, record it as `blocked-by-configuration` with the exact error and lean on Level-1 deterministic evidence + a real-HTTP activation chain; do not mint tokens to force it.
 
+## First-run Onboarding Epic #779 (2026-07-03)
+
+- **One query param carrying two meanings breaks the moment a second producer appears.** `step=github` historically meant "force the reconnect flow"; when status-carrying redirects also began appending it (for auto-open), success returns rendered the reconnect UI and retry CTAs looped. Make intent explicit (`reconnect=1` emitted only by `buildGitHubReconnectUrl`) and let the ambient param keep exactly one job. Grep for every producer of a param before adding a second meaning.
+- **Hidden must mean inert.** `opacity-0` + `pointer-events-none` leaves a control in the accessibility tree and tab order — keyboard users can focus an invisible button, and a11y-tree-driven automation (agent-browser snapshots) will "click" it and report a dead CTA. Use `visibility: hidden` (`invisible`) + `aria-hidden` for hidden interactive clusters. Triage recipe that settled three phases of confusion: `elementFromPoint` at the control's center + computed `pointerEvents`, and `form.requestSubmit()` to distinguish overlay-intercepted clicks from genuinely dead handlers.
+- **better-auth's client resolves API errors as `{ data, error }` — it does not reject.** Any wrapper that treats a resolved promise as success (e.g. leaving a pending spinner up "until navigation") hangs forever on API-level failures. Inspect the resolved value for a truthy `error` and route it through the same failure path as a rejection.
+- **Making an API stop lying is only half a fix — grep the consumers.** After `connection-status` stopped reporting `"connected"` on unknown validation failures, the settings UI still mapped everything non-reconnect to a green "Connected" pill, so the false success survived one layer up. When introducing a new status value, trace every consumer branch (`status === ...`) and prove the new value renders visibly, not just type-checks.
+- **Serial merge trains on a hot `develop` need automation, not patience.** With strict branch protection and sibling missions merging continuously, PRs go `BEHIND` faster than a manual update-merge cycle completes. Arm `gh pr merge --auto`, drive `gh pr update-branch` serially from a monitor script, and expect semantic conflicts *between same-epic PRs* (e.g. state validation vs status rerouting in one route file) — resolve at the train with tests asserting the union behavior, and add fixtures the later PR made mandatory (state cookies) to the earlier PR's tests.
+- **A local dev toolbar overlay (styles-module `toolbar`/`buttonWrapper` classes) floats over the bottom-right of every page under `next dev` and swallows clicks** — including the chat composer's Send button. Browser walkers must prefer direct URL navigation and treat silent dead clicks in that region as suspect; `NEXT_PUBLIC_DISABLE_AGENTATION=1` does not remove it.
+- **Naive-walk findings need a directed-verification pass before ticketing.** Three evidence streams (parallel code readers with file:line proof, an outside-model review of the repomix-packed paths, and goal-based naive walks) converged on the same blockers with near-zero false positives — but the walks alone also produced artifact findings (dev-overlay dead clicks, stale test-user data). The cheap discipline that kept the ticket set clean: every walk blocker gets reproduced by the lead (or a directed verifier with exact URLs) before it becomes a ticket.
+
 ## DOM test infra spike #858 (2026-07-03)
 
 - **Chose `@happy-dom/global-registrator` + `@testing-library/react` + `@testing-library/dom`** (versions `^20.10.6`/`^16.3.2`/`^10.4.1`) over raw `happy-dom` + manual `createRoot`, and over `jsdom`. Verified end-to-end against this repo's exact react/react-dom/next versions that render → click → mocked-fetch-assert → `role="alert"` appears → `next/link` renders without router context, all pass. RTL's role-based queries are required because the behavior contract needs `getByRole("alert")`/`getByRole("button", {name})`, not raw DOM traversal. **Correction:** the original spike write-up claimed this was verified on both local Bun 1.3.14 and CI's pinned Bun 1.2.14 before landing — it was not; CI run 28688331327 (job 85084963147) failed 2 of 4 tests on first real CI execution (see the cleanup-wiring gotcha below). The claim is now backed by an actual green CI run on the PR head; see the PR's "How it was verified" section for the run link.
@@ -268,3 +308,70 @@ When adding a new export to a shared store/module, grep for all `mock.module` fa
 - **Write the acceptance condition before dispatching.** "Only these files may change. No existing line may be modified." Checked mechanically against the diff, that pair rejects corruption deterministically with no grader model involved. It is a test written before the code, applied to delegation.
 - **Fan-out concurrency is bounded by the inference provider, not the platform.** Four parallel slices against one profile hit 429s; the workflow engine's step retry absorbed them, but ten slices on one profile would not fare as well.
 - **A wedged slice can be recovered without losing work.** `stop_run` releases the slot, the sandbox keeps its changes, and a `send_message` from any client resumes the session. One recovered slice still held 155 lines across the exact files it had been assigned.
+
+## Monitors that cannot fail (#1314, 2026-08-16)
+
+**144 of 166 production agent-loop runs had failed, over a month, while the
+canary watching them reported success every six hours.** Four distinct
+mistakes stacked up to hide it. Each is worth avoiding on its own.
+
+- **A strictness flag that defaults to permissive is a monitor that cannot
+  fail.** Both journey proofs treat "require the run to have succeeded" as an
+  opt-in (`LOOP_JOURNEY_PROOF_REQUIRE_SUCCEEDED`,
+  `BACKGROUND_AGENT_PROOF_REQUIRE_SUCCEEDED`) defaulting to `false`. With it
+  off, the assertion skips its terminal-status check and only catches dispatch
+  errors, turn-budget exhaustion, and a missing start event. A run reaching
+  terminal `failed` was graded **passed**. The scheduled workflow never set
+  the flag. A permissive default is defensible for a developer running a proof
+  locally against a half-configured environment — but the scheduled production
+  job must opt in, and something must assert that it did. Guarded now by
+  `apps/web/scripts/canary-strictness.regression.test.ts`, which reads the
+  workflow YAML, because no unit test of the proof script can see what the
+  cron job passes it.
+
+- **Check the sibling before you close the ticket.** The background-agent
+  proof had the identical defect and was green only because its runs happened
+  to succeed. It would have gone silent the moment they stopped. When you find
+  a monitor that cannot fail, grep for the pattern rather than fixing the one
+  instance you were handed.
+
+- **A permission gate should ask for what the operation needs, not what the
+  feature might eventually need.** Agent loops demanded `write` at three
+  points before any writing: checkout, step preparation, and a per-turn
+  liveness re-check. Checking out and preparing are reads; "has access been
+  revoked mid-step" is a read question too. `verifyRepoAccess` deliberately
+  refuses write to an installation-scoped service identity — there is an
+  explicit test locking that in — so the production canary, which runs as one,
+  was refused before doing anything, including on loops whose only node reads
+  and reports. Background agents already derived the requirement from whether
+  a write action was enabled; loops hard-coded it. Write now lives only at the
+  two commit paths, each gated on `hasChanges`, and
+  `write-gate-placement.regression.test.ts` counts the sites.
+
+- **A mocked suite is blind to code that needs a live sandbox, so guard it
+  from the source text instead.** The third write gate ran before every
+  `openAgent.generate` call. No test reached it — reaching it requires a real
+  sandbox — so 898 green tests and my own review both missed it, and a
+  reviewer reading the diff found it. When a line cannot be executed in test,
+  a source-text assertion ("write appears in exactly these two places") is
+  worth more than another mock. Both new guards were mutation-tested:
+  reintroducing a gate fails them with `Expected: 2, Received: 3`.
+
+- **Confirm which database you are querying before drawing any conclusion from
+  it.** Mid-investigation I reported that Background Agents and Agent Loops
+  were dead subsystems with no activity since 2026-07-02, and proposed
+  deleting ~110,000 lines. I was querying the **dev** branch
+  (`ep-old-union`) via `apps/web/.env.local`, not production
+  (`ep-soft-silence`). In production both were the busiest subsystems, active
+  that same day. `CLAUDE.md` already prescribes the check —
+  `grep '^POSTGRES_URL=' apps/web/.env.local | grep -o 'ep-[a-z0-9-]*'` — and
+  the honest reading is that a usage claim is worthless until you have run it.
+  Pull production values with `vercel env pull` rather than assuming the local
+  file points where you expect.
+
+- **A skip that is recorded but not reported is invisible.** The scheduled
+  sweep wrote `last_skip_reason` to the trigger row and returned nothing, so a
+  refused trigger and an idle one both answered `{"matched":0,...}`. One
+  production trigger was refused weekly from 2026-07-06 and the only way to
+  see it was a direct database query. `dispatchScheduledBackgroundAgents` now
+  returns `skipped`, present only when something was refused.
