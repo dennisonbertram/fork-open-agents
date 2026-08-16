@@ -1,5 +1,28 @@
 import { describe, expect, test } from "bun:test";
-import { isRetryableContractRequest } from "./_client";
+import {
+  assertContractConfiguration,
+  isRetryableContractRequest,
+} from "./_client";
+
+describe("contract client configuration policy", () => {
+  test("required mode fails when the contract target is missing", () => {
+    expect(() =>
+      assertContractConfiguration({
+        required: true,
+        baseUrl: "",
+      }),
+    ).toThrow("CONTRACT_BASE_URL");
+  });
+
+  test("optional mode permits a missing contract target", () => {
+    expect(() =>
+      assertContractConfiguration({
+        required: false,
+        baseUrl: "",
+      }),
+    ).not.toThrow();
+  });
+});
 
 describe("contract client retry policy", () => {
   test("retries transient failures for GET requests only", () => {
