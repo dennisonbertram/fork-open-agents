@@ -153,3 +153,32 @@ describe("redis configuration", () => {
     client.disconnect();
   });
 });
+
+// Review finding on release #1322: `test:verbose` and `test:coverage` did not
+// carry the marker, so those documented commands bypassed the hermetic guard
+// whenever the shell had inherited NODE_ENV=production. Hermeticity must not
+// depend on which test command someone picked.
+//
+// A source guard because nothing else can see it: a unit test runs under
+// whichever script invoked it and cannot observe the others.
+describe("every test entry point is hermetic", () => {
+  test("all test scripts set OPEN_AGENTS_TEST", async () => {
+    const pkg = (await Bun.file(
+      new URL("../../../package.json", import.meta.url).pathname,
+    ).json()) as { scripts: Record<string, string> };
+
+    const testScripts = Object.entries(pkg.scripts).filter(
+      ([name]) => name === "test" || name.startsWith("test:"),
+    );
+    expect(testScripts.length).toBeGreaterThan(0);
+
+    const missing = testScripts
+      .filter(([, cmd]) => !cmd.includes("OPEN_AGENTS_TEST=1"))
+      // test:isolated spawns children that inherit the marker from it, so it
+      // must carry it too — no exemptions today. If one becomes necessary,
+      // name it here with the reason rather than loosening the check.
+      .map(([name]) => name);
+
+    expect(missing).toEqual([]);
+  });
+});

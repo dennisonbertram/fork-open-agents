@@ -2127,6 +2127,34 @@ describe("runAgentWorkflow", () => {
     // wrong one — reported by review on #1313 and reproduced before this
     // guard existed. The whole point of grading the declaration is outcome
     // honesty; masking a more specific reason defeats it.
+    // #1321 made expectFileChanges accept a numeric allowance; #1313 added the
+    // end-of-run grading gated on `=== true`. Shipped separately, never tested
+    // together: a numeric declaration was armed mid-run but NOT graded at the
+    // end, so a slice dispatched with `expectFileChanges: 40` that changed
+    // nothing reported `completed` — the exact bug #1313 exists to fix,
+    // reintroduced for the new input type. Found by review of the release.
+    test("a numeric expectFileChanges is graded at the end, like `true`", async () => {
+      spies.probeChangedFilePaths.mockImplementation(async () => []);
+
+      await runAgentWorkflow(makeOptions({ expectFileChanges: 40 }));
+
+      const rwCalls = spies.recordWorkflowUsage.mock.calls as unknown[][];
+      const workflowRun = rwCalls.at(-1)?.[5] as { status: string };
+      expect(workflowRun.status).toBe("no_file_changes");
+    });
+
+    // The other half of the same contract: a read-only run must still be
+    // completely ungraded. This is the #1242 regression guard.
+    test("expectFileChanges: false is still never graded", async () => {
+      spies.probeChangedFilePaths.mockImplementation(async () => []);
+
+      await runAgentWorkflow(makeOptions({ expectFileChanges: false }));
+
+      const rwCalls = spies.recordWorkflowUsage.mock.calls as unknown[][];
+      const workflowRun = rwCalls.at(-1)?.[5] as { status: string };
+      expect(workflowRun.status).not.toBe("no_file_changes");
+    });
+
     test("a truncated run with an empty diff still reports truncated, not no_file_changes", async () => {
       agentFinishReason = "length";
       agentRawFinishReason = "provider_length";
