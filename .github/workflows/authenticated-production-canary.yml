@@ -61,6 +61,11 @@ jobs:
         shell: bash
         env:
           PRODUCTION_CANARY_REQUIRE_CONFIG: "true"
+          # Same latent defect the loop proof actually hit: without this, a run
+          # reaching terminal `failed` is graded as passed. This one has been
+          # green only because its runs happen to succeed — the monitor would
+          # not have told us if they stopped.
+          BACKGROUND_AGENT_PROOF_REQUIRE_SUCCEEDED: "true"
           PRODUCTION_CANARY_URL: ${{ vars.PRODUCTION_URL || 'https://open-agents-azure-xi.vercel.app' }}
           PRODUCTION_CANARY_REPO: ${{ vars.PRODUCTION_CANARY_REPO }}
           PRODUCTION_CANARY_IDENTITY: ${{ vars.PRODUCTION_CANARY_IDENTITY }}

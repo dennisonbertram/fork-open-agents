@@ -30,6 +30,7 @@ Dated epic and sweep sections:
 - [Preview shared the production database (#1167, 2026-08-08)](#preview-shared-the-production-database-1167-2026-08-08)
 - [Composite model ids, and errors that hide behind a generic message (#1191/#1196, 2026-08-11)](#composite-model-ids-and-errors-that-hide-behind-a-generic-message-11911196-2026-08-11)
 - [MCP fan-out loop — a day of production dogfooding](#mcp-fan-out-loop--a-day-of-production-dogfooding)
+- [Monitors that cannot fail (#1314, 2026-08-16)](#monitors-that-cannot-fail-1314-2026-08-16)
 
 ## General / Tooling
 
@@ -307,3 +308,70 @@ When adding a new export to a shared store/module, grep for all `mock.module` fa
 - **Write the acceptance condition before dispatching.** "Only these files may change. No existing line may be modified." Checked mechanically against the diff, that pair rejects corruption deterministically with no grader model involved. It is a test written before the code, applied to delegation.
 - **Fan-out concurrency is bounded by the inference provider, not the platform.** Four parallel slices against one profile hit 429s; the workflow engine's step retry absorbed them, but ten slices on one profile would not fare as well.
 - **A wedged slice can be recovered without losing work.** `stop_run` releases the slot, the sandbox keeps its changes, and a `send_message` from any client resumes the session. One recovered slice still held 155 lines across the exact files it had been assigned.
+
+## Monitors that cannot fail (#1314, 2026-08-16)
+
+**144 of 166 production agent-loop runs had failed, over a month, while the
+canary watching them reported success every six hours.** Four distinct
+mistakes stacked up to hide it. Each is worth avoiding on its own.
+
+- **A strictness flag that defaults to permissive is a monitor that cannot
+  fail.** Both journey proofs treat "require the run to have succeeded" as an
+  opt-in (`LOOP_JOURNEY_PROOF_REQUIRE_SUCCEEDED`,
+  `BACKGROUND_AGENT_PROOF_REQUIRE_SUCCEEDED`) defaulting to `false`. With it
+  off, the assertion skips its terminal-status check and only catches dispatch
+  errors, turn-budget exhaustion, and a missing start event. A run reaching
+  terminal `failed` was graded **passed**. The scheduled workflow never set
+  the flag. A permissive default is defensible for a developer running a proof
+  locally against a half-configured environment — but the scheduled production
+  job must opt in, and something must assert that it did. Guarded now by
+  `apps/web/scripts/canary-strictness.regression.test.ts`, which reads the
+  workflow YAML, because no unit test of the proof script can see what the
+  cron job passes it.
+
+- **Check the sibling before you close the ticket.** The background-agent
+  proof had the identical defect and was green only because its runs happened
+  to succeed. It would have gone silent the moment they stopped. When you find
+  a monitor that cannot fail, grep for the pattern rather than fixing the one
+  instance you were handed.
+
+- **A permission gate should ask for what the operation needs, not what the
+  feature might eventually need.** Agent loops demanded `write` at three
+  points before any writing: checkout, step preparation, and a per-turn
+  liveness re-check. Checking out and preparing are reads; "has access been
+  revoked mid-step" is a read question too. `verifyRepoAccess` deliberately
+  refuses write to an installation-scoped service identity — there is an
+  explicit test locking that in — so the production canary, which runs as one,
+  was refused before doing anything, including on loops whose only node reads
+  and reports. Background agents already derived the requirement from whether
+  a write action was enabled; loops hard-coded it. Write now lives only at the
+  two commit paths, each gated on `hasChanges`, and
+  `write-gate-placement.regression.test.ts` counts the sites.
+
+- **A mocked suite is blind to code that needs a live sandbox, so guard it
+  from the source text instead.** The third write gate ran before every
+  `openAgent.generate` call. No test reached it — reaching it requires a real
+  sandbox — so 898 green tests and my own review both missed it, and a
+  reviewer reading the diff found it. When a line cannot be executed in test,
+  a source-text assertion ("write appears in exactly these two places") is
+  worth more than another mock. Both new guards were mutation-tested:
+  reintroducing a gate fails them with `Expected: 2, Received: 3`.
+
+- **Confirm which database you are querying before drawing any conclusion from
+  it.** Mid-investigation I reported that Background Agents and Agent Loops
+  were dead subsystems with no activity since 2026-07-02, and proposed
+  deleting ~110,000 lines. I was querying the **dev** branch
+  (`ep-old-union`) via `apps/web/.env.local`, not production
+  (`ep-soft-silence`). In production both were the busiest subsystems, active
+  that same day. `CLAUDE.md` already prescribes the check —
+  `grep '^POSTGRES_URL=' apps/web/.env.local | grep -o 'ep-[a-z0-9-]*'` — and
+  the honest reading is that a usage claim is worthless until you have run it.
+  Pull production values with `vercel env pull` rather than assuming the local
+  file points where you expect.
+
+- **A skip that is recorded but not reported is invisible.** The scheduled
+  sweep wrote `last_skip_reason` to the trigger row and returned nothing, so a
+  refused trigger and an idle one both answered `{"matched":0,...}`. One
+  production trigger was refused weekly from 2026-07-06 and the only way to
+  see it was a direct database query. `dispatchScheduledBackgroundAgents` now
+  returns `skipped`, present only when something was refused.
