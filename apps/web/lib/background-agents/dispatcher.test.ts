@@ -596,6 +596,42 @@ describe("dispatchScheduledBackgroundAgents", () => {
     resetDispatcherMocks();
   });
 
+  // A scheduled trigger refused by the repo allowlist writes `last_skip_reason`
+  // to the database and reports nothing back. In production one trigger was
+  // skipped weekly from 2026-07-06 for six weeks and the cron kept answering
+  // {"matched":0,...} — indistinguishable from "nothing was due". The operator
+  // reading the cron response has to be able to see a refusal.
+  test("reports allowlist-refused triggers in the sweep result", async () => {
+    process.env.BACKGROUND_AGENTS_ALLOWED_REPOS = "someone-else/other-repo";
+    scheduleRows = [{ agent, trigger: scheduleTrigger }];
+    const { dispatchScheduledBackgroundAgents } = await dispatcherModulePromise;
+
+    const result = await dispatchScheduledBackgroundAgents({
+      now: new Date("2026-05-27T12:34:00.000Z"),
+      requestId: "req-cron",
+    });
+
+    expect(result.matched).toBe(0);
+    expect(result.created).toBe(0);
+    expect(result.skipped).toEqual([
+      { triggerId: scheduleTrigger.id, reason: "repo_not_allowlisted" },
+    ]);
+  });
+
+  // The field must stay absent on a clean sweep so an operator can tell
+  // "nothing was due" from "something was refused" at a glance.
+  test("omits skipped entirely when nothing was refused", async () => {
+    scheduleRows = [{ agent, trigger: scheduleTrigger }];
+    const { dispatchScheduledBackgroundAgents } = await dispatcherModulePromise;
+
+    const result = await dispatchScheduledBackgroundAgents({
+      now: new Date("2026-05-27T12:34:00.000Z"),
+      requestId: "req-cron",
+    });
+
+    expect(result.skipped).toBeUndefined();
+  });
+
   test("records trigger and workflow-start evidence for scheduled runs", async () => {
     scheduleRows = [
       {
@@ -676,6 +712,10 @@ describe("dispatchScheduledBackgroundAgents", () => {
       duplicates: 0,
       runIds: [],
       loopRunIds: [],
+      // The refusal is now reported, not only written to the trigger row.
+      skipped: [
+        { triggerId: scheduleTrigger.id, reason: "repo_not_allowlisted" },
+      ],
     });
     expect(createRunForTrigger).not.toHaveBeenCalled();
     expect(start).not.toHaveBeenCalled();

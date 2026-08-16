@@ -818,10 +818,13 @@ export async function executeAgentStep(
   try {
     accessResult = await withAgentStepPreparationTimeout(
       verifyRepoAccess({
+        // Preparation only needs to read the repo. The two commit paths below
+        // re-verify "write" when `hasChanges` is true, so requiring it here
+        // as well only blocked read-only work that never reaches them.
         userId: executionUserId,
         owner: repoOwner,
         repo: repoName,
-        requiredUserPermission: "write",
+        requiredUserPermission: "read",
       }),
       remainingPreparationTimeoutMs,
     );
