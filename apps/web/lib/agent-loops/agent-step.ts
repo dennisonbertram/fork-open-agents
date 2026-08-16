@@ -1155,11 +1155,17 @@ export async function executeAgentStep(
         // result before re-sending history — otherwise the provider rejects the
         // request ("Tool result is missing for tool call …") and fails the run.
         agentMessages = sanitizeUnattendedToolCalls(agentMessages);
+        // Liveness re-check before each turn: has access been revoked while
+        // the step was running? That question is about access existing at
+        // all, not about write. Requiring write here refused every turn for
+        // an identity that cannot write, which is the same defect as the two
+        // preparation gates. Write is still verified at the commit paths
+        // below, gated on `hasChanges`.
         const liveModelAccess = await verifyRepoAccess({
           userId: executionUserId,
           owner: repoOwner,
           repo: repoName,
-          requiredUserPermission: "write",
+          requiredUserPermission: "read",
         });
         if (!liveModelAccess.ok) {
           return await recordAgentStepFailure({
