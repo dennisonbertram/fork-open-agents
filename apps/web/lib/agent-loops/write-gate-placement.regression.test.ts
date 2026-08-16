@@ -28,13 +28,19 @@ async function countWriteGates(path: string): Promise<number> {
 }
 
 describe("agent loops require write only where they write", () => {
-  test("agent-step.ts has exactly the two commit gates", async () => {
-    // The two are the `hasChanges` commit check and the final commit check.
-    // A third means something upstream of writing started demanding write
-    // again — the defect this guard exists to prevent. If you are adding one
-    // deliberately, prove the identity can reach it and update this count in
-    // the same commit.
-    expect(await countWriteGates("./agent-step.ts")).toBe(2);
+  test("agent-step.ts has exactly three write gates", async () => {
+    // Three, each justified:
+    //   1. before attaching Composio tools — they can open a PR, comment or
+    //      dispatch a workflow, and `guardToolSet` checks only loop liveness
+    //      and toolkit policy, never repo write (#1315)
+    //   2. the `hasChanges` commit check
+    //   3. the final commit check
+    //
+    // A fourth means something upstream of writing started demanding write
+    // again — the defect this guard exists to prevent, which cost 144 failed
+    // production runs. If you are adding one deliberately, prove the identity
+    // can reach it and update this count in the same commit.
+    expect(await countWriteGates("./agent-step.ts")).toBe(3);
   });
 
   test("step-executor.ts has none", async () => {
@@ -42,22 +48,35 @@ describe("agent loops require write only where they write", () => {
     expect(await countWriteGates("./step-executor.ts")).toBe(0);
   });
 
-  test("both commit gates sit behind a hasChanges guard", async () => {
+  test("each write gate sits at the operation it protects", async () => {
     const source = await Bun.file(
       new URL("agent-step.ts", import.meta.url).pathname,
     ).text();
     const lines = source.split("\n");
-    const gateLines = lines
-      .map((line, index) => ({ line, index }))
-      .filter(({ line }) => /requiredUserPermission:\s*"write"/.test(line));
+    const lineIndex = (needle: string) =>
+      lines.findIndex((line) => line.includes(needle));
 
-    expect(gateLines.length).toBe(2);
-    for (const { index } of gateLines) {
-      // `hasChanges` opens the block each gate lives in. Look back a bounded
-      // window rather than parsing scope: this only has to notice a gate that
-      // floated out of the commit path.
-      const preceding = lines.slice(Math.max(0, index - 40), index).join("\n");
-      expect(preceding).toContain("hasChanges");
-    }
+    const gates = lines
+      .map((line, index) => ({ line, index }))
+      .filter(({ line }) => /requiredUserPermission:\s*"write"/.test(line))
+      .map(({ index }) => index);
+    expect(gates).toHaveLength(3);
+
+    // Anchored to real code, not to comment wording: a comment can say
+    // anything, and an earlier version of this assertion keyed on the word
+    // "composio" appearing nearby — which it does regardless of where the
+    // gate actually sits.
+    const attachComposio = lineIndex("resolveComposioToolsForBgRun(");
+    const firstHasChanges = lineIndex("if (hasChanges) {");
+    expect(attachComposio).toBeGreaterThan(-1);
+    expect(firstHasChanges).toBeGreaterThan(-1);
+
+    // Exactly one gate guards Composio: before the tools are resolved.
+    const beforeComposio = gates.filter((g) => g < attachComposio);
+    expect(beforeComposio).toHaveLength(1);
+
+    // The other two are the commit checks, after the hasChanges branch opens.
+    const afterHasChanges = gates.filter((g) => g > firstHasChanges);
+    expect(afterHasChanges).toHaveLength(2);
   });
 });
