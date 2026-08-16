@@ -90,6 +90,7 @@ import {
   buildHeadlessNoFileChangesMessage,
   buildRunOuterStepCeilingMessage,
   getHeadlessRunMaxStepsWithoutDiff,
+  resolveStepsWithoutDiffAllowance,
   getRunOuterStepCeiling,
 } from "@/lib/chat/declared-expectation-budget";
 import { getMaxLengthContinuations } from "@/lib/chat/length-continuation-budget";
@@ -157,7 +158,7 @@ type Options = {
   // the design decision recorded on issue #1288. Both optional; undefined
   // (today's behavior for every existing caller) disables the circling
   // detector and the acceptance check entirely.
-  expectFileChanges?: boolean;
+  expectFileChanges?: boolean | number;
   expectedFiles?: string[];
 };
 
@@ -2356,11 +2357,18 @@ export async function runAgentWorkflow(options: Options) {
     // call. A run with no declaration (the default for every existing
     // caller) or one declared read-only behaves exactly as before —
     // `headlessDiffExpectationDetector` stays null and is never consulted.
-    const expectFileChanges = options.expectFileChanges === true;
+    // Resolved once per run. `true` takes the configured default; a number is
+    // the caller's own allowance, because a slice told to match existing
+    // conventions must read several files before its first edit while a slice
+    // told to change one line should stop almost immediately, and a single
+    // global number cannot serve both.
+    const stepsWithoutDiffAllowance = resolveStepsWithoutDiffAllowance(
+      options.expectFileChanges,
+    );
     const headlessDiffExpectationDetector =
-      headlessHasSandbox && expectFileChanges
+      headlessHasSandbox && stepsWithoutDiffAllowance !== null
         ? createHeadlessDiffExpectationDetector({
-            allowance: getHeadlessRunMaxStepsWithoutDiff(),
+            allowance: stepsWithoutDiffAllowance,
           })
         : null;
     // #1288: option 3 — a far outer, generous step-count backstop under
@@ -2610,7 +2618,10 @@ export async function runAgentWorkflow(options: Options) {
             headlessNoDiffCapped = true;
             const noDiffText = buildHeadlessNoFileChangesMessage(
               diffObservation.stepsWithoutChange,
-              getHeadlessRunMaxStepsWithoutDiff(),
+              // The allowance this run actually used, not the global default —
+              // the message told callers the wrong limit whenever the two
+              // differed.
+              stepsWithoutDiffAllowance ?? getHeadlessRunMaxStepsWithoutDiff(),
             );
             await sendTextMessage(
               writable,
