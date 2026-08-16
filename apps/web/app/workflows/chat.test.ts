@@ -2793,6 +2793,33 @@ describe("runAgentWorkflow", () => {
     expect(spies.refreshDiffCache).toHaveBeenCalledTimes(1);
   });
 
+  // A run working directly on the default branch (isNewBranch: false) with
+  // auto-commit pushes to that branch. The push advances the local
+  // origin/<default> tracking ref to HEAD, and probeChangedFilePaths resolves
+  // its base ref from refs/remotes/origin/HEAD and runs AFTER the push — so it
+  // diffs HEAD against HEAD and returns []. Grading that as no_file_changes
+  // calls a run that committed and pushed "produced nothing". Reported by
+  // review on #1313.
+  test("a run that auto-committed is never graded no_file_changes, even when the post-push diff is empty", async () => {
+    spies.runAutoCommitStep.mockImplementationOnce(() =>
+      Promise.resolve({ committed: true, pushed: true }),
+    );
+    spies.probeChangedFilePaths.mockImplementation(async () => []);
+
+    await runAgentWorkflow(
+      makeOptions({
+        autoCommitEnabled: true,
+        expectFileChanges: true,
+        repoOwner: "acme",
+        repoName: "repo",
+      }),
+    );
+
+    const rwCalls = spies.recordWorkflowUsage.mock.calls as unknown[][];
+    const workflowRun = rwCalls.at(-1)?.[5] as { status: string };
+    expect(workflowRun.status).not.toBe("no_file_changes");
+  });
+
   test("runs auto-commit when enabled and not aborted", async () => {
     await runAgentWorkflow(
       makeOptions({

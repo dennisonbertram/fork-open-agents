@@ -2977,10 +2977,20 @@ export async function runAgentWorkflow(options: Options) {
           truncationBoundExhausted ||
           outerStepCeilingReached ||
           endedUnexpectedly;
+        // An empty probe result does not always mean an empty run. This block
+        // runs after auto-commit, and on a session working directly on the
+        // default branch (`isNewBranch: false`) a successful push advances the
+        // local `origin/<default>` tracking ref to HEAD. `probeChangedFilePaths`
+        // resolves its base from `refs/remotes/origin/HEAD`, so it then diffs
+        // HEAD against HEAD and reports nothing — for a run that committed and
+        // pushed. A recorded commit is direct evidence of a change and outranks
+        // the probe.
+        const autoCommitRecordedAChange = autoCommitResult?.committed === true;
         if (
           options.expectFileChanges === true &&
           changedPaths.length === 0 &&
-          !stoppedForAMoreSpecificReason
+          !stoppedForAMoreSpecificReason &&
+          !autoCommitRecordedAChange
         ) {
           headlessNoDiffCapped = true;
         }
