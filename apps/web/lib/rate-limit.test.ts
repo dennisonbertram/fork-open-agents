@@ -130,6 +130,9 @@ describe("checkRateLimit", () => {
     delete process.env.REDIS_URL;
     delete process.env.KV_URL;
     process.env[nodeEnvKey] = "production";
+    // Opting into the real client path means clearing BOTH hermetic
+    // signals — NODE_ENV alone is no longer sufficient (#1320 review).
+    delete process.env.OPEN_AGENTS_TEST;
     const { checkRateLimit } = await loadRateLimitModule();
 
     const response = await checkRateLimit({
@@ -148,6 +151,9 @@ describe("checkRateLimit", () => {
   test("allows Redis commands to queue during initial connection", async () => {
     process.env.REDIS_URL = "redis://localhost:6379";
     process.env[nodeEnvKey] = "production";
+    // Opting into the real client path means clearing BOTH hermetic
+    // signals — NODE_ENV alone is no longer sufficient (#1320 review).
+    delete process.env.OPEN_AGENTS_TEST;
     const { checkRateLimit } = await loadRateLimitModule();
 
     await expect(
@@ -168,6 +174,9 @@ describe("checkRateLimit", () => {
     try {
       process.env.REDIS_URL = "redis://localhost:6379";
       process.env[nodeEnvKey] = "production";
+      // Opting into the real client path means clearing BOTH hermetic
+      // signals — NODE_ENV alone is no longer sufficient (#1320 review).
+      delete process.env.OPEN_AGENTS_TEST;
       redisState.execResults = [
         [null, 1],
         [new Error("ERR syntax error"), null],
@@ -191,6 +200,9 @@ describe("checkRateLimit", () => {
   test("returns a retry response when the Redis count exceeds the limit", async () => {
     process.env.REDIS_URL = "redis://localhost:6379";
     process.env[nodeEnvKey] = "production";
+    // Opting into the real client path means clearing BOTH hermetic
+    // signals — NODE_ENV alone is no longer sufficient (#1320 review).
+    delete process.env.OPEN_AGENTS_TEST;
     redisState.execResults = [
       [null, 3],
       [null, 0],
@@ -216,6 +228,9 @@ describe("checkRateLimit", () => {
       process.env.REDIS_URL = "redis://localhost:6379";
       process.env.RATE_LIMIT_TIMEOUT_MS = "1";
       process.env[nodeEnvKey] = "production";
+      // Opting into the real client path means clearing BOTH hermetic
+      // signals — NODE_ENV alone is no longer sufficient (#1320 review).
+      delete process.env.OPEN_AGENTS_TEST;
       redisState.execResults = new Promise<RedisExecResults>(() => undefined);
       const { checkRateLimit } = await loadRateLimitModule();
 

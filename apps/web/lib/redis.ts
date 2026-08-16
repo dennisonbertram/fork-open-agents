@@ -58,12 +58,19 @@ function applyRedisQueryOptions(
 }
 
 export function getRedisUrl(): string | null {
-  // `bun test` sets NODE_ENV=test: never open a live Redis connection from the
-  // test suite, even when the developer's env has a real REDIS_URL/KV_URL — a
-  // shared live rate limiter makes unrelated test files fail with 429 (#1132).
+  // Never open a live Redis connection from the test suite, even when the
+  // developer's environment has a real REDIS_URL/KV_URL — a shared live rate
+  // limiter makes unrelated test files fail with 429 (#1132).
+  //
+  // Two signals, because neither alone is sufficient. `bun test` sets
+  // NODE_ENV=test only when it is UNSET: verified on Bun 1.2.14, where
+  // `NODE_ENV=production bun test` keeps "production" and this gate would
+  // never fire. OPEN_AGENTS_TEST is set by the repo's own test scripts and
+  // survives an inherited NODE_ENV, which is the case review raised.
+  //
   // rate-limit.test.ts opts back into the client path by setting
-  // NODE_ENV=production.
-  if (process.env.NODE_ENV === "test") {
+  // NODE_ENV=production AND clearing OPEN_AGENTS_TEST.
+  if (process.env.NODE_ENV === "test" || process.env.OPEN_AGENTS_TEST === "1") {
     return null;
   }
 

@@ -102,6 +102,9 @@ describe("redis configuration", () => {
 
   test("falls back to KV_URL when REDIS_URL is blank", () => {
     process.env[nodeEnvKey] = "production";
+    // Opting into the real client path means clearing BOTH hermetic
+    // signals — NODE_ENV alone is no longer sufficient (#1320 review).
+    delete process.env.OPEN_AGENTS_TEST;
     process.env.REDIS_URL = " ";
     process.env.KV_URL = "redis://localhost:6379";
 
@@ -123,8 +126,24 @@ describe("redis configuration", () => {
     );
   });
 
+  // Review finding on #1320: `bun test` sets NODE_ENV=test only when it is
+  // UNSET. Verified on Bun 1.2.14 — `NODE_ENV=production bun test` keeps
+  // "production", so a gate on NODE_ENV alone leaves inherited REDIS_URL
+  // credentials live for the whole suite, which is the isolation this change
+  // exists to provide.
+  test("stays hermetic when NODE_ENV was inherited as production", () => {
+    process.env[nodeEnvKey] = "production";
+    process.env.OPEN_AGENTS_TEST = "1";
+    process.env.REDIS_URL = "redis://127.0.0.1:6379";
+    delete process.env.KV_URL;
+
+    expect(getRedisUrl()).toBeNull();
+    expect(isRedisConfigured()).toBe(false);
+  });
+
   test("creates a client from REDIS_URL outside test", () => {
     process.env[nodeEnvKey] = "production";
+    delete process.env.OPEN_AGENTS_TEST;
     process.env.REDIS_URL = "redis://127.0.0.1:6379";
     delete process.env.KV_URL;
 
