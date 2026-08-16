@@ -8,6 +8,7 @@ import {
   getHeadlessRunMaxStepsWithoutDiff,
   getRunOuterStepCeiling,
   HEADLESS_RUN_MAX_STEPS_WITHOUT_DIFF_CEILING,
+  resolveStepsWithoutDiffAllowance,
   RUN_OUTER_STEP_CEILING_CEILING,
 } from "./declared-expectation-budget";
 
@@ -127,5 +128,46 @@ describe("buildDiffAcceptanceViolationMessage (#1288)", () => {
     expect(message).toContain("unexpected.ts");
     expect(message).toContain("also-bad.ts");
     expect(message.toLowerCase()).toContain("stopped");
+  });
+});
+
+describe("caller-supplied no-diff allowance (#1307 follow-up)", () => {
+  // Three dispatched slices died at the 20-step default on 2026-08-16 while
+  // doing legitimate research — reading the files they had been told to match
+  // conventions with, before writing anything. The dispatcher knew those tasks
+  // needed to read first; it had no way to say so. The env var is global, and
+  // the run that needs 40 steps sits beside the run that should stop at 5.
+  test("a caller number sets the allowance", () => {
+    expect(resolveStepsWithoutDiffAllowance(45)).toBe(45);
+  });
+
+  test("`true` keeps the configured default", () => {
+    expect(resolveStepsWithoutDiffAllowance(true)).toBe(
+      getHeadlessRunMaxStepsWithoutDiff(),
+    );
+  });
+
+  test("a caller cannot exceed the ceiling", () => {
+    expect(resolveStepsWithoutDiffAllowance(10_000)).toBe(
+      HEADLESS_RUN_MAX_STEPS_WITHOUT_DIFF_CEILING,
+    );
+  });
+
+  test("a nonsense allowance falls back to the default rather than disabling the fuse", () => {
+    // 0 or negative must not mean "never stop" — that would turn a cost
+    // control into an unbounded run, which is the failure this fuse exists
+    // to prevent.
+    expect(resolveStepsWithoutDiffAllowance(0)).toBe(
+      getHeadlessRunMaxStepsWithoutDiff(),
+    );
+    expect(resolveStepsWithoutDiffAllowance(-5)).toBe(
+      getHeadlessRunMaxStepsWithoutDiff(),
+    );
+    expect(resolveStepsWithoutDiffAllowance(1.5)).toBe(1);
+  });
+
+  test("false and undefined mean the fuse is not armed at all", () => {
+    expect(resolveStepsWithoutDiffAllowance(false)).toBeNull();
+    expect(resolveStepsWithoutDiffAllowance(undefined)).toBeNull();
   });
 });
