@@ -156,7 +156,21 @@ let verifyRepoAccessResult: {
 };
 
 let verifyRepoAccessImpl = async () => verifyRepoAccessResult;
-const verifyRepoAccessMock = mock(async () => verifyRepoAccessImpl());
+/**
+ * Records the permission each call asks for. The upfront checkout check must
+ * ask for "read" — write is verified separately at the commit points, and
+ * demanding it before any work runs locks read-only identities out of
+ * read-only loops entirely (#791 follow-up: 144 failed production runs).
+ */
+const verifyRepoAccessCalls: { requiredUserPermission?: string }[] = [];
+const verifyRepoAccessMock = mock(
+  async (params?: { requiredUserPermission?: string }) => {
+    verifyRepoAccessCalls.push({
+      requiredUserPermission: params?.requiredUserPermission,
+    });
+    return await verifyRepoAccessImpl();
+  },
+);
 
 let connectSandboxImpl = async () => {
   throw new Error("Sandbox unavailable in step-executor test suite");
@@ -465,6 +479,7 @@ function resetMocks() {
   terminalTransitionWins = true;
   conditionallyTransitionRunStatusMock.mockClear();
   githubApiCallCount = 0;
+  verifyRepoAccessCalls.length = 0;
 
   verifyRepoAccessResult = {
     ok: true,
@@ -1982,5 +1997,63 @@ describe("redaction", () => {
       const serialized = JSON.stringify(update.stepOutput ?? {});
       expect(serialized).not.toContain(tokenValue);
     }
+  });
+});
+
+describe("agent_step — upfront repo access asks for read, not write", () => {
+  beforeEach(() => {
+    resetMocks();
+
+    const node = {
+      id: "agent-node-read",
+      kind: "agent_step",
+      label: "Report",
+      position: { x: 0, y: 0 },
+      instructions: "Summarise the repository. Change nothing.",
+    };
+    const snapshot = makeDefinitionSnapshot([node]);
+    currentStepRun = makeStepRun({
+      nodeId: "agent-node-read",
+      nodeKind: "agent_step",
+    });
+    currentLoopRun = makeLoopRun({
+      definitionSnapshot: snapshot as Record<string, unknown>,
+      executionSnapshot: null,
+      definitionVersion: null,
+      definitionHash: null,
+    });
+    currentLoop = makeLoop();
+  });
+
+  // Regression for 144 failed production loop runs. The checkout gate demanded
+  // "write" before any work started, so a read-only identity — the production
+  // canary's installation-scoped service identity — was refused on every run
+  // with `user_no_write`, even for a loop whose only node reads and reports.
+  // Write is still enforced where writing actually happens: agent-step.ts
+  // re-verifies it at both commit points, gated on `hasChanges`.
+  test("the checkout access check requests read", async () => {
+    const { executeAgentLoopStep } = await executorPromise;
+    await executeAgentLoopStep({
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+    });
+
+    expect(verifyRepoAccessCalls.length).toBeGreaterThan(0);
+    expect(verifyRepoAccessCalls[0]?.requiredUserPermission).toBe("read");
+  });
+
+  // The denial must still be honoured — relaxing the level must not relax the
+  // gate itself.
+  test("a read denial still stops the step", async () => {
+    verifyRepoAccessResult = { ok: false, reason: "user_no_access" };
+    verifyRepoAccessImpl = async () => verifyRepoAccessResult;
+
+    const { executeAgentLoopStep } = await executorPromise;
+    const result = await executeAgentLoopStep({
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+    });
+
+    expect(result.outcome).not.toBe("success");
   });
 });
