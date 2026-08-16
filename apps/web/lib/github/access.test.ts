@@ -134,6 +134,7 @@ mock.module("./app", () => ({
 // ── Import the module under test (after mocks) ────────────────────────────────
 
 const {
+  __resetInstallationResyncCooldownForTests,
   getRepoAccessErrorMessage,
   getRepoAccessErrorStatus,
   verifyRepoAccess,
@@ -196,6 +197,9 @@ function resetToDefaults() {
   mockInstallationRowAfterResync = undefined;
   syncUserInstallationsCallCount = 0;
   getInstallationByAccountLoginCallCount = 0;
+  // The resync cooldown is module-level state. Without clearing it the first
+  // test to trigger a resync suppresses every later one in this file.
+  __resetInstallationResyncCooldownForTests();
 }
 
 beforeEach(resetToDefaults);
@@ -656,5 +660,101 @@ describe("verifyRepoAccess — installation resync (#791)", () => {
 
     expect(syncUserInstallationsCallCount).toBe(0);
     expect(result.ok).toBe(true);
+  });
+});
+
+describe("verifyRepoAccess — resync review findings (#791 follow-up)", () => {
+  // Finding 1. Two concurrent checks on a newly installed owner can both call
+  // syncUserInstallations; its select-then-insert upsert means one loses the
+  // unique-index race. The old code only re-read when the attempt "succeeded",
+  // so the loser reported no_installation even though the row now existed.
+  test("re-reads the installation even when the sync itself throws", async () => {
+    mockInstallationRow = undefined;
+    mockInstallationRowAfterResync = { installationId: 77 };
+    mockSyncUserInstallations = async () => {
+      throw new Error("duplicate key value violates unique constraint");
+    };
+
+    const result = await verifyRepoAccess({
+      userId: "u1",
+      owner: "acme",
+      repo: "widgets",
+    });
+
+    expect(getInstallationByAccountLoginCallCount).toBe(2);
+    expect(result.ok).toBe(true);
+  });
+
+  // Finding 2. A user browsing a public repo they never installed the App on
+  // hits this branch on every call, across 23+ call sites. Each attempt
+  // paginates every installation.
+  test("does not resync twice for the same user inside the cooldown", async () => {
+    mockInstallationRow = undefined;
+    mockInstallationRowAfterResync = undefined;
+
+    await verifyRepoAccess({ userId: "u1", owner: "acme", repo: "widgets" });
+    await verifyRepoAccess({ userId: "u1", owner: "acme", repo: "widgets" });
+
+    expect(syncUserInstallationsCallCount).toBe(1);
+  });
+
+  test("the cooldown is per user, not global", async () => {
+    mockInstallationRow = undefined;
+    mockInstallationRowAfterResync = undefined;
+
+    await verifyRepoAccess({ userId: "u1", owner: "acme", repo: "widgets" });
+    await verifyRepoAccess({ userId: "u2", owner: "acme", repo: "widgets" });
+
+    expect(syncUserInstallationsCallCount).toBe(2);
+  });
+
+  // Finding 3. The catch used to erase the failure entirely, so the user was
+  // told to install the App and operators saw nothing.
+  test("records a structured event when the sync fails", async () => {
+    mockInstallationRow = undefined;
+    mockInstallationRowAfterResync = undefined;
+    mockSyncUserInstallations = async () => {
+      throw new Error("github 500");
+    };
+    const warnings: unknown[][] = [];
+    const original = console.warn;
+    console.warn = (...args: unknown[]) => {
+      warnings.push(args);
+    };
+
+    try {
+      const result = await verifyRepoAccess({
+        userId: "u1",
+        owner: "acme",
+        repo: "widgets",
+      });
+      expect(result).toEqual({ ok: false, reason: "no_installation" });
+    } finally {
+      console.warn = original;
+    }
+
+    const event = warnings.find(
+      (args) =>
+        (args[1] as { eventName?: string } | undefined)?.eventName ===
+        "github.access.installation_resync_failed",
+    );
+    expect(event).toBeDefined();
+    expect(event?.[1]).toMatchObject({ userId: "u1", owner: "acme" });
+  });
+
+  // The regression guard that matters most: the success path is the gate for
+  // 23+ call sites and must never pay for any of this.
+  test("a successful first read never triggers a resync", async () => {
+    mockInstallationRow = { installationId: 42 };
+
+    const result = await verifyRepoAccess({
+      userId: "u1",
+      owner: "acme",
+      repo: "widgets",
+    });
+
+    expect(result.ok).toBe(true);
+    expect(syncUserInstallationsCallCount).toBe(0);
+    expect(getInstallationByAccountLoginCallCount).toBe(1);
   });
 });
