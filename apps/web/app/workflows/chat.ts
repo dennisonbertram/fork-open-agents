@@ -2962,7 +2962,26 @@ export async function runAgentWorkflow(options: Options) {
     ) {
       const changedPaths = await probeChangedFilePaths(sandboxState);
       if (changedPaths !== null) {
-        if (options.expectFileChanges === true && changedPaths.length === 0) {
+        // Only claim "no_file_changes" when nothing more specific already
+        // explains why the run stopped.
+        //
+        // `headlessNoDiffCapped` outranks `step_ceiling`, `truncated` and
+        // `ended_unexpectedly` in deriveWorkflowRunOutcomeStatus. That was
+        // safe while the mid-run fuse was the only thing setting it, because
+        // the fuse breaks the loop and is mutually exclusive with those. This
+        // end-of-run path is not: a run truncated by the provider's output
+        // limit can also finish with an empty diff, and reporting
+        // `no_file_changes` would hide the real reason behind a wrong one —
+        // the exact dishonesty this whole change exists to remove.
+        const stoppedForAMoreSpecificReason =
+          truncationBoundExhausted ||
+          outerStepCeilingReached ||
+          endedUnexpectedly;
+        if (
+          options.expectFileChanges === true &&
+          changedPaths.length === 0 &&
+          !stoppedForAMoreSpecificReason
+        ) {
           headlessNoDiffCapped = true;
         }
         if (options.expectedFiles && options.expectedFiles.length > 0) {

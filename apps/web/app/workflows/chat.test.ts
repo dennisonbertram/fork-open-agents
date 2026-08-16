@@ -2121,6 +2121,27 @@ describe("runAgentWorkflow", () => {
       });
     });
 
+    // A truncated run can also finish with an empty diff. `no_file_changes`
+    // outranks `truncated` in deriveWorkflowRunOutcomeStatus, so declaring
+    // `expectFileChanges: true` used to overwrite the real stop reason with a
+    // wrong one — reported by review on #1313 and reproduced before this
+    // guard existed. The whole point of grading the declaration is outcome
+    // honesty; masking a more specific reason defeats it.
+    test("a truncated run with an empty diff still reports truncated, not no_file_changes", async () => {
+      agentFinishReason = "length";
+      agentRawFinishReason = "provider_length";
+      agentAssistantPartsFactory = () => [{ type: "text", text: "partial" }];
+      spies.probeChangedFilePaths.mockImplementation(async () => []);
+
+      await runAgentWorkflow(
+        makeOptions({ maxSteps: 20, expectFileChanges: true }),
+      );
+
+      const rwCalls = spies.recordWorkflowUsage.mock.calls as unknown[][];
+      const workflowRun = rwCalls.at(-1)?.[5] as { status: string };
+      expect(workflowRun.status).toBe("truncated");
+    });
+
     test("does not auto-commit truncated work once the continuation budget is exhausted", async () => {
       agentFinishReason = "length";
       agentRawFinishReason = "provider_length";
