@@ -514,10 +514,16 @@ async function executeAgentLoopStepDelivery(
     try {
       checkoutAccess = await withStepPreparationTimeout(
         verifyRepoAccess({
+          // Checking out is a read. Demanding "write" here refused every run
+          // by an identity that cannot write — including the production
+          // canary's installation-scoped service identity, which is
+          // deliberately read-only — even when the loop never writes
+          // anything. Write is verified where writing happens: agent-step.ts
+          // re-checks it at both commit points, gated on `hasChanges`.
           userId: loopRun.userId,
           owner: repository.owner,
           repo: repository.name,
-          requiredUserPermission: "write",
+          requiredUserPermission: "read",
         }),
         Math.max(0, stepDeadlineAt - nowMs()),
       );

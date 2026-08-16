@@ -818,10 +818,13 @@ export async function executeAgentStep(
   try {
     accessResult = await withAgentStepPreparationTimeout(
       verifyRepoAccess({
+        // Preparation only needs to read the repo. The two commit paths below
+        // re-verify "write" when `hasChanges` is true, so requiring it here
+        // as well only blocked read-only work that never reaches them.
         userId: executionUserId,
         owner: repoOwner,
         repo: repoName,
-        requiredUserPermission: "write",
+        requiredUserPermission: "read",
       }),
       remainingPreparationTimeoutMs,
     );
@@ -1028,7 +1031,32 @@ export async function executeAgentStep(
     // off/error skip. Still non-fatal — the step continues without
     // Composio tools on off/error.
     let composioTools: import("ai").ToolSet | undefined;
+    // Composio tools can write to the repository — open a pull request,
+    // comment, dispatch a workflow — and `guardToolSet` below checks only loop
+    // liveness and toolkit policy, never repo write. So the write decision has
+    // to happen here, before the tools are attached.
+    //
+    // This matters because the preparation gates above ask for "read" (a
+    // read-only loop must be able to run). Without this check a read-only
+    // identity that also holds an ACTIVE Composio GitHub connection could
+    // write through Composio while `verifyRepoAccess` was refusing it write —
+    // reaching neither `hasChanges`-gated commit check. Raised independently
+    // by two reviewers on #1314/#1316; see #1315.
+    //
+    // A read-only run keeps its read work and simply gets no Composio tools,
+    // which is strictly more permissive than before, when it could not run at
+    // all.
+    let composioWriteAllowed = true;
     if (toolkitSlugs.length > 0) {
+      const composioWriteAccess = await verifyRepoAccess({
+        userId: executionUserId,
+        owner: repoOwner,
+        repo: repoName,
+        requiredUserPermission: "write",
+      });
+      composioWriteAllowed = composioWriteAccess.ok;
+    }
+    if (toolkitSlugs.length > 0 && composioWriteAllowed) {
       const composioResult = await resolveComposioToolsForBgRun({
         agentId: null,
         runId: executionLoopRunId,
@@ -1152,11 +1180,17 @@ export async function executeAgentStep(
         // result before re-sending history — otherwise the provider rejects the
         // request ("Tool result is missing for tool call …") and fails the run.
         agentMessages = sanitizeUnattendedToolCalls(agentMessages);
+        // Liveness re-check before each turn: has access been revoked while
+        // the step was running? That question is about access existing at
+        // all, not about write. Requiring write here refused every turn for
+        // an identity that cannot write, which is the same defect as the two
+        // preparation gates. Write is still verified at the commit paths
+        // below, gated on `hasChanges`.
         const liveModelAccess = await verifyRepoAccess({
           userId: executionUserId,
           owner: repoOwner,
           repo: repoName,
-          requiredUserPermission: "write",
+          requiredUserPermission: "read",
         });
         if (!liveModelAccess.ok) {
           return await recordAgentStepFailure({

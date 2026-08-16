@@ -52,6 +52,17 @@ export type BackgroundDispatchResult = {
     | "agent_disabled"
     | "no_enabled_trigger"
     | BackgroundAgentRepoRefusalReason;
+  /**
+   * Triggers the scheduled sweep refused, and why. Present only when at least
+   * one was refused, so a clean sweep stays byte-identical to before.
+   *
+   * The sweep already writes `last_skip_reason` to each trigger row, but the
+   * cron response reported nothing: a refused trigger and an idle one both
+   * answered `{"matched":0,...}`. One production trigger was refused weekly
+   * from 2026-07-06 for six weeks without surfacing anywhere an operator
+   * looks.
+   */
+  skipped?: Array<{ triggerId: string; reason: string }>;
 };
 
 function policyStateForReason(reason: BackgroundAgentRepoRefusalReason) {
@@ -807,6 +818,9 @@ export async function dispatchScheduledBackgroundAgents(params?: {
     requestId: params?.requestId ?? null,
   });
   const allRows = await listEnabledScheduleTriggers();
+  // Mirrors every recordTriggerSkipReason call the sweep makes, so the cron
+  // response tells an operator what was refused instead of only what ran.
+  const skipped: Array<{ triggerId: string; reason: string }> = [];
   let created = 0;
   let duplicates = 0;
   const runIds: string[] = [];
@@ -828,6 +842,10 @@ export async function dispatchScheduledBackgroundAgents(params?: {
       await recordTriggerSkipReason({
         triggerId: row.trigger.id,
         skipReason: "invalid schedule expression",
+      });
+      skipped.push({
+        triggerId: row.trigger.id,
+        reason: "invalid schedule expression",
       });
       continue;
     }
@@ -868,6 +886,10 @@ export async function dispatchScheduledBackgroundAgents(params?: {
         await recordTriggerSkipReason({
           triggerId: row.trigger.id,
           skipReason: repoAccess.reason,
+        });
+        skipped.push({
+          triggerId: row.trigger.id,
+          reason: repoAccess.reason,
         });
         warnBackgroundAgentRepoPolicyRefused({
           repoOwner: agent.repoOwner,
@@ -924,6 +946,7 @@ export async function dispatchScheduledBackgroundAgents(params?: {
             triggerId: row.trigger.id,
             skipReason: reason,
           });
+          skipped.push({ triggerId: row.trigger.id, reason });
         }
       }
       continue;
@@ -1001,5 +1024,6 @@ export async function dispatchScheduledBackgroundAgents(params?: {
     duplicates,
     runIds,
     loopRunIds,
+    ...(skipped.length > 0 ? { skipped } : {}),
   };
 }
