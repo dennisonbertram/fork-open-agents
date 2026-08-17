@@ -2,6 +2,7 @@ import "server-only";
 
 import {
   and,
+  ne,
   asc,
   count,
   desc,
@@ -274,8 +275,28 @@ export async function updateAgentLoop(
           : {}),
         updatedAt: new Date(),
       })
-      .where(and(eq(agentLoops.id, loopId), eq(agentLoops.userId, userId)))
+      .where(
+        and(
+          eq(agentLoops.id, loopId),
+          eq(agentLoops.userId, userId),
+          // Atomicity: the `existing.status` read above can go stale if a
+          // concurrent PATCH archives the loop between the read and this
+          // write. Without this predicate the definition would land on an
+          // already-archived row. Including it in the WHERE makes the check
+          // and the write one operation — the same TOCTOU discipline the run
+          // retry paths in this file already use.
+          ...(input.definition !== undefined
+            ? [ne(agentLoops.status, "archived")]
+            : []),
+        ),
+      )
       .returning();
+
+    if (!updated && input.definition !== undefined) {
+      // The row exists (the read above found it) but the guarded update
+      // matched nothing, so it was archived in the race window.
+      throw new AgentLoopArchivedError();
+    }
 
     return updated ?? null;
   });
