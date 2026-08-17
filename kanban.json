@@ -7,7 +7,7 @@
     "Backlog": "Filed and not started. Open issues and unmerged older PRs.",
     "In progress": "Being worked now, no PR open yet.",
     "In review": "PR open. Waiting on CI, review, or a merge train slot.",
-    "Shipped": "Merged to main and live on production."
+    "Shipped": "Merged to main and live in production. A change sitting on develop does not belong here, however finished it is."
   },
   "columnColors": {
     "Backlog": "#8b5cf6",
@@ -123,8 +123,8 @@
       "id": "plan-beautiful-ui",
       "title": "Beautiful UI integration plan",
       "theme": "ux",
-      "column": "Shipped",
-      "note": "Committed in #1335. Verdict is not to adopt the registry.",
+      "column": "In review",
+      "note": "Committed in #1335, which is merged to develop but not yet released, so it is not in production. Verdict is not to adopt the registry: none of the run-list defects it was measured against needs a new component, and the library does not state its framework anywhere.",
       "link": "docs/plans/beautiful-ui-integration.md"
     },
     {
@@ -236,8 +236,8 @@
       "id": "hetzner",
       "title": "Remote work continues on a Hetzner VM",
       "theme": "release",
-      "column": "Shipped",
-      "note": "Two jobs, both delivered: the story catalog (#1336) and the flow critique (#1338). Each ran under systemd on its own VM with its own branch and PR, and kept working while the laptop was closed. Base image has node, git and gh but no Bun, so only toolchain-free work goes there. Both VMs are finished.",
+      "column": "In review",
+      "note": "Two jobs, both delivered and both merged to develop but not yet released: the story catalog (#1336) and the flow critique (#1338). Each ran under systemd on its own VM with its own branch and pull request, and kept working while the laptop was closed. The base image has node, git and gh but no Bun, so only toolchain-free work goes there. Both VMs are deleted.",
       "link": "docs/ux-paths/browser/catalog.md"
     },
     {
