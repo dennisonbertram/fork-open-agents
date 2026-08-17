@@ -506,6 +506,8 @@ describe("updateAgentLoop", () => {
         })),
       })),
     });
+    // The re-read that tells archival apart from deletion still finds a row.
+    txFindFirstMock.mockResolvedValueOnce(makeLoop({ status: "archived" }));
 
     const store = await storePromise;
     await expect(
@@ -516,6 +518,34 @@ describe("updateAgentLoop", () => {
       name: "AgentLoopArchivedError",
       kind: "conflict",
     });
+  });
+
+  // A zero-row guarded UPDATE has two possible causes, and they map to
+  // different HTTP statuses. Archival is a 409 conflict; deletion must stay
+  // the 404 that a missing loop has always produced.
+  test("returns null when the loop is deleted in the race window", async () => {
+    // Read sees an active loop...
+    txFindFirstMock.mockResolvedValueOnce(makeLoop({ status: "active" }));
+    // ...the guarded UPDATE matches nothing...
+    txUpdateMock.mockReturnValueOnce({
+      set: mock(() => ({
+        where: mock(() => ({
+          returning: mock(() => []),
+        })),
+      })),
+    });
+    // ...and the re-read finds no row at all, so it was deleted, not archived.
+    txFindFirstMock.mockResolvedValueOnce(undefined);
+
+    const store = await storePromise;
+    const result = await store.updateAgentLoop("user-1", "loop-1", {
+      definition: VALID_DEFINITION,
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.loop).toBeNull();
+    }
   });
 
   test("allows archived loops to be un-archived without a definition write", async () => {

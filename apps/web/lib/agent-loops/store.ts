@@ -323,8 +323,17 @@ export async function updateAgentLoop(
       .returning();
 
     if (!updated && editsSomethingOtherThanStatus) {
-      // The row exists (the read above found it) but the guarded update
-      // matched nothing, so it was archived in the race window.
+      // A zero-row update has two possible causes, and they are not the same
+      // answer to the caller: the loop was archived in the race window (a 409
+      // conflict), or it was deleted (the 404 a missing loop has always
+      // produced). Re-read inside the same transaction to tell them apart
+      // instead of reporting every race as archival.
+      const current = await tx.query.agentLoops.findFirst({
+        where: and(eq(agentLoops.id, loopId), eq(agentLoops.userId, userId)),
+      });
+      if (!current) {
+        return null;
+      }
       throw new AgentLoopArchivedError();
     }
 
