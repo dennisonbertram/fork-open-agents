@@ -369,7 +369,7 @@ Cross-references were extracted mechanically: every literal `STORY-NNN` mention 
 - STORY-032, STORY-044: New agent builder reachable via `/repos/[owner]/[repo]/agents` -> "New agent" button OR `/automations/new?repoOwner=&repoName=` with `surface="automation"`
 - STORY-043: Run detail at `/background-runs/{runId}` (legacy) OR `/runs/background-agent/[runId]` (canonical) -- both render the identical `nativeDetail` block
 - STORY-044: Agent detail/edit at `/automations/background-agent/{agentId}` OR `/repos/{owner}/{repo}/agents/{agentId}` -- same underlying `AgentDetailContent` component
-- STORY-039, STORY-044: Deletion affordance exists only at `/settings/background-agents` (no alternate route)
+- STORY-044: Deletion affordance exists only at `/settings/background-agents` (no alternate route)
 - STORY-066: Open the git panel via keyboard shortcut (`Cmd+Shift+B`) or the panel-toggle button in the session header -- both call the same `handleGitPanelToggle` code path
 - STORY-067: View a file's diff by clicking the file row in the Files tab or the Changes tab -- both call `openDiffToFile(path)` and land in the same `DiffTabView`; diff style is remembered per `defaultDiffMode` except it is always forced back to Unified on mobile
 - STORY-072: Discard all uncommitted changes via the toolbar trash icon OR by discarding each file individually via the per-row trash icon -- "slower, but reaches the same end state"
