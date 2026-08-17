@@ -151,6 +151,33 @@ export function buildRunOuterStepCeilingMessage(ceiling: number): string {
   ].join("\n");
 }
 
+/** Explains that the run exhausted its caller-supplied step budget. */
+export function buildMaxStepsMessage(): string {
+  return [
+    "Stopped: this run exhausted its step budget, so the work may be incomplete.",
+    "",
+    "Send a follow-up message to continue the work from here.",
+  ].join("\n");
+}
+
+/** Explains a response that stayed truncated through every continuation. */
+export function buildTruncatedMessage(): string {
+  return [
+    "Stopped: the model hit the provider's output-token ceiling and stayed truncated after every automatic continuation. The recorded response is INCOMPLETE.",
+    "",
+    "Send a follow-up message to continue the work from here.",
+  ].join("\n");
+}
+
+/** Explains a provider stop whose specific cause could not be classified. */
+export function buildRunEndedUnexpectedlyMessage(): string {
+  return [
+    "Stopped: the provider ended the run for an unusual reason, and the reason is unclassified.",
+    "",
+    "Retry the request. If the problem continues, send a follow-up message with the same goal.",
+  ].join("\n");
+}
+
 /**
  * The message a reading agent (and a human reviewer reading the transcript
  * afterward) sees when the final diff touched a file outside the caller's
