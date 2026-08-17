@@ -9,6 +9,7 @@ import { formatRunTimestamp } from "@/lib/date/format-run-timestamp";
 import { cn } from "@/lib/utils";
 import type { RunsListResponse } from "@/lib/runs/list";
 import type { NormalizedAutomationRun } from "@/lib/runs/types";
+import { resolveRunsEmptyState } from "./empty-state";
 import { fetchRunsWithTimeout, useRunsList } from "./use-runs-list";
 
 const views = [
@@ -42,6 +43,10 @@ function titleCase(value: string): string {
     .replace(/^./, (letter) => letter.toUpperCase());
 }
 
+function visibleAttentionReasons(run: NormalizedAutomationRun) {
+  return run.attentionReasons.filter((reason) => reason !== run.outcome);
+}
+
 function RunDimensions({ run }: { run: NormalizedAutomationRun }) {
   return (
     <div className="flex flex-wrap items-center gap-1.5 text-xs">
@@ -65,6 +70,23 @@ function RunDimensions({ run }: { run: NormalizedAutomationRun }) {
           {titleCase(run.health)}
         </span>
       ) : null}
+      {/* "Needs attention" says something is wrong without saying what. The
+          reason is already computed and already on the run, so show it — that
+          is the difference between a list you can triage and one you have to
+          open row by row.
+
+          A reason that only repeats the outcome is dropped: a failed run
+          rendered "Finished · Failed · Needs attention · Failed", which is
+          three words to say one thing. "Failed steps" on a succeeded run is
+          kept, because that one is news. */}
+      {visibleAttentionReasons(run).map((reason) => (
+        <span
+          className="rounded border border-border bg-muted/30 px-1.5 py-0.5 text-muted-foreground"
+          key={reason}
+        >
+          {titleCase(reason)}
+        </span>
+      ))}
     </div>
   );
 }
@@ -218,9 +240,17 @@ export function RunsList({ searchParams }: { searchParams: string }) {
     setRepoOwner(params.get("repoOwner") ?? "");
     setRepoName(params.get("repoName") ?? "");
   }, [searchParams]);
+  // `view` is a status tab and `cursor` is paging machinery. Neither is a
+  // filter the reader chose, so neither may make the empty state offer to
+  // clear filters that were never set — the button would not undo the tab.
   const isFiltered = [...currentParams.entries()].some(
-    ([key, value]) => value && !(key === "view" && value === "all"),
+    ([key, value]) => value && key !== "view" && key !== "cursor",
   );
+  const emptyState = resolveRunsEmptyState({
+    isFiltered,
+    view: currentView,
+    viewLabel: views.find((view) => view.id === currentView)?.label ?? "All",
+  });
 
   async function loadMore() {
     if (!nextCursor || loadingMore) return;
@@ -364,17 +394,13 @@ export function RunsList({ searchParams }: { searchParams: string }) {
       {response && !response.allSourcesFailed && items.length === 0 ? (
         <div className="rounded-md border border-dashed border-border p-10 text-center">
           <h2 className="text-balance text-sm font-semibold">
-            {isFiltered ? "No runs found" : "No runs yet"}
+            {emptyState.heading}
           </h2>
           <p className="mt-1 text-pretty text-sm text-muted-foreground">
-            {isFiltered
-              ? "Try another status or clear the repository and trigger filters."
-              : "Create an Automation and run it before execution history appears here."}
+            {emptyState.body}
           </p>
           <Button asChild variant="outline" size="sm" className="mt-4">
-            <Link href={isFiltered ? "/runs" : "/automations"}>
-              {isFiltered ? "Clear filters" : "Create an Automation"}
-            </Link>
+            <Link href={emptyState.href}>{emptyState.action}</Link>
           </Button>
         </div>
       ) : null}

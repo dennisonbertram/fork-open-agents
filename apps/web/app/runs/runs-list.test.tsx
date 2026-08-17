@@ -157,7 +157,10 @@ describe("RunsList", () => {
         error: undefined,
         isLoading: false,
       },
-      expected: "No runs found",
+      // Rendered with searchParams="view=active" below, and a status tab is
+      // not a filter, so this is the view-scoped message rather than the
+      // filtered one.
+      expected: "No runs in Active",
     },
     {
       name: "total source failure",
@@ -211,8 +214,69 @@ describe("RunsList", () => {
       isLoading: false,
     };
     const { RunsList } = await componentPromise;
-    const html = renderToStaticMarkup(<RunsList searchParams="view=active" />);
+    const html = renderToStaticMarkup(
+      <RunsList searchParams="repoOwner=acme&repoName=shop" />,
+    );
     expect(html).toContain("No runs found");
     expect(html).toContain("Clear filters");
+  });
+
+  // A status tab is navigation, not a filter. Offering to "clear filters" to
+  // someone who only clicked Active names a thing they never set, and the
+  // button they are pointed at does not undo the tab.
+  test("a status tab alone is not treated as a filter", async () => {
+    swrState = {
+      data: { items: [], sourceStatus: [], allSourcesFailed: false },
+      isLoading: false,
+    };
+    const { RunsList } = await componentPromise;
+    const html = renderToStaticMarkup(<RunsList searchParams="view=active" />);
+    expect(html).not.toContain("Clear filters");
+    expect(html).toContain("No runs in Active");
+    expect(html).toContain("View all runs");
+  });
+
+  // The paging cursor is machinery, not a user choice. It must not turn the
+  // empty state into a filtered one either.
+  test("a cursor alone is not treated as a filter", async () => {
+    swrState = {
+      data: { items: [], sourceStatus: [], allSourcesFailed: false },
+      isLoading: false,
+    };
+    const { RunsList } = await componentPromise;
+    const html = renderToStaticMarkup(<RunsList searchParams="cursor=abc" />);
+    expect(html).not.toContain("Clear filters");
+    expect(html).toContain("No runs yet");
+  });
+
+  // attentionReasons is already computed, already on the run, and already in
+  // the browser payload — the list just dropped it, so "Needs attention" told
+  // the reader that something is wrong without telling them what.
+  test("renders why a run needs attention, not just that it does", async () => {
+    swrState = populatedState();
+    const { RunsList } = await componentPromise;
+    const html = renderToStaticMarkup(<RunsList searchParams="" />);
+    expect(html).toContain("Needs attention");
+    expect(html).toContain("Stale");
+  });
+
+  // Seen in the browser before it was fixed: a failed run rendered
+  // "Finished · Failed · Needs attention · Failed".
+  test("drops an attention reason that only repeats the outcome", async () => {
+    const state = populatedState();
+    const items = state.data.items as Record<string, unknown>[];
+    items[0] = {
+      ...items[0],
+      state: "finished",
+      outcome: "failed",
+      health: "needs_attention",
+      attentionReasons: ["failed"],
+    };
+    swrState = state;
+
+    const { RunsList } = await componentPromise;
+    const html = renderToStaticMarkup(<RunsList searchParams="" />);
+    const failedChips = html.match(/>Failed</g) ?? [];
+    expect(failedChips.length).toBe(1);
   });
 });
