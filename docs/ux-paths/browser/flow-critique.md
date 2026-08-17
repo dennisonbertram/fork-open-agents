@@ -2,14 +2,14 @@
 
 Generated: 2026-08-17
 Source: docs/ux-paths/browser/catalog.md (187 stories)
-Candidates examined: 60
-Confirmed in code: 56   Unconfirmed: 4
+Candidates examined: 59
+Confirmed in code: 52   Unconfirmed: 7
 
 A note on scope: the catalog's `## Redundancy Candidates` section lists
 roughly 100 individual bullet points across its three subsections (Duplicate
 paths / Duplicate information / Overlapping features), but many of those
 bullets cite the same underlying redundancy from different angles — for
-example STORY-043, STORY-129, STORY-128 and STORY-415 in the catalog all
+example STORY-043, STORY-129, STORY-128 and STORY-141 in the catalog all
 describe the same "background-agent run has too many URLs" problem. This
 critique treats one *consolidated real-world redundancy* as one candidate,
 citing every bullet/story that describes it, rather than producing one
@@ -21,11 +21,11 @@ fine as it is," or in "Not confirmed."
 
 | Verdict | Count |
 |---------|-------|
-| keep | 30 |
+| keep | 25 |
 | redirect | 3 |
 | merge | 11 |
-| differentiate | 12 |
-| unconfirmed | 4 |
+| differentiate | 13 |
+| unconfirmed | 7 |
 
 ## Findings
 
@@ -227,7 +227,7 @@ fine as it is," or in "Not confirmed."
 ### F-009 — The runs list used to hide the reason for "Needs attention" — already fixed
 
 - **Verdict:** keep
-- **Stories:** STORY-128
+- **Stories:** STORY-128, STORY-136
 - **Evidence:** The catalog claims "the list row shows only state/outcome/health
   badges; the actual attention reason (`attentionReasons` string) only
   renders on the detail page." That is no longer true.
@@ -238,10 +238,17 @@ fine as it is," or in "Not confirmed."
   on the run, so show it — that is the difference between a list you can
   triage and one you have to open row by row." This matches commit
   `c3164287` ("fix(runs): make the run list triageable, #1334"), which is
-  already on `develop` as of this branch.
+  already on `develop` as of this branch. The same fix addresses STORY-136's
+  related claim ("a row can show both a `Succeeded` outcome badge and a
+  warning health badge simultaneously"): the code comment at lines 73-81
+  explains this is now a deliberate choice — a reason that only repeats the
+  outcome is dropped, but "failed steps" on an otherwise-succeeded run is
+  intentionally kept because "that one is news."
 - **What it costs the user:** Nothing, currently. This is a correction to
   the catalog, not a live redundancy: the exact gap the catalog describes
-  was closed by a recent, already-merged fix.
+  was closed by a recent, already-merged fix, and the seemingly
+  contradictory badge combination is now an intentional, explained display
+  rather than an unlabeled contradiction.
 - **Recommendation:** None for the product. Flag to whoever maintains
   `catalog.md` that this bullet is stale and should be dropped or updated
   on the next regeneration.
@@ -889,6 +896,12 @@ fine as it is," or in "Not confirmed."
 
 ## What is fine as it is
 
+- STORY-117: Session creation is reachable from a repo dashboard's "New
+  Session" button (`apps/web/app/repos/[owner]/[repo]/repository-new-session-action.tsx:7-25`,
+  pre-fills the repo via `initialRepository`) or bypassed entirely via the
+  `/sessions` repo picker — both explicitly show the selected repo, so
+  neither hides state from the user; legitimately different moments
+  (already-viewing-a-repo vs. starting fresh).
 - STORY-098: Sign-in CTA appears at the hero and the nav bar (revealed on
   scroll) — standard progressive disclosure, not confusing.
 - STORY-029: Reconnect-after-disconnect via Settings or the `/sessions`
@@ -920,6 +933,12 @@ fine as it is," or in "Not confirmed."
 - STORY-065, STORY-112: The MCP composer lock and the mobile tool-approval
   bar both drive off the same `activeRunSource`/`addToolApprovalResponse`
   state as desktop — shared decision logic, mobile-specific chrome only.
+  STORY-052, STORY-053, STORY-054, STORY-055, STORY-057 describe five
+  run-outcome codes
+  (`no_progress_fuse`, `no_file_changes`, `no_sandbox_step_cap`,
+  `step_ceiling`, `diff_violation`) that fire only for MCP-driven runs —
+  that's channel-specific behavior on a shared stream, not duplication, so
+  there's nothing to consolidate.
 - STORY-066: The git panel keyboard shortcut and header button both call
   the same `handleGitPanelToggle` — no divergence risk.
 - STORY-072: "Discard all" and per-file discard both route through the same
@@ -932,6 +951,30 @@ fine as it is," or in "Not confirmed."
 
 ## Not confirmed
 
+- **STORY-003** — "PR-review-to-issues loop reachable via template gallery
+  (STORY-001 path) or AI description path with example chip" describes a
+  specific claim that both loop-creation entry paths "can converge on
+  nearly the same graph via two different roads." This review verified the
+  two *surfaces* that host loop creation (F-005), but did not independently
+  trace whether the template-gallery path and the AI-description path
+  produce a comparably converged graph for this specific scenario — that
+  would require exercising the AI-generation path, which is out of scope
+  for a static code read. Not confirmed.
+- **STORY-062, STORY-063** — "Chat Loop <-> Workflows" (orchestration
+  templates selected from the composer) and "Chat Loop <-> managed
+  runtime" (the `task` tool in Delegated mode rendering a "Managed worker"
+  card) describe conceptual scope overlap between subsystems rather than a
+  specific duplicate route, component, or display this review could open
+  and check against a file:line. Not independently verified.
+- **STORY-149** — "archiving a session via 'Merge & Archive' from the PR
+  panel, OR archiving directly from the session/inbox sidebar without
+  going through merge -- both reach the identical `isArchived` state." A
+  quick search found `isArchived` state handling in
+  `apps/web/app/sessions/[sessionId]/chats/[chatId]/session-chat-content.tsx`
+  but no `"Merge & Archive"` string or equivalent PR-panel archive action in
+  the files checked, so the specific claim that two distinct UI actions
+  reach the same state was inconclusive without deeper tracing than this
+  review's budget allowed.
 - **STORY-181** — "MCP server tools" are described in the source as
   "becoming available in chats in an upcoming update." This describes a
   planned future state, not a redundancy that exists in the product today;
@@ -944,8 +987,9 @@ fine as it is," or in "Not confirmed."
   framing point from the story's prose, not a specific route, component, or
   field this review could open and check. No file or line could be pointed
   to as confirming or refuting it.
-- **STORY-015** — The claim that a retry-budget counter is shared between
-  failure-watchdog invocations and stall-sweep invocations ("the same
+- **STORY-015, STORY-009** — The claim that a retry-budget counter is
+  shared between failure-watchdog invocations (STORY-009) and stall-sweep
+  invocations (STORY-015) ("the same
   shared per-node counter... stall-triggered retries count against it
   too") describes internal scheduling/backend state rather than a
   user-visible route or display. This review did not trace the relevant
