@@ -2044,6 +2044,33 @@ describe("runAgentWorkflow", () => {
         finishReason: "tool-calls",
       }),
     ]);
+    expect(JSON.stringify(writtenChunks).toLowerCase()).toContain(
+      "step budget",
+    );
+    expect(JSON.stringify(writtenChunks).toLowerCase()).toContain("follow-up");
+  });
+
+  test("explains an unclassified unexpected provider stop", async () => {
+    agentFinishReason = "content-filter";
+    agentRawFinishReason = "provider_content_filter";
+
+    await runAgentWorkflow(makeOptions({ maxSteps: 10 }));
+
+    expect(JSON.stringify(writtenChunks).toLowerCase()).toContain("unclassified");
+    expect(JSON.stringify(writtenChunks).toLowerCase()).toContain("retry");
+  });
+
+  test("explains a permanently truncated provider response as incomplete", async () => {
+    agentFinishReason = "length";
+    agentRawFinishReason = "provider_length";
+    agentAssistantPartsFactory = () => [{ type: "text", text: "partial" }];
+
+    await runAgentWorkflow(makeOptions({ maxSteps: 20 }));
+
+    const serializedChunks = JSON.stringify(writtenChunks).toLowerCase();
+    expect(serializedChunks).toContain("output-token ceiling");
+    expect(serializedChunks).toContain("incomplete");
+    expect(serializedChunks).toContain("follow-up");
   });
 
   // #1247: a step whose finishReason is "length" was cut off by the

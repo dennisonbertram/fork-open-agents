@@ -88,7 +88,10 @@ import {
 import {
   buildDiffAcceptanceViolationMessage,
   buildHeadlessNoFileChangesMessage,
+  buildMaxStepsMessage,
+  buildRunEndedUnexpectedlyMessage,
   buildRunOuterStepCeilingMessage,
+  buildTruncatedMessage,
   getHeadlessRunMaxStepsWithoutDiff,
   resolveStepsWithoutDiffAllowance,
   getRunOuterStepCeiling,
@@ -3080,6 +3083,30 @@ export async function runAgentWorkflow(options: Options) {
       outerStepCeilingReached,
       diffAcceptanceViolated,
     });
+
+    const outcomeMessage =
+      workflowRunOutcomeStatus === "max_steps"
+        ? buildMaxStepsMessage()
+        : workflowRunOutcomeStatus === "truncated"
+          ? buildTruncatedMessage()
+          : workflowRunOutcomeStatus === "ended_unexpectedly"
+            ? buildRunEndedUnexpectedlyMessage()
+            : null;
+    if (outcomeMessage) {
+      await sendTextMessage(
+        writable,
+        `${assistantId}:${workflowRunOutcomeStatus}`,
+        outcomeMessage,
+      );
+      pendingAssistantResponse = {
+        ...pendingAssistantResponse,
+        parts: [
+          ...pendingAssistantResponse.parts,
+          { type: "text", text: outcomeMessage },
+        ],
+      };
+      didUpdateGitData = true;
+    }
 
     if (
       runtime.mode === "sandbox" &&
