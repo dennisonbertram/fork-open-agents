@@ -18,6 +18,7 @@ or detailed procedures here; put that material in `docs/agents`,
 - [Development Workflow](docs/process/development-workflow.md)
 - [Guard Integrity](docs/process/guard-integrity.md)
 - [Reviewing What Tests Cannot See](docs/process/reviewing-what-tests-cannot-see.md)
+- [UI References](docs/design/ui-references.md)
 - [Dogfood The Cloud Loop](docs/process/dogfood-cloud-fanout.md)
 - [Behavior-First TDD](docs/process/behavior-tdd.md)
 - [Authenticated Local UI Smoke](docs/process/development-workflow.md#authenticated-local-ui-smoke)
@@ -426,3 +427,17 @@ record of intent (link back to it from new planning docs and issues):
 - **Zod** schemas for validation, derive types with `z.infer`
 
 See [Code Style & Patterns](docs/agents/code-style.md) for full conventions, tool implementation patterns, and dependency patterns.
+
+<!-- kanban-lifecycle:start -->
+## Kanban lifecycle
+
+When this project has a `kanban.json`, keep it factual and regenerate its HTML board after each change.
+
+1. At work start, build the board to `.kanban/board.html`, launch `node /path/to/kanban/scripts/serve.mjs .kanban/board.html` in the background, and tell the user its printed local URL. The server selects a random available port and opens the browser automatically.
+2. Before making a plan, find the card for the requested work. If a card is required but missing, add one from the explicit task facts in `workflow.planning`; do not invent a theme, note, or status.
+3. After a plan is written or saved, update that card's note or link with the factual plan location or next decision, regenerate the board, and reload the open local URL.
+4. Immediately before the first material implementation change, move the card to `workflow.active`, regenerate the board, and reload the open local URL.
+5. Before the final handoff, update the card to its factual outcome: `workflow.completed` only when the task is complete; otherwise leave/move it to the applicable declared workflow column and state the remaining work in its note. Regenerate the board and reload the open local URL.
+
+Never hand-edit generated HTML. If `workflow` is absent or does not map the needed phase, do not guess—ask for the mapping or record only the facts already known.
+<!-- kanban-lifecycle:end -->
