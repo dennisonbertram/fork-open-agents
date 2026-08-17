@@ -43,6 +43,10 @@ function titleCase(value: string): string {
     .replace(/^./, (letter) => letter.toUpperCase());
 }
 
+function visibleAttentionReasons(run: NormalizedAutomationRun) {
+  return run.attentionReasons.filter((reason) => reason !== run.outcome);
+}
+
 function RunDimensions({ run }: { run: NormalizedAutomationRun }) {
   return (
     <div className="flex flex-wrap items-center gap-1.5 text-xs">
@@ -69,8 +73,13 @@ function RunDimensions({ run }: { run: NormalizedAutomationRun }) {
       {/* "Needs attention" says something is wrong without saying what. The
           reason is already computed and already on the run, so show it — that
           is the difference between a list you can triage and one you have to
-          open row by row. */}
-      {run.attentionReasons.map((reason) => (
+          open row by row.
+
+          A reason that only repeats the outcome is dropped: a failed run
+          rendered "Finished · Failed · Needs attention · Failed", which is
+          three words to say one thing. "Failed steps" on a succeeded run is
+          kept, because that one is news. */}
+      {visibleAttentionReasons(run).map((reason) => (
         <span
           className="rounded border border-border bg-muted/30 px-1.5 py-0.5 text-muted-foreground"
           key={reason}

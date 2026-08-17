@@ -259,4 +259,24 @@ describe("RunsList", () => {
     expect(html).toContain("Needs attention");
     expect(html).toContain("Stale");
   });
+
+  // Seen in the browser before it was fixed: a failed run rendered
+  // "Finished · Failed · Needs attention · Failed".
+  test("drops an attention reason that only repeats the outcome", async () => {
+    const state = populatedState();
+    const items = state.data.items as Record<string, unknown>[];
+    items[0] = {
+      ...items[0],
+      state: "finished",
+      outcome: "failed",
+      health: "needs_attention",
+      attentionReasons: ["failed"],
+    };
+    swrState = state;
+
+    const { RunsList } = await componentPromise;
+    const html = renderToStaticMarkup(<RunsList searchParams="" />);
+    const failedChips = html.match(/>Failed</g) ?? [];
+    expect(failedChips.length).toBe(1);
+  });
 });
