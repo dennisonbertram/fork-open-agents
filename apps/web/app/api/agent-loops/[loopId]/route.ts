@@ -2,6 +2,7 @@ import { requireAuthenticatedUser } from "@/app/api/sessions/_lib/session-contex
 import {
   deleteAgentLoop,
   getOwnedAgentLoop,
+  AgentLoopArchivedError,
   updateAgentLoop,
 } from "@/lib/agent-loops/store";
 import { listTriggersForLoop } from "@/lib/background-agents/store";
@@ -91,7 +92,26 @@ export async function PATCH(
   }
 
   const { loopId } = await ctx.params;
-  const result = await updateAgentLoop(authResult.userId, loopId, parsed.data);
+  // AgentLoopArchivedError is a typed conflict, not a crash. Letting it
+  // propagate gives Next.js a generic 500, which tells the caller nothing and
+  // hides the one thing they need to know: un-archive the loop first.
+  let result: Awaited<ReturnType<typeof updateAgentLoop>>;
+  try {
+    result = await updateAgentLoop(authResult.userId, loopId, parsed.data);
+  } catch (error) {
+    if (error instanceof AgentLoopArchivedError) {
+      const message = error.message;
+      return Response.json(
+        {
+          errorKind: "conflict",
+          error: message,
+          message,
+        },
+        { status: 409 },
+      );
+    }
+    throw error;
+  }
 
   if (!result.ok) {
     return Response.json(

@@ -59,7 +59,21 @@ mock.module("@/app/api/sessions/_lib/session-context", () => ({
   requireAuthenticatedUser: async () => authResult,
 }));
 
+// The route imports AgentLoopArchivedError to translate it into a 409, so the
+// mock must export it too — otherwise every test in this file dies at import
+// with "Export named 'AgentLoopArchivedError' not found".
+class AgentLoopArchivedError extends Error {
+  readonly kind = "conflict" as const;
+  constructor() {
+    super(
+      "Archived agent loop definitions cannot be changed. Un-archive the loop before editing its definition.",
+    );
+    this.name = "AgentLoopArchivedError";
+  }
+}
+
 mock.module("@/lib/agent-loops/store", () => ({
+  AgentLoopArchivedError,
   getOwnedAgentLoop,
   updateAgentLoop,
   deleteAgentLoop,

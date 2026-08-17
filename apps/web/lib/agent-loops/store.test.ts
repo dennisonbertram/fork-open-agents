@@ -408,6 +408,84 @@ describe("updateAgentLoop", () => {
       expect(result.loop?.name).toBe("New name");
     }
   });
+
+  test("rejects definition writes to archived loops with a conflict error", async () => {
+    txFindFirstMock.mockResolvedValueOnce(makeLoop({ status: "archived" }));
+
+    const store = await storePromise;
+    await expect(
+      store.updateAgentLoop("user-1", "loop-1", {
+        definition: VALID_DEFINITION,
+      }),
+    ).rejects.toMatchObject({
+      name: "AgentLoopArchivedError",
+      kind: "conflict",
+    });
+    expect(txUpdateMock).not.toHaveBeenCalled();
+  });
+
+  // Review finding: the status read and the update were two operations. A
+  // concurrent PATCH archiving the loop in that window let the definition
+  // write land on an already-archived row. The guard is now in the WHERE
+  // clause, so the race resolves to zero matched rows.
+  // The test below mocks the database, so it proves the THROW handles a
+  // zero-row update — it cannot see the WHERE clause that causes one.
+  // Verified by mutation: removing the predicate leaves every behavioural
+  // test green. So the predicate is asserted from the source, per
+  // docs/process/reviewing-what-tests-cannot-see.md.
+  test("the definition update is guarded by a non-archived predicate", async () => {
+    const source = await Bun.file(
+      new URL("store.ts", import.meta.url).pathname,
+    ).text();
+    expect(source).toMatch(/ne\(\s*agentLoops\.status\s*,\s*"archived"\s*\)/);
+  });
+
+  test("rejects a definition write archived in the race window", async () => {
+    // Read sees an active loop...
+    txFindFirstMock.mockResolvedValueOnce(makeLoop({ status: "active" }));
+    // ...but the guarded UPDATE matches nothing, because it was archived
+    // between the read and the write.
+    txUpdateMock.mockReturnValueOnce({
+      set: mock(() => ({
+        where: mock(() => ({
+          returning: mock(() => []),
+        })),
+      })),
+    });
+
+    const store = await storePromise;
+    await expect(
+      store.updateAgentLoop("user-1", "loop-1", {
+        definition: VALID_DEFINITION,
+      }),
+    ).rejects.toMatchObject({
+      name: "AgentLoopArchivedError",
+      kind: "conflict",
+    });
+  });
+
+  test("allows archived loops to be un-archived without a definition write", async () => {
+    const archived = makeLoop({ status: "archived" });
+    const updated = makeLoop({ status: "draft" });
+    txFindFirstMock.mockResolvedValueOnce(archived);
+    txUpdateMock.mockReturnValueOnce({
+      set: mock(() => ({
+        where: mock(() => ({
+          returning: mock(() => [updated]),
+        })),
+      })),
+    });
+
+    const store = await storePromise;
+    const result = await store.updateAgentLoop("user-1", "loop-1", {
+      status: "draft",
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.loop?.status).toBe("draft");
+    }
+  });
 });
 
 describe("deleteAgentLoop", () => {
