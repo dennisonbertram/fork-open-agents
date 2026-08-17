@@ -79,6 +79,17 @@ export type AgentLoopUpdateResult =
   | { ok: true; loop: AgentLoop | null }
   | { ok: false; errors: LoopValidationError[] };
 
+export class AgentLoopArchivedError extends Error {
+  readonly kind = "conflict" as const;
+
+  constructor() {
+    super(
+      "Archived agent loop definitions cannot be changed. Un-archive the loop before editing its definition.",
+    );
+    this.name = "AgentLoopArchivedError";
+  }
+}
+
 export type CreateAgentLoopInput = {
   name: string;
   description?: string | null;
@@ -226,6 +237,9 @@ export async function updateAgentLoop(
     });
     if (!existing) {
       return null;
+    }
+    if (existing.status === "archived" && input.definition !== undefined) {
+      throw new AgentLoopArchivedError();
     }
 
     const [updated] = await tx

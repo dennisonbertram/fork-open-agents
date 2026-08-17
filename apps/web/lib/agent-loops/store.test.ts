@@ -408,6 +408,44 @@ describe("updateAgentLoop", () => {
       expect(result.loop?.name).toBe("New name");
     }
   });
+
+  test("rejects definition writes to archived loops with a conflict error", async () => {
+    txFindFirstMock.mockResolvedValueOnce(makeLoop({ status: "archived" }));
+
+    const store = await storePromise;
+    await expect(
+      store.updateAgentLoop("user-1", "loop-1", {
+        definition: VALID_DEFINITION,
+      }),
+    ).rejects.toMatchObject({
+      name: "AgentLoopArchivedError",
+      kind: "conflict",
+    });
+    expect(txUpdateMock).not.toHaveBeenCalled();
+  });
+
+  test("allows archived loops to be un-archived without a definition write", async () => {
+    const archived = makeLoop({ status: "archived" });
+    const updated = makeLoop({ status: "draft" });
+    txFindFirstMock.mockResolvedValueOnce(archived);
+    txUpdateMock.mockReturnValueOnce({
+      set: mock(() => ({
+        where: mock(() => ({
+          returning: mock(() => [updated]),
+        })),
+      })),
+    });
+
+    const store = await storePromise;
+    const result = await store.updateAgentLoop("user-1", "loop-1", {
+      status: "draft",
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.loop?.status).toBe("draft");
+    }
+  });
 });
 
 describe("deleteAgentLoop", () => {
