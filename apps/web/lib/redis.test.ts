@@ -162,6 +162,30 @@ describe("redis configuration", () => {
 // A source guard because nothing else can see it: a unit test runs under
 // whichever script invoked it and cannot observe the others.
 describe("every test entry point is hermetic", () => {
+  // Package scripts cannot cover the entry points CLAUDE.md documents as
+  // normal — `bun test path/to/file.test.ts`, `bun test --isolate <dir>`,
+  // `bun test --watch` — because those bypass package.json entirely. The
+  // bunfig preload does cover them: Bun applies it to every `bun test`
+  // invocation however it was launched. Raised by review of #1323.
+  test("bunfig.toml preloads the hermetic marker", async () => {
+    const bunfig = await Bun.file(
+      new URL("../../../bunfig.toml", import.meta.url).pathname,
+    ).text();
+
+    expect(bunfig).toContain("[test]");
+    expect(bunfig).toMatch(
+      /preload\s*=\s*\[[^\]]*hermetic-preload\.ts[^\]]*\]/,
+    );
+  });
+
+  test("the preload actually sets the marker", async () => {
+    const preload = await Bun.file(
+      new URL("../../../scripts/testing/hermetic-preload.ts", import.meta.url)
+        .pathname,
+    ).text();
+    expect(preload).toMatch(/process\.env\.OPEN_AGENTS_TEST\s*=\s*"1"/);
+  });
+
   test("all test scripts set OPEN_AGENTS_TEST", async () => {
     const pkg = (await Bun.file(
       new URL("../../../package.json", import.meta.url).pathname,
