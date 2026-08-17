@@ -18,6 +18,7 @@ or detailed procedures here; put that material in `docs/agents`,
 - [Development Workflow](docs/process/development-workflow.md)
 - [Guard Integrity](docs/process/guard-integrity.md)
 - [Reviewing What Tests Cannot See](docs/process/reviewing-what-tests-cannot-see.md)
+- [UI References](docs/design/ui-references.md)
 - [Dogfood The Cloud Loop](docs/process/dogfood-cloud-fanout.md)
 - [Behavior-First TDD](docs/process/behavior-tdd.md)
 - [Authenticated Local UI Smoke](docs/process/development-workflow.md#authenticated-local-ui-smoke)
