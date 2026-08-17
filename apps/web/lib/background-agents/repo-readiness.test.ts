@@ -37,6 +37,10 @@ const modulePromise = import("./repo-readiness");
 
 describe("background agent repo readiness", () => {
   beforeEach(() => {
+    // These cases exercise GitHub permission, not the allowlist. Readiness now
+    // consults both, so give them a wildcard allowlist to isolate what they
+    // actually assert.
+    process.env.BACKGROUND_AGENTS_ALLOWED_REPOS = "*";
     verifyRepoAccess.mockReset();
     verifyRepoAccess.mockImplementation(
       async (): Promise<RepoAccessResult> => ({
@@ -125,5 +129,76 @@ describe("background agent repo readiness", () => {
       defaultBranch: null,
     });
     expect(readiness.message).not.toContain("GitHub is unavailable");
+  });
+});
+
+// Regression for a six-week silent production outage. A scheduled trigger on
+// dennisonbertram/agent-university was refused every week from 2026-07-06 with
+// `repo_not_allowlisted`, while the readiness panel reported the repo ready —
+// because readiness checked only GitHub permission, and the allowlist that
+// actually gates dispatch was consulted nowhere on this path. Readiness that
+// disagrees with the dispatcher is worse than no readiness check.
+describe("repo readiness reflects the allowlist the dispatcher enforces", () => {
+  beforeEach(() => {
+    process.env.BACKGROUND_AGENTS_ALLOWED_REPOS = "acme/allowed";
+  });
+
+  test("a repo outside the allowlist is NOT ready, even with full GitHub write", async () => {
+    const { getBackgroundAgentRepoReadiness } =
+      await import("./repo-readiness");
+
+    const readiness = await getBackgroundAgentRepoReadiness({
+      userId: "user-1",
+      repoOwner: "acme",
+      repoName: "not-listed",
+    });
+
+    expect(readiness.ready).toBe(false);
+    expect(readiness.reason).toBe("repo_not_allowlisted");
+    // The message must name the variable an operator has to change.
+    expect(readiness.message).toContain("BACKGROUND_AGENTS_ALLOWED_REPOS");
+  });
+
+  test("a repo on the allowlist is ready", async () => {
+    const { getBackgroundAgentRepoReadiness } =
+      await import("./repo-readiness");
+
+    const readiness = await getBackgroundAgentRepoReadiness({
+      userId: "user-1",
+      repoOwner: "acme",
+      repoName: "allowed",
+    });
+
+    expect(readiness.ready).toBe(true);
+    expect(readiness.reason).toBeNull();
+  });
+
+  test("a wildcard allowlist allows any repo", async () => {
+    process.env.BACKGROUND_AGENTS_ALLOWED_REPOS = "*";
+    const { getBackgroundAgentRepoReadiness } =
+      await import("./repo-readiness");
+
+    const readiness = await getBackgroundAgentRepoReadiness({
+      userId: "user-1",
+      repoOwner: "anyone",
+      repoName: "anything",
+    });
+
+    expect(readiness.ready).toBe(true);
+  });
+
+  test("an unconfigured allowlist is reported, not silently allowed", async () => {
+    process.env.BACKGROUND_AGENTS_ALLOWED_REPOS = undefined as never;
+    delete process.env.BACKGROUND_AGENTS_ALLOWED_REPOS;
+    const { getBackgroundAgentRepoReadiness } =
+      await import("./repo-readiness");
+
+    const readiness = await getBackgroundAgentRepoReadiness({
+      userId: "user-1",
+      repoOwner: "acme",
+      repoName: "allowed",
+    });
+
+    expect(readiness.ready).toBe(false);
   });
 });
