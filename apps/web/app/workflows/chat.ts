@@ -88,7 +88,10 @@ import {
 import {
   buildDiffAcceptanceViolationMessage,
   buildHeadlessNoFileChangesMessage,
+  buildMaxStepsMessage,
+  buildRunEndedUnexpectedlyMessage,
   buildRunOuterStepCeilingMessage,
+  buildTruncatedMessage,
   getHeadlessRunMaxStepsWithoutDiff,
   resolveStepsWithoutDiffAllowance,
   getRunOuterStepCeiling,
@@ -3080,6 +3083,35 @@ export async function runAgentWorkflow(options: Options) {
       outerStepCeilingReached,
       diffAcceptanceViolated,
     });
+
+    const outcomeMessage =
+      workflowRunOutcomeStatus === "max_steps"
+        ? buildMaxStepsMessage()
+        : workflowRunOutcomeStatus === "truncated"
+          ? buildTruncatedMessage()
+          : workflowRunOutcomeStatus === "ended_unexpectedly"
+            ? buildRunEndedUnexpectedlyMessage()
+            : null;
+    if (outcomeMessage) {
+      await sendTextMessage(
+        writable,
+        `${assistantId}:${workflowRunOutcomeStatus}`,
+        outcomeMessage,
+      );
+      pendingAssistantResponse = {
+        ...pendingAssistantResponse,
+        parts: [
+          ...pendingAssistantResponse.parts,
+          { type: "text", text: outcomeMessage },
+        ],
+      };
+      // Persist here, explicitly. Setting `didUpdateGitData` would be a no-op:
+      // the persistence it guards runs earlier in this function, so the
+      // explanation would stream to the browser and vanish on reload — the
+      // reader would see a run stop for no reason, which is the exact defect
+      // this message exists to remove.
+      await persistAssistantMessage(options.chatId, pendingAssistantResponse);
+    }
 
     if (
       runtime.mode === "sandbox" &&

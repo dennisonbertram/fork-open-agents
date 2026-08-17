@@ -2,7 +2,10 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
   buildDiffAcceptanceViolationMessage,
   buildHeadlessNoFileChangesMessage,
+  buildMaxStepsMessage,
+  buildRunEndedUnexpectedlyMessage,
   buildRunOuterStepCeilingMessage,
+  buildTruncatedMessage,
   DEFAULT_HEADLESS_RUN_MAX_STEPS_WITHOUT_DIFF,
   DEFAULT_RUN_OUTER_STEP_CEILING,
   getHeadlessRunMaxStepsWithoutDiff,
@@ -108,6 +111,28 @@ describe("buildHeadlessNoFileChangesMessage (#1288)", () => {
   test("distinguishes itself from the generic no-progress fuse wording", () => {
     const message = buildHeadlessNoFileChangesMessage(5, 5);
     expect(message.toLowerCase()).toContain("declared");
+  });
+});
+
+describe("run outcome messages", () => {
+  test("explains max_steps and how to continue", () => {
+    const message = buildMaxStepsMessage();
+    expect(message.toLowerCase()).toContain("step budget");
+    expect(message.toLowerCase()).toContain("incomplete");
+    expect(message.toLowerCase()).toContain("follow-up");
+  });
+
+  test("explains that truncated output is incomplete and how to continue", () => {
+    const message = buildTruncatedMessage();
+    expect(message.toLowerCase()).toContain("output-token ceiling");
+    expect(message.toLowerCase()).toContain("incomplete");
+    expect(message.toLowerCase()).toContain("follow-up");
+  });
+
+  test("explains the unclassified unexpected stop and suggests retrying", () => {
+    const message = buildRunEndedUnexpectedlyMessage();
+    expect(message.toLowerCase()).toContain("unclassified");
+    expect(message.toLowerCase()).toContain("retry");
   });
 });
 
