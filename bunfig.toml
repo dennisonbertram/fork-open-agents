@@ -1,0 +1,4 @@
+# Applies to every `bun test` invocation, including direct file runs that
+# bypass package.json scripts. See scripts/testing/hermetic-preload.ts.
+[test]
+preload = ["./scripts/testing/hermetic-preload.ts"]

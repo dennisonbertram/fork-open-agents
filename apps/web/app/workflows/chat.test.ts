@@ -2127,6 +2127,34 @@ describe("runAgentWorkflow", () => {
     // wrong one — reported by review on #1313 and reproduced before this
     // guard existed. The whole point of grading the declaration is outcome
     // honesty; masking a more specific reason defeats it.
+    // #1321 made expectFileChanges accept a numeric allowance; #1313 added the
+    // end-of-run grading gated on `=== true`. Shipped separately, never tested
+    // together: a numeric declaration was armed mid-run but NOT graded at the
+    // end, so a slice dispatched with `expectFileChanges: 40` that changed
+    // nothing reported `completed` — the exact bug #1313 exists to fix,
+    // reintroduced for the new input type. Found by review of the release.
+    test("a numeric expectFileChanges is graded at the end, like `true`", async () => {
+      spies.probeChangedFilePaths.mockImplementation(async () => []);
+
+      await runAgentWorkflow(makeOptions({ expectFileChanges: 40 }));
+
+      const rwCalls = spies.recordWorkflowUsage.mock.calls as unknown[][];
+      const workflowRun = rwCalls.at(-1)?.[5] as { status: string };
+      expect(workflowRun.status).toBe("no_file_changes");
+    });
+
+    // The other half of the same contract: a read-only run must still be
+    // completely ungraded. This is the #1242 regression guard.
+    test("expectFileChanges: false is still never graded", async () => {
+      spies.probeChangedFilePaths.mockImplementation(async () => []);
+
+      await runAgentWorkflow(makeOptions({ expectFileChanges: false }));
+
+      const rwCalls = spies.recordWorkflowUsage.mock.calls as unknown[][];
+      const workflowRun = rwCalls.at(-1)?.[5] as { status: string };
+      expect(workflowRun.status).not.toBe("no_file_changes");
+    });
+
     test("a truncated run with an empty diff still reports truncated, not no_file_changes", async () => {
       agentFinishReason = "length";
       agentRawFinishReason = "provider_length";
@@ -3968,6 +3996,134 @@ describe("runAgentWorkflow", () => {
 
       expect(text).toContain("only");
     });
+  });
+
+  // Placed here deliberately: this file's tests below call
+  // `mock.module("@/app/config", ...)`, which permanently replaces the module
+  // for the rest of the single test process. This matrix was originally
+  // appended at the end of the file and every row failed with "Agent failed",
+  // inheriting a deliberately-broken agent mock. Same hazard the note below
+  // describes.
+  /**
+   * Declared-expectation combination matrix.
+   *
+   * Why this exists: `expectFileChanges` and `expectedFiles` were each tested
+   * thoroughly on their own and never together. Two PRs shipped a week apart —
+   * one adding a numeric allowance, one adding end-of-run grading gated on
+   * `=== true` — and their combination silently reported `completed` for a run
+   * that produced nothing. Every individual test stayed green.
+   *
+   * A checklist entry did not prevent that; the repo's own review doc names
+   * "combinations tested only in isolation" as a blind spot and this defect was
+   * introduced anyway. So the cross-product is enumerated mechanically here.
+   *
+   * Adding a new accepted form of the declaration means adding its rows. That
+   * is the point: the matrix makes an untested combination a visible omission
+   * rather than an invisible one.
+   */
+  describe("declared expectation — combination matrix", () => {
+    type Row = {
+      name: string;
+      expectFileChanges?: boolean | number;
+      expectedFiles?: string[];
+      changed: string[];
+      outcome: string;
+    };
+
+    const rows: Row[] = [
+      // ── expectFileChanges alone, every accepted form ──────────────────────
+      {
+        name: "undeclared + empty diff -> completed (read-only run, #1242)",
+        changed: [],
+        outcome: "completed",
+      },
+      {
+        name: "false + empty diff -> completed",
+        expectFileChanges: false,
+        changed: [],
+        outcome: "completed",
+      },
+      {
+        name: "true + empty diff -> no_file_changes",
+        expectFileChanges: true,
+        changed: [],
+        outcome: "no_file_changes",
+      },
+      {
+        name: "number + empty diff -> no_file_changes (the combination that shipped broken)",
+        expectFileChanges: 40,
+        changed: [],
+        outcome: "no_file_changes",
+      },
+      {
+        name: "true + a changed file -> completed",
+        expectFileChanges: true,
+        changed: ["src/a.ts"],
+        outcome: "completed",
+      },
+      {
+        name: "number + a changed file -> completed",
+        expectFileChanges: 40,
+        changed: ["src/a.ts"],
+        outcome: "completed",
+      },
+
+      // ── both declared together ────────────────────────────────────────────
+      {
+        name: "true + expectedFiles, empty diff -> no_file_changes wins over diff_violation",
+        expectFileChanges: true,
+        expectedFiles: ["src/a.ts"],
+        changed: [],
+        outcome: "no_file_changes",
+      },
+      {
+        name: "number + expectedFiles, in-list change -> completed",
+        expectFileChanges: 40,
+        expectedFiles: ["src/a.ts"],
+        changed: ["src/a.ts"],
+        outcome: "completed",
+      },
+      {
+        name: "number + expectedFiles, out-of-list change -> diff_violation",
+        expectFileChanges: 40,
+        expectedFiles: ["src/a.ts"],
+        changed: ["src/b.ts"],
+        outcome: "diff_violation",
+      },
+
+      // ── expectedFiles alone ───────────────────────────────────────────────
+      {
+        name: "expectedFiles alone, empty diff -> completed (no change was demanded)",
+        expectedFiles: ["src/a.ts"],
+        changed: [],
+        outcome: "completed",
+      },
+      {
+        name: "expectedFiles alone, out-of-list change -> diff_violation",
+        expectedFiles: ["src/a.ts"],
+        changed: ["src/b.ts"],
+        outcome: "diff_violation",
+      },
+    ];
+
+    for (const row of rows) {
+      test(row.name, async () => {
+        spies.probeChangedFilePaths.mockImplementation(async () => row.changed);
+
+        await runAgentWorkflow(
+          makeOptions({
+            ...(row.expectFileChanges !== undefined
+              ? { expectFileChanges: row.expectFileChanges }
+              : {}),
+            ...(row.expectedFiles ? { expectedFiles: row.expectedFiles } : {}),
+          }),
+        );
+
+        const rwCalls = spies.recordWorkflowUsage.mock.calls as unknown[][];
+        const workflowRun = rwCalls.at(-1)?.[5] as { status: string };
+        expect(workflowRun.status).toBe(row.outcome);
+      });
+    }
   });
 
   // #1231: this describe block MUST stay before "recordGoalLedgerClose uses

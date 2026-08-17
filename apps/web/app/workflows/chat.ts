@@ -2964,10 +2964,18 @@ export async function runAgentWorkflow(options: Options) {
     // in which case there is no "final" diff yet to grade). Computed once,
     // after auto-commit/auto-PR so it sees any changes those steps just made,
     // never mid-loop.
+    // Armed for ANY resolved declaration, not just `=== true`. #1321 made
+    // `expectFileChanges` accept a numeric allowance, and a number is the same
+    // declaration with a custom mid-run budget — grading it differently at the
+    // end meant a slice dispatched with `expectFileChanges: 40` that changed
+    // nothing reported `completed`, which is the defect this block exists to
+    // fix. `stepsWithoutDiffAllowance` is null exactly when the caller
+    // declared nothing or `false`, so read-only runs stay ungraded (#1242).
+    const declaredFileChanges = stepsWithoutDiffAllowance !== null;
     if (
       sandboxState &&
       ((options.expectedFiles && options.expectedFiles.length > 0) ||
-        options.expectFileChanges === true) &&
+        declaredFileChanges) &&
       !wasAborted &&
       !awaitingToolApproval
     ) {
@@ -2998,7 +3006,7 @@ export async function runAgentWorkflow(options: Options) {
         // the probe.
         const autoCommitRecordedAChange = autoCommitResult?.committed === true;
         if (
-          options.expectFileChanges === true &&
+          declaredFileChanges &&
           changedPaths.length === 0 &&
           !stoppedForAMoreSpecificReason &&
           !autoCommitRecordedAChange
