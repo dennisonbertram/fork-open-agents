@@ -83,13 +83,7 @@ mock.module("@/components/ui/settings-section", () => ({
   SettingsPageHeader: ({ title }: { title: string }) => <h1>{title}</h1>,
 }));
 mock.module("./repo-settings-section", () => ({
-  RepoSettingsSection: ({
-    owner,
-    repo,
-  }: {
-    owner: string;
-    repo: string;
-  }) => (
+  RepoSettingsSection: ({ owner, repo }: { owner: string; repo: string }) => (
     <div>
       {owner}/{repo} settings
     </div>
