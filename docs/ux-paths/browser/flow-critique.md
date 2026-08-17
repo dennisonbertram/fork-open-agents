@@ -21,9 +21,9 @@ fine as it is," or in "Not confirmed."
 
 | Verdict | Count |
 |---------|-------|
-| keep | 25 |
+| keep | 26 |
 | redirect | 3 |
-| merge | 11 |
+| merge | 10 |
 | differentiate | 13 |
 | unconfirmed | 7 |
 
@@ -165,19 +165,28 @@ fine as it is," or in "Not confirmed."
 - **Evidence:** `apps/web/app/loops/new/page.tsx:24,51-65` and
   `apps/web/app/automations/agent-loop/new/page.tsx:24,45-61` both check
   `isAgentLoopsEnabled()` and block creation with "Loops are disabled" copy
-  when `AGENT_LOOPS_ENABLED` is off. No equivalent check exists on the
-  background-agent creation pages (`apps/web/app/repos/[owner]/[repo]/agents/new/`
-  and `apps/web/app/automations/new/`) — neither checks
-  `BACKGROUND_AGENTS_ENABLED` before letting the user build and save an
-  agent.
-- **What it costs the user:** A user on a deployment with background agents
-  disabled can fully configure an agent, wire up triggers, and save it, and
-  it will simply never run — with no error, no warning, nothing at the point
-  where the mistake is made. The equivalent mistake in Agent Loops is caught
-  immediately with a clear "disabled" message.
-- **Recommendation:** Apply the same `isAgentLoopsEnabled()`-style hard-stop
-  pattern that Loops already has to the background-agent creation pages,
-  gated on `BACKGROUND_AGENTS_ENABLED`.
+  when `AGENT_LOOPS_ENABLED` is off. Background agents have no equivalent
+  hard stop, but the two creation surfaces do **not** behave the same, and an
+  earlier draft of this finding was wrong to say they did. `agent-spec-editor.tsx:310`
+  computes `enableBlocked = surface === "automation" && !persistedEnabled &&
+  (!createdAgentId || !readinessReady)`. On the canonical `/automations/new`
+  path the surface **is** `"automation"`, so `new-agent-builder.tsx` fetches
+  readiness, renders its failed verdict, and blocks enabling with an
+  explanation. The legacy repo-scoped page at
+  `apps/web/app/repos/[owner]/[repo]/agents/new/` runs the same editor on a
+  different surface value, so that condition is false and the enable control
+  is never blocked.
+- **What it costs the user:** On the legacy repo-scoped page, a user on a
+  deployment with background agents disabled can configure an agent, wire up
+  triggers, save it and enable it, and it will never run — with nothing said
+  at the point where the mistake is made. The canonical page catches the same
+  mistake. So this is an inconsistency between two surfaces, not a blanket
+  gap, and it is the legacy surface that is wrong.
+- **Recommendation:** Make the legacy repo-scoped page apply the same
+  readiness-gated enable condition the `"automation"` surface already
+  applies, rather than adding a new pattern. A hard stop on
+  `BACKGROUND_AGENTS_ENABLED` matching the Loops pages would also close it,
+  but reusing the existing condition is the smaller change.
 - **Effort:** small
 
 ### F-007 — Four different ways of saying "this feature is off"
@@ -420,24 +429,23 @@ fine as it is," or in "Not confirmed."
   client method is intentionally equivalent.
 - **Effort:** small
 
-### F-017 — The home page can start a session without the onboarding check `/sessions` enforces
+### F-017 — The home page cannot start a session without the onboarding check (not a defect)
 
-- **Verdict:** merge
+- **Verdict:** keep
 - **Stories:** STORY-026
-- **Evidence:** `apps/web/app/sessions/layout.tsx:25` calls
-  `requireOnboarded()`, redirecting an unboarded user to `/get-started`.
-  The home page (`apps/web/app/page.tsx`, redirecting authenticated users to
-  a `HomePage` that renders the repo picker/`SessionStarter`) does not call
-  this gate at all.
-- **What it costs the user:** A user can bypass the onboarding flow
-  entirely by starting a session from the home page — skipping whatever
-  setup the gate exists to enforce (GitHub connection, App install, etc.) —
-  and only discover the missing prerequisite later, mid-session, when
-  something that depends on it fails.
-- **Recommendation:** Apply `requireOnboarded()` (or an equivalent check)
-  consistently to both entry points, since they lead to the identical
-  outcome (a new session).
-- **Effort:** small
+- **Evidence:** This finding was raised in review and does not hold.
+  `apps/web/app/page.tsx:5-11` reads the server session and calls
+  `redirect("/sessions")` for **every** authenticated user; `HomePage` is
+  returned only when no session was found. `/sessions` then calls
+  `requireOnboarded()` in its layout (`apps/web/app/sessions/layout.tsx:25`).
+  So an authenticated user cannot reach the home-page session starter under
+  normal request handling, and there is no second entry point to guard.
+- **What it costs the user:** Nothing. The bypass described here does not
+  exist.
+- **Recommendation:** None. Recorded rather than deleted so the same
+  apparent gap is not re-reported by the next reader — the redirect is what
+  makes it safe, and anything that weakens that redirect would reopen it.
+- **Effort:** none
 
 ### F-018 — Four entry points create a session, but quick actions hide choices the full dialog exposes
 
