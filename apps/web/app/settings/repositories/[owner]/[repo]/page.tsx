@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { getServerSession } from "@/lib/session/get-server-session";
+import { verifyRepoAccess } from "@/lib/github/access";
+import { RepositoryDashboardAccessError } from "@/app/repos/[owner]/[repo]/repository-dashboard-view";
+import { resolveRepoAccessPageOutcome } from "@/lib/github/repo-page-access";
 import { resolveRepoDefaults } from "@/lib/repo-settings/resolve-repo-defaults";
 import { getRepositorySettings } from "@/lib/db/repository-settings";
 import { getVercelProjectLinkByRepo } from "@/lib/db/vercel-project-links";
@@ -65,10 +68,30 @@ export default async function RepoSettingsPage({ params }: PageProps) {
 
   const session = await getServerSession();
   if (!session?.user?.id) {
-    redirect("/login");
+    redirect("/");
   }
 
   const userId = session.user.id;
+
+  let access: Awaited<ReturnType<typeof verifyRepoAccess>>;
+  try {
+    access = await verifyRepoAccess({
+      userId,
+      owner,
+      repo,
+      requiredUserPermission: "read",
+    });
+  } catch {
+    return <RepositoryDashboardAccessError owner={owner} repo={repo} />;
+  }
+  if (!access.ok) {
+    // Same rule as the repo dashboard: a fixable denial gets guidance, not a
+    // 404. Both pages share resolveRepoAccessPageOutcome so they cannot drift.
+    if (resolveRepoAccessPageOutcome(access.reason) === "actionable") {
+      return <RepositoryDashboardAccessError owner={owner} repo={repo} />;
+    }
+    notFound();
+  }
 
   const [resolved, raw, vercelLink, githubStatus, toolStatusesResult] =
     await Promise.all([

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { verifyRepoAccess } from "@/lib/github/access";
+import { resolveRepoAccessPageOutcome } from "@/lib/github/repo-page-access";
 import { getServerSession } from "@/lib/session/get-server-session";
 import { loadRepositoryDashboardSummary } from "./repository-dashboard-summary";
 import {
@@ -35,7 +36,15 @@ export default async function RepoDashboardPage({
   } catch {
     return <RepositoryDashboardAccessError owner={owner} repo={repo} />;
   }
-  if (!access.ok) notFound();
+  if (!access.ok) {
+    // Not every denial is "this repo does not exist for you". An expired
+    // token, a rate limit, or a missing App installation are all fixable, and
+    // answering them with a 404 leaves the user no route back.
+    if (resolveRepoAccessPageOutcome(access.reason) === "actionable") {
+      return <RepositoryDashboardAccessError owner={owner} repo={repo} />;
+    }
+    notFound();
+  }
 
   const summary = await loadRepositoryDashboardSummary({
     userId: session.user.id,
