@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { getServerSession } from "@/lib/session/get-server-session";
 import { verifyRepoAccess } from "@/lib/github/access";
 import { RepositoryDashboardAccessError } from "@/app/repos/[owner]/[repo]/repository-dashboard-view";
+import { resolveRepoAccessPageOutcome } from "@/lib/github/repo-page-access";
 import { resolveRepoDefaults } from "@/lib/repo-settings/resolve-repo-defaults";
 import { getRepositorySettings } from "@/lib/db/repository-settings";
 import { getVercelProjectLinkByRepo } from "@/lib/db/vercel-project-links";
@@ -83,7 +84,14 @@ export default async function RepoSettingsPage({ params }: PageProps) {
   } catch {
     return <RepositoryDashboardAccessError owner={owner} repo={repo} />;
   }
-  if (!access.ok) notFound();
+  if (!access.ok) {
+    // Same rule as the repo dashboard: a fixable denial gets guidance, not a
+    // 404. Both pages share resolveRepoAccessPageOutcome so they cannot drift.
+    if (resolveRepoAccessPageOutcome(access.reason) === "actionable") {
+      return <RepositoryDashboardAccessError owner={owner} repo={repo} />;
+    }
+    notFound();
+  }
 
   const [resolved, raw, vercelLink, githubStatus, toolStatusesResult] =
     await Promise.all([
