@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import {
+  createRedisClient,
   getRedisConnectionOptions,
   getRedisUrl,
   isRedisConfigured,
@@ -7,6 +8,8 @@ import {
 
 const originalRedisUrl = process.env.REDIS_URL;
 const originalKvUrl = process.env.KV_URL;
+const originalNodeEnv = process.env.NODE_ENV;
+const nodeEnvKey = "NODE_ENV" as keyof NodeJS.ProcessEnv;
 
 afterEach(() => {
   if (originalRedisUrl === undefined) {
@@ -20,6 +23,8 @@ afterEach(() => {
   } else {
     process.env.KV_URL = originalKvUrl;
   }
+
+  process.env[nodeEnvKey] = originalNodeEnv;
 });
 
 describe("getRedisConnectionOptions", () => {
@@ -96,10 +101,108 @@ describe("redis configuration", () => {
   });
 
   test("falls back to KV_URL when REDIS_URL is blank", () => {
+    process.env[nodeEnvKey] = "production";
+    // Opting into the real client path means clearing BOTH hermetic
+    // signals — NODE_ENV alone is no longer sufficient (#1320 review).
+    delete process.env.OPEN_AGENTS_TEST;
     process.env.REDIS_URL = " ";
     process.env.KV_URL = "redis://localhost:6379";
 
     expect(getRedisUrl()).toBe("redis://localhost:6379");
     expect(isRedisConfigured()).toBe(true);
+  });
+
+  test("refuses a live REDIS_URL when running under test", () => {
+    process.env[nodeEnvKey] = "test";
+    process.env.REDIS_URL = "redis://127.0.0.1:6379";
+    delete process.env.KV_URL;
+
+    // No client is created: the suite must stay hermetic even when the
+    // developer's environment points at a real Redis (#1132).
+    expect(getRedisUrl()).toBeNull();
+    expect(isRedisConfigured()).toBe(false);
+    expect(() => createRedisClient()).toThrow(
+      "REDIS_URL or KV_URL environment variable is required",
+    );
+  });
+
+  // Review finding on #1320: `bun test` sets NODE_ENV=test only when it is
+  // UNSET. Verified on Bun 1.2.14 — `NODE_ENV=production bun test` keeps
+  // "production", so a gate on NODE_ENV alone leaves inherited REDIS_URL
+  // credentials live for the whole suite, which is the isolation this change
+  // exists to provide.
+  test("stays hermetic when NODE_ENV was inherited as production", () => {
+    process.env[nodeEnvKey] = "production";
+    process.env.OPEN_AGENTS_TEST = "1";
+    process.env.REDIS_URL = "redis://127.0.0.1:6379";
+    delete process.env.KV_URL;
+
+    expect(getRedisUrl()).toBeNull();
+    expect(isRedisConfigured()).toBe(false);
+  });
+
+  test("creates a client from REDIS_URL outside test", () => {
+    process.env[nodeEnvKey] = "production";
+    delete process.env.OPEN_AGENTS_TEST;
+    process.env.REDIS_URL = "redis://127.0.0.1:6379";
+    delete process.env.KV_URL;
+
+    expect(getRedisUrl()).toBe("redis://127.0.0.1:6379");
+    expect(isRedisConfigured()).toBe(true);
+    const client = createRedisClient();
+    client.disconnect();
+  });
+});
+
+// Review finding on release #1322: `test:verbose` and `test:coverage` did not
+// carry the marker, so those documented commands bypassed the hermetic guard
+// whenever the shell had inherited NODE_ENV=production. Hermeticity must not
+// depend on which test command someone picked.
+//
+// A source guard because nothing else can see it: a unit test runs under
+// whichever script invoked it and cannot observe the others.
+describe("every test entry point is hermetic", () => {
+  // Package scripts cannot cover the entry points CLAUDE.md documents as
+  // normal — `bun test path/to/file.test.ts`, `bun test --isolate <dir>`,
+  // `bun test --watch` — because those bypass package.json entirely. The
+  // bunfig preload does cover them: Bun applies it to every `bun test`
+  // invocation however it was launched. Raised by review of #1323.
+  test("bunfig.toml preloads the hermetic marker", async () => {
+    const bunfig = await Bun.file(
+      new URL("../../../bunfig.toml", import.meta.url).pathname,
+    ).text();
+
+    expect(bunfig).toContain("[test]");
+    expect(bunfig).toMatch(
+      /preload\s*=\s*\[[^\]]*hermetic-preload\.ts[^\]]*\]/,
+    );
+  });
+
+  test("the preload actually sets the marker", async () => {
+    const preload = await Bun.file(
+      new URL("../../../scripts/testing/hermetic-preload.ts", import.meta.url)
+        .pathname,
+    ).text();
+    expect(preload).toMatch(/process\.env\.OPEN_AGENTS_TEST\s*=\s*"1"/);
+  });
+
+  test("all test scripts set OPEN_AGENTS_TEST", async () => {
+    const pkg = (await Bun.file(
+      new URL("../../../package.json", import.meta.url).pathname,
+    ).json()) as { scripts: Record<string, string> };
+
+    const testScripts = Object.entries(pkg.scripts).filter(
+      ([name]) => name === "test" || name.startsWith("test:"),
+    );
+    expect(testScripts.length).toBeGreaterThan(0);
+
+    const missing = testScripts
+      .filter(([, cmd]) => !cmd.includes("OPEN_AGENTS_TEST=1"))
+      // test:isolated spawns children that inherit the marker from it, so it
+      // must carry it too — no exemptions today. If one becomes necessary,
+      // name it here with the reason rather than loosening the check.
+      .map(([name]) => name);
+
+    expect(missing).toEqual([]);
   });
 });

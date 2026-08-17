@@ -90,6 +90,7 @@ import {
   buildHeadlessNoFileChangesMessage,
   buildRunOuterStepCeilingMessage,
   getHeadlessRunMaxStepsWithoutDiff,
+  resolveStepsWithoutDiffAllowance,
   getRunOuterStepCeiling,
 } from "@/lib/chat/declared-expectation-budget";
 import { getMaxLengthContinuations } from "@/lib/chat/length-continuation-budget";
@@ -157,7 +158,7 @@ type Options = {
   // the design decision recorded on issue #1288. Both optional; undefined
   // (today's behavior for every existing caller) disables the circling
   // detector and the acceptance check entirely.
-  expectFileChanges?: boolean;
+  expectFileChanges?: boolean | number;
   expectedFiles?: string[];
 };
 
@@ -2356,11 +2357,18 @@ export async function runAgentWorkflow(options: Options) {
     // call. A run with no declaration (the default for every existing
     // caller) or one declared read-only behaves exactly as before —
     // `headlessDiffExpectationDetector` stays null and is never consulted.
-    const expectFileChanges = options.expectFileChanges === true;
+    // Resolved once per run. `true` takes the configured default; a number is
+    // the caller's own allowance, because a slice told to match existing
+    // conventions must read several files before its first edit while a slice
+    // told to change one line should stop almost immediately, and a single
+    // global number cannot serve both.
+    const stepsWithoutDiffAllowance = resolveStepsWithoutDiffAllowance(
+      options.expectFileChanges,
+    );
     const headlessDiffExpectationDetector =
-      headlessHasSandbox && expectFileChanges
+      headlessHasSandbox && stepsWithoutDiffAllowance !== null
         ? createHeadlessDiffExpectationDetector({
-            allowance: getHeadlessRunMaxStepsWithoutDiff(),
+            allowance: stepsWithoutDiffAllowance,
           })
         : null;
     // #1288: option 3 — a far outer, generous step-count backstop under
@@ -2610,7 +2618,10 @@ export async function runAgentWorkflow(options: Options) {
             headlessNoDiffCapped = true;
             const noDiffText = buildHeadlessNoFileChangesMessage(
               diffObservation.stepsWithoutChange,
-              getHeadlessRunMaxStepsWithoutDiff(),
+              // The allowance this run actually used, not the global default —
+              // the message told callers the wrong limit whenever the two
+              // differed.
+              stepsWithoutDiffAllowance ?? getHeadlessRunMaxStepsWithoutDiff(),
             );
             await sendTextMessage(
               writable,
@@ -2948,42 +2959,85 @@ export async function runAgentWorkflow(options: Options) {
     }
 
     // #1288: the acceptance check — only when the caller declared
-    // `expectedFiles` and the run reached a genuine terminal state (not
-    // aborted, not paused waiting on the user, in which case there is no
-    // "final" diff yet to grade). Computed once, after auto-commit/auto-PR
-    // so it sees any changes those steps just made, never mid-loop.
+    // `expectedFiles` or `expectFileChanges: true` and the run reached a
+    // genuine terminal state (not aborted, not paused waiting on the user,
+    // in which case there is no "final" diff yet to grade). Computed once,
+    // after auto-commit/auto-PR so it sees any changes those steps just made,
+    // never mid-loop.
+    // Armed for ANY resolved declaration, not just `=== true`. #1321 made
+    // `expectFileChanges` accept a numeric allowance, and a number is the same
+    // declaration with a custom mid-run budget — grading it differently at the
+    // end meant a slice dispatched with `expectFileChanges: 40` that changed
+    // nothing reported `completed`, which is the defect this block exists to
+    // fix. `stepsWithoutDiffAllowance` is null exactly when the caller
+    // declared nothing or `false`, so read-only runs stay ungraded (#1242).
+    const declaredFileChanges = stepsWithoutDiffAllowance !== null;
     if (
       sandboxState &&
-      options.expectedFiles &&
-      options.expectedFiles.length > 0 &&
+      ((options.expectedFiles && options.expectedFiles.length > 0) ||
+        declaredFileChanges) &&
       !wasAborted &&
       !awaitingToolApproval
     ) {
       const changedPaths = await probeChangedFilePaths(sandboxState);
       if (changedPaths !== null) {
-        const acceptance = checkDiffAcceptance(
-          changedPaths,
-          options.expectedFiles,
-        );
-        if (acceptance.violated) {
-          diffAcceptanceViolated = true;
-          diffAcceptanceOffendingPaths = acceptance.offendingPaths;
-          const violationText = buildDiffAcceptanceViolationMessage(
-            acceptance.offendingPaths,
+        // Only claim "no_file_changes" when nothing more specific already
+        // explains why the run stopped.
+        //
+        // `headlessNoDiffCapped` outranks `step_ceiling`, `truncated` and
+        // `ended_unexpectedly` in deriveWorkflowRunOutcomeStatus. That was
+        // safe while the mid-run fuse was the only thing setting it, because
+        // the fuse breaks the loop and is mutually exclusive with those. This
+        // end-of-run path is not: a run truncated by the provider's output
+        // limit can also finish with an empty diff, and reporting
+        // `no_file_changes` would hide the real reason behind a wrong one —
+        // the exact dishonesty this whole change exists to remove.
+        const stoppedForAMoreSpecificReason =
+          truncationBoundExhausted ||
+          outerStepCeilingReached ||
+          endedUnexpectedly;
+        // An empty probe result does not always mean an empty run. This block
+        // runs after auto-commit, and on a session working directly on the
+        // default branch (`isNewBranch: false`) a successful push advances the
+        // local `origin/<default>` tracking ref to HEAD. `probeChangedFilePaths`
+        // resolves its base from `refs/remotes/origin/HEAD`, so it then diffs
+        // HEAD against HEAD and reports nothing — for a run that committed and
+        // pushed. A recorded commit is direct evidence of a change and outranks
+        // the probe.
+        const autoCommitRecordedAChange = autoCommitResult?.committed === true;
+        if (
+          declaredFileChanges &&
+          changedPaths.length === 0 &&
+          !stoppedForAMoreSpecificReason &&
+          !autoCommitRecordedAChange
+        ) {
+          headlessNoDiffCapped = true;
+        }
+        if (options.expectedFiles && options.expectedFiles.length > 0) {
+          const acceptance = checkDiffAcceptance(
+            changedPaths,
+            options.expectedFiles,
           );
-          await sendTextMessage(
-            writable,
-            `${assistantId}:diff-acceptance-violation`,
-            violationText,
-          );
-          pendingAssistantResponse = {
-            ...pendingAssistantResponse,
-            parts: [
-              ...pendingAssistantResponse.parts,
-              { type: "text", text: violationText },
-            ],
-          };
-          didUpdateGitData = true;
+          if (acceptance.violated) {
+            diffAcceptanceViolated = true;
+            diffAcceptanceOffendingPaths = acceptance.offendingPaths;
+            const violationText = buildDiffAcceptanceViolationMessage(
+              acceptance.offendingPaths,
+            );
+            await sendTextMessage(
+              writable,
+              `${assistantId}:diff-acceptance-violation`,
+              violationText,
+            );
+            pendingAssistantResponse = {
+              ...pendingAssistantResponse,
+              parts: [
+                ...pendingAssistantResponse.parts,
+                { type: "text", text: violationText },
+              ],
+            };
+            didUpdateGitData = true;
+          }
         }
       }
     }

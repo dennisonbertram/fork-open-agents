@@ -41,7 +41,7 @@ export type StartChatRunInput = {
   // today's behavior, forwarded straight through to the workflow's own
   // `Options` (app/workflows/chat.ts), which is where the circling detector
   // and the acceptance check actually live.
-  expectFileChanges?: boolean;
+  expectFileChanges?: boolean | number;
   expectedFiles?: string[];
   // Set by a caller (the chat route) that already called
   // `reconcileChatRunSlot` for this request and confirmed the slot is

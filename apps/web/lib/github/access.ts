@@ -2,6 +2,9 @@ import { getInstallationByAccountLogin } from "@/lib/db/installations";
 import { getGitHubAppServiceRepoGrant } from "@/lib/db/service-identities";
 import { withScopedInstallationOctokit } from "./app";
 import { getUserOctokit } from "./client";
+import { syncUserInstallations } from "./sync";
+import { getUserGitHubToken } from "./token";
+import { getGitHubUsername } from "./users";
 
 export type RepoAccessDeniedReason =
   | "no_user_token"
@@ -40,6 +43,81 @@ function hasUserWritePermission(
   return Boolean(
     permissions?.admin || permissions?.maintain || permissions?.push,
   );
+}
+
+/**
+ * Last re-sync attempt per user, for the cooldown in
+ * `attemptInstallationResync`. Module-level and therefore per serverless
+ * instance; see the note in that function.
+ */
+const lastResyncAttemptAt = new Map<string, number>();
+const RESYNC_COOLDOWN_MS = 60_000;
+
+/** Test-only: clears the cooldown so cases do not leak state into each other. */
+export function __resetInstallationResyncCooldownForTests(): void {
+  lastResyncAttemptAt.clear();
+}
+
+/**
+ * Best-effort re-sync of the user's GitHub App installations, used only when
+ * `verifyRepoAccess` finds no local installation row for the owner (issue
+ * #791). Mirrors the token + username lookup already used by the GitHub App
+ * callback route (`app/api/github/app/callback/route.ts`) rather than
+ * duplicating it. Never throws — any failure to resolve a token/username or
+ * to sync is caught and folded into a `false` return so the caller can fall
+ * back to the existing "no_installation" result.
+ */
+async function attemptInstallationResync(params: {
+  userId: string;
+  owner: string;
+}): Promise<void> {
+  const { userId, owner } = params;
+
+  // Review finding 2: an owner that legitimately has no installation — an
+  // authenticated user opening a public repo they never installed the App on
+  // — reaches this branch on EVERY call, and verifyRepoAccess has 23+ call
+  // sites. Each attempt fetches the user profile, paginates every
+  // installation, and rewrites rows. Bound it.
+  //
+  // ponytail: the cooldown map is per serverless instance, so it is
+  // best-effort across instances. That is deliberate — it collapses the
+  // pathological case without introducing shared state, and the worst
+  // remaining behaviour is one redundant sync per instance per minute.
+  const lastAttempt = lastResyncAttemptAt.get(userId);
+  if (
+    lastAttempt !== undefined &&
+    Date.now() - lastAttempt < RESYNC_COOLDOWN_MS
+  ) {
+    return;
+  }
+  // Recorded when the attempt STARTS, not when it finishes, so a slow sync
+  // does not let a second one through behind it.
+  lastResyncAttemptAt.set(userId, Date.now());
+
+  const userToken = await getUserGitHubToken(userId);
+  if (!userToken) {
+    return;
+  }
+
+  const username = await getGitHubUsername(userId);
+  if (!username) {
+    return;
+  }
+
+  try {
+    await syncUserInstallations(userId, userToken, username);
+  } catch (error) {
+    // Review finding 3: this catch used to erase the failure, so the caller
+    // reported `no_installation` and told the user to install the App while
+    // operators saw nothing. A failed recovery is not the same as an absent
+    // installation, and AGENTS.md requires observability on this path.
+    console.warn("[github-access] installation re-sync failed", {
+      eventName: "github.access.installation_resync_failed",
+      userId,
+      owner,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
 }
 
 function getGitHubHttpStatus(error: unknown): number | null {
@@ -165,7 +243,19 @@ export async function verifyRepoAccess(params: {
   }
 
   // 2. check installation exists for this owner
-  const installation = await getInstallationByAccountLogin(userId, owner);
+  let installation = await getInstallationByAccountLogin(userId, owner);
+  if (!installation) {
+    // The local installations DB row can lag right after a fresh GitHub App
+    // install/callback (issue #791). Attempt one best-effort re-sync before
+    // giving up, then re-read — never retry more than once per call.
+    // Review finding 1: re-read after EVERY attempt, not only a "successful"
+    // one. Two concurrent checks on a newly installed owner can both call
+    // syncUserInstallations; its select-then-insert loses the unique-index
+    // race for one of them, which previously skipped the re-read and reported
+    // no_installation even though the row now exists.
+    await attemptInstallationResync({ userId, owner });
+    installation = await getInstallationByAccountLogin(userId, owner);
+  }
   if (!installation) {
     return { ok: false, reason: "no_installation" };
   }
