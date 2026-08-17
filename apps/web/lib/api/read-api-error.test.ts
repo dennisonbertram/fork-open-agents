@@ -61,8 +61,10 @@ describe("readApiError", () => {
         .retryAfterSeconds,
     ).toBeUndefined();
     expect(
-      readApiError({ error: "Too many requests", retryAfterSeconds: Number.NaN })
-        .retryAfterSeconds,
+      readApiError({
+        error: "Too many requests",
+        retryAfterSeconds: Number.NaN,
+      }).retryAfterSeconds,
     ).toBeUndefined();
   });
 
