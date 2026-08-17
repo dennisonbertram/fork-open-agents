@@ -2073,6 +2073,19 @@ describe("runAgentWorkflow", () => {
     expect(serializedChunks).toContain("output-token ceiling");
     expect(serializedChunks).toContain("incomplete");
     expect(serializedChunks).toContain("follow-up");
+
+    // The stream is not the record. Review of #1325 found the explanation was
+    // appended and never persisted — it set a flag whose persistence call had
+    // already run earlier in the function, so the text reached the browser and
+    // vanished on reload. A reader reopening the chat would see the run stop
+    // for no reason, which is exactly what this message exists to prevent.
+    const persisted = (
+      spies.persistAssistantMessage.mock.calls as unknown[][]
+    ).flatMap((call) => {
+      const message = call[1] as { parts?: { text?: string }[] } | undefined;
+      return (message?.parts ?? []).map((part) => part.text ?? "");
+    });
+    expect(persisted.join("\n")).toContain("output-token ceiling");
   });
 
   // #1247: a step whose finishReason is "length" was cut off by the

@@ -3105,7 +3105,12 @@ export async function runAgentWorkflow(options: Options) {
           { type: "text", text: outcomeMessage },
         ],
       };
-      didUpdateGitData = true;
+      // Persist here, explicitly. Setting `didUpdateGitData` would be a no-op:
+      // the persistence it guards runs earlier in this function, so the
+      // explanation would stream to the browser and vanish on reload — the
+      // reader would see a run stop for no reason, which is the exact defect
+      // this message exists to remove.
+      await persistAssistantMessage(options.chatId, pendingAssistantResponse);
     }
 
     if (
