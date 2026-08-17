@@ -10,8 +10,11 @@ const sessions = readFileSync(
   join(import.meta.dir, "../sessions/sessions-index-shell.tsx"),
   "utf8",
 );
+// The empty-state copy moved out of runs-list.tsx into its own module. This
+// guard follows the copy rather than the file, because what it protects is the
+// wording a first-run user sees, not where that wording is declared.
 const runs = readFileSync(
-  join(import.meta.dir, "../runs/runs-list.tsx"),
+  join(import.meta.dir, "../runs/empty-state.ts"),
   "utf8",
 );
 
