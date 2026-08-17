@@ -433,6 +433,60 @@ describe("updateAgentLoop", () => {
   // Verified by mutation: removing the predicate leaves every behavioural
   // test green. So the predicate is asserted from the source, per
   // docs/process/reviewing-what-tests-cannot-see.md.
+  // Review finding: the guard covered only `definition`, so a PATCH of name,
+  // description, guardrails, permissions or any watchdog field slipped through
+  // and contradicted the UI's own promise that an archived loop cannot be
+  // edited at all.
+  test.each([
+    ["name", { name: "Renamed while archived" }],
+    ["description", { description: "Edited while archived" }],
+    ["guardrails", { guardrails: { maxStepsPerRun: 99 } }],
+    ["permissions", { permissions: { github: { contents: "read" as const } } }],
+    ["watchdogEnabled", { watchdogEnabled: true }],
+    ["watchdogInstructions", { watchdogInstructions: "watch harder" }],
+    ["watchdogRetryBudget", { watchdogRetryBudget: 5 }],
+  ])("rejects a %s edit on an archived loop", async (_field, patch) => {
+    txFindFirstMock.mockResolvedValueOnce(makeLoop({ status: "archived" }));
+
+    const store = await storePromise;
+    await expect(
+      store.updateAgentLoop("user-1", "loop-1", patch),
+    ).rejects.toMatchObject({ name: "AgentLoopArchivedError" });
+    expect(txUpdateMock).not.toHaveBeenCalled();
+  });
+
+  // Drift guard: a new editable column added to the update payload without
+  // being added to EDITABLE_LOOP_FIELDS would silently become writable on an
+  // archived loop. Nothing else would catch that.
+  test("every editable field is covered by the archived guard", async () => {
+    const source = await Bun.file(
+      new URL("store.ts", import.meta.url).pathname,
+    ).text();
+
+    // Fields the update payload actually writes, read from the .set() block.
+    const setBlock = source.slice(
+      source.indexOf("const [updated] = await tx"),
+      source.indexOf(".where(", source.indexOf("const [updated] = await tx")),
+    );
+    const written = [...setBlock.matchAll(/input\.(\w+) !== undefined/g)].map(
+      (m) => m[1] as string,
+    );
+
+    const guarded = [
+      ...source
+        .slice(
+          source.indexOf("export const EDITABLE_LOOP_FIELDS"),
+          source.indexOf("] as const satisfies"),
+        )
+        .matchAll(/"(\w+)"/g),
+    ].map((m) => m[1] as string);
+
+    // `status` is the deliberate exception — it is how un-archiving works.
+    const shouldBeGuarded = written.filter((f) => f !== "status");
+    const missing = shouldBeGuarded.filter((f) => !guarded.includes(f));
+    expect(missing).toEqual([]);
+  });
+
   test("the definition update is guarded by a non-archived predicate", async () => {
     const source = await Bun.file(
       new URL("store.ts", import.meta.url).pathname,
