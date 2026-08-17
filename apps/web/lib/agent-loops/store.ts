@@ -2,6 +2,7 @@ import "server-only";
 
 import {
   and,
+  ne,
   asc,
   count,
   desc,
@@ -78,6 +79,37 @@ export type AgentLoopWriteResult =
 export type AgentLoopUpdateResult =
   | { ok: true; loop: AgentLoop | null }
   | { ok: false; errors: LoopValidationError[] };
+
+/**
+ * Every field of an agent loop that counts as an "edit" for the archived
+ * read-only rule. `status` is deliberately absent: changing it alone is how a
+ * loop is un-archived.
+ *
+ * Adding a new editable column means adding it here. The guard test asserts
+ * this list against the update payload's own keys so a new field cannot
+ * quietly become editable while archived.
+ */
+export const EDITABLE_LOOP_FIELDS = [
+  "name",
+  "description",
+  "definition",
+  "guardrails",
+  "permissions",
+  "watchdogEnabled",
+  "watchdogInstructions",
+  "watchdogRetryBudget",
+] as const satisfies readonly (keyof UpdateAgentLoopInput)[];
+
+export class AgentLoopArchivedError extends Error {
+  readonly kind = "conflict" as const;
+
+  constructor() {
+    super(
+      "Archived agent loop definitions cannot be changed. Un-archive the loop before editing its definition.",
+    );
+    this.name = "AgentLoopArchivedError";
+  }
+}
 
 export type CreateAgentLoopInput = {
   name: string;
@@ -227,6 +259,19 @@ export async function updateAgentLoop(
     if (!existing) {
       return null;
     }
+    // "Read-only. Kept for reference; can't run or edit." — the promise the UI
+    // makes for an archived loop (app/loops/[loopId]/status-meanings.ts). That
+    // covers every field, not just `definition`: name, description,
+    // guardrails, permissions and the watchdog settings are all edits.
+    //
+    // The one permitted change is `status` alone, which is how a loop gets
+    // un-archived. Without that exception archiving would be a one-way trap.
+    const editsSomethingOtherThanStatus = EDITABLE_LOOP_FIELDS.some(
+      (field) => input[field] !== undefined,
+    );
+    if (existing.status === "archived" && editsSomethingOtherThanStatus) {
+      throw new AgentLoopArchivedError();
+    }
 
     const [updated] = await tx
       .update(agentLoops)
@@ -260,8 +305,37 @@ export async function updateAgentLoop(
           : {}),
         updatedAt: new Date(),
       })
-      .where(and(eq(agentLoops.id, loopId), eq(agentLoops.userId, userId)))
+      .where(
+        and(
+          eq(agentLoops.id, loopId),
+          eq(agentLoops.userId, userId),
+          // Atomicity: the `existing.status` read above can go stale if a
+          // concurrent PATCH archives the loop between the read and this
+          // write. Without this predicate the definition would land on an
+          // already-archived row. Including it in the WHERE makes the check
+          // and the write one operation — the same TOCTOU discipline the run
+          // retry paths in this file already use.
+          ...(editsSomethingOtherThanStatus
+            ? [ne(agentLoops.status, "archived")]
+            : []),
+        ),
+      )
       .returning();
+
+    if (!updated && editsSomethingOtherThanStatus) {
+      // A zero-row update has two possible causes, and they are not the same
+      // answer to the caller: the loop was archived in the race window (a 409
+      // conflict), or it was deleted (the 404 a missing loop has always
+      // produced). Re-read inside the same transaction to tell them apart
+      // instead of reporting every race as archival.
+      const current = await tx.query.agentLoops.findFirst({
+        where: and(eq(agentLoops.id, loopId), eq(agentLoops.userId, userId)),
+      });
+      if (!current) {
+        return null;
+      }
+      throw new AgentLoopArchivedError();
+    }
 
     return updated ?? null;
   });

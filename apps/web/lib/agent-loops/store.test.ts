@@ -408,6 +408,168 @@ describe("updateAgentLoop", () => {
       expect(result.loop?.name).toBe("New name");
     }
   });
+
+  test("rejects definition writes to archived loops with a conflict error", async () => {
+    txFindFirstMock.mockResolvedValueOnce(makeLoop({ status: "archived" }));
+
+    const store = await storePromise;
+    await expect(
+      store.updateAgentLoop("user-1", "loop-1", {
+        definition: VALID_DEFINITION,
+      }),
+    ).rejects.toMatchObject({
+      name: "AgentLoopArchivedError",
+      kind: "conflict",
+    });
+    expect(txUpdateMock).not.toHaveBeenCalled();
+  });
+
+  // Review finding: the status read and the update were two operations. A
+  // concurrent PATCH archiving the loop in that window let the definition
+  // write land on an already-archived row. The guard is now in the WHERE
+  // clause, so the race resolves to zero matched rows.
+  // The test below mocks the database, so it proves the THROW handles a
+  // zero-row update — it cannot see the WHERE clause that causes one.
+  // Verified by mutation: removing the predicate leaves every behavioural
+  // test green. So the predicate is asserted from the source, per
+  // docs/process/reviewing-what-tests-cannot-see.md.
+  // Review finding: the guard covered only `definition`, so a PATCH of name,
+  // description, guardrails, permissions or any watchdog field slipped through
+  // and contradicted the UI's own promise that an archived loop cannot be
+  // edited at all.
+  test.each([
+    ["name", { name: "Renamed while archived" }],
+    ["description", { description: "Edited while archived" }],
+    ["guardrails", { guardrails: { maxStepsPerRun: 99 } }],
+    ["permissions", { permissions: { github: { contents: "read" as const } } }],
+    ["watchdogEnabled", { watchdogEnabled: true }],
+    ["watchdogInstructions", { watchdogInstructions: "watch harder" }],
+    ["watchdogRetryBudget", { watchdogRetryBudget: 5 }],
+  ])("rejects a %s edit on an archived loop", async (_field, patch) => {
+    txFindFirstMock.mockResolvedValueOnce(makeLoop({ status: "archived" }));
+
+    const store = await storePromise;
+    await expect(
+      store.updateAgentLoop("user-1", "loop-1", patch),
+    ).rejects.toMatchObject({ name: "AgentLoopArchivedError" });
+    expect(txUpdateMock).not.toHaveBeenCalled();
+  });
+
+  // Drift guard: a new editable column added to the update payload without
+  // being added to EDITABLE_LOOP_FIELDS would silently become writable on an
+  // archived loop. Nothing else would catch that.
+  test("every editable field is covered by the archived guard", async () => {
+    const source = await Bun.file(
+      new URL("store.ts", import.meta.url).pathname,
+    ).text();
+
+    // Fields the update payload actually writes, read from the .set() block.
+    const setBlock = source.slice(
+      source.indexOf("const [updated] = await tx"),
+      source.indexOf(".where(", source.indexOf("const [updated] = await tx")),
+    );
+    const written = [...setBlock.matchAll(/input\.(\w+) !== undefined/g)].map(
+      (m) => m[1] as string,
+    );
+
+    const guarded = [
+      ...source
+        .slice(
+          source.indexOf("export const EDITABLE_LOOP_FIELDS"),
+          source.indexOf("] as const satisfies"),
+        )
+        .matchAll(/"(\w+)"/g),
+    ].map((m) => m[1] as string);
+
+    // `status` is the deliberate exception — it is how un-archiving works.
+    const shouldBeGuarded = written.filter((f) => f !== "status");
+    const missing = shouldBeGuarded.filter((f) => !guarded.includes(f));
+    expect(missing).toEqual([]);
+  });
+
+  test("the definition update is guarded by a non-archived predicate", async () => {
+    const source = await Bun.file(
+      new URL("store.ts", import.meta.url).pathname,
+    ).text();
+    expect(source).toMatch(/ne\(\s*agentLoops\.status\s*,\s*"archived"\s*\)/);
+  });
+
+  test("rejects a definition write archived in the race window", async () => {
+    // Read sees an active loop...
+    txFindFirstMock.mockResolvedValueOnce(makeLoop({ status: "active" }));
+    // ...but the guarded UPDATE matches nothing, because it was archived
+    // between the read and the write.
+    txUpdateMock.mockReturnValueOnce({
+      set: mock(() => ({
+        where: mock(() => ({
+          returning: mock(() => []),
+        })),
+      })),
+    });
+    // The re-read that tells archival apart from deletion still finds a row.
+    txFindFirstMock.mockResolvedValueOnce(makeLoop({ status: "archived" }));
+
+    const store = await storePromise;
+    await expect(
+      store.updateAgentLoop("user-1", "loop-1", {
+        definition: VALID_DEFINITION,
+      }),
+    ).rejects.toMatchObject({
+      name: "AgentLoopArchivedError",
+      kind: "conflict",
+    });
+  });
+
+  // A zero-row guarded UPDATE has two possible causes, and they map to
+  // different HTTP statuses. Archival is a 409 conflict; deletion must stay
+  // the 404 that a missing loop has always produced.
+  test("returns null when the loop is deleted in the race window", async () => {
+    // Read sees an active loop...
+    txFindFirstMock.mockResolvedValueOnce(makeLoop({ status: "active" }));
+    // ...the guarded UPDATE matches nothing...
+    txUpdateMock.mockReturnValueOnce({
+      set: mock(() => ({
+        where: mock(() => ({
+          returning: mock(() => []),
+        })),
+      })),
+    });
+    // ...and the re-read finds no row at all, so it was deleted, not archived.
+    txFindFirstMock.mockResolvedValueOnce(undefined);
+
+    const store = await storePromise;
+    const result = await store.updateAgentLoop("user-1", "loop-1", {
+      definition: VALID_DEFINITION,
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.loop).toBeNull();
+    }
+  });
+
+  test("allows archived loops to be un-archived without a definition write", async () => {
+    const archived = makeLoop({ status: "archived" });
+    const updated = makeLoop({ status: "draft" });
+    txFindFirstMock.mockResolvedValueOnce(archived);
+    txUpdateMock.mockReturnValueOnce({
+      set: mock(() => ({
+        where: mock(() => ({
+          returning: mock(() => [updated]),
+        })),
+      })),
+    });
+
+    const store = await storePromise;
+    const result = await store.updateAgentLoop("user-1", "loop-1", {
+      status: "draft",
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.loop?.status).toBe("draft");
+    }
+  });
 });
 
 describe("deleteAgentLoop", () => {

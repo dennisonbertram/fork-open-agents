@@ -41,6 +41,10 @@ mock.module("drizzle-orm", () => ({
   isNull: passthrough,
   isNotNull: passthrough,
   like: passthrough,
+  // store.ts imports `ne` for the archived-loop guard in the definition
+  // update predicate. A partial drizzle mock without it kills this whole file
+  // at import with "Export named 'ne' not found".
+  ne: passthrough,
   sql,
 }));
 
