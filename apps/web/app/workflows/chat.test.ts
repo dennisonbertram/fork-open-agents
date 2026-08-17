@@ -2056,7 +2056,9 @@ describe("runAgentWorkflow", () => {
 
     await runAgentWorkflow(makeOptions({ maxSteps: 10 }));
 
-    expect(JSON.stringify(writtenChunks).toLowerCase()).toContain("unclassified");
+    expect(JSON.stringify(writtenChunks).toLowerCase()).toContain(
+      "unclassified",
+    );
     expect(JSON.stringify(writtenChunks).toLowerCase()).toContain("retry");
   });
 
