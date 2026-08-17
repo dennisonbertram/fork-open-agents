@@ -1,0 +1,268 @@
+{
+  "title": "Open Agents — build board",
+  "description": "Work in flight on dennisonbertram/fork-open-agents. Cards are real GitHub PRs, real GitHub issues, or named local work. Nothing here is a projection or a target. A card in Shipped means the change is merged to main and the commit is deployed to production.",
+  "headerNote": "Snapshot: 2026-08-17 20:00. Production is live on ae40a224 and healthy — verified against the GitHub deployment record, which points at the running Vercel deployment. develop is 4 commits ahead of main and ready for the next release. GitHub recovered at 19:03 after a 5-hour partial outage.",
+  "columns": ["Backlog", "In progress", "In review", "Shipped"],
+  "columnDescriptions": {
+    "Backlog": "Filed and not started. Open issues and unmerged older PRs.",
+    "In progress": "Being worked now, no PR open yet.",
+    "In review": "PR open. Waiting on CI, review, or a merge train slot.",
+    "Shipped": "Merged to main and live in production. A change sitting on develop does not belong here, however finished it is."
+  },
+  "columnColors": {
+    "Backlog": "#8b5cf6",
+    "In progress": "#f59e0b",
+    "In review": "#3b82f6",
+    "Shipped": "#22c55e"
+  },
+  "workflow": {
+    "planning": "Backlog",
+    "active": "In progress",
+    "review": "In review",
+    "completed": "Shipped"
+  },
+  "themes": {
+    "agent-loops": "#ef4444",
+    "background-agents": "#f97316",
+    "mcp-fanout": "#06b6d4",
+    "test-integrity": "#a855f7",
+    "ux": "#ec4899",
+    "release": "#22c55e",
+    "docs": "#64748b"
+  },
+  "cards": [
+    {
+      "id": "pr-1332",
+      "title": "Readiness must check the allowlist the dispatcher enforces",
+      "theme": "background-agents",
+      "column": "Shipped",
+      "note": "Merged and released to main in ae40a224. The fix had sat finished on an unopened branch, so production readiness reported green for a repo the dispatcher refuses. 7 readiness tests, 753 pass across the background-agents suite.",
+      "link": "https://github.com/dennisonbertram/fork-open-agents/pull/1332"
+    },
+    {
+      "id": "pr-1330",
+      "title": "Guard every archived edit, not only definitions",
+      "theme": "agent-loops",
+      "column": "Shipped",
+      "note": "Merged and released to main in ae40a224. Codex raised one P2 — a loop deleted during the race window returned 409 instead of 404 — fixed in 517cca51, thread resolved.",
+      "link": "https://github.com/dennisonbertram/fork-open-agents/pull/1330"
+    },
+    {
+      "id": "pr-1329",
+      "title": "Release: archived agent loops are actually read-only",
+      "theme": "release",
+      "column": "Shipped",
+      "note": "Merged as ae40a224. Its own CI failed twice on GitHub returning 429 for the setup-bun action download — infrastructure, not code — and went green on the third run.",
+      "link": "https://github.com/dennisonbertram/fork-open-agents/pull/1329"
+    },
+    {
+      "id": "br-ui-refs",
+      "title": "Note Beautiful UI as a design reference",
+      "theme": "docs",
+      "column": "Shipped",
+      "note": "PR #1333, merged and released to main in ae40a224.",
+      "link": "https://github.com/dennisonbertram/fork-open-agents/pull/1333"
+    },
+    {
+      "id": "iss-1331",
+      "title": "Make run lists triageable",
+      "theme": "ux",
+      "column": "In review",
+      "note": "PR #1334 merged to develop, awaiting the next release. Attention reasons render, a status tab no longer counts as a filter, and a reason that only repeats the outcome is hidden — that last one came from looking at the rendered page, where a failed run showed Finished, Failed, Needs attention, Failed. A source-text guard broke when the copy moved file; CI caught it.",
+      "link": "https://github.com/dennisonbertram/fork-open-agents/pull/1334"
+    },
+    {
+      "id": "iss-1315",
+      "title": "Composio tools can write to a repo without a write grant",
+      "theme": "agent-loops",
+      "column": "Backlog",
+      "note": "Found while relaxing the agent-loop write gates.",
+      "link": "https://github.com/dennisonbertram/fork-open-agents/issues/1315"
+    },
+    {
+      "id": "iss-1308",
+      "title": "The gh CLI is not available in the sandbox",
+      "theme": "mcp-fanout",
+      "column": "Backlog",
+      "note": "Dispatched slices cannot open their own PRs.",
+      "link": "https://github.com/dennisonbertram/fork-open-agents/issues/1308"
+    },
+    {
+      "id": "iss-1307",
+      "title": "expectFileChanges is a fuse but never an acceptance check",
+      "theme": "mcp-fanout",
+      "column": "Backlog",
+      "note": "Partly addressed by #1313 and #1323, which grade it on completion. The issue remains open for the rest.",
+      "link": "https://github.com/dennisonbertram/fork-open-agents/issues/1307"
+    },
+    {
+      "id": "ux-catalog",
+      "title": "Consolidate the browser UX path catalog",
+      "theme": "ux",
+      "column": "In review",
+      "note": "PR #1336 merged to develop, awaiting release. Written on a Hetzner VM in 27 minutes: 540 lines, 187 stories, four acceptance checks verified locally rather than taken on trust. Codex then found four false claims in it; all four were checked against the source and fixed.",
+      "link": "docs/ux-paths/browser/discovery.md"
+    },
+    {
+      "id": "ux-walker",
+      "title": "Walk the stories in a real browser",
+      "theme": "ux",
+      "column": "Backlog",
+      "note": "Not started, and a poor fit for a remote VM: it needs the running app and a database. The catalog it depends on now exists.",
+      "link": "docs/ux-paths/browser/discovery.md"
+    },
+    {
+      "id": "ux-flow",
+      "title": "Simplicity and redundancy critique",
+      "theme": "ux",
+      "column": "In review",
+      "note": "PR #1338 open, written on a Hetzner VM. 1005 lines, 36 findings: 25 keep, 13 differentiate, 11 merge, 3 redirect, 7 unconfirmed. All four acceptance checks re-run locally and passed. It corrected the catalog twice, including one claim that turned out worse than reported.",
+      "link": "https://github.com/dennisonbertram/fork-open-agents/pull/1338"
+    },
+    {
+      "id": "plan-beautiful-ui",
+      "title": "Beautiful UI integration plan",
+      "theme": "ux",
+      "column": "In review",
+      "note": "Committed in #1335, which is merged to develop but not yet released, so it is not in production. Verdict is not to adopt the registry: none of the run-list defects it was measured against needs a new component, and the library does not state its framework anywhere.",
+      "link": "docs/plans/beautiful-ui-integration.md"
+    },
+    {
+      "id": "pr-old-stack",
+      "title": "Seven older open PRs",
+      "theme": "release",
+      "column": "Backlog",
+      "note": "#1312 get-started polish, #1176 create GitHub repos, #1048 truthful unit runs, #856 mobile deep-link, #855 get-started re-walk, #853 session authProvider, #852 installation resync. Each needs a keep-or-close decision.",
+      "link": "https://github.com/dennisonbertram/fork-open-agents/pulls"
+    },
+    {
+      "id": "pr-1314",
+      "title": "Stop demanding write before any work; make the canary able to fail",
+      "theme": "agent-loops",
+      "column": "Shipped",
+      "note": "The headline fix. Three write gates relaxed to read, and the journey canary given a strictness flag it can actually fail on.",
+      "link": "https://github.com/dennisonbertram/fork-open-agents/pull/1314"
+    },
+    {
+      "id": "pr-1323",
+      "title": "Grade numeric expectFileChanges, harden every test entry point",
+      "theme": "test-integrity",
+      "column": "Shipped",
+      "note": "Adds bunfig.toml preload so OPEN_AGENTS_TEST=1 is set for every bun test invocation, not only the package scripts.",
+      "link": "https://github.com/dennisonbertram/fork-open-agents/pull/1323"
+    },
+    {
+      "id": "pr-1321",
+      "title": "Let a caller set the no-diff allowance, and raise the default",
+      "theme": "mcp-fanout",
+      "column": "Shipped",
+      "link": "https://github.com/dennisonbertram/fork-open-agents/pull/1321"
+    },
+    {
+      "id": "pr-1320",
+      "title": "Make the test suite hermetic by ignoring REDIS_URL",
+      "theme": "test-integrity",
+      "column": "Shipped",
+      "link": "https://github.com/dennisonbertram/fork-open-agents/pull/1320"
+    },
+    {
+      "id": "pr-1318",
+      "title": "Require contract config when CONTRACT_REQUIRED=1",
+      "theme": "test-integrity",
+      "column": "Shipped",
+      "link": "https://github.com/dennisonbertram/fork-open-agents/pull/1318"
+    },
+    {
+      "id": "pr-1313",
+      "title": "Grade expectFileChanges when the workflow completes",
+      "theme": "mcp-fanout",
+      "column": "Shipped",
+      "link": "https://github.com/dennisonbertram/fork-open-agents/pull/1313"
+    },
+    {
+      "id": "pr-1325",
+      "title": "Explain chat turn run outcomes to the user",
+      "theme": "agent-loops",
+      "column": "Shipped",
+      "link": "https://github.com/dennisonbertram/fork-open-agents/pull/1325"
+    },
+    {
+      "id": "pr-1326",
+      "title": "Add access control to the repo settings page",
+      "theme": "ux",
+      "column": "Shipped",
+      "note": "A repo the user cannot reach now returns not-found instead of an actionable page.",
+      "link": "https://github.com/dennisonbertram/fork-open-agents/pull/1326"
+    },
+    {
+      "id": "pr-1327",
+      "title": "Validate retryAfterSeconds in rate limit errors",
+      "theme": "test-integrity",
+      "column": "Shipped",
+      "link": "https://github.com/dennisonbertram/fork-open-agents/pull/1327"
+    },
+    {
+      "id": "pr-1309",
+      "title": "Resync the GitHub App installation when not found",
+      "theme": "background-agents",
+      "column": "Shipped",
+      "link": "https://github.com/dennisonbertram/fork-open-agents/pull/1309"
+    },
+    {
+      "id": "doc-blindspots",
+      "title": "Reviewing what tests cannot see",
+      "theme": "docs",
+      "column": "Shipped",
+      "note": "Names the four blind spots: infrastructure-gated lines, untested combinations, config outside code, and the environment of the evidence itself. Linked from AGENTS.md.",
+      "link": "docs/process/reviewing-what-tests-cannot-see.md"
+    },
+    {
+      "id": "pr-1329b",
+      "title": "Release train, round one",
+      "theme": "release",
+      "column": "Shipped",
+      "note": "Complete. #1329 merged as ae40a224, carrying #1330, #1332 and #1333, and it is live in production and healthy. Its own CI failed twice on GitHub returning 429 for an action download and went green on the third run. The backmerge (#1337) followed immediately.",
+      "link": "https://github.com/dennisonbertram/fork-open-agents/pull/1329"
+    },
+    {
+      "id": "deploy-stuck",
+      "title": "Release deployed; the status tools said otherwise",
+      "theme": "release",
+      "column": "Shipped",
+      "note": "Resolved, and the original diagnosis was wrong. Vercel did build ae40a224 at 17:18. The outage stopped it reporting that back to GitHub, so the commit carried no Vercel check and ops:status fell back to a stale deployment record showing the previous SHA. The GitHub deployment record posted at 16:17 UTC points at the running deployment and confirms ae40a224 is live. A manual CLI deploy started on the wrong diagnosis was redundant and never completed.",
+      "link": "https://github.com/dennisonbertram/fork-open-agents/commit/ae40a224"
+    },
+    {
+      "id": "hetzner",
+      "title": "Remote work continues on a Hetzner VM",
+      "theme": "release",
+      "column": "In review",
+      "note": "Two jobs, both delivered and both merged to develop but not yet released: the story catalog (#1336) and the flow critique (#1338). Each ran under systemd on its own VM with its own branch and pull request, and kept working while the laptop was closed. The base image has node, git and gh but no Bun, so only toolchain-free work goes there. Both VMs are deleted.",
+      "link": "docs/ux-paths/browser/catalog.md"
+    },
+    {
+      "id": "iss-actions-perm",
+      "title": "Actions and Secrets check the App's permission, not the user's",
+      "theme": "agent-loops",
+      "column": "Backlog",
+      "note": "Found by the flow critique and confirmed by reading the code: apps/web/lib/github/actions-manager/readiness.ts decides canWrite from the GitHub App installation's permissions and contains no verifyRepoAccess, no requiredUserPermission and no userId. A read-only collaborator sees an enabled Run workflow button and an enabled Add secret form, and only finds out at submit time. Same defect class as the background-agent readiness bug fixed today in #1332. No issue filed yet.",
+      "link": "https://github.com/dennisonbertram/fork-open-agents/pull/1338"
+    },
+    {
+      "id": "iss-ops-status",
+      "title": "ops:status can print a SHA that is not the deployment's",
+      "theme": "release",
+      "column": "Backlog",
+      "note": "scripts/ops-status.ts takes the deployment identity from Vercel but the SHA from Vercel's meta.githubCommitSha, falling back to the latest GitHub deployment record when that is absent. The two can describe different deployments and the output gives no sign of it. Today it reported the previous SHA beside a deployment running the new one, for two hours, during an incident. No issue filed yet.",
+      "link": "docs/process/production-release-runbook.md"
+    },
+    {
+      "id": "rel-next",
+      "title": "Release train, round two",
+      "theme": "release",
+      "column": "Backlog",
+      "note": "Not started, and nothing blocks it now that GitHub is back. Four commits wait on develop: #1334 runs triage, #1335 kanban board, #1336 story catalog, #1337 backmerge. #1338 (flow critique) is open and could ride along if merged first. Needs a release PR from develop to main, then a backmerge.",
+      "link": "https://github.com/dennisonbertram/fork-open-agents/compare/main...develop"
+    }
+  ]
+}
