@@ -1,0 +1,228 @@
+{
+  "title": "Open Agents — build board",
+  "description": "Work in flight on dennisonbertram/fork-open-agents. Cards are real GitHub PRs, real GitHub issues, or named local work. Nothing here is a projection or a target. A card in Shipped means the change is merged to main and the commit is deployed to production.",
+  "headerNote": "Snapshot: 2026-08-17 17:05. Production is main@9423d9f7, HTTP 200. develop is ahead by two merged fixes awaiting release.",
+  "columns": ["Backlog", "In progress", "In review", "Shipped"],
+  "columnDescriptions": {
+    "Backlog": "Filed and not started. Open issues and unmerged older PRs.",
+    "In progress": "Being worked now, no PR open yet.",
+    "In review": "PR open. Waiting on CI, review, or a merge train slot.",
+    "Shipped": "Merged to main and live on production."
+  },
+  "columnColors": {
+    "Backlog": "#8b5cf6",
+    "In progress": "#f59e0b",
+    "In review": "#3b82f6",
+    "Shipped": "#22c55e"
+  },
+  "workflow": {
+    "planning": "Backlog",
+    "active": "In progress",
+    "review": "In review",
+    "completed": "Shipped"
+  },
+  "themes": {
+    "agent-loops": "#ef4444",
+    "background-agents": "#f97316",
+    "mcp-fanout": "#06b6d4",
+    "test-integrity": "#a855f7",
+    "ux": "#ec4899",
+    "release": "#22c55e",
+    "docs": "#64748b"
+  },
+  "cards": [
+    {
+      "id": "pr-1332",
+      "title": "Readiness must check the allowlist the dispatcher enforces",
+      "theme": "background-agents",
+      "column": "In review",
+      "note": "Merged to develop 2026-08-17. Not on main yet — rides release #1329. Found today: the fix existed on a branch since 2026-08-17 but was never opened as a PR, so production readiness still reports green for a repo the dispatcher refuses.",
+      "link": "https://github.com/dennisonbertram/fork-open-agents/pull/1332"
+    },
+    {
+      "id": "pr-1330",
+      "title": "Guard every archived edit, not only definitions",
+      "theme": "agent-loops",
+      "column": "In review",
+      "note": "Merged to develop 2026-08-17. Not on main yet — rides release #1329. Codex raised one P2 (a deleted loop returned 409 instead of 404); fixed in 517cca51 and the thread is resolved.",
+      "link": "https://github.com/dennisonbertram/fork-open-agents/pull/1330"
+    },
+    {
+      "id": "pr-1329",
+      "title": "Release: archived agent loops are actually read-only",
+      "theme": "release",
+      "column": "In review",
+      "note": "develop to main. Waits for #1330 and #1332 to land on develop first.",
+      "link": "https://github.com/dennisonbertram/fork-open-agents/pull/1329"
+    },
+    {
+      "id": "br-ui-refs",
+      "title": "Note Beautiful UI as a design reference",
+      "theme": "docs",
+      "column": "In review",
+      "note": "PR #1333, merged to develop 2026-08-17. Not on main yet — rides release #1329.",
+      "link": "https://github.com/dennisonbertram/fork-open-agents/pull/1333"
+    },
+    {
+      "id": "iss-1331",
+      "title": "Make run lists triageable",
+      "theme": "ux",
+      "column": "In review",
+      "note": "PR #1334 open. Attention reasons now render, a status tab no longer counts as a filter, and a reason that only repeats the outcome is hidden — the last one was found by looking at the rendered page. The 'one canonical URL' item is explicitly out of scope.",
+      "link": "https://github.com/dennisonbertram/fork-open-agents/pull/1334"
+    },
+    {
+      "id": "iss-1315",
+      "title": "Composio tools can write to a repo without a write grant",
+      "theme": "agent-loops",
+      "column": "Backlog",
+      "note": "Found while relaxing the agent-loop write gates.",
+      "link": "https://github.com/dennisonbertram/fork-open-agents/issues/1315"
+    },
+    {
+      "id": "iss-1308",
+      "title": "The gh CLI is not available in the sandbox",
+      "theme": "mcp-fanout",
+      "column": "Backlog",
+      "note": "Dispatched slices cannot open their own PRs.",
+      "link": "https://github.com/dennisonbertram/fork-open-agents/issues/1308"
+    },
+    {
+      "id": "iss-1307",
+      "title": "expectFileChanges is a fuse but never an acceptance check",
+      "theme": "mcp-fanout",
+      "column": "Backlog",
+      "note": "Partly addressed by #1313 and #1323, which grade it on completion. The issue remains open for the rest.",
+      "link": "https://github.com/dennisonbertram/fork-open-agents/issues/1307"
+    },
+    {
+      "id": "ux-catalog",
+      "title": "Consolidate the browser UX path catalog",
+      "theme": "ux",
+      "column": "In progress",
+      "note": "Running on a Hetzner VM so it survives a closed laptop. Job hdev-uxcat-0817-1632, branch uxcat/0817-1632-build-docs-ux-paths-browser-cata, opening a PR into develop. Brief requires four mechanical checks to pass before the PR: 187 unique story IDs, no duplicates, all 12 topic files referenced, exactly one file added.",
+      "link": "docs/ux-paths/browser/discovery.md"
+    },
+    {
+      "id": "ux-walker",
+      "title": "Walk the stories in a real browser",
+      "theme": "ux",
+      "column": "Backlog",
+      "note": "Not started. Needs the catalog first. The local app is up on port 3002 with the test-auth cookie.",
+      "link": "docs/ux-paths/browser/discovery.md"
+    },
+    {
+      "id": "ux-flow",
+      "title": "Simplicity and redundancy critique",
+      "theme": "ux",
+      "column": "Backlog",
+      "note": "Not started. Consumes the catalog's Redundancy Candidates section, which does not exist yet.",
+      "link": "docs/ux-paths/browser/discovery.md"
+    },
+    {
+      "id": "plan-beautiful-ui",
+      "title": "Beautiful UI integration plan",
+      "theme": "ux",
+      "column": "Backlog",
+      "note": "Plan written to docs/plans/beautiful-ui-integration.md, still untracked. Its verdict is not to adopt the registry: none of #1331's defects needs a new component.",
+      "link": "docs/plans/beautiful-ui-integration.md"
+    },
+    {
+      "id": "pr-old-stack",
+      "title": "Seven older open PRs",
+      "theme": "release",
+      "column": "Backlog",
+      "note": "#1312 get-started polish, #1176 create GitHub repos, #1048 truthful unit runs, #856 mobile deep-link, #855 get-started re-walk, #853 session authProvider, #852 installation resync. Each needs a keep-or-close decision.",
+      "link": "https://github.com/dennisonbertram/fork-open-agents/pulls"
+    },
+    {
+      "id": "pr-1314",
+      "title": "Stop demanding write before any work; make the canary able to fail",
+      "theme": "agent-loops",
+      "column": "Shipped",
+      "note": "The headline fix. Three write gates relaxed to read, and the journey canary given a strictness flag it can actually fail on.",
+      "link": "https://github.com/dennisonbertram/fork-open-agents/pull/1314"
+    },
+    {
+      "id": "pr-1323",
+      "title": "Grade numeric expectFileChanges, harden every test entry point",
+      "theme": "test-integrity",
+      "column": "Shipped",
+      "note": "Adds bunfig.toml preload so OPEN_AGENTS_TEST=1 is set for every bun test invocation, not only the package scripts.",
+      "link": "https://github.com/dennisonbertram/fork-open-agents/pull/1323"
+    },
+    {
+      "id": "pr-1321",
+      "title": "Let a caller set the no-diff allowance, and raise the default",
+      "theme": "mcp-fanout",
+      "column": "Shipped",
+      "link": "https://github.com/dennisonbertram/fork-open-agents/pull/1321"
+    },
+    {
+      "id": "pr-1320",
+      "title": "Make the test suite hermetic by ignoring REDIS_URL",
+      "theme": "test-integrity",
+      "column": "Shipped",
+      "link": "https://github.com/dennisonbertram/fork-open-agents/pull/1320"
+    },
+    {
+      "id": "pr-1318",
+      "title": "Require contract config when CONTRACT_REQUIRED=1",
+      "theme": "test-integrity",
+      "column": "Shipped",
+      "link": "https://github.com/dennisonbertram/fork-open-agents/pull/1318"
+    },
+    {
+      "id": "pr-1313",
+      "title": "Grade expectFileChanges when the workflow completes",
+      "theme": "mcp-fanout",
+      "column": "Shipped",
+      "link": "https://github.com/dennisonbertram/fork-open-agents/pull/1313"
+    },
+    {
+      "id": "pr-1325",
+      "title": "Explain chat turn run outcomes to the user",
+      "theme": "agent-loops",
+      "column": "Shipped",
+      "link": "https://github.com/dennisonbertram/fork-open-agents/pull/1325"
+    },
+    {
+      "id": "pr-1326",
+      "title": "Add access control to the repo settings page",
+      "theme": "ux",
+      "column": "Shipped",
+      "note": "A repo the user cannot reach now returns not-found instead of an actionable page.",
+      "link": "https://github.com/dennisonbertram/fork-open-agents/pull/1326"
+    },
+    {
+      "id": "pr-1327",
+      "title": "Validate retryAfterSeconds in rate limit errors",
+      "theme": "test-integrity",
+      "column": "Shipped",
+      "link": "https://github.com/dennisonbertram/fork-open-agents/pull/1327"
+    },
+    {
+      "id": "pr-1309",
+      "title": "Resync the GitHub App installation when not found",
+      "theme": "background-agents",
+      "column": "Shipped",
+      "link": "https://github.com/dennisonbertram/fork-open-agents/pull/1309"
+    },
+    {
+      "id": "doc-blindspots",
+      "title": "Reviewing what tests cannot see",
+      "theme": "docs",
+      "column": "Shipped",
+      "note": "Names the four blind spots: infrastructure-gated lines, untested combinations, config outside code, and the environment of the evidence itself. Linked from AGENTS.md.",
+      "link": "docs/process/reviewing-what-tests-cannot-see.md"
+    },
+    {
+      "id": "pr-1329b",
+      "title": "Release train: get today's four fixes to production",
+      "theme": "release",
+      "column": "In progress",
+      "note": "develop to main. Carries #1330, #1332, #1333 and, once merged, #1334. Blocked only by being BEHIND main until the train runs.",
+      "link": "https://github.com/dennisonbertram/fork-open-agents/pull/1329"
+    }
+  ]
+}
