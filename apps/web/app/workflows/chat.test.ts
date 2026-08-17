@@ -5180,3 +5180,125 @@ describe("runAgentWorkflow", () => {
     expect(spies.clearActiveStream).toHaveBeenCalled();
   });
 });
+
+/**
+ * Declared-expectation combination matrix.
+ *
+ * Why this exists: `expectFileChanges` and `expectedFiles` were each tested
+ * thoroughly on their own and never together. Two PRs shipped a week apart —
+ * one adding a numeric allowance, one adding end-of-run grading gated on
+ * `=== true` — and their combination silently reported `completed` for a run
+ * that produced nothing. Every individual test stayed green.
+ *
+ * A checklist entry did not prevent that; the repo's own review doc names
+ * "combinations tested only in isolation" as a blind spot and this defect was
+ * introduced anyway. So the cross-product is enumerated mechanically here.
+ *
+ * Adding a new accepted form of the declaration means adding its rows. That
+ * is the point: the matrix makes an untested combination a visible omission
+ * rather than an invisible one.
+ */
+describe("declared expectation — combination matrix", () => {
+  type Row = {
+    name: string;
+    expectFileChanges?: boolean | number;
+    expectedFiles?: string[];
+    changed: string[];
+    outcome: string;
+  };
+
+  const rows: Row[] = [
+    // ── expectFileChanges alone, every accepted form ──────────────────────
+    {
+      name: "undeclared + empty diff -> completed (read-only run, #1242)",
+      changed: [],
+      outcome: "completed",
+    },
+    {
+      name: "false + empty diff -> completed",
+      expectFileChanges: false,
+      changed: [],
+      outcome: "completed",
+    },
+    {
+      name: "true + empty diff -> no_file_changes",
+      expectFileChanges: true,
+      changed: [],
+      outcome: "no_file_changes",
+    },
+    {
+      name: "number + empty diff -> no_file_changes (the combination that shipped broken)",
+      expectFileChanges: 40,
+      changed: [],
+      outcome: "no_file_changes",
+    },
+    {
+      name: "true + a changed file -> completed",
+      expectFileChanges: true,
+      changed: ["src/a.ts"],
+      outcome: "completed",
+    },
+    {
+      name: "number + a changed file -> completed",
+      expectFileChanges: 40,
+      changed: ["src/a.ts"],
+      outcome: "completed",
+    },
+
+    // ── both declared together ────────────────────────────────────────────
+    {
+      name: "true + expectedFiles, empty diff -> no_file_changes wins over diff_violation",
+      expectFileChanges: true,
+      expectedFiles: ["src/a.ts"],
+      changed: [],
+      outcome: "no_file_changes",
+    },
+    {
+      name: "number + expectedFiles, in-list change -> completed",
+      expectFileChanges: 40,
+      expectedFiles: ["src/a.ts"],
+      changed: ["src/a.ts"],
+      outcome: "completed",
+    },
+    {
+      name: "number + expectedFiles, out-of-list change -> diff_violation",
+      expectFileChanges: 40,
+      expectedFiles: ["src/a.ts"],
+      changed: ["src/b.ts"],
+      outcome: "diff_violation",
+    },
+
+    // ── expectedFiles alone ───────────────────────────────────────────────
+    {
+      name: "expectedFiles alone, empty diff -> completed (no change was demanded)",
+      expectedFiles: ["src/a.ts"],
+      changed: [],
+      outcome: "completed",
+    },
+    {
+      name: "expectedFiles alone, out-of-list change -> diff_violation",
+      expectedFiles: ["src/a.ts"],
+      changed: ["src/b.ts"],
+      outcome: "diff_violation",
+    },
+  ];
+
+  for (const row of rows) {
+    test(row.name, async () => {
+      spies.probeChangedFilePaths.mockImplementation(async () => row.changed);
+
+      await runAgentWorkflow(
+        makeOptions({
+          ...(row.expectFileChanges !== undefined
+            ? { expectFileChanges: row.expectFileChanges }
+            : {}),
+          ...(row.expectedFiles ? { expectedFiles: row.expectedFiles } : {}),
+        }),
+      );
+
+      const rwCalls = spies.recordWorkflowUsage.mock.calls as unknown[][];
+      const workflowRun = rwCalls.at(-1)?.[5] as { status: string };
+      expect(workflowRun.status).toBe(row.outcome);
+    });
+  }
+});

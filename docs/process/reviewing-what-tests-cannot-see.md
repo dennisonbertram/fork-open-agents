@@ -48,6 +48,22 @@ opposite remediations.
 Enumerate the cross-product explicitly rather than trusting that each half is
 covered.
 
+**Then write the matrix down, because asking is not enough.** This section was
+written on 2026-08-16. Later the same day two PRs by its author reintroduced
+exactly this defect on exactly this surface: one added a numeric form of
+`expectFileChanges`, the other added end-of-run grading gated on `=== true`.
+Shipped a few hours apart, each fully tested alone, never run together. A
+numeric declaration was armed mid-run and never graded at the end, so a run
+that produced nothing reported `completed` — the precise bug the second PR
+existed to remove. Review caught it; no test did.
+
+A checklist item is not a control. When a surface accepts several forms of an
+input, or two options that interact, enumerate the combinations as data and
+loop over them — see the matrix at the end of
+`apps/web/app/workflows/chat.test.ts`. Adding a new accepted form then means
+adding its rows, which turns an untested combination into a visible omission
+instead of an invisible one.
+
 ### 3. Behavior decided outside the code
 
 Configuration in YAML, environment variables, database rows, and dashboard
