@@ -38,6 +38,36 @@ describe("readApiError", () => {
     });
   });
 
+  test("rate_limited body surfaces retryAfterSeconds so callers can say when to retry", () => {
+    // Exact shape produced by lib/rate-limit.ts:
+    // apiError("rate_limited", "Too many requests", { retryAfterSeconds }).
+    expect(
+      readApiError({
+        error: "Too many requests",
+        errorKind: "rate_limited",
+        retryAfterSeconds: 30,
+      }),
+    ).toEqual({
+      message: "Too many requests",
+      kind: "rate_limited",
+      fields: undefined,
+      retryAfterSeconds: 30,
+    });
+  });
+
+  test("non-numeric retryAfterSeconds is dropped", () => {
+    expect(
+      readApiError({ error: "Too many requests", retryAfterSeconds: "soon" })
+        .retryAfterSeconds,
+    ).toBeUndefined();
+    expect(
+      readApiError({
+        error: "Too many requests",
+        retryAfterSeconds: Number.NaN,
+      }).retryAfterSeconds,
+    ).toBeUndefined();
+  });
+
   test("error wins over message when both are present", () => {
     expect(readApiError({ error: "a", message: "b" }).message).toBe("a");
   });
