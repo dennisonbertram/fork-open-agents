@@ -5,6 +5,7 @@ import {
   Ban,
   ChevronDown,
   ArrowUpRight,
+  Clock,
   ExternalLink,
   Globe,
   ListFilter,
@@ -69,7 +70,7 @@ interface OrgInstallStatus {
   githubId: number;
   login: string;
   avatarUrl: string;
-  installStatus: "installed" | "not_installed";
+  installStatus: "installed" | "not_installed" | "request_sent";
   installationId: number | null;
   installationUrl: string | null;
   repositorySelection: "all" | "selected" | null;
@@ -77,7 +78,7 @@ interface OrgInstallStatus {
 
 interface ConnectionStatusResponse {
   user: GitHubUserProfile;
-  personalInstallStatus: "installed" | "not_installed";
+  personalInstallStatus: "installed" | "not_installed" | "request_sent";
   personalInstallationUrl: string | null;
   personalRepositorySelection: "all" | "selected" | null;
   orgs: OrgInstallStatus[];
@@ -228,7 +229,7 @@ function InstallBadge({
   repositorySelection,
   className = "size-4",
 }: {
-  status: "installed" | "not_installed";
+  status: "installed" | "not_installed" | "request_sent";
   repositorySelection: "all" | "selected" | null;
   className?: string;
 }) {
@@ -256,6 +257,18 @@ function InstallBadge({
       </Tooltip>
     );
   }
+  if (status === "request_sent") {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Clock
+            className={`${className} shrink-0 text-amber-600 dark:text-amber-400`}
+          />
+        </TooltipTrigger>
+        <TooltipContent>Installation approval pending</TooltipContent>
+      </Tooltip>
+    );
+  }
   return (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -275,6 +288,7 @@ function OrgRow({ org }: { org: OrgInstallStatus }) {
     `https://avatars.githubusercontent.com/${org.login}?s=40&v=4`;
 
   if (!isInstalled) {
+    const isPending = org.installStatus === "request_sent";
     return (
       <div className="flex items-center justify-between gap-3 py-2 first:pt-0 last:pb-0">
         <div className="flex min-w-0 items-center gap-3">
@@ -294,14 +308,20 @@ function OrgRow({ org }: { org: OrgInstallStatus }) {
           </div>
         </div>
 
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-6 px-2 text-[11px]"
-          onClick={() => startGitHubInstallForOrg(org.githubId)}
-        >
-          Install
-        </Button>
+        {isPending ? (
+          <span className="text-[11px] text-amber-600 dark:text-amber-400">
+            Installation approval pending
+          </span>
+        ) : (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 px-2 text-[11px]"
+            onClick={() => startGitHubInstallForOrg(org.githubId)}
+          >
+            Install
+          </Button>
+        )}
       </div>
     );
   }
