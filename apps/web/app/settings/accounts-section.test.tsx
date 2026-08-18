@@ -138,3 +138,47 @@ describe("NotConnectedState — pending/error/retry (#786)", () => {
     );
   });
 });
+
+describe("ConnectedState — GitHub org install status (#12 / #1342)", () => {
+  test("request_sent org shows pending approval label and no active Install button", async () => {
+    mock.module("@/hooks/use-session", () => ({
+      useSession: () => ({
+        hasGitHubAccount: true,
+        hasGitHub: true,
+        loading: false,
+      }),
+    }));
+
+    mock.module("swr", () => ({
+      default: () => ({
+        data: {
+          user: { githubId: 1, login: "user", avatarUrl: "" },
+          personalInstallStatus: "installed",
+          personalInstallationUrl: null,
+          personalRepositorySelection: null,
+          orgs: [
+            {
+              githubId: 2,
+              login: "acme-corp",
+              avatarUrl: "",
+              installStatus: "request_sent",
+              installationId: null,
+              installationUrl: null,
+              repositorySelection: null,
+            },
+          ],
+          tokenExpired: false,
+        },
+        error: undefined,
+        isLoading: false,
+      }),
+      useSWRConfig: () => ({ mutate: async () => {} }),
+    }));
+
+    const { AccountsSection } = await accountsSectionModulePromise;
+    const html = renderToStaticMarkup(<AccountsSection />);
+
+    expect(html).toContain("Installation approval pending");
+    expect(html).not.toContain(">Install</button>");
+  });
+});
