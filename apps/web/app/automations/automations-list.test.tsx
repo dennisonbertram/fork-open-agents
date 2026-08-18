@@ -1,12 +1,7 @@
 import { beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { ListAutomationsResponse } from "@/lib/automations/types";
-import {
-  registerDomTestHooks,
-  render,
-  userClick,
-  within,
-} from "@/tests/dom";
+import { registerDomTestHooks, render, userClick, within } from "@/tests/dom";
 import type { AutomationsList as AutomationsListComponent } from "./automations-list";
 
 const refresh = mock(() => undefined);
