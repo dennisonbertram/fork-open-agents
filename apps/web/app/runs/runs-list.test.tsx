@@ -284,10 +284,7 @@ describe("RunsList", () => {
     const { RunsList } = await componentPromise;
 
     for (const [health, expectedClasses] of [
-      [
-        "unknown",
-        "border-border bg-muted/40 text-muted-foreground",
-      ],
+      ["unknown", "border-border bg-muted/40 text-muted-foreground"],
       [
         "warning",
         "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300",
