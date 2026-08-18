@@ -278,6 +278,9 @@ export function DiffTabView() {
 
   const showStaleIndicator = !sandboxInfo && diff !== null;
 
+  const showMobileUnifiedNote =
+    isMobile && (preferences?.defaultDiffMode ?? "unified") !== "unified";
+
   useEffect(() => {
     if (isMobile) {
       setDiffStyle("unified");
@@ -541,18 +544,26 @@ export function DiffTabView() {
 
         {!diffLoading &&
           !diffError &&
-          visibleFiles.length > 0 &&
-          visibleFiles.map((file) => (
-            <FileDiffSection
-              key={file.path}
-              file={file}
-              isExpanded={expandedFiles.has(file.path)}
-              onToggle={() => toggleFile(file.path)}
-              diffStyle={diffStyle}
-              diffScope={diffScope}
-              sectionRef={(el) => setSectionRef(file.path, el)}
-            />
-          ))}
+          visibleFiles.length > 0 && (
+            <>
+              {showMobileUnifiedNote && (
+                <div className="px-4 py-2 text-xs text-muted-foreground border-b border-border">
+                  Split view isn't available on small screens.
+                </div>
+              )}
+              {visibleFiles.map((file) => (
+                <FileDiffSection
+                  key={file.path}
+                  file={file}
+                  isExpanded={expandedFiles.has(file.path)}
+                  onToggle={() => toggleFile(file.path)}
+                  diffStyle={diffStyle}
+                  diffScope={diffScope}
+                  sectionRef={(el) => setSectionRef(file.path, el)}
+                />
+              ))}
+            </>
+          )}
       </div>
     </div>
   );
