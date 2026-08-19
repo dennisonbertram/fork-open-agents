@@ -64,7 +64,9 @@ function RunDimensions({ run }: { run: NormalizedAutomationRun }) {
             "rounded border px-1.5 py-0.5 font-medium",
             run.health === "needs_attention"
               ? "border-destructive/30 bg-destructive/10 text-destructive"
-              : "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300",
+              : run.health === "warning"
+                ? "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300"
+                : "border-border bg-muted/40 text-muted-foreground",
           )}
         >
           {titleCase(run.health)}
