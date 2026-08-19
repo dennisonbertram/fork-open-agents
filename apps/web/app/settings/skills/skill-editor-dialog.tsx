@@ -121,8 +121,14 @@ export function SkillEditorDialog({
         .json()
         .catch(() => null)) as GenerateSkillResponse | null;
       if (!response.ok || !data?.skill) {
+        const apiError = readApiError(
+          data,
+          "Couldn't generate a draft. Try again.",
+        );
         toast.error(
-          readApiError(data, "Couldn't generate a draft. Try again.").message,
+          typeof apiError.retryAfterSeconds === "number"
+            ? `${apiError.message} — try again in ${apiError.retryAfterSeconds}s`
+            : apiError.message,
         );
         return;
       }
