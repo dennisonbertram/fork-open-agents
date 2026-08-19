@@ -8,6 +8,7 @@ import {
   Workflow,
 } from "lucide-react";
 import Link from "next/link";
+import { RetryButton } from "./retry-button";
 import type {
   AutomationFilters,
   AutomationListItem,
@@ -379,6 +380,7 @@ export function AutomationsList({ response, filters }: AutomationsListProps) {
               The definition sources are unavailable. Retry this page; no
               configuration was changed.
             </p>
+            <RetryButton />
           </section>
         ) : response.automations.length === 0 ? (
           <section className="rounded-lg border border-dashed border-border p-10 text-center">
