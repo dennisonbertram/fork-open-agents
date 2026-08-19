@@ -1,5 +1,3 @@
-"use client";
-
 import {
   AlertTriangle,
   ArrowUpRight,
@@ -10,8 +8,7 @@ import {
   Workflow,
 } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { Button } from "@/components/ui/button";
+import { RetryButton } from "./retry-button";
 import type {
   AutomationFilters,
   AutomationListItem,
@@ -218,7 +215,6 @@ function AutomationCard({ item }: { item: AutomationListItem }) {
 }
 
 export function AutomationsList({ response, filters }: AutomationsListProps) {
-  const router = useRouter();
   const links = createLinks(filters);
   const loopsDisabled = response.sourceStatus.some(
     (status) => status.source === "agent_loop" && status.status === "disabled",
@@ -384,15 +380,7 @@ export function AutomationsList({ response, filters }: AutomationsListProps) {
               The definition sources are unavailable. Retry this page; no
               configuration was changed.
             </p>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="mt-4"
-              onClick={() => router.refresh()}
-            >
-              Retry this page
-            </Button>
+            <RetryButton />
           </section>
         ) : response.automations.length === 0 ? (
           <section className="rounded-lg border border-dashed border-border p-10 text-center">
