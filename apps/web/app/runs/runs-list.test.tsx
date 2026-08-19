@@ -279,4 +279,26 @@ describe("RunsList", () => {
     const failedChips = html.match(/>Failed</g) ?? [];
     expect(failedChips.length).toBe(1);
   });
+
+  test("distinguishes unknown health from warning by badge color", async () => {
+    const { RunsList } = await componentPromise;
+
+    for (const [health, expectedClasses] of [
+      ["unknown", "border-border bg-muted/40 text-muted-foreground"],
+      [
+        "warning",
+        "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300",
+      ],
+    ] as const) {
+      const state = populatedState();
+      const items = state.data.items as Record<string, unknown>[];
+      items[0] = { ...items[0], health, attentionReasons: [] };
+      swrState = state;
+
+      const html = renderToStaticMarkup(<RunsList searchParams="" />);
+      const label = health === "unknown" ? "Unknown" : "Warning";
+      expect(html).toContain(label);
+      expect(html).toContain(expectedClasses);
+    }
+  });
 });
