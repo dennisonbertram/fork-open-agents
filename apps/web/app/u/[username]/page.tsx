@@ -8,7 +8,18 @@ export default async function Page({
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const { username } = await params;
-  // Avoid the unused-parameter warning; Next.js still passes searchParams.
-  void searchParams;
-  permanentRedirect(`/${username}`);
+  const search = await searchParams;
+
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(search ?? {})) {
+    if (value === undefined) continue;
+    if (Array.isArray(value)) {
+      for (const item of value) query.append(key, item);
+    } else {
+      query.set(key, value);
+    }
+  }
+
+  const queryString = query.toString();
+  permanentRedirect(`/${username}${queryString ? `?${queryString}` : ""}`);
 }

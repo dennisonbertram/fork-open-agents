@@ -30,4 +30,16 @@ describe("/u/[username] redirect", () => {
     ).rejects.toThrow("permanent-redirect:/someuser");
     expect(permanentRedirect).toHaveBeenCalledWith("/someuser");
   });
+
+  test("preserves supported query parameters in the redirect", async () => {
+    const { default: Page } = await pageModulePromise;
+
+    await expect(
+      Page({
+        params: Promise.resolve({ username: "someuser" }),
+        searchParams: Promise.resolve({ date: "30d" }),
+      }),
+    ).rejects.toThrow("permanent-redirect:/someuser?date=30d");
+    expect(permanentRedirect).toHaveBeenCalledWith("/someuser?date=30d");
+  });
 });
