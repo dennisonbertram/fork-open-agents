@@ -98,8 +98,9 @@ describe("DiffTabView mobile unified diff override", () => {
 
     await act(async () => {});
 
-    expect(container.textContent).toContain("Split view isn't available on small screens.");
+    expect(container.textContent).toContain(
+      "Split view isn't available on small screens.",
+    );
     expect(capturedPatchDiffOptions?.diffStyle).toBe("unified");
   });
 });
-
