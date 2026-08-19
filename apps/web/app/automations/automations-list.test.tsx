@@ -1,7 +1,35 @@
-import { describe, expect, test } from "bun:test";
+import { beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { ListAutomationsResponse } from "@/lib/automations/types";
-import { AutomationsList } from "./automations-list";
+import { registerDomTestHooks, render, userClick, within } from "@/tests/dom";
+import type { AutomationsList as AutomationsListComponent } from "./automations-list";
+
+const refresh = mock(() => undefined);
+
+mock.module("next/navigation", () => ({
+  useRouter: () => ({
+    back: () => undefined,
+    forward: () => undefined,
+    prefetch: () => undefined,
+    push: () => undefined,
+    refresh,
+    replace: () => undefined,
+  }),
+}));
+
+const automationsListModule = import("./automations-list");
+
+let AutomationsList: typeof AutomationsListComponent;
+
+beforeAll(async () => {
+  ({ AutomationsList } = await automationsListModule);
+});
+
+beforeEach(() => {
+  refresh.mockClear();
+});
+
+registerDomTestHooks();
 
 function response(
   overrides: Partial<ListAutomationsResponse> = {},
@@ -246,5 +274,39 @@ describe("AutomationsList", () => {
     expect(html).toContain("Create a single-step automation");
     expect(html).not.toContain("No automations match these filters");
     expect(html).not.toContain("retry after");
+  });
+
+  test("allUnavailable state renders a Retry this page button that re-runs the list fetch", async () => {
+    const { baseElement } = render(
+      <AutomationsList
+        filters={{}}
+        response={response({
+          sourceStatus: [
+            {
+              source: "background_agent",
+              status: "failed",
+              itemCount: 0,
+              invalidItemCount: 0,
+              errorKind: "source_unavailable",
+            },
+            {
+              source: "agent_loop",
+              status: "failed",
+              itemCount: 0,
+              invalidItemCount: 0,
+              errorKind: "source_unavailable",
+            },
+          ],
+        })}
+      />,
+    );
+
+    const retry = within(baseElement).getByRole("button", {
+      name: "Retry this page",
+    });
+    expect(retry).not.toBeNull();
+
+    await userClick(retry);
+    expect(refresh).toHaveBeenCalledTimes(1);
   });
 });
