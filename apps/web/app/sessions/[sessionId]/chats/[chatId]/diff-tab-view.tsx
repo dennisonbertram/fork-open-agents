@@ -469,7 +469,7 @@ export function DiffTabView() {
             </Tooltip>
           </div>
           {/* Unified / Split icon toggle */}
-          <div className="hidden items-center rounded-md border border-border md:flex">
+          <div className="hidden items-center rounded-md border border-border min-[900px]:flex">
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
