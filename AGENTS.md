@@ -19,6 +19,7 @@ or detailed procedures here; put that material in `docs/agents`,
 - [Guard Integrity](docs/process/guard-integrity.md)
 - [Reviewing What Tests Cannot See](docs/process/reviewing-what-tests-cannot-see.md)
 - [UI References](docs/design/ui-references.md)
+- [UX browser catalog](docs/ux-paths/browser/catalog.md) · [Walk 2026-08-20](docs/ux-paths/browser/walk-2026-08-20.md) · [Cloud UX walk plan](docs/plans/cloud-ux-walk.md)
 - [Dogfood The Cloud Loop](docs/process/dogfood-cloud-fanout.md)
 - [Behavior-First TDD](docs/process/behavior-tdd.md)
 - [Authenticated Local UI Smoke](docs/process/development-workflow.md#authenticated-local-ui-smoke)
