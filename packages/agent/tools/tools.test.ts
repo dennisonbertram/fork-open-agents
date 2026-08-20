@@ -293,15 +293,16 @@ describe("tools execute behavior", () => {
     );
     expect(nestedDotenvApproval).toBe(true);
 
-    // A committed template is not a secret, and gating it stalled a headless
-    // run on an approval nobody could give. See path-security.test.ts for the
-    // full contract, including that `.env.example.local` stays gated.
-    const templateApproval = await getNeedsApprovalResult(
+    // A template skips approval only when git confirms it is committed and
+    // unmodified. This fixture's sandbox has no `exec`, so the check cannot
+    // run and the file stays gated — fail closed is the point. The confirmed
+    // and unconfirmed cases are covered in path-security.test.ts.
+    const unverifiableTemplateApproval = await getNeedsApprovalResult(
       readFileTool().needsApproval,
       { filePath: "apps/web/.env.example" },
       baseContext,
     );
-    expect(templateApproval).toBe(false);
+    expect(unverifiableTemplateApproval).toBe(true);
 
     const regularFileApproval = await getNeedsApprovalResult(
       readFileTool().needsApproval,

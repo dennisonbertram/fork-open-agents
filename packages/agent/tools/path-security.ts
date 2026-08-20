@@ -3,27 +3,77 @@ import type { Sandbox } from "@open-agents/sandbox";
 import { isPathWithinDirectory, shellEscape } from "./utils";
 
 /**
- * Suffixes that mark a dotenv file as a committed template rather than a real
- * one: `.env.example`, `.env.sample`, `.env.template`, `.env.dist`. These hold
- * placeholder keys, ship in the repository on purpose, and are exactly what an
- * agent is meant to read to learn which variables exist.
+ * Suffixes a dotenv file carries when it is meant to be a committed template
+ * rather than a live one: `.env.example`, `.env.sample`, `.env.template`,
+ * `.env.dist`.
+ *
+ * The suffix alone proves nothing. A developer can create an untracked
+ * `.env.example` holding real credentials, or fill a tracked one in locally.
+ * Use `isCommittedDotEnvTemplate`, which checks the claim against git, rather
+ * than trusting the name.
  */
 const DOTENV_TEMPLATE_SUFFIXES = [".example", ".sample", ".template", ".dist"];
 
 export function isDotEnvFilePath(filePath: string): boolean {
   const basename = path.basename(filePath.replaceAll("\\", "/")).toLowerCase();
+  return basename.startsWith(".env");
+}
+
+function hasDotEnvTemplateSuffix(filePath: string): boolean {
+  const basename = path.basename(filePath.replaceAll("\\", "/")).toLowerCase();
   if (!basename.startsWith(".env")) {
     return false;
   }
 
-  // Match on the LAST suffix only. `.env.production.example` is a template,
-  // but `.env.example.local` is a real local file wearing a template-looking
-  // segment in the middle, and must stay gated.
-  //
-  // Gating the templates is not harmless caution: a read of
-  // `apps/web/.env.example` parked a headless run on an approval nobody could
-  // give, because a run dispatched over MCP has no human attached.
-  return !DOTENV_TEMPLATE_SUFFIXES.some((suffix) => basename.endsWith(suffix));
+  // The LAST suffix decides. `.env.production.example` is a template;
+  // `.env.example.local` is a real local file wearing a template-looking
+  // segment in the middle, and must not qualify.
+  return DOTENV_TEMPLATE_SUFFIXES.some((suffix) => basename.endsWith(suffix));
+}
+
+/**
+ * Whether a path is a dotenv template that git confirms is committed and
+ * unmodified — the only kind safe to read or write without a human.
+ *
+ * Gating every `.env*` name wedged a headless run on an approval nobody could
+ * give, for `apps/web/.env.example`: a committed placeholder file an agent is
+ * meant to read. But the name is not evidence. This asks git instead, and
+ * fails closed — no sandbox, no exec, a non-zero exit, or any local
+ * modification all mean "keep it gated".
+ *
+ * `git status --porcelain` prints nothing for a tracked, unmodified path, and
+ * prints a status line for anything untracked or changed. One command answers
+ * both halves of the claim.
+ */
+export async function isCommittedDotEnvTemplate(params: {
+  sandbox: Sandbox;
+  absolutePath: string;
+  workingDirectory: string;
+}): Promise<boolean> {
+  if (!hasDotEnvTemplateSuffix(params.absolutePath)) {
+    return false;
+  }
+
+  if (typeof params.sandbox.exec !== "function") {
+    return false;
+  }
+
+  let result: Awaited<ReturnType<Sandbox["exec"]>>;
+  try {
+    result = await params.sandbox.exec(
+      `git status --porcelain -- ${shellEscape(params.absolutePath)}`,
+      params.workingDirectory,
+      5000,
+    );
+  } catch {
+    return false;
+  }
+
+  if (!result.success) {
+    return false;
+  }
+
+  return result.stdout.trim() === "";
 }
 
 export function resolveWorkspacePath(
