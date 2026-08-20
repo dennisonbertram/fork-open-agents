@@ -1,26 +1,24 @@
-# Development log — cloud UX walk unblock (2026-08-20)
+# Development log — STORY-158 after #1390 (2026-08-20)
 
 ## Done
 
-- Branched `cursor/cloud-ux-walk-unblock-b536` from `origin/develop`.
-- Implemented epic #1389 slices 1–4 tests-first:
-  - Sign out deletes `open_agents_test_user_id` (#1386).
-  - `VERCEL_ENV=production` hard-refuses test-auth (Guard Integrity).
-  - `GET /api/dev/test-auth` cookie-only bootstrap + idempotent seed.
-  - Connection-status short-circuit for the demo user.
-- Documented remaining operator work (Dev env var) and the unfaked
-  STORY-158 proof.
+- Merged #1390 into `develop` (`f1f918b4`).
+- Probed Preview / Dev / Production for `GET /api/dev/test-auth`.
+- Walked STORY-158 locally via the new bootstrap (2/2). Screenshots in
+  `docs/ux-paths/browser/walk-story-158/`.
 
 ## Incorrect assumptions
 
-1. Assumed Turbo needed `NODE_ENV` in its build env allowlist because
-   `isTestAuthEnabled()` reads it — runtime builtins are not Turbo inputs.
-2. Assumed the seed should store a placeholder GitHub token — that would
-   send garbage to the GitHub API from other callers. Null token + status
-   bypass is the safer pair.
-3. Assumed this VM could flip the Dev env var (slice 5) — no Vercel CLI
-   auth, so that slice stays an operator action.
+1. Assumed merge to `develop` would immediately update the Dev URL — it
+   still served HTML 404 (`x-matched-path: /404`) on the previous deploy id.
+2. Assumed this VM could set the Dev env var — no Vercel token, CLI logged
+   out. Slice 5 stays operator-owned.
+3. Assumed Preview would already have the stale test-auth flag — Preview
+   has the new route and returns JSON 404 (flag off).
 
 ## Global learnings
 
-See `docs/agents/lessons-learned.md` (Auth / OAuth) and `docs/learnings.md`.
+- Preview JSON 404 vs Dev HTML 404 is the difference between “route
+  deployed, flag off” and “old build, route missing”.
+- Local `GET /api/dev/test-auth?next=/sessions` is enough to walk
+  authenticated catalog stories without mocking connection-status.

@@ -17,3 +17,7 @@ Short cross-cutting notes. Detailed entries live in
 - A seeded GitHub account with a fake token trips undismissable
   `GitHubReconnectGate`. Prefer a null token plus a connection-status
   exception for `dev-managed-runtime-user` while test-auth is on.
+- After #1390, local `GET /api/dev/test-auth?next=/sessions` walks
+  STORY-158 in 2 steps. A Preview JSON 404 means the route is live and
+  the flag is off; a Dev HTML 404 means the merge has not deployed yet.
+  This VM cannot flip Vercel env vars (`vercel` logged out).

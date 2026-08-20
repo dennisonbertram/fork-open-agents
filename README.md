@@ -129,7 +129,8 @@ ELEVENLABS_API_KEY=
   when `NODE_ENV=development`. **Never set this on Production** —
   `VERCEL_ENV=production` refuses test-auth even if the flag is `1`.
   Cookie-only bootstrap: `GET /api/dev/test-auth` (404 when disabled).
-  See [Cloud UX walk plan](docs/plans/cloud-ux-walk.md).
+  See [Cloud UX walk plan](docs/plans/cloud-ux-walk.md) and the local
+  [STORY-158 walk](docs/ux-paths/browser/walk-story-158.md).
 
 ## Deploy your own copy on Vercel
 

@@ -68,7 +68,9 @@ Dated epic and sweep sections:
   sandbox. Browser tools have no cookie API; Playwright honors
   `Set-Cookie` on navigate, including `?next=/sessions` (307). Reject
   `/%5c%5c…` as well as `//` and absolute URLs — URL parsers treat
-  backslashes as an authority separator.
+  backslashes as an authority separator. Locally this unblocks STORY-158
+  in two clicks. On Vercel, JSON 404 means the route is deployed and the
+  flag is off; HTML 404 means an older build.
 
 - **A fake GitHub token bricks the demo user.**
   `GitHubReconnectGate` has no dismiss control (STORY-024). Seed the

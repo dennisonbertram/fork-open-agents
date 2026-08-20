@@ -1,6 +1,6 @@
 # Cloud UX Walk — Unblock Plan
 
-Status: **slices 1–4 implemented in this PR; slices 5–6 remain operator-blocked.**
+Status: **slices 1–4 merged in [#1390](https://github.com/dennisonbertram/fork-open-agents/pull/1390) (`f1f918b4`).** Local STORY-158 walked 2/2. Slices 5–6 remain operator-blocked (no Vercel auth in this VM).
 Epic: [#1389](https://github.com/dennisonbertram/fork-open-agents/issues/1389).
 Related: [Browser catalog](../ux-paths/browser/catalog.md), [Dogfood The Cloud Loop](../process/dogfood-cloud-fanout.md).
 
@@ -21,8 +21,8 @@ deployed target honors test-auth safely. This plan is the ordered unblock.
 
 | # | Slice | Owner | Why it is still blocked |
 |---|-------|-------|-------------------------|
-| 5 | Enable `OPEN_AGENTS_ENABLE_TEST_AUTH=1` on the stable **Dev** deployment only; delete any stale Preview branch var | Operator | This agent VM has no Vercel CLI auth. Do not set the flag on Production — slice 2 now refuses even if someone does |
-| 6 | Prove STORY-158 from an unattended `open_agents_start_session` | After slice 5 | Needs the Dev URL + bootstrap route live. Do not fake a walk |
+| 5 | Enable `OPEN_AGENTS_ENABLE_TEST_AUTH=1` on the stable **Dev** deployment only; delete any stale Preview branch var | Operator | `vercel whoami` is logged out; no `VERCEL_TOKEN`. Live: Preview JSON 404 (route on, flag off); Dev still HTML 404 (old deploy). See [STORY-158 walk](../ux-paths/browser/walk-story-158.md) |
+| 6 | Prove STORY-158 from an unattended `open_agents_start_session` | After slice 5 | Local walk done (2/2). Cloud/Dev walk not faked |
 
 ## How a cloud walker should authenticate after slice 5
 
