@@ -11,8 +11,10 @@ is worth stating them plainly before anything else:
 - **Neither this project nor its sibling uses Clerk today.** This repo uses
   better-auth (source of truth: `AGENTS.md:179`). The sibling repo `free-pi`
   signs in with a GitHub OAuth **device flow** driven from a CLI and hand-rolled
-  `jose` JWTs — no Clerk reference anywhere in it (verified by reading that repo
-  directly; the sandbox itself cannot see it). So "use Clerk" means introducing
+  `jose` JWTs — no Clerk reference anywhere in it. **This was verified by the human operator
+  reading that repository directly and passing the result in — not by this
+  sandbox, which cannot see it.** Treated here as reliable secondhand input,
+  not first-hand evidence (see "Not verified" item 6). So "use Clerk" means introducing
   Clerk to both projects, not copying an existing setup.
 - **Original intent, corrected:** the idea was that Clerk could sit *inside*
   better-auth as a provider so that "adding sign-in methods is simple." That
@@ -376,6 +378,49 @@ OAuth web app** (this repo) and a **device-code CLI flow** (that repo).
 
 ---
 
+## Two prerequisites Option A actually has
+
+Raised in review and confirmed against the code. Option A remains the
+recommendation, but "nothing breaks" was too strong: it is true for existing
+users, and not automatically true for users who arrive through a new provider.
+
+### 1. A new provider gives a user no Vercel or GitHub account row
+
+`getUserVercelAuthInfo` calls
+`auth.api.getAccessToken({ providerId: "vercel", userId })`
+(`lib/vercel/token.ts:30-33`) and returns `null` when there is no token. The
+GitHub user token is read the same way (`lib/github/token.ts:8-14`).
+
+Both read the `accounts` table, which is populated per provider. A user who
+signs in with Google therefore has **no `vercel` row and no `github` row**, so
+every feature behind those tokens is unavailable to them until they link — and
+the current UI treats Vercel as guaranteed, because until now it was.
+
+So adding a sign-in provider is a config block **plus** a linking story: which
+grants a new-provider user must complete before the product works for them,
+and what each dependent surface does in the meantime. That is design work, not
+configuration, and it should be settled before the second provider ships.
+
+### 2. GitHub-as-sign-in would collapse the repo-consent boundary
+
+`socialProviders.github` requests `scope: ["read:user", "user:email", "repo"]`
+(`config.ts:119`). Today that is fine, because GitHub is only reached through
+`linkSocial` — a deliberate, later, optional step, after the user has decided
+they want repo features.
+
+Turn that same entry into a sign-in button and **every sign-in demands `repo`
+up front**. A visitor who only wants to look around must grant write access to
+their repositories to get through the door. That is a real regression in the
+consent boundary, and the code comment at `config.ts:115-117` already notes
+that changing scopes forces existing users to reconnect.
+
+If GitHub becomes a sign-in method it needs a **separate provider entry with
+minimal scopes** (`read:user`, `user:email`), keeping the broad-scope entry for
+the explicit repo-access grant. Google or another OIDC provider avoids the
+question entirely, which is a point in its favour as the first addition.
+
+---
+
 ## Cost and lock-in
 
 **[docs: pricing read from clerk.com/pricing]** Clerk pricing (as published):
@@ -450,6 +495,9 @@ Genuinely open items, with what would settle each:
 ---
 
 ## Recommendation
+
+> Tracked by issue #794. That issue carries the `authProvider` prerequisite
+> described below and is the durable record for this decision.
 
 **Do not replace better-auth with Clerk. Add sign-in methods inside
 better-auth instead.**
