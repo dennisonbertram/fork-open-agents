@@ -25,6 +25,13 @@
    exist, but neither sandbox-hosted app nor deployed test-auth bootstrap is
    available without new infrastructure.
 
+## Follow-up (2026-08-20, later)
+
+- Filed epic #1389 with the six-slice unblock plan (sign-out cookie fix,
+  production hard-guard for test-auth, cookie-only bootstrap route, reconnect
+  gate exception, Dev-only env flip, single-story cloud proof) and linked it
+  from `docs/plans/cloud-ux-walk.md`.
+
 ## Global learnings
 
 See `docs/agents/lessons-learned.md` (Auth / OAuth + Next.js bullets) and
