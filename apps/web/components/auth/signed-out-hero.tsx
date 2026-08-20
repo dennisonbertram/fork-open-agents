@@ -13,6 +13,14 @@ import { LandingNav } from "@/components/landing/nav";
 import { Stage } from "@/components/landing/stage";
 import { ProductJourney } from "@/components/product-journey";
 import { PRODUCT_JOURNEY } from "@/lib/product-journey";
+import { sanitizeInternalRedirect } from "@/lib/redirect-safety";
+
+function resolveSignInCallbackUrl(nextParam: string | null): string {
+  if (!nextParam) {
+    return PRODUCT_JOURNEY[0].href;
+  }
+  return sanitizeInternalRedirect(nextParam, PRODUCT_JOURNEY[0].href);
+}
 
 /**
  * Renders when the Vercel OAuth flow redirects back with `?error=<code>`
@@ -39,6 +47,7 @@ export function SignedOutHero() {
   const [heroButtonsVisible, setHeroButtonsVisible] = useState(true);
   const searchParams = useSearchParams();
   const signInErrorCode = searchParams.get("error");
+  const signInCallbackUrl = resolveSignInCallbackUrl(searchParams.get("next"));
 
   useEffect(() => {
     const el = heroButtonsRef.current;
@@ -77,7 +86,7 @@ export function SignedOutHero() {
               className="mt-6 flex flex-col gap-2 sm:mt-8"
             >
               <div className="flex items-center gap-2">
-                <SignInButton size="lg" callbackUrl={PRODUCT_JOURNEY[0].href} />
+                <SignInButton size="lg" callbackUrl={signInCallbackUrl} />
                 <GitHubLink>Open Source</GitHubLink>
               </div>
               <p className="text-xs text-(--l-fg-3)">

@@ -22,13 +22,31 @@
 
 import { describe, expect, mock, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
+import { PRODUCT_JOURNEY } from "@/lib/product-journey";
 
 let searchParamValue: string | null = null;
+let nextParamValue: string | null = null;
 
 mock.module("next/navigation", () => ({
   useSearchParams: () => ({
-    get: (key: string) => (key === "error" ? searchParamValue : null),
+    get: (key: string) => {
+      if (key === "error") {
+        return searchParamValue;
+      }
+      return key === "next" ? nextParamValue : null;
+    },
   }),
+}));
+mock.module("@/components/auth/sign-in-button", () => ({
+  SignInButton: ({
+    callbackUrl,
+    size,
+  }: {
+    callbackUrl?: string;
+    size?: string;
+  }) => (
+    <div data-sign-in-callback-url={callbackUrl} data-sign-in-size={size} />
+  ),
 }));
 
 const signedOutHeroModulePromise = import("./signed-out-hero");
@@ -85,5 +103,53 @@ describe("SignedOutHero - honest first-run copy (#787)", () => {
     const html = renderToStaticMarkup(<SignedOutHero />);
     expect(html.toLowerCase()).toContain("vercel");
     expect(html).toContain("Why Vercel");
+  });
+});
+
+describe("SignedOutHero - mobile deep-link callback (#793)", () => {
+  function callbackUrlFromHero(html: string): string | undefined {
+    return /data-sign-in-callback-url="([^"]+)" data-sign-in-size="lg"/
+      .exec(html)?.[1]
+      ?.replaceAll("&amp;", "&");
+  }
+
+  test("uses the product journey default when no next parameter is present", async () => {
+    searchParamValue = null;
+    nextParamValue = null;
+    const { SignedOutHero } = await signedOutHeroModulePromise;
+
+    const html = renderToStaticMarkup(<SignedOutHero />);
+
+    expect(callbackUrlFromHero(html)).toBe(PRODUCT_JOURNEY[0].href);
+  });
+
+  test("uses a safe mobile deep link as the sign-in callback", async () => {
+    searchParamValue = null;
+    nextParamValue = "/m/chat/abc";
+    const { SignedOutHero } = await signedOutHeroModulePromise;
+
+    const html = renderToStaticMarkup(<SignedOutHero />);
+
+    expect(callbackUrlFromHero(html)).toBe("/m/chat/abc");
+  });
+
+  test("rejects protocol-relative next parameters", async () => {
+    searchParamValue = null;
+    nextParamValue = "//evil.com";
+    const { SignedOutHero } = await signedOutHeroModulePromise;
+
+    const html = renderToStaticMarkup(<SignedOutHero />);
+
+    expect(callbackUrlFromHero(html)).toBe(PRODUCT_JOURNEY[0].href);
+  });
+
+  test("rejects absolute next parameters", async () => {
+    searchParamValue = null;
+    nextParamValue = "https://evil.com";
+    const { SignedOutHero } = await signedOutHeroModulePromise;
+
+    const html = renderToStaticMarkup(<SignedOutHero />);
+
+    expect(callbackUrlFromHero(html)).toBe(PRODUCT_JOURNEY[0].href);
   });
 });
