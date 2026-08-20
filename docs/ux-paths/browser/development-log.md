@@ -17,6 +17,9 @@
   `OPEN_AGENTS_ENABLE_TEST_AUTH` is Encrypted, environments `dev`, 7m
   ago. Reprobe still HTML 404 on `dpl_4j7yWJe…`. Deploy is the remaining
   step.
+- Operator `git pull` on `~/dev/open-agents` `develop` aborted: local
+  `kanban.json` would be overwritten. Checkout is still `36f2caf3`, not
+  `f1f918b4`. Stash/discard kanban, pull, then deploy.
 
 ## Incorrect assumptions
 

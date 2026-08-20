@@ -156,8 +156,8 @@ closes the env-var half of slice 5. Reprobe at 21:25 UTC: Dev is still
 HTML 404 on `dpl_4j7yWJeZCNtkPi5qGJjZUiNPL2C5`. Adding a var does not
 update a live deployment.
 
-Remaining command (from `~/develop`, after `git checkout develop && git
-pull` so the upload is current `develop`, not a dirty tree):
+Remaining command (from `~/dev/open-agents` on `develop`, after a clean
+`git pull` so the upload is `f1f918b4` or later, not a dirty tree):
 
 ```bash
 vercel deploy --target=dev \
@@ -168,6 +168,35 @@ vercel deploy --target=dev \
 
 Wait until it prints a deployment URL. Do not `vercel redeploy` the
 existing `dpl_4j7yWJe…` URL.
+
+### Operator action 2026-08-20 ~21:33 UTC — pull blocked on local kanban
+
+`~/dev/open-agents` was on `develop` at `36f2caf3` and `git pull` aborted:
+
+```text
+error: Your local changes to the following files would be overwritten by merge:
+	kanban.json
+```
+
+`origin/develop` is `f1f918b4`. Stash the local kanban (and anything
+else dirty), pull, then deploy **before** `stash pop` so the upload is
+clean:
+
+```bash
+cd ~/dev/open-agents
+git stash push -m "local kanban before dev deploy" -- kanban.json
+git pull origin develop
+git status -sb
+# expect: ## develop...origin/develop
+vercel deploy --target=dev \
+  --scope dennisons-projects \
+  --project open-agents \
+  --yes
+```
+
+`git checkout -- kanban.json` is fine instead of stash if that local
+edit is disposable. Do not commit the laptop kanban onto `develop` just
+to unblock the pull.
 
 ## Walk
 

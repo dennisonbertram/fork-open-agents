@@ -1,6 +1,6 @@
 # Cloud UX Walk — Unblock Plan
 
-Status: **slices 1–4 merged in [#1390](https://github.com/dennisonbertram/fork-open-agents/pull/1390) (`f1f918b4`).** Local STORY-158 walked 2/2. Slice 5 is still blocked: the 2026-08-20 operator add targeted Vercel `development`, not the custom `dev` environment, and the Dev URL is still the pre-merge deploy.
+Status: **slices 1–4 merged in [#1390](https://github.com/dennisonbertram/fork-open-agents/pull/1390) (`f1f918b4`).** Local STORY-158 walked 2/2. Slice 5 env var is on custom `dev` (`vercel env ls`, 2026-08-20). Live Dev URL is still the pre-merge deploy — needs `vercel deploy --target=dev`.
 Epic: [#1389](https://github.com/dennisonbertram/fork-open-agents/issues/1389).
 Related: [Browser catalog](../ux-paths/browser/catalog.md), [Dogfood The Cloud Loop](../process/dogfood-cloud-fanout.md).
 
@@ -21,7 +21,7 @@ deployed target honors test-auth safely. This plan is the ordered unblock.
 
 | # | Slice | Owner | Why it is still blocked |
 |---|-------|-------|-------------------------|
-| 5 | Enable `OPEN_AGENTS_ENABLE_TEST_AUTH=1` on the custom **`dev`** environment only; delete any stale Preview branch var | Operator | Flag is on `dev` (`vercel env ls`: Encrypted, `dev` only, 7m ago). Live URL still HTML 404 on `dpl_4j7yWJe…` — needs `vercel deploy --target=dev` from current `develop`. Branch tracking is stale (Updated 80d). See [STORY-158 walk](../ux-paths/browser/walk-story-158.md) |
+| 5 | Enable `OPEN_AGENTS_ENABLE_TEST_AUTH=1` on the custom **`dev`** environment only; delete any stale Preview branch var | Operator | Flag is on `dev`. Live URL still HTML 404 on `dpl_4j7yWJe…`. Laptop `git pull` in `~/dev/open-agents` aborted on dirty `kanban.json` (local `36f2caf3`, not `f1f918b4`). Stash, pull, then `vercel deploy --target=dev`. See [STORY-158 walk](../ux-paths/browser/walk-story-158.md) |
 | 6 | Prove STORY-158 from an unattended `open_agents_start_session` | After slice 5 | Local walk done (2/2). Cloud/Dev walk not faked |
 
 ## How a cloud walker should authenticate after slice 5
