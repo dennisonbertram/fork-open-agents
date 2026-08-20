@@ -179,6 +179,27 @@ export function buildRunEndedUnexpectedlyMessage(): string {
 }
 
 /**
+ * The message a dispatching agent sees when a headless run stopped because a
+ * tool call needed approval.
+ *
+ * For an attended run this state is a genuine pause: the person watching
+ * clicks approve and the run continues. For a headless run — one dispatched
+ * over MCP with nobody attached — it is terminal, because no route, tool or
+ * API resolves a pending approval; only a browser click does. Reported as a
+ * pause it reads as "waiting", and a run that is actually dead sits looking
+ * patient. Say plainly that it is over and what to change.
+ */
+export function buildHeadlessAwaitingApprovalMessage(): string {
+  return [
+    "Stopped: a tool call needed approval and this run has nobody to give it.",
+    "",
+    "No human is attached to a headless run, and a pending approval cannot be resumed by approving it later — there is no non-browser path that resolves one. This run is over, not waiting.",
+    "",
+    "Re-dispatch with a prompt that avoids the gated call, or make the call unnecessary. If the gated call is genuinely required, run it attended in the browser instead.",
+  ].join("\n");
+}
+
+/**
  * The message a reading agent (and a human reviewer reading the transcript
  * afterward) sees when the final diff touched a file outside the caller's
  * declared `expectedFiles` list. Informational, not a mid-run stop: by the

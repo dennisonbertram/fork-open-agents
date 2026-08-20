@@ -3,6 +3,7 @@ import { z } from "zod";
 import * as path from "path";
 import { getSandbox, toDisplayPath } from "./utils";
 import {
+  isCommittedDotEnvTemplate,
   isDotEnvFilePath,
   isSensitiveDotEnvPath,
   resolveSandboxRealPath,
@@ -41,15 +42,15 @@ const editInputSchema = z.object({
 export const writeFileTool = () =>
   tool({
     needsApproval: async ({ filePath }, { experimental_context }) => {
-      if (isDotEnvFilePath(filePath)) {
-        return true;
-      }
-
+      // A dotenv name alone no longer decides. The sandbox is needed either
+      // way: to resolve symlinks, and to ask git whether a template really is
+      // a committed, unmodified placeholder. No sandbox means fail closed for
+      // anything dotenv-shaped.
       let sandbox;
       try {
         sandbox = await getSandbox(experimental_context, "write");
       } catch {
-        return false;
+        return isDotEnvFilePath(filePath);
       }
       const workingDirectory = sandbox.workingDirectory;
       const absolutePath = resolveWorkspacePath(filePath, workingDirectory);
@@ -63,11 +64,25 @@ export const writeFileTool = () =>
         workingDirectory,
       });
 
-      return isSensitiveDotEnvPath({
-        requestedPath: filePath,
-        absolutePath,
-        realPath,
-      });
+      if (
+        !isSensitiveDotEnvPath({
+          requestedPath: filePath,
+          absolutePath,
+          realPath,
+        })
+      ) {
+        return false;
+      }
+
+      // It is dotenv-shaped. Only a template git confirms is committed and
+      // unmodified skips approval; everything else stays gated. Checked
+      // against the resolved real path so a symlink cannot launder a live
+      // dotenv file behind a template name.
+      return !(await isCommittedDotEnvTemplate({
+        sandbox,
+        absolutePath: realPath ?? absolutePath,
+        workingDirectory,
+      }));
     },
     description: `Write content to a file on the filesystem.
 
@@ -145,15 +160,13 @@ EXAMPLES:
 export const editFileTool = () =>
   tool({
     needsApproval: async ({ filePath }, { experimental_context }) => {
-      if (isDotEnvFilePath(filePath)) {
-        return true;
-      }
-
+      // See the write gate above: the name alone no longer decides, and no
+      // sandbox means fail closed for anything dotenv-shaped.
       let sandbox;
       try {
         sandbox = await getSandbox(experimental_context, "edit");
       } catch {
-        return false;
+        return isDotEnvFilePath(filePath);
       }
       const workingDirectory = sandbox.workingDirectory;
       const absolutePath = resolveWorkspacePath(filePath, workingDirectory);
@@ -167,11 +180,25 @@ export const editFileTool = () =>
         workingDirectory,
       });
 
-      return isSensitiveDotEnvPath({
-        requestedPath: filePath,
-        absolutePath,
-        realPath,
-      });
+      if (
+        !isSensitiveDotEnvPath({
+          requestedPath: filePath,
+          absolutePath,
+          realPath,
+        })
+      ) {
+        return false;
+      }
+
+      // It is dotenv-shaped. Only a template git confirms is committed and
+      // unmodified skips approval; everything else stays gated. Checked
+      // against the resolved real path so a symlink cannot launder a live
+      // dotenv file behind a template name.
+      return !(await isCommittedDotEnvTemplate({
+        sandbox,
+        absolutePath: realPath ?? absolutePath,
+        workingDirectory,
+      }));
     },
     description: `Perform exact string replacement in a file.
 
