@@ -76,15 +76,26 @@ describe("landing product journey (#967)", () => {
   test("every landing sign-in CTA consumes the shared safe GitHub URL", () => {
     expect(PRODUCT_JOURNEY[0].href).toBe(buildGitHubConnectUrl("/sessions"));
 
-    for (const file of [
-      "../auth/signed-out-hero.tsx",
-      "nav.tsx",
-      "bento.tsx",
-    ]) {
+    for (const file of ["nav.tsx", "bento.tsx"]) {
       const value = readFileSync(join(landingDir, file), "utf8");
       expect(value).toContain("callbackUrl={PRODUCT_JOURNEY[0].href}");
       expect(value).not.toContain("/get-started?step=github");
     }
+
+    // signed-out-hero.tsx passes a variable rather than the literal, because
+    // #793 lets a mobile deep link supply its own destination through a `next`
+    // param. What this guard protects is unchanged: the CTA must still fall
+    // back to the shared safe URL, and must not hand-roll one. Assert the
+    // default and the sanitiser rather than the call site's spelling.
+    const hero = readFileSync(
+      join(landingDir, "../auth/signed-out-hero.tsx"),
+      "utf8",
+    );
+    expect(hero).not.toContain("/get-started?step=github");
+    expect(hero).toContain("return PRODUCT_JOURNEY[0].href;");
+    expect(hero).toContain(
+      "sanitizeInternalRedirect(nextParam, PRODUCT_JOURNEY[0].href)",
+    );
   });
 
   test("labels every simulated activity as an illustrative example", () => {

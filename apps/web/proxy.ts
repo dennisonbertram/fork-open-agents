@@ -10,11 +10,18 @@ function wantsSharedMarkdown(acceptHeader: string | null): boolean {
 }
 
 export function proxy(request: NextRequest) {
+  const pathname = request.nextUrl.pathname;
+
+  if (pathname.startsWith("/m/")) {
+    const requestHeaders = new Headers(request.headers);
+    requestHeaders.set("x-invoke-path", `${pathname}${request.nextUrl.search}`);
+    return NextResponse.next({ request: { headers: requestHeaders } });
+  }
+
   if (request.method !== "GET") {
     return NextResponse.next();
   }
 
-  const pathname = request.nextUrl.pathname;
   const segments = pathname.split("/").filter(Boolean);
 
   if (
@@ -31,5 +38,5 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/shared/:path*"],
+  matcher: ["/shared/:path*", "/m/:path*"],
 };

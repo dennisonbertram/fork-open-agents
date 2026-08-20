@@ -1,3 +1,4 @@
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 import { getServerSession } from "@/lib/session/get-server-session";
@@ -21,7 +22,9 @@ export default async function MobileLayout({ children }: MobileLayoutProps) {
   const session = await getServerSession();
 
   if (!session?.user) {
-    redirect("/");
+    const requestHeaders = await headers();
+    const originalPath = requestHeaders.get("x-invoke-path");
+    redirect(originalPath ? `/?next=${encodeURIComponent(originalPath)}` : "/");
   }
 
   return (
