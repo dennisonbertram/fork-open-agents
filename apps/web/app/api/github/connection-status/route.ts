@@ -13,6 +13,7 @@ import {
 import { getUserGitHubToken } from "@/lib/github/token";
 import { getGitHubUsername, hasGitHubAccount } from "@/lib/github/users";
 import { getServerSession } from "@/lib/session/get-server-session";
+import { shouldBypassGitHubReconnectForTestAuth } from "@/lib/session/test-auth";
 
 export async function GET() {
   const session = await getServerSession();
@@ -22,6 +23,15 @@ export async function GET() {
       { error: "Not authenticated", errorKind: "unauthorized" },
       { status: 401 },
     );
+  }
+
+  if (shouldBypassGitHubReconnectForTestAuth(session.user.id)) {
+    return NextResponse.json({
+      status: "connected",
+      reason: null,
+      hasInstallations: true,
+      syncedInstallationsCount: 0,
+    } satisfies GitHubConnectionStatusResponse);
   }
 
   const [linked, installations] = await Promise.all([

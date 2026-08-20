@@ -125,6 +125,8 @@ Before opening the browser:
    does not require OAuth provider behavior:
 
    ```bash
+   curl -sS -D - http://localhost:3001/api/dev/test-auth -o /dev/null
+   # or, when driving agent-browser directly:
    agent-browser --session local-ui cookies set open_agents_test_user_id dev-managed-runtime-user --url http://localhost:3001 --path / --sameSite Lax
    ```
 
