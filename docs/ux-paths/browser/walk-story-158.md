@@ -81,6 +81,68 @@ Do **not** add it to Production. After the `dev` deploy finishes:
   until a release) or JSON 404 (guard) if the flag is ever set there by
   mistake
 
+### Operator action 2026-08-20 ~21:17 UTC — target list only
+
+The laptop printed `vercel target list` successfully:
+
+```text
+Target Name   Branch Tracking               Type          Updated
+Production    main                          Production    -
+Preview       All unassigned git branches   Preview       -
+Development   Accessible via CLI            Development   -
+dev           develop                       Preview       80d
+```
+
+That confirms the custom `dev` environment exists, tracks `develop`, and
+is typed as Preview (`VERCEL_ENV` will be `preview` there — the
+production hard-guard does not fire). **Updated: 80d** means branch
+tracking has not deployed this target in ~80 days, which is why merging
+#1390 to `develop` did not move `open-agents-env-dev-…`.
+
+The paste then shows a second `Vercel CLI 56.5.0` banner and stops. There
+is no `✓ Added` for `dev`, no `git pull` output, and no
+`vercel deploy --target=dev` URL. Reprobe at 2026-08-20 21:20 UTC:
+
+| Target | Result |
+| --- | --- |
+| Dev `open-agents-env-dev-…` | Still HTML 404, `dpl_4j7yWJeZCNtkPi5qGJjZUiNPL2C5`, cache HIT |
+| GitHub deployments | Newest is Preview `1e231064` (#1391), not a `dev` deploy |
+| Production | Still HTML 404 |
+
+Run the remaining commands **one at a time** and paste the full output
+of each. A multi-command paste can stop after `target list`.
+
+```bash
+vercel env ls dev --scope dennisons-projects --project open-agents
+```
+
+Look for `OPEN_AGENTS_ENABLE_TEST_AUTH`. If it is missing:
+
+```bash
+vercel env add OPEN_AGENTS_ENABLE_TEST_AUTH dev \
+  --scope dennisons-projects \
+  --project open-agents \
+  --value 1 \
+  --yes \
+  --no-sensitive
+```
+
+If the CLI says the name already exists, add the `dev` target on the
+existing row in the Vercel dashboard (Project → Settings → Environment
+Variables) instead of creating a second name. Then, only after `✓ Added`
+or a dashboard save:
+
+```bash
+cd ~/develop && git checkout develop && git pull
+vercel deploy --target=dev \
+  --scope dennisons-projects \
+  --project open-agents \
+  --yes
+```
+
+Wait for that deploy to finish (minutes, not seconds). The command must
+print a deployment URL. Then this agent can probe again.
+
 ## Walk
 
 Bootstrap: `agent-browser` opened `/api/dev/test-auth?next=/sessions` → 307 →

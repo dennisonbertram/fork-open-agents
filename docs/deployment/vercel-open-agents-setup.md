@@ -32,6 +32,10 @@ pull`. Vars for the stable Dev URL must be added to `dev`, then deployed
 with `vercel deploy --target=dev`. A merge to `develop` is not by itself
 proof that `open-agents-env-dev-…` is on that commit.
 
+As of 2026-08-20, `vercel target list` on `dennisons-projects/open-agents`
+showed `dev` tracking `develop` (type Preview) with **Updated 80d**. Treat
+that as stale until a new `vercel deploy --target=dev` finishes.
+
 Stable dev alias:
 
 ```text

@@ -77,7 +77,10 @@ Dated epic and sweep sections:
   (`open-agents-env-dev-dennisons-projects.vercel.app`) is the custom
   environment named `dev` with its own var scope. After adding a var,
   deploy current `develop` with `vercel deploy --target=dev`. Do not
-  `vercel redeploy` the previous HTML-404 deployment id.
+  `vercel redeploy` the previous HTML-404 deployment id. Branch
+  tracking is not proof of freshness: `vercel target list` showed this
+  project’s `dev` target Updated **80d** after `develop` had already
+  received #1390.
 
 - **A fake GitHub token bricks the demo user.**
   `GitHubReconnectGate` has no dismiss control (STORY-024). Seed the

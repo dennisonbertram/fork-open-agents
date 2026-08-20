@@ -26,3 +26,6 @@ Short cross-cutting notes. Detailed entries live in
   needs `vercel env add … dev` and a new `vercel deploy --target=dev`
   from current `develop`. Redeploying the old `dpl_4j7yWJe…` URL would
   keep the missing route.
+- Custom `dev` can be branch-matched to `develop` and still be stale.
+  `vercel target list` showed `dev` Updated **80d** after #1390 merged.
+  Do not treat a develop merge as a Dev deploy.

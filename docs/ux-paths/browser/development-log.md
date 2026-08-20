@@ -9,6 +9,10 @@
 - Operator added `OPEN_AGENTS_ENABLE_TEST_AUTH=1` on Vercel
   `development` (2026-08-20 22:52 local). Reprobed: Dev still HTML 404
   on `dpl_4j7yWJeZCNtkPi5qGJjZUiNPL2C5`. Production unchanged.
+- Operator `vercel target list` (2026-08-20 ~21:17 UTC): `dev` exists,
+  tracks `develop`, type Preview, Updated **80d**. Paste stopped after
+  the list; no env-add success and no `deploy --target=dev`. Reprobe
+  21:20 UTC still the old Dev deploy.
 
 ## Incorrect assumptions
 
@@ -21,6 +25,9 @@
 4. Assumed `vercel env add … development` arms the stable Dev URL.
    Wrong: that is Vercel’s built-in Development scope. The URL
    `open-agents-env-dev-…` is the custom environment named `dev`.
+5. Assumed `dev` branch-tracking `develop` would deploy on merge.
+   Wrong: `vercel target list` shows `dev` Updated **80d**. A merge to
+   `develop` is not a Dev deploy.
 
 ## Global learnings
 
