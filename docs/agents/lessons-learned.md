@@ -53,10 +53,29 @@ Dated epic and sweep sections:
 
 ## Auth / OAuth
 
+- **Test-auth Sign out is a no-op unless the cookie is cleared.**
+  `signOut` clears the Better Auth session and redirects to `/`, but leaves
+  `open_agents_test_user_id` in place. With `NODE_ENV=development` (or
+  `OPEN_AGENTS_ENABLE_TEST_AUTH=1`), `/` immediately re-authenticates and
+  redirects to `/sessions`. Clear the cookie on sign-out when test-auth is
+  enabled (#1386). Never enable test-auth on Production.
+- **GitHubReconnectGate blocks the whole app on `token_unavailable`.**
+  Seeding a GitHub `accounts` row with a fake token is enough to pass
+  `needsOnboarding`, then the reconnect dialog appears with no dismiss control
+  (STORY-024). UX walks need a real token or a mocked
+  `/api/github/connection-status`.
 - For local Vercel sign-in, the Vercel OAuth app must register the exact Better Auth callback `http://localhost:3000/api/auth/callback/vercel` alongside the production callback. In production, `BETTER_AUTH_URL` pins Vercel sign-in to the canonical callback; in local development without `BETTER_AUTH_URL`, the app derives `redirect_uri` from the request host. Verify behavior by POSTing to `/api/auth/sign-in/social` and checking the returned Vercel URL.
 
 ## Next.js
 
+- **`/[username]/[repo]` will claim incomplete product paths.**
+  `/automations/background-agent` (no `[agentId]`) matches the shorthand repo
+  route as `automations/background-agent` and hits the GitHub API (#1385).
+  Reserved first segments must be excluded or given their own pages.
+- **Missing-session not-found is branded now.**
+  `app/sessions/not-found.tsx` makes flow-critique F-025 / STORY-1203 outdated;
+  dead `/shared/[shareId]` links still fall through to the unbranded Next 404
+  (#1384, #1387).
 - In Next.js App Router, dynamic route param names must match the folder segment exactly (e.g. `[sessionId]` requires `params.sessionId`, not `params.id`), or DB queries can receive `undefined` and fail at runtime.
 - Some planning docs still reference legacy `apps/web/app/tasks/[id]/...` paths; current UI/API code is centered on `apps/web/app/sessions/[sessionId]/chats/[chatId]/...`, so verify file paths before implementing plan items.
 - Next.js `after()` defers callbacks until the response is fully sent; for streaming endpoints this means `after()` runs after the entire stream completes, not at call time. Use fire-and-forget (`void run()`) for lifecycle kicks that must happen at request start.

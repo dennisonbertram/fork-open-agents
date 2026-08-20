@@ -258,6 +258,16 @@ bun run ci                 # full CI: check, typecheck, tests, migration check
 bun run sandbox:snapshot-base  # refresh sandbox base snapshot
 ```
 
+## UX path catalog
+
+The browser UX story catalog lives at
+[`docs/ux-paths/browser/catalog.md`](docs/ux-paths/browser/catalog.md)
+(187 journeys). The first live browser walk of that catalog is
+[`docs/ux-paths/browser/walk-2026-08-20.md`](docs/ux-paths/browser/walk-2026-08-20.md).
+Whether a cloud Open Agents session can walk those journeys itself is assessed
+(and currently blocked) in
+[`docs/plans/cloud-ux-walk.md`](docs/plans/cloud-ux-walk.md).
+
 ## Repo layout
 
 ```text
