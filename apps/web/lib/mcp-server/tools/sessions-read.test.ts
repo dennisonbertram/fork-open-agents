@@ -414,6 +414,7 @@ describe("listSessions", () => {
           latestChatId: "chat-1",
           lastActivityAt: justNow,
           label: "auth-refactor-2026-08-14",
+          lastRunStatus: "completed",
         },
       ];
     });
@@ -439,6 +440,7 @@ describe("listSessions", () => {
       // the write path enforces — so `resumable` tracks filing, not workspace.
       resumable: true,
       activity: "working",
+      lastRunOutcome: "completed",
       repo: "acme/widgets",
       branch: "main",
       linesAdded: 0,
@@ -882,6 +884,120 @@ describe("listSessions", () => {
     expect(countSessionsByUserId).toHaveBeenCalledWith("user-1", {
       status: "active",
     });
+  });
+});
+
+// A dispatcher fanning out several sessions polls list_sessions, not
+// get_session per session (an N+1 poll). Before this, `lastRunOutcome` was
+// only on get_session's output, so a stalled run (`activity: "idle"`,
+// `state: "active"` — indistinguishable from a healthy finish) was invisible
+// to that poll. list_sessions must expose the same field, with the same
+// vocabulary and the same null-when-never-run rule.
+describe("listSessions lastRunOutcome", () => {
+  function buildListRow(overrides: Record<string, unknown> = {}) {
+    return {
+      id: "session-1",
+      title: "Fix bug",
+      status: "running",
+      repoOwner: null,
+      repoName: null,
+      branch: null,
+      linesAdded: 0,
+      linesRemoved: 0,
+      prNumber: null,
+      prStatus: null,
+      createdAt: new Date("2026-01-01T00:00:00Z"),
+      hasUnread: false,
+      hasStreaming: false,
+      latestChatId: null,
+      lastActivityAt: new Date("2026-01-01T00:00:00Z"),
+      ...overrides,
+    };
+  }
+
+  test("reports null for a session that has never run", async () => {
+    const { listSessions } = await toolsModulePromise;
+    getSessionsWithUnreadByUserId.mockImplementation(async () => [
+      buildListRow({ lastRunStatus: null }),
+    ]);
+
+    const result = await listSessions(makeCtx({}), {
+      status: "active",
+      limit: 20,
+      offset: 0,
+    });
+
+    expect(result.sessions[0]?.lastRunOutcome).toBeNull();
+  });
+
+  test("reports a stall value (awaiting_tool_approval), not just idle activity", async () => {
+    const { listSessions } = await toolsModulePromise;
+    getSessionsWithUnreadByUserId.mockImplementation(async () => [
+      buildListRow({ lastRunStatus: "awaiting_tool_approval" }),
+    ]);
+
+    const result = await listSessions(makeCtx({}), {
+      status: "active",
+      limit: 20,
+      offset: 0,
+    });
+
+    expect(result.sessions[0]?.lastRunOutcome).toBe("awaiting_tool_approval");
+  });
+
+  test("a fan-out poll can tell a stalled session apart from a healthy idle finish, which activity alone cannot", async () => {
+    const { listSessions } = await toolsModulePromise;
+    getSessionsWithUnreadByUserId.mockImplementation(async () => [
+      buildListRow({
+        id: "session-stalled",
+        lastRunStatus: "awaiting_tool_approval",
+      }),
+      buildListRow({ id: "session-finished", lastRunStatus: "completed" }),
+    ]);
+
+    const result = await listSessions(makeCtx({}), {
+      status: "active",
+      limit: 20,
+      offset: 0,
+    });
+
+    // Neither row has a live run slot, so both report the same idle activity —
+    // only lastRunOutcome tells the stall apart from the finish.
+    expect(result.sessions[0]?.activity).toBe("idle");
+    expect(result.sessions[1]?.activity).toBe("idle");
+    expect(result.sessions[0]?.lastRunOutcome).toBe("awaiting_tool_approval");
+    expect(result.sessions[1]?.lastRunOutcome).toBe("completed");
+  });
+
+  test("list_sessions' real result conforms to its advertised outputSchema for every outcome", async () => {
+    const { listSessions, sessionReadTools } = await toolsModulePromise;
+    const listSessionsDef = sessionReadTools.find(
+      (def) => def.name === "open_agents_list_sessions",
+    );
+    if (!listSessionsDef) {
+      throw new Error("open_agents_list_sessions not registered");
+    }
+
+    for (const status of [
+      null,
+      "completed",
+      "awaiting_tool_approval",
+      "no_progress_fuse",
+      "diff_violation",
+    ] as const) {
+      getSessionsWithUnreadByUserId.mockImplementation(async () => [
+        buildListRow({ lastRunStatus: status }),
+      ]);
+
+      const result = await listSessions(makeCtx({}), {
+        status: "active",
+        limit: 20,
+        offset: 0,
+      });
+
+      const parsed = listSessionsDef.outputSchema.safeParse(result);
+      expect(parsed.success).toBe(true);
+    }
   });
 });
 

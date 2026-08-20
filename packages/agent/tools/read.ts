@@ -2,6 +2,7 @@ import { tool } from "ai";
 import { z } from "zod";
 import { getSandbox, toDisplayPath } from "./utils";
 import {
+  isCommittedDotEnvTemplate,
   isDotEnvFilePath,
   isSensitiveDotEnvPath,
   resolveSandboxRealPath,
@@ -27,15 +28,15 @@ const readInputSchema = z.object({
 export const readFileTool = () =>
   tool({
     needsApproval: async ({ filePath }, { experimental_context }) => {
-      if (isDotEnvFilePath(filePath)) {
-        return true;
-      }
-
+      // A dotenv name alone no longer decides. The sandbox is needed either
+      // way: to resolve symlinks, and to ask git whether a template really is
+      // a committed, unmodified placeholder. No sandbox means fail closed for
+      // anything dotenv-shaped.
       let sandbox;
       try {
         sandbox = await getSandbox(experimental_context, "read");
       } catch {
-        return false;
+        return isDotEnvFilePath(filePath);
       }
       const workingDirectory = sandbox.workingDirectory;
       const absolutePath = resolveWorkspacePath(filePath, workingDirectory);
@@ -49,11 +50,25 @@ export const readFileTool = () =>
         workingDirectory,
       });
 
-      return isSensitiveDotEnvPath({
-        requestedPath: filePath,
-        absolutePath,
-        realPath,
-      });
+      if (
+        !isSensitiveDotEnvPath({
+          requestedPath: filePath,
+          absolutePath,
+          realPath,
+        })
+      ) {
+        return false;
+      }
+
+      // It is dotenv-shaped. Only a template git confirms is committed and
+      // unmodified skips approval; everything else stays gated. Checked
+      // against the resolved real path so a symlink cannot launder a live
+      // dotenv file behind a template name.
+      return !(await isCommittedDotEnvTemplate({
+        sandbox,
+        absolutePath: realPath ?? absolutePath,
+        workingDirectory,
+      }));
     },
     description: `Read a file from the filesystem.
 

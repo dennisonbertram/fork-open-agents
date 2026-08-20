@@ -87,6 +87,7 @@ import {
 } from "@/lib/chat/headless-progress-budget";
 import {
   buildDiffAcceptanceViolationMessage,
+  buildHeadlessAwaitingApprovalMessage,
   buildHeadlessNoFileChangesMessage,
   buildMaxStepsMessage,
   buildRunEndedUnexpectedlyMessage,
@@ -3091,7 +3092,13 @@ export async function runAgentWorkflow(options: Options) {
           ? buildTruncatedMessage()
           : workflowRunOutcomeStatus === "ended_unexpectedly"
             ? buildRunEndedUnexpectedlyMessage()
-            : null;
+            : // An approval stall is a real pause when someone is watching and
+              // a dead end when nobody is. Only say so in the headless case,
+              // so an attended run's approval prompt is left alone.
+              workflowRunOutcomeStatus === "awaiting_tool_approval" &&
+                isHeadlessRun
+              ? buildHeadlessAwaitingApprovalMessage()
+              : null;
     if (outcomeMessage) {
       await sendTextMessage(
         writable,

@@ -63,8 +63,13 @@ export const bashTool = (options?: ToolOptions) =>
       //   - local bash effects (bashPolicy) stay inside the ephemeral
       //     per-session sandbox -> auto-approve.
       //   - the git-push family (gitPushPolicy) mutates state that outlives
-      //     the sandbox -> keep gated; the unattended loop denies it with a
-      //     recorded reason.
+      //     the sandbox -> keep gated.
+      //
+      // Keeping it gated in an unattended run ENDS the run: there is no
+      // non-browser path that resolves a pending approval, so the run stops
+      // with outcome `awaiting_tool_approval` and explains itself. An earlier
+      // version of this comment claimed "the unattended loop denies it with a
+      // recorded reason" — no such loop exists. Do not rely on one.
       if (getUnattended(experimental_context)) {
         return decision.category === "git-force-push";
       }
