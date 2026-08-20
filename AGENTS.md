@@ -293,6 +293,30 @@ bun run test:verbose path/to/file.test.ts             # Same verbose output for 
 - Railway CLI auth and install state are separate from project linking. Use `railway whoami --json` to verify auth; `railway status --json` only works after this repo is linked to the correct Railway project.
 - Do not link or deploy to Railway based on a guessed project name. Confirm the project URL or project ID first, then use `railway link <project-id>` or explicit `--project`/`--environment` flags.
 
+## Cursor Cloud specific instructions
+
+For Cursor Cloud Agent VMs, the environment snapshot already provides Bun, a
+local PostgreSQL 16 cluster (role/db `open_agents`), a local-dev
+`apps/web/.env.local`, and installed dependencies. The startup update script
+only runs `bun install --frozen-lockfile`. Full details, recovery commands, and
+validation results are in
+[Cloud Agent Environment](docs/process/cloud-agent-environment.md).
+
+Non-obvious gotchas for this VM:
+
+- **Postgres is not auto-started.** Run `sudo pg_ctlcluster 16 main start`
+  before DB work or `bun run web`.
+- **Do not use `bun --bun run` here.** The `--bun` `ultracite` path hangs (10+
+  min at 100% CPU). Use plain `bun run check` / `bun run typecheck` /
+  `bun run ci` (they finish in seconds). The "Codex/recovery-safe" `--bun`
+  guidance elsewhere in this file does not apply on the cloud VM.
+- **Sign-in is OAuth-only** (Vercel + GitHub) with no OAuth credentials
+  configured, so interactive login and the model/GitHub/sandbox paths behind it
+  cannot run without added secrets. Unauthenticated DB-writing paths (e.g.
+  `POST /api/auth/mcp/register`) do work for a quick app↔DB smoke.
+- **Flaky test:** `bun run test:isolated` can show one timeout in
+  `packages/agent/tools/tools.test.ts`; it passes when re-run in isolation.
+
 ## Production Operations
 
 For production deploys, incidents, release promotion, or agent-ready ops
