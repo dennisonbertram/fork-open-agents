@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
+  buildHeadlessAwaitingApprovalMessage,
   buildDiffAcceptanceViolationMessage,
   buildHeadlessNoFileChangesMessage,
   buildMaxStepsMessage,
@@ -194,5 +195,21 @@ describe("caller-supplied no-diff allowance (#1307 follow-up)", () => {
   test("false and undefined mean the fuse is not armed at all", () => {
     expect(resolveStepsWithoutDiffAllowance(false)).toBeNull();
     expect(resolveStepsWithoutDiffAllowance(undefined)).toBeNull();
+  });
+});
+
+describe("buildHeadlessAwaitingApprovalMessage", () => {
+  test("says the run is over, not paused, and why nobody can resume it", () => {
+    const message = buildHeadlessAwaitingApprovalMessage();
+
+    // The failure this fixes: the run looked like a pause a human could
+    // return to. Headless, it is terminal — nobody is attached to approve.
+    expect(message).toContain("No human is attached");
+    expect(message).toContain("cannot be resumed by approving");
+  });
+
+  test("tells the caller what to change, not just that it stopped", () => {
+    const message = buildHeadlessAwaitingApprovalMessage();
+    expect(message.toLowerCase()).toContain("re-dispatch");
   });
 });

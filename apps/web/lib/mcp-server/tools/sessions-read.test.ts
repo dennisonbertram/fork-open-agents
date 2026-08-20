@@ -414,6 +414,7 @@ describe("listSessions", () => {
           latestChatId: "chat-1",
           lastActivityAt: justNow,
           label: "auth-refactor-2026-08-14",
+          lastRunStatus: "completed",
         },
       ];
     });

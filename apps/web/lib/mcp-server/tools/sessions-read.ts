@@ -112,6 +112,14 @@ export type McpSessionSummary = {
   workspace: McpWorkspaceState;
   resumable: boolean;
   activity: McpActivityState;
+  /** How the session's most recently recorded run ended, or null when it has
+   * no run yet. A third axis, distinct from `state` and `activity` — see
+   * `toLastRunOutcome` in session-state.ts. Caution when reading alongside
+   * `activity`: at turn end `activity` clears to idle a moment before this
+   * field is written, so a just-finished session can briefly pair
+   * `activity: "idle"` with a null here, same as a never-run session — re-read
+   * shortly before concluding "never ran". */
+  lastRunOutcome: McpLastRunOutcome | null;
   repo: string | null;
   branch: string | null;
   linesAdded: number;
@@ -463,6 +471,7 @@ function toSessionSummary(row: SessionWithUnreadRow): McpSessionSummary {
       // behind a fresh message on another.
       lastActivityAt: row.activeRunSlotAt,
     }),
+    lastRunOutcome: toLastRunOutcome(row.lastRunStatus),
     repo: toRepo(row.repoOwner, row.repoName),
     branch: row.branch,
     linesAdded: row.linesAdded ?? 0,
@@ -844,8 +853,10 @@ export async function getSession(
   ]);
   const chats = chatRows.map((chat) => toChatSummary(record.id, chat));
   const state = toSessionState(record.status);
-  // get_session only, never list_sessions — see getLatestWorkflowRunStatusBySessionId's
-  // own doc comment for why this single lookup doesn't become an N+1.
+  // get_session's own single-row lookup only, per its own doc comment —
+  // list_sessions gets the same field from a batched join in
+  // getSessionsWithUnreadByUserId (lib/db/sessions.ts) instead, so neither
+  // path turns a page of sessions into an N+1.
   const lastRunStatus = await getLatestWorkflowRunStatusBySessionId(record.id);
 
   return {
@@ -1159,6 +1170,7 @@ const sessionSummaryOutputSchema = z.object({
   workspace: workspaceStateOutputSchema,
   resumable: z.boolean(),
   activity: activityStateOutputSchema,
+  lastRunOutcome: lastRunOutcomeOutputSchema,
   repo: z.string().nullable(),
   branch: z.string().nullable(),
   linesAdded: z.number(),
@@ -1314,7 +1326,7 @@ export const sessionReadTools: readonly AnyMcpToolDefinition[] = [
     name: "open_agents_list_sessions",
     title: "List Open Agents Sessions",
     description:
-      "List the caller's coding sessions in Open Agents — this MCP server's own sessions, not the calling client's own session — with lightweight `state`, `workspace`, `resumable`, and `activity` fields plus repo and PR summaries. `state` (active/archived) is filing and matches the `status` input filter. `workspace` is the sandbox's own status (ready, hibernated, provisioning, restoring, failed, or none): only ready means a sandbox is live right now, and hibernated is the normal resting state — the sandbox is parked to stop billing and is restored automatically on the next message. `resumable` is true for every non-archived session, whatever its `workspace` says, because accepting new work is gated on filing alone; a hibernated or failed workspace is rebuilt on demand. `activity` is working only while a run is genuinely live. Pass `label` to narrow the page (and `total`) to sessions sharing that exact free-text tag — the same one `open_agents_start_session` accepts — which is how a client that did not start a fan-out batch can find it later. `sort` picks the page order (default `created_desc`); every option is stable across pages, so paging until offset + returned reaches total never skips or repeats a row even when several sessions share a timestamp. Returns `returned` (rows on this page) and `total` (all sessions matching the same status/label filters).",
+      "List the caller's coding sessions in Open Agents — this MCP server's own sessions, not the calling client's own session — with lightweight `state`, `workspace`, `resumable`, `activity`, and `lastRunOutcome` fields plus repo and PR summaries. `state` (active/archived) is filing and matches the `status` input filter. `workspace` is the sandbox's own status (ready, hibernated, provisioning, restoring, failed, or none): only ready means a sandbox is live right now, and hibernated is the normal resting state — the sandbox is parked to stop billing and is restored automatically on the next message. `resumable` is true for every non-archived session, whatever its `workspace` says, because accepting new work is gated on filing alone; a hibernated or failed workspace is rebuilt on demand. `activity` is working only while a run is genuinely live. `lastRunOutcome` is a third, distinct axis from `state` and `activity`, reusing get_session's own vocabulary (`completed`, `aborted`, `failed`, the deliberate headless stops such as `no_progress_fuse` and `awaiting_tool_approval`, and the rest — see open_agents_get_session's description for the full list) or null when the session has no run yet. This is the field to check when fanning out several sessions: `activity: \"idle\"` alone cannot tell a healthy finish apart from a run stalled waiting on something, such as `awaiting_tool_approval` — only `lastRunOutcome` does. Same transient as get_session: `activity` clears to idle a moment before `lastRunOutcome` is written, so a just-finished session can briefly pair `activity: \"idle\"` with a null `lastRunOutcome`, indistinguishable from never-run; re-read shortly rather than concluding never-run. Pass `label` to narrow the page (and `total`) to sessions sharing that exact free-text tag — the same one `open_agents_start_session` accepts — which is how a client that did not start a fan-out batch can find it later. `sort` picks the page order (default `created_desc`); every option is stable across pages, so paging until offset + returned reaches total never skips or repeats a row even when several sessions share a timestamp. Returns `returned` (rows on this page) and `total` (all sessions matching the same status/label filters).",
     scope: SESSION_READ_SCOPE,
     inputSchema: listSessionsInputSchema,
     outputSchema: listSessionsOutputSchema,
