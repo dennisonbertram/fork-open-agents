@@ -288,10 +288,21 @@ describe("tools execute behavior", () => {
 
     const nestedDotenvApproval = await getNeedsApprovalResult(
       readFileTool().needsApproval,
-      { filePath: "apps/web/.env.example" },
+      { filePath: "apps/web/.env.production" },
       baseContext,
     );
     expect(nestedDotenvApproval).toBe(true);
+
+    // A template skips approval only when git confirms it is committed and
+    // unmodified. This fixture's sandbox has no `exec`, so the check cannot
+    // run and the file stays gated — fail closed is the point. The confirmed
+    // and unconfirmed cases are covered in path-security.test.ts.
+    const unverifiableTemplateApproval = await getNeedsApprovalResult(
+      readFileTool().needsApproval,
+      { filePath: "apps/web/.env.example" },
+      baseContext,
+    );
+    expect(unverifiableTemplateApproval).toBe(true);
 
     const regularFileApproval = await getNeedsApprovalResult(
       readFileTool().needsApproval,

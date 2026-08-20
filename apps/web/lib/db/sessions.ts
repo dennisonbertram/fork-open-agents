@@ -26,6 +26,7 @@ import {
   type NewShare,
   sessions,
   shares,
+  workflowRuns,
 } from "./schema";
 
 function sanitizeChatMessageData(data: NewChatMessage): NewChatMessage {
@@ -282,6 +283,15 @@ export type SessionWithUnread = SessionSidebarFields & {
   latestChatId: string | null;
   lastActivityAt: Date;
   /**
+   * Raw `workflow_runs.status` for the session's most recently recorded run,
+   * or null when it has never run. Mapped to the MCP `lastRunOutcome`
+   * vocabulary at the read boundary (`toLastRunOutcome`) — same field
+   * `getLatestWorkflowRunStatusBySessionId` backs for get_session, but
+   * fetched here as one batched join instead of a per-session lookup so a
+   * page of sessions never becomes an N+1.
+   */
+  lastRunStatus: string | null;
+  /**
    * Sessions matching this query's filter, ignoring limit/offset.
    *
    * Window functions run after GROUP BY but before LIMIT/OFFSET, so this is
@@ -404,10 +414,21 @@ export async function getSessionsWithUnreadByUserId(
         ARRAY_AGG(${chats.id} ORDER BY ${chats.updatedAt} DESC, ${chats.createdAt} DESC)
         FILTER (WHERE ${chats.id} IS NOT NULL)
       )[1]`,
+      // Same "latest by timestamp" technique as `latestChatId` above, applied
+      // to the session's workflow runs instead of its chats: order the
+      // aggregated statuses by run recency and take the first. Duplication
+      // from the `chats` fan-out doesn't corrupt this — every duplicate of the
+      // most-recent run's status still sorts to the front, so `[1]` is
+      // unaffected by how many chat rows it was paired with pre-aggregation.
+      lastRunStatus: sql<string | null>`(
+        ARRAY_AGG(${workflowRuns.status} ORDER BY ${workflowRuns.createdAt} DESC)
+        FILTER (WHERE ${workflowRuns.id} IS NOT NULL)
+      )[1]`,
       totalCount: sql<number>`COUNT(*) OVER ()::int`,
     })
     .from(sessions)
     .leftJoin(chats, eq(chats.sessionId, sessions.id))
+    .leftJoin(workflowRuns, eq(workflowRuns.sessionId, sessions.id))
     .leftJoin(
       chatReads,
       and(eq(chatReads.chatId, chats.id), eq(chatReads.userId, userId)),
