@@ -260,9 +260,9 @@
       "id": "iss-1389",
       "title": "Unblock the cloud UX walk — safe test-auth + bootstrap",
       "theme": "ux",
-      "column": "In progress",
-      "note": "Implementing epic #1389 slices 1–4 on cursor/cloud-ux-walk-unblock-b536: sign-out clears the test-auth cookie, production VERCEL_ENV hard-refuses test-auth, GET /api/dev/test-auth cookie-only bootstrap, connection-status short-circuit for the test user. Slices 5–6 (Dev env flip + STORY-158 cloud proof) stay operator-blocked.",
-      "link": "https://github.com/dennisonbertram/fork-open-agents/issues/1389"
+      "column": "In review",
+      "note": "PR #1390 implements epic #1389 slices 1–4. Slices 5–6 (Dev env flip + STORY-158 cloud proof) stay operator-blocked.",
+      "link": "https://github.com/dennisonbertram/fork-open-agents/pull/1390"
     },
     {
       "id": "rel-next",
