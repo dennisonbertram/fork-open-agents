@@ -288,10 +288,20 @@ describe("tools execute behavior", () => {
 
     const nestedDotenvApproval = await getNeedsApprovalResult(
       readFileTool().needsApproval,
-      { filePath: "apps/web/.env.example" },
+      { filePath: "apps/web/.env.production" },
       baseContext,
     );
     expect(nestedDotenvApproval).toBe(true);
+
+    // A committed template is not a secret, and gating it stalled a headless
+    // run on an approval nobody could give. See path-security.test.ts for the
+    // full contract, including that `.env.example.local` stays gated.
+    const templateApproval = await getNeedsApprovalResult(
+      readFileTool().needsApproval,
+      { filePath: "apps/web/.env.example" },
+      baseContext,
+    );
+    expect(templateApproval).toBe(false);
 
     const regularFileApproval = await getNeedsApprovalResult(
       readFileTool().needsApproval,
