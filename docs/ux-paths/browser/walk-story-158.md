@@ -143,6 +143,32 @@ vercel deploy --target=dev \
 Wait for that deploy to finish (minutes, not seconds). The command must
 print a deployment URL. Then this agent can probe again.
 
+### Operator action 2026-08-20 ~21:25 UTC — flag is on `dev`
+
+`vercel env ls dev` shows:
+
+```text
+OPEN_AGENTS_ENABLE_TEST_AUTH        Encrypted           dev                                         7m ago
+```
+
+The flag is on the custom `dev` environment only (not Production). That
+closes the env-var half of slice 5. Reprobe at 21:25 UTC: Dev is still
+HTML 404 on `dpl_4j7yWJeZCNtkPi5qGJjZUiNPL2C5`. Adding a var does not
+update a live deployment.
+
+Remaining command (from `~/develop`, after `git checkout develop && git
+pull` so the upload is current `develop`, not a dirty tree):
+
+```bash
+vercel deploy --target=dev \
+  --scope dennisons-projects \
+  --project open-agents \
+  --yes
+```
+
+Wait until it prints a deployment URL. Do not `vercel redeploy` the
+existing `dpl_4j7yWJe…` URL.
+
 ## Walk
 
 Bootstrap: `agent-browser` opened `/api/dev/test-auth?next=/sessions` → 307 →

@@ -13,6 +13,10 @@
   tracks `develop`, type Preview, Updated **80d**. Paste stopped after
   the list; no env-add success and no `deploy --target=dev`. Reprobe
   21:20 UTC still the old Dev deploy.
+- Operator `vercel env ls dev` (~21:25 UTC):
+  `OPEN_AGENTS_ENABLE_TEST_AUTH` is Encrypted, environments `dev`, 7m
+  ago. Reprobe still HTML 404 on `dpl_4j7yWJe…`. Deploy is the remaining
+  step.
 
 ## Incorrect assumptions
 

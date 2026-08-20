@@ -21,7 +21,7 @@ deployed target honors test-auth safely. This plan is the ordered unblock.
 
 | # | Slice | Owner | Why it is still blocked |
 |---|-------|-------|-------------------------|
-| 5 | Enable `OPEN_AGENTS_ENABLE_TEST_AUTH=1` on the custom **`dev`** environment only; delete any stale Preview branch var | Operator | `vercel target list` confirms `dev` tracks `develop` (type Preview, **Updated 80d** — branch tracking is stale). First add went to `development`. The 21:17 UTC paste listed targets then stopped — no `✓ Added` on `dev`, no new deploy. Dev still `dpl_4j7yWJe…` HTML 404. See [STORY-158 walk](../ux-paths/browser/walk-story-158.md) |
+| 5 | Enable `OPEN_AGENTS_ENABLE_TEST_AUTH=1` on the custom **`dev`** environment only; delete any stale Preview branch var | Operator | Flag is on `dev` (`vercel env ls`: Encrypted, `dev` only, 7m ago). Live URL still HTML 404 on `dpl_4j7yWJe…` — needs `vercel deploy --target=dev` from current `develop`. Branch tracking is stale (Updated 80d). See [STORY-158 walk](../ux-paths/browser/walk-story-158.md) |
 | 6 | Prove STORY-158 from an unattended `open_agents_start_session` | After slice 5 | Local walk done (2/2). Cloud/Dev walk not faked |
 
 ## How a cloud walker should authenticate after slice 5
