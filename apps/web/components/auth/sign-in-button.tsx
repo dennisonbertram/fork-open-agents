@@ -59,7 +59,11 @@ export function SignInButton({
     if (typeof window === "undefined") {
       return undefined;
     }
-    return `${window.location.origin}${window.location.pathname}`;
+    // Keep the query. #793 carries the deep-link destination in `?next=`, and
+    // dropping it means a cancelled or rejected sign-in returns to a bare
+    // `/?error=...`, so the retry sees no `next` and silently lands on the
+    // default journey instead of where the user was going.
+    return `${window.location.origin}${window.location.pathname}${window.location.search}`;
   }
 
   function handleSignIn() {
