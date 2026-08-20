@@ -66,7 +66,10 @@ Dated epic and sweep sections:
 - **Cookie-only bootstrap is `GET /api/dev/test-auth`.**
   `/api/dev/managed-runtime-demo` also sets the cookie but provisions a
   sandbox. Browser tools have no cookie API; Playwright honors
-  `Set-Cookie` on navigate, including `?next=/sessions`.
+  `Set-Cookie` on navigate, including `?next=/sessions` (307). Reject
+  `/%5c%5c…` as well as `//` and absolute URLs — URL parsers treat
+  backslashes as an authority separator.
+
 - **A fake GitHub token bricks the demo user.**
   `GitHubReconnectGate` has no dismiss control (STORY-024). Seed the
   demo GitHub account with a null token and short-circuit

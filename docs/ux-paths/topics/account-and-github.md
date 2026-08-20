@@ -68,14 +68,14 @@ All subsequent calls replay `-b cookies.txt`. Steps that redirect to
 
 ### Steps
 1. `GET /api/dev/test-auth` — no body → expect `200` `{ok:true,userId:"dev-managed-runtime-user"}` and `Set-Cookie: open_agents_test_user_id=dev-managed-runtime-user`. (`GET /api/dev/managed-runtime-demo` also sets the cookie but provisions a sandbox — only use it when the story needs the demo runtime.)
-2. `GET /api/auth/info` — cookie → expect `200` `{user:{id:"dev-managed-runtime-user",...},authProvider,isAdmin,hasGitHub:false,hasGitHubAccount:false,hasGitHubInstallations:false}`
+2. `GET /api/auth/info` — cookie → expect `200` `{user:{id:"dev-managed-runtime-user",...},authProvider,isAdmin,hasGitHub:true,hasGitHubAccount:true,hasGitHubInstallations:true}` (the cookie-only seed inserts a GitHub account row and an installation so `GitHubReconnectGate` stays closed; this is not an empty GitHub baseline)
 3. `GET /api/account/status?window=24h` — cookie → expect `200` `{snapshot:{...}}` with empty/zeroed activity
 4. `GET /api/settings/preferences` — cookie → expect `200` `{preferences:{defaultModelId,defaultSandboxType,...}}` (defaults, never created before)
 
 ### Variations
-- `GET /api/dev/test-auth?next=/sessions` → `302` to `/sessions` with the same `Set-Cookie`.
+- `GET /api/dev/test-auth?next=/sessions` → `307` to `/sessions` with the same `Set-Cookie`. Absolute, protocol-relative, and `/%5c%5c…` `next` values are ignored and return the JSON body instead.
 - `GET /api/dev/managed-runtime-demo?profileId=node-22` → sandbox demo payload, demo seeded against that profile.
-- Call step 2 twice; `hasGitHub` must stay `false` (no implicit linking).
+- Call step 2 twice; `hasGitHub` / `hasGitHubAccount` / `hasGitHubInstallations` stay `true` (the seed is idempotent and does not unlink GitHub).
 
 ### Edge Cases
 - Not found: start the server without `OPEN_AGENTS_ENABLE_TEST_AUTH=1` and in `NODE_ENV=production` → `GET /api/dev/test-auth` and `GET /api/dev/managed-runtime-demo` return `404 {"error":"Not found"}`. `VERCEL_ENV=production` also 404s both routes even if the flag is set.

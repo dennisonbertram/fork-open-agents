@@ -12,8 +12,9 @@ slices 1–4. Plan: [docs/plans/cloud-ux-walk.md](../../plans/cloud-ux-walk.md).
 - **New cookie-only bootstrap.** `GET /api/dev/test-auth` (404 unless
   test-auth is enabled) sets the demo cookie and seeds the demo user + a
   GitHub account row + an installation. It does **not** provision a sandbox.
-  `?next=/sessions` redirects after the cookie is set. Absolute and
-  protocol-relative `next` values are ignored.
+  `?next=/sessions` redirects with **307** after the cookie is set. Absolute,
+  protocol-relative, and encoded-backslash (`/%5c%5c…`) `next` values are
+  ignored.
 - **Demo user is not bricked by Reconnect GitHub.** While test-auth is
   enabled, `/api/github/connection-status` reports `connected` for
   `dev-managed-runtime-user` so `GitHubReconnectGate` stays closed.

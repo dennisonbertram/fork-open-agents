@@ -95,8 +95,7 @@ describe("GET /api/dev/test-auth", () => {
       new Request("http://localhost:3000/api/dev/test-auth?next=/sessions"),
     );
 
-    expect(response.status).toBeGreaterThanOrEqual(300);
-    expect(response.status).toBeLessThan(400);
+    expect(response.status).toBe(307);
     expect(response.headers.get("Location")).toBe(
       "http://localhost:3000/sessions",
     );
@@ -121,6 +120,23 @@ describe("GET /api/dev/test-auth", () => {
       userId: "dev-managed-runtime-user",
     });
     expect(response.headers.get("Location")).toBeNull();
+  });
+
+  test("ignores encoded-backslash open redirects and returns JSON instead", async () => {
+    process.env.OPEN_AGENTS_ENABLE_TEST_AUTH = "1";
+    const { GET } = await routeModulePromise;
+    const response = await GET(
+      new Request(
+        "http://localhost:3000/api/dev/test-auth?next=/%5c%5cevil.example",
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Location")).toBeNull();
+    expect(await response.json()).toEqual({
+      ok: true,
+      userId: "dev-managed-runtime-user",
+    });
   });
 
   test("the route source never imports sandbox or the managed-runtime demo", async () => {

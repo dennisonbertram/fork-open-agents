@@ -83,7 +83,7 @@ Nearly every route resolves a cookie session through one of two code paths that 
 | GET | /api/composio/status | user | Composio config/live status | query live? | `{status}` |
 | GET | /api/composio/toolkits | user | Toolkit catalog (cached 1h) | none | `{toolkits}` \| 502 |
 | GET | /api/dev/managed-runtime-demo | test-cookie | Dev-only: seed demo session + sandbox + set test-auth cookie | query profileId? | demo payload, sets `open_agents_test_user_id` cookie \| 404 if disabled |
-| GET | /api/dev/test-auth | test-cookie | Dev-only: seed demo user + GitHub rows and set test-auth cookie (no sandbox) | query next? (same-origin relative path) | `{ok,userId}` + `Set-Cookie` \| 302 when `next` is safe \| 404 if disabled |
+| GET | /api/dev/test-auth | test-cookie | Dev-only: seed demo user + GitHub rows and set test-auth cookie (no sandbox) | query next? (same-origin relative path) | `{ok,userId}` + `Set-Cookie` \| 307 when `next` is safe \| 404 if disabled |
 | POST | /api/generate-pr | user+own(session) | Prepare branch + AI-generate PR title/body | `{sessionId,sessionTitle,baseBranch,branchName,createBranchOnly?}` | `{title,body,branchName}` or `{branchName}` \| 400/403/404 |
 | POST | /api/generate-title | user | AI session title from a message | `{message}` | `{title}` \| 400/401/500 |
 | GET | /api/github/app/callback | user (redirect) | GitHub App Setup URL callback | query installation_id?,setup_action?,state | redirect |
