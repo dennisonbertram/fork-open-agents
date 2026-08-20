@@ -261,8 +261,8 @@
       "title": "Unblock the cloud UX walk — safe test-auth + bootstrap",
       "theme": "ux",
       "column": "In review",
-      "note": "PR #1390 merged to develop as f1f918b4. Local STORY-158 walked 2/2. Slice 5 (Dev env var) still needs Vercel auth; Dev URL was still the pre-merge deploy. Cloud slice 6 not faked.",
-      "link": "https://github.com/dennisonbertram/fork-open-agents/pull/1390"
+      "note": "PR #1390 merged to develop as f1f918b4. Local STORY-158 walked 2/2. Operator added OPEN_AGENTS_ENABLE_TEST_AUTH to Vercel development (wrong target). Custom env dev still HTML 404 on dpl_4j7yWJe. Need vercel env add … dev and vercel deploy --target=dev. Cloud slice 6 not faked. Evidence PR #1391.",
+      "link": "https://github.com/dennisonbertram/fork-open-agents/pull/1391"
     },
     {
       "id": "rel-next",

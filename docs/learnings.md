@@ -21,3 +21,8 @@ Short cross-cutting notes. Detailed entries live in
   STORY-158 in 2 steps. A Preview JSON 404 means the route is live and
   the flag is off; a Dev HTML 404 means the merge has not deployed yet.
   This VM cannot flip Vercel env vars (`vercel` logged out).
+- Vercel `development` is not the custom `dev` environment. `vercel env
+  add … development` arms local `vercel dev` only. The stable Dev URL
+  needs `vercel env add … dev` and a new `vercel deploy --target=dev`
+  from current `develop`. Redeploying the old `dpl_4j7yWJe…` URL would
+  keep the missing route.

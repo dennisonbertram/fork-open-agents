@@ -71,6 +71,13 @@ Dated epic and sweep sections:
   backslashes as an authority separator. Locally this unblocks STORY-158
   in two clicks. On Vercel, JSON 404 means the route is deployed and the
   flag is off; HTML 404 means an older build.
+- **Vercel `development` ≠ custom `dev`.**
+  `vercel env add NAME development` writes the built-in Development
+  scope used by `vercel env pull` / `vercel dev`. The stable Dev URL
+  (`open-agents-env-dev-dennisons-projects.vercel.app`) is the custom
+  environment named `dev` with its own var scope. After adding a var,
+  deploy current `develop` with `vercel deploy --target=dev`. Do not
+  `vercel redeploy` the previous HTML-404 deployment id.
 
 - **A fake GitHub token bricks the demo user.**
   `GitHubReconnectGate` has no dismiss control (STORY-024). Seed the

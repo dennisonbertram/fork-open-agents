@@ -18,10 +18,12 @@ session against Dev). That remains blocked on slice 5.
 | Dev `open-agents-env-dev-dennisons-projects.vercel.app` | HTML 404, `x-matched-path: /404`, deploy `dpl_4j7yWJeZCNtkPi5qGJjZUiNPL2C5` | Merge `f1f918b4` had **not** reached this URL yet |
 | Production `open-agents.dev` | HTML 404, `x-matched-path: /404` | Route not in the last Production deploy (`a9e9e780`) — correct until a release |
 
-This VM has no `VERCEL_TOKEN` and `vercel whoami` is logged out. The Dev env
-flip was **not** performed and was **not** faked.
+This VM has no `VERCEL_TOKEN` and `vercel whoami` is logged out. The hosted
+Dev env flip cannot be performed from here.
 
-Operator command once logged in (Development environment only):
+### Operator action 2026-08-20 22:52 local — wrong Vercel target
+
+The logged-in laptop ran:
 
 ```bash
 vercel env add OPEN_AGENTS_ENABLE_TEST_AUTH development \
@@ -31,11 +33,53 @@ vercel env add OPEN_AGENTS_ENABLE_TEST_AUTH development \
   --yes
 ```
 
-Do **not** add it to Production. Redeploy Dev after the var is set. Then
-`GET https://open-agents-env-dev-dennisons-projects.vercel.app/api/dev/test-auth`
-must return `200` + `Set-Cookie`, while `https://open-agents.dev/api/dev/test-auth`
-must stay 404 (route absent until release) or JSON 404 (guard) if someone
-mistakenly sets the flag there.
+CLI 56.5.0 reported: added, project `dennisons-projects/open-agents`,
+environments **Development**, type non-sensitive.
+
+That is Vercel’s built-in `development` scope (the source for `vercel env
+pull` / `vercel dev`). It is **not** the custom environment named `dev`
+that serves
+`https://open-agents-env-dev-dennisons-projects.vercel.app`
+([setup notes](../../deployment/vercel-open-agents-setup.md)).
+
+Reprobe at 2026-08-20 20:54 UTC, after that add:
+
+| Target | `GET /api/dev/test-auth` | Meaning |
+| --- | --- | --- |
+| Dev `open-agents-env-dev-…vercel.app` | HTML 404, `x-matched-path: /404`, still `dpl_4j7yWJeZCNtkPi5qGJjZUiNPL2C5` | Flag is not on this target; this deploy still lacks the route |
+| Production `open-agents.dev` | HTML 404, `x-matched-path: /404` | Unchanged. Do **not** add the flag here |
+| PR Preview `…c05212…` | JSON 404, `x-matched-path: /api/dev/test-auth` | Route live, flag still off (correct) |
+
+`development` may stay set — it helps local `vercel dev`. It does not arm
+the stable Dev URL.
+
+Correct next commands (logged-in laptop, **custom `dev` only**):
+
+```bash
+vercel target list --scope dennisons-projects --project open-agents
+
+vercel env add OPEN_AGENTS_ENABLE_TEST_AUTH dev \
+  --scope dennisons-projects \
+  --project open-agents \
+  --value 1 \
+  --yes
+
+# New deploy from current develop (f1f918b4 or later). Do not
+# vercel redeploy the existing dpl_4j7yWJe… URL — that is the old build.
+cd ~/develop && git checkout develop && git pull
+vercel deploy --target=dev \
+  --scope dennisons-projects \
+  --project open-agents \
+  --yes
+```
+
+Do **not** add it to Production. After the `dev` deploy finishes:
+
+- `GET https://open-agents-env-dev-dennisons-projects.vercel.app/api/dev/test-auth`
+  must return `200` + `Set-Cookie`
+- `https://open-agents.dev/api/dev/test-auth` must stay 404 (route absent
+  until a release) or JSON 404 (guard) if the flag is ever set there by
+  mistake
 
 ## Walk
 

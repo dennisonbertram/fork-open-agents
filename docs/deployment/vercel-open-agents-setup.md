@@ -26,6 +26,12 @@ The `dev` custom environment is branch-matched to `develop` and has its own
 Vercel env-var scope. Production is branch-matched to `main`, so merging a
 feature PR to `develop` should not ship production by itself.
 
+Do not confuse this with Vercel’s built-in `development` environment.
+`vercel env add NAME development` only affects `vercel dev` / `vercel env
+pull`. Vars for the stable Dev URL must be added to `dev`, then deployed
+with `vercel deploy --target=dev`. A merge to `develop` is not by itself
+proof that `open-agents-env-dev-…` is on that commit.
+
 Stable dev alias:
 
 ```text

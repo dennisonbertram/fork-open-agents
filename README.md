@@ -124,12 +124,13 @@ ELEVENLABS_API_KEY=
 - `VERCEL_PROJECT_PRODUCTION_URL` / `NEXT_PUBLIC_VERCEL_PROJECT_PRODUCTION_URL`: canonical production URL for metadata and some callback behavior.
 - `VERCEL_SANDBOX_BASE_SNAPSHOT_ID`: optional base snapshot for fresh sandboxes. If unset, sandboxes start from Vercel's standard Sandbox runtime. Use a snapshot created in/accessible to your own Vercel scope.
 - `ELEVENLABS_API_KEY`: voice transcription.
-- `OPEN_AGENTS_ENABLE_TEST_AUTH`: optional Dev/Preview-only impersonation
-  cookie (`open_agents_test_user_id=dev-managed-runtime-user`). Already on
-  when `NODE_ENV=development`. **Never set this on Production** —
+- `OPEN_AGENTS_ENABLE_TEST_AUTH`: optional impersonation cookie
+  (`open_agents_test_user_id=dev-managed-runtime-user`). Already on
+  when `NODE_ENV=development`. On Vercel, set it on the custom **`dev`**
+  environment (not built-in `development`, not Production).
   `VERCEL_ENV=production` refuses test-auth even if the flag is `1`.
   Cookie-only bootstrap: `GET /api/dev/test-auth` (404 when disabled).
-  See [Cloud UX walk plan](docs/plans/cloud-ux-walk.md) and the local
+  See [Cloud UX walk plan](docs/plans/cloud-ux-walk.md) and the
   [STORY-158 walk](docs/ux-paths/browser/walk-story-158.md).
 
 ## Deploy your own copy on Vercel
