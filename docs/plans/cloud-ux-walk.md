@@ -1,6 +1,6 @@
 # Cloud UX Walk — Feasibility (2026-08-20)
 
-Status: **stopped before building a harness.** Neither authenticated target route works today without significant new infrastructure. Prompt 1's local walk proved the catalog walk is worth automating; this doc records what a cloud session would need before a single story can be proven end-to-end.
+Status: **stopped before building a harness; unblock plan filed as epic [#1389](https://github.com/dennisonbertram/fork-open-agents/issues/1389).** Neither authenticated target route works today without significant new infrastructure. Prompt 1's local walk proved the catalog walk is worth automating; this doc records what a cloud session would need before a single story can be proven end-to-end, and the ordered plan to get there.
 
 Related: [Dogfood The Cloud Loop](../process/dogfood-cloud-fanout.md), [Browser walk 2026-08-20](../ux-paths/browser/walk-2026-08-20.md).
 
@@ -85,8 +85,23 @@ Missing:
 - Whether `open_agents_start_session` MCP from *this* Cursor cloud agent can reach the user's Open Agents deployment (MCP server for Open Agents was not available in this run's tool catalog).
 - Live behavior of browser tools against an external HTTPS origin from inside a real Vercel Sandbox (unit tests mock Playwright).
 
+## Unblock plan (epic #1389)
+
+Durable record: [#1389](https://github.com/dennisonbertram/fork-open-agents/issues/1389). Six ordered PR-sized slices, safety first — each with its acceptance condition written before dispatch, per [Dogfood The Cloud Loop](../process/dogfood-cloud-fanout.md).
+
+| # | Slice | Blocker it removes | Key files | Gate |
+|---|-------|--------------------|-----------|------|
+| 1 | Sign out clears the test-auth cookie ([#1386](https://github.com/dennisonbertram/fork-open-agents/issues/1386)) | Sign out is a no-op under test-auth — unsafe to enable anywhere shared | `lib/auth/actions.ts`, `lib/session/test-auth.ts` | Red test first: sign-out response lacks clearing `Set-Cookie` |
+| 2 | Guard: `isTestAuthEnabled()` hard-refuses when `VERCEL_ENV === "production"` | "Never on Production" is currently a rule, not a guard — `test-auth.ts` has no production check at all | `lib/session/test-auth.ts`, Turbo env allowlist, `.env.example` | [Guard Integrity](../process/guard-integrity.md): refusal proven through `resolve-session`, allow paths proven, mutation-check the guard |
+| 3 | Cookie-only bootstrap route `GET /api/dev/test-auth` | Browser tools have no cookie API; only existing cookie-setter also provisions a sandbox | new `app/api/dev/test-auth/route.ts` + idempotent seed helper | 404 when disabled; cookie + seeded rows + zero sandbox imports when enabled. Works because Playwright honors `Set-Cookie` on `browser_navigate` |
+| 4 | Reconnect gate must not brick the test user | Seeded fake token trips undismissable `GitHubReconnectGate` | (a) `connection-status` short-circuit for `TEST_AUTH_USER_ID` under test-auth, and/or (b) make the dialog dismissible (also fixes real-user STORY-024 trap) | `/sessions` renders for the test user without the blocking dialog |
+| 5 | Ops: `OPEN_AGENTS_ENABLE_TEST_AUTH=1` on **Dev only**; delete the stale 83-day Preview branch var | No deployed authenticated target | Vercel env config (operator action — this agent VM has no Vercel auth) | Curl evidence: test cookie authenticates on Dev, refused on Production (slice 2 guard verified live first) |
+| 6 | Prove ONE story (STORY-158) from an unattended cloud session | Nothing proven end-to-end | walk prompt via `open_agents_start_session` | Transcript with ≥4 inline PNGs, actual-vs-ideal 2 vs 2, `sandbox_browser_runs` rows |
+
+Ordering rationale: slices 1–2 make test-auth safe to exist anywhere shared; 3–4 make a browser session able to authenticate and stay unblocked; 5 is the only shared-environment change and lands after the guard; 6 is the proof. Scale work (Chromium in the base snapshot, story-runner template, disposable repo, inference creds) stays behind slice 6 as follow-up tickets — see the epic.
+
 ## Recommendation
 
 1. Ship Prompt 1's filed issues (#1384–#1387); they unblock real users without waiting on automation.
-2. Treat Route B + bootstrap endpoint + Dev test-auth as the smallest path to a **single** proven cloud story.
+2. Execute epic [#1389](https://github.com/dennisonbertram/fork-open-agents/issues/1389) slices in order; stop after slice 6 and reassess before scaling to the full catalog.
 3. Do not invest in Route A until Route B has walked a handful of authenticated stories successfully.
