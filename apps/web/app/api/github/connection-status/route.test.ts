@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 
 mock.module("server-only", () => ({}));
 
@@ -48,6 +48,22 @@ mock.module("@/lib/github/sync", () => ({
 
 const routeModulePromise = import("./route");
 
+const originalTestAuth = process.env.OPEN_AGENTS_ENABLE_TEST_AUTH;
+const originalVercelEnv = process.env.VERCEL_ENV;
+
+function restoreTestAuthEnv() {
+  if (originalTestAuth === undefined) {
+    delete process.env.OPEN_AGENTS_ENABLE_TEST_AUTH;
+  } else {
+    process.env.OPEN_AGENTS_ENABLE_TEST_AUTH = originalTestAuth;
+  }
+  if (originalVercelEnv === undefined) {
+    delete process.env.VERCEL_ENV;
+  } else {
+    process.env.VERCEL_ENV = originalVercelEnv;
+  }
+}
+
 describe("GET /api/github/connection-status", () => {
   beforeEach(() => {
     authSession = { user: { id: "user-1" } };
@@ -58,6 +74,12 @@ describe("GET /api/github/connection-status", () => {
     syncedInstallationsCount = 1;
     syncError = null;
     syncErrorIsAuth = false;
+    delete process.env.OPEN_AGENTS_ENABLE_TEST_AUTH;
+    delete process.env.VERCEL_ENV;
+  });
+
+  afterEach(() => {
+    restoreTestAuthEnv();
   });
 
   test("returns 401 when unauthenticated", async () => {
@@ -169,6 +191,57 @@ describe("GET /api/github/connection-status", () => {
   // Issue #783: an unknown (non-auth) thrown error must not be reported as
   // "connected" with a fabricated syncedInstallationsCount — it must return
   // a degraded status instead.
+  test("stays connected for the test-auth user even when the token is missing", async () => {
+    process.env.OPEN_AGENTS_ENABLE_TEST_AUTH = "1";
+    authSession = { user: { id: "dev-managed-runtime-user" } };
+    userToken = null;
+    const { GET } = await routeModulePromise;
+
+    const response = await GET();
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      status: "connected",
+      reason: null,
+      hasInstallations: true,
+      syncedInstallationsCount: 0,
+    });
+  });
+
+  test("still requires reconnect for a normal user when the token is missing", async () => {
+    process.env.OPEN_AGENTS_ENABLE_TEST_AUTH = "1";
+    userToken = null;
+    const { GET } = await routeModulePromise;
+
+    const response = await GET();
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      status: "reconnect_required",
+      reason: "token_unavailable",
+      hasInstallations: true,
+      syncedInstallationsCount: null,
+    });
+  });
+
+  test("does not bypass reconnect for the demo user on production", async () => {
+    process.env.OPEN_AGENTS_ENABLE_TEST_AUTH = "1";
+    process.env.VERCEL_ENV = "production";
+    authSession = { user: { id: "dev-managed-runtime-user" } };
+    userToken = null;
+    const { GET } = await routeModulePromise;
+
+    const response = await GET();
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      status: "reconnect_required",
+      reason: "token_unavailable",
+      hasInstallations: true,
+      syncedInstallationsCount: null,
+    });
+  });
+
   test("returns a degraded status when sync throws an unknown non-auth error", async () => {
     syncError = new Error("Unexpected GitHub API failure");
     syncErrorIsAuth = false;

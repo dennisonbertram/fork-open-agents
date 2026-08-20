@@ -1,9 +1,10 @@
 "use server";
 
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth/config";
 import { getServerSession } from "@/lib/session/get-server-session";
+import { deleteTestAuthCookie } from "@/lib/session/test-auth";
 import { getUserVercelToken } from "@/lib/vercel/token";
 
 const VERCEL_REVOKE_URL = "https://api.vercel.com/login/oauth/token/revoke";
@@ -54,6 +55,10 @@ export async function signOut(): Promise<void> {
   }
 
   await auth.api.signOut({ headers: await headers() });
+
+  // HttpOnly test-auth cookie survives Better Auth sign-out. Delete it
+  // before redirect so `/` cannot immediately re-authenticate (#1386).
+  deleteTestAuthCookie(await cookies());
 
   redirect("/");
 }

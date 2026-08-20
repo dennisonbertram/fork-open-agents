@@ -67,17 +67,18 @@ All subsequent calls replay `-b cookies.txt`. Steps that redirect to
 **Alternate paths**: Real users go through `GET /api/auth/[...all]` (better-auth GitHub sign-in) instead of the dev endpoint; `/api/account/status` also returns an account-wide snapshot that overlaps `/api/auth/info` on identity.
 
 ### Steps
-1. `GET /api/dev/managed-runtime-demo` — no body → expect `200` demo payload and `Set-Cookie: open_agents_test_user_id=dev-managed-runtime-user`
+1. `GET /api/dev/test-auth` — no body → expect `200` `{ok:true,userId:"dev-managed-runtime-user"}` and `Set-Cookie: open_agents_test_user_id=dev-managed-runtime-user`. (`GET /api/dev/managed-runtime-demo` also sets the cookie but provisions a sandbox — only use it when the story needs the demo runtime.)
 2. `GET /api/auth/info` — cookie → expect `200` `{user:{id:"dev-managed-runtime-user",...},authProvider,isAdmin,hasGitHub:false,hasGitHubAccount:false,hasGitHubInstallations:false}`
 3. `GET /api/account/status?window=24h` — cookie → expect `200` `{snapshot:{...}}` with empty/zeroed activity
 4. `GET /api/settings/preferences` — cookie → expect `200` `{preferences:{defaultModelId,defaultSandboxType,...}}` (defaults, never created before)
 
 ### Variations
-- `GET /api/dev/managed-runtime-demo?profileId=node-22` → same shape, demo seeded against that profile.
+- `GET /api/dev/test-auth?next=/sessions` → `302` to `/sessions` with the same `Set-Cookie`.
+- `GET /api/dev/managed-runtime-demo?profileId=node-22` → sandbox demo payload, demo seeded against that profile.
 - Call step 2 twice; `hasGitHub` must stay `false` (no implicit linking).
 
 ### Edge Cases
-- Not found: start the server without `OPEN_AGENTS_ENABLE_TEST_AUTH=1` and in `NODE_ENV=production` → `GET /api/dev/managed-runtime-demo` returns `404 {"error":"Not found"}`.
+- Not found: start the server without `OPEN_AGENTS_ENABLE_TEST_AUTH=1` and in `NODE_ENV=production` → `GET /api/dev/test-auth` and `GET /api/dev/managed-runtime-demo` return `404 {"error":"Not found"}`. `VERCEL_ENV=production` also 404s both routes even if the flag is set.
 - Auth failure: `GET /api/account/status` with no cookie → `401`.
 - Validation failure: `GET /api/account/status?window=notatime` → `400`.
 - Conflict-ish: `GET /api/auth/info` for a session whose user row was deleted → `200 {"user":undefined}` (the `userExists` guard), not a 401.

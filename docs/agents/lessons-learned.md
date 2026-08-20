@@ -53,6 +53,25 @@ Dated epic and sweep sections:
 
 ## Auth / OAuth
 
+- **Test-auth Sign out is a no-op unless the cookie is cleared.**
+  Better Auth `signOut` plus `redirect("/")` leaves
+  `open_agents_test_user_id` in place. With test-auth enabled, `/`
+  immediately re-authenticates. Delete the cookie with `Path=/` in the
+  server action (#1386).
+- **`VERCEL_ENV === "production"` is the Production refusal for test-auth.**
+  `NODE_ENV=production` is true on Preview and Dev too. Never enable
+  `OPEN_AGENTS_ENABLE_TEST_AUTH` on Production; the helper now refuses
+  even if the flag is set. Unset `VERCEL_ENV` must not look like
+  Production (local/CI).
+- **Cookie-only bootstrap is `GET /api/dev/test-auth`.**
+  `/api/dev/managed-runtime-demo` also sets the cookie but provisions a
+  sandbox. Browser tools have no cookie API; Playwright honors
+  `Set-Cookie` on navigate, including `?next=/sessions`.
+- **A fake GitHub token bricks the demo user.**
+  `GitHubReconnectGate` has no dismiss control (STORY-024). Seed the
+  demo GitHub account with a null token and short-circuit
+  `/api/github/connection-status` for `dev-managed-runtime-user` while
+  test-auth is enabled.
 - For local Vercel sign-in, the Vercel OAuth app must register the exact Better Auth callback `http://localhost:3000/api/auth/callback/vercel` alongside the production callback. In production, `BETTER_AUTH_URL` pins Vercel sign-in to the canonical callback; in local development without `BETTER_AUTH_URL`, the app derives `redirect_uri` from the request host. Verify behavior by POSTing to `/api/auth/sign-in/social` and checking the returned Vercel URL.
 
 ## Next.js

@@ -26,6 +26,8 @@ or detailed procedures here; put that material in `docs/agents`,
 - [Managed Runtime Proof Standard](docs/process/managed-runtime-proof-standard.md)
 - [Deployed Feature Proof Standard](docs/process/deployed-feature-proof-standard.md)
 - [Production Release Runbook](docs/process/production-release-runbook.md)
+- [Cloud UX walk plan](docs/plans/cloud-ux-walk.md)
+- [Cloud UX walk plan](docs/plans/cloud-ux-walk.md)
 
 ## Repository Ownership And Upstream Policy
 
