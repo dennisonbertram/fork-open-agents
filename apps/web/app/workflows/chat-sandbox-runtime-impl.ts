@@ -1363,96 +1363,132 @@ export async function resolveChatSandboxRuntime(params: {
   // VM (expectsColdStart false, wasCreated false), which already has them.
   const shouldRefreshUserSkills = expectsColdStart || didSetupWorkspace;
 
-  await Promise.all([
-    updateSession(params.sessionId, {
+  // #1399: once the VM exists, always kick lifecycle cleanup (finally), and
+  // never let non-critical skill installs block sandboxState persistence.
+  let provisioningErrorKind: string | null = null;
+  try {
+    await updateSession(params.sessionId, {
       sandboxState,
       snapshotUrl: null,
       snapshotCreatedAt: null,
       lifecycleVersion: getNextLifecycleVersion(session.lifecycleVersion),
       ...buildActiveLifecycleUpdate(sandboxState),
-    }),
-    installSessionGlobalSkills({
-      session,
-      sandbox,
-      didSetupWorkspace,
-    }),
-    installSessionUserSkills({
-      userId: params.userId,
-      sessionId: params.sessionId,
-      sandboxName: sandboxState.sandboxName ?? null,
-      sandbox,
-      didSetupWorkspace: shouldRefreshUserSkills,
-    }),
-  ]);
+    });
 
-  if (expectsColdStart) {
-    await startupReporter.send("Workspace setup finished.", [
-      "Session sandbox state saved.",
-      "Workspace skills cache refreshed.",
+    const installResults = await Promise.allSettled([
+      installSessionGlobalSkills({
+        session,
+        sandbox,
+        didSetupWorkspace,
+      }),
+      installSessionUserSkills({
+        userId: params.userId,
+        sessionId: params.sessionId,
+        sandboxName: sandboxState.sandboxName ?? null,
+        sandbox,
+        didSetupWorkspace: shouldRefreshUserSkills,
+      }),
     ]);
-  }
 
-  // Kick the lifecycle workflow BEFORE managed-runtime setup runs. Managed
-  // setup can now fail closed (throw), and this is the only lifecycle kick in
-  // the provisioning path — kicking it first ensures a failed setup still
-  // leaves the persistent sandbox scheduled for hibernation/cleanup rather than
-  // orphaned (Codex #832 P2).
-  kickSandboxLifecycleWorkflow({
-    sessionId: params.sessionId,
-    reason: "sandbox-created",
-  });
+    for (const result of installResults) {
+      if (result.status === "rejected") {
+        console.warn(
+          JSON.stringify({
+            service: "sandbox-lifecycle",
+            event: "prewarm.install_failed_state_preserved",
+            sessionId: params.sessionId,
+            sandboxName: sandboxState.sandboxName ?? null,
+            skillId: "session",
+            errorKind: "skill_install_failed",
+          }),
+        );
+      }
+    }
 
-  const managedRuntimeEnvironment =
-    session.runtimeMode === "managed_runtime" &&
-    managedRuntimeProfile &&
-    requestedProfileId &&
-    resolvedProfileId
-      ? await ensureManagedRuntimeEnvironment({
-          session,
+    if (expectsColdStart) {
+      await startupReporter.send("Workspace setup finished.", [
+        "Session sandbox state saved.",
+        "Workspace skills cache refreshed.",
+      ]);
+    }
+
+    const managedRuntimeEnvironment =
+      session.runtimeMode === "managed_runtime" &&
+      managedRuntimeProfile &&
+      requestedProfileId &&
+      resolvedProfileId
+        ? await ensureManagedRuntimeEnvironment({
+            session,
+            chatId: params.chatId ?? null,
+            userId: params.userId,
+            workflowRunId: params.workflowRunId ?? null,
+            sandbox,
+            sandboxName: sandboxState.sandboxName ?? null,
+            profile: managedRuntimeProfile,
+            requestedProfileId,
+            resolvedProfileId,
+            startupReporter,
+          })
+        : { notes: [] };
+    const managedRuntimeNotes = managedRuntimeEnvironment.notes;
+
+    const skills = await loadSessionSkills({
+      sessionId: params.sessionId,
+      sandboxState,
+      sandbox,
+    });
+
+    return {
+      mode: "sandbox",
+      sandboxState,
+      runtimeMode: session.runtimeMode,
+      ...(managedRuntimeProfile
+        ? {
+            managedRuntime: {
+              profileId: managedRuntimeProfile.id,
+              profileVersion: managedRuntimeProfile.version,
+              profileDisplayName: managedRuntimeProfile.displayName,
+              profileRunId: managedRuntimeEnvironment.profileRunId,
+              sandboxName: sandboxState.sandboxName,
+            },
+          }
+        : {}),
+      workingDirectory: sandbox.workingDirectory,
+      currentBranch: sandbox.currentBranch,
+      environmentDetails:
+        session.runtimeMode === "managed_runtime"
+          ? `${sandbox.environmentDetails}\n\n# Managed Runtime\n\n- Runtime mode: managed runtime.\n- The user selected managed runtime for this session. Make that explicit in status updates and final verification notes when runtime behavior matters.\n- Managed runtime service previews, service logs, and browser checks are available from the app UI for local web apps.\n- Managed runtime uses a profile-specific setup step. Do not assume Node, npm, Bun, Python, or any other tool exists unless the active profile verifies it.\n${managedRuntimeEnvironment.profileRunId ? `- Managed runtime profile run id: ${managedRuntimeEnvironment.profileRunId}.\n` : ""}${managedRuntimeNotes.map((note) => `- ${note}`).join("\n")}`
+          : sandbox.environmentDetails,
+      skills,
+      didSetupWorkspace,
+      sessionTitle: session.title,
+      repoOwner: session.repoOwner ?? undefined,
+      repoName: session.repoName ?? undefined,
+    } satisfies SandboxBackedRuntime;
+  } catch (error) {
+    provisioningErrorKind =
+      error instanceof Error
+        ? error.name || "provisioning_failed"
+        : "provisioning_failed";
+    throw error;
+  } finally {
+    // Guaranteed cleanup kick once the VM exists — including install failures
+    // and managed-runtime setup failures (Codex #832 P2 / #1399).
+    kickSandboxLifecycleWorkflow({
+      sessionId: params.sessionId,
+      reason: "sandbox-created",
+    });
+    if (provisioningErrorKind !== null) {
+      console.warn(
+        JSON.stringify({
+          service: "sandbox-lifecycle",
+          event: "provisioning.cleanup_kicked_on_error",
+          sessionId: params.sessionId,
           chatId: params.chatId ?? null,
-          userId: params.userId,
           workflowRunId: params.workflowRunId ?? null,
-          sandbox,
-          sandboxName: sandboxState.sandboxName ?? null,
-          profile: managedRuntimeProfile,
-          requestedProfileId,
-          resolvedProfileId,
-          startupReporter,
-        })
-      : { notes: [] };
-  const managedRuntimeNotes = managedRuntimeEnvironment.notes;
-
-  const skills = await loadSessionSkills({
-    sessionId: params.sessionId,
-    sandboxState,
-    sandbox,
-  });
-
-  return {
-    mode: "sandbox",
-    sandboxState,
-    runtimeMode: session.runtimeMode,
-    ...(managedRuntimeProfile
-      ? {
-          managedRuntime: {
-            profileId: managedRuntimeProfile.id,
-            profileVersion: managedRuntimeProfile.version,
-            profileDisplayName: managedRuntimeProfile.displayName,
-            profileRunId: managedRuntimeEnvironment.profileRunId,
-            sandboxName: sandboxState.sandboxName,
-          },
-        }
-      : {}),
-    workingDirectory: sandbox.workingDirectory,
-    currentBranch: sandbox.currentBranch,
-    environmentDetails:
-      session.runtimeMode === "managed_runtime"
-        ? `${sandbox.environmentDetails}\n\n# Managed Runtime\n\n- Runtime mode: managed runtime.\n- The user selected managed runtime for this session. Make that explicit in status updates and final verification notes when runtime behavior matters.\n- Managed runtime service previews, service logs, and browser checks are available from the app UI for local web apps.\n- Managed runtime uses a profile-specific setup step. Do not assume Node, npm, Bun, Python, or any other tool exists unless the active profile verifies it.\n${managedRuntimeEnvironment.profileRunId ? `- Managed runtime profile run id: ${managedRuntimeEnvironment.profileRunId}.\n` : ""}${managedRuntimeNotes.map((note) => `- ${note}`).join("\n")}`
-        : sandbox.environmentDetails,
-    skills,
-    didSetupWorkspace,
-    sessionTitle: session.title,
-    repoOwner: session.repoOwner ?? undefined,
-    repoName: session.repoName ?? undefined,
-  } satisfies SandboxBackedRuntime;
+          errorKind: provisioningErrorKind,
+        }),
+      );
+    }
+  }
 }

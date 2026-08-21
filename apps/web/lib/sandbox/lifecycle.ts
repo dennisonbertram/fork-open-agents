@@ -246,6 +246,23 @@ export async function evaluateSandboxLifecycle(
       }
     }
 
+    // #1399: final TOCTOU guard — a stream may have started after the
+    // post-connect / timing rechecks and before stop(). Abort rather than
+    // tearing down a live workspace mid-run.
+    if (await hasActiveStreamForSession(sessionId)) {
+      await restoreActiveLifecycleState(sessionId, sandboxState);
+      console.info(
+        JSON.stringify({
+          service: "sandbox-lifecycle",
+          event: "hibernate.aborted_stream_active",
+          sessionId,
+          sandboxName: getPersistentSandboxName(sandboxState),
+          errorKind: "hibernate_race_aborted",
+        }),
+      );
+      return { action: "skipped", reason: "active-workflow" };
+    }
+
     await sandbox.stop();
 
     const clearedState = clearSandboxState(sandboxState);

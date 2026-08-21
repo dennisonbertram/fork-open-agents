@@ -174,14 +174,18 @@ export async function prewarmSessionSandbox(params: {
       ? rawSandboxState
       : sandboxInputState;
 
-    await Promise.all([
-      updateSession(sessionId, {
-        sandboxState,
-        snapshotUrl: null,
-        snapshotCreatedAt: null,
-        lifecycleVersion: getNextLifecycleVersion(session.lifecycleVersion),
-        ...buildActiveLifecycleUpdate(sandboxState),
-      }),
+    // #1399: persist operable sandboxState BEFORE skill installs. A rejected
+    // install must not prevent the DB from recording the live VM (otherwise
+    // lifecycle hibernation cannot find it and the box orphans).
+    await updateSession(sessionId, {
+      sandboxState,
+      snapshotUrl: null,
+      snapshotCreatedAt: null,
+      lifecycleVersion: getNextLifecycleVersion(session.lifecycleVersion),
+      ...buildActiveLifecycleUpdate(sandboxState),
+    });
+
+    const installResults = await Promise.allSettled([
       installSessionGlobalSkills({
         session,
         sandbox,
@@ -198,6 +202,23 @@ export async function prewarmSessionSandbox(params: {
         didSetupWorkspace: true,
       }),
     ]);
+
+    const installSkillIds = ["global", "user"] as const;
+    for (let i = 0; i < installResults.length; i++) {
+      const result = installResults[i];
+      if (result.status === "rejected") {
+        console.warn(
+          JSON.stringify({
+            service: "sandbox-lifecycle",
+            event: "prewarm.install_failed_state_preserved",
+            sessionId,
+            sandboxName: sandboxState.sandboxName ?? null,
+            skillId: installSkillIds[i],
+            errorKind: "skill_install_failed",
+          }),
+        );
+      }
+    }
 
     kickSandboxLifecycleWorkflow({ sessionId, reason: "sandbox-created" });
 
