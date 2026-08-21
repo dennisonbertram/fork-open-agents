@@ -4,6 +4,18 @@ export type FetchEventContext = {
   runId?: string;
 };
 
+export type UnattendedMutatingFetchBlockedEvent = {
+  service: "agent-fetch-tool";
+  event: "unattended-mutating-fetch-blocked";
+  level: "warn";
+  sessionId: string | undefined;
+  chatId: string | undefined;
+  runId: string | undefined;
+  method: string;
+  host: string;
+  errorKind: "unattended_write_blocked";
+};
+
 export type FetchHostResolvedEvent = {
   service: "agent-fetch-tool";
   event: "fetch-host-resolved";
@@ -31,6 +43,7 @@ export type FetchPrivateTargetBlockedEvent = {
 };
 
 export type FetchEvent =
+  | UnattendedMutatingFetchBlockedEvent
   | FetchHostResolvedEvent
   | FetchPrivateTargetBlockedEvent;
 
@@ -73,6 +86,28 @@ function emit(event: FetchEvent, level: "info" | "warn"): void {
     return;
   }
   console.info(line);
+}
+
+export function emitUnattendedMutatingFetchBlocked(params: {
+  method: string;
+  host: string;
+  experimental_context: unknown;
+}): void {
+  const ids = fetchEventContext(params.experimental_context);
+  emit(
+    {
+      service: "agent-fetch-tool",
+      event: "unattended-mutating-fetch-blocked",
+      level: "warn",
+      sessionId: ids.sessionId,
+      chatId: ids.chatId,
+      runId: ids.runId,
+      method: params.method,
+      host: params.host,
+      errorKind: "unattended_write_blocked",
+    },
+    "warn",
+  );
 }
 
 export function emitFetchHostResolved(params: {

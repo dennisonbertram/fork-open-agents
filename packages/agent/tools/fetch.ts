@@ -1,8 +1,10 @@
 import { tool } from "ai";
 import { z } from "zod";
+import { externalWritePolicy } from "./approval-policy";
 import {
   emitFetchHostResolved,
   emitFetchPrivateTargetBlocked,
+  emitUnattendedMutatingFetchBlocked,
 } from "./fetch-events";
 import {
   getGithubToolAvailable,
@@ -340,14 +342,34 @@ const fetchOutputSchema = z.union([
 ]);
 
 export const webFetchTool = tool({
-  // web_fetch is a network-egress gate. In an attended session it requires a
-  // human approval. In an unattended run (background agent / agent-loop step)
-  // there is no approver: exposure is governed by the agent's tool allowlist,
-  // so being available *is* the pre-approval. Auto-approve to avoid wedging the
-  // run with a dangling, never-approved tool call.
-  // Method-based unattended write gating is #1394 (separate PR).
-  needsApproval: (_input, { experimental_context }) =>
-    !getUnattended(experimental_context),
+  // web_fetch is a network-egress gate. In an attended session it always
+  // requires human approval, regardless of method.
+  //
+  // In an unattended run (background agent / agent-loop step) there is no
+  // human approver. Auto-approve safe reads (GET/HEAD). Mutating methods
+  // still requireApproval via externalWritePolicy so unattended POST/PUT/
+  // PATCH/DELETE stay blocked rather than silently writing (#1394).
+  needsApproval: (input, { experimental_context }) => {
+    if (!getUnattended(experimental_context)) {
+      return true;
+    }
+    const method = input.method ?? "GET";
+    const decision = externalWritePolicy(method);
+    if (decision.requires) {
+      let host = "";
+      try {
+        host = new URL(input.url).hostname;
+      } catch {
+        host = "";
+      }
+      emitUnattendedMutatingFetchBlocked({
+        method,
+        host,
+        experimental_context,
+      });
+    }
+    return decision.requires;
+  },
   description: `Fetch a URL from the web.
 
 USAGE:
