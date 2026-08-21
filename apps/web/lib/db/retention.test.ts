@@ -1,4 +1,20 @@
-import { beforeEach, describe, expect, test } from "bun:test";
+import { beforeEach, describe, expect, mock, test } from "bun:test";
+
+mock.module("server-only", () => ({}));
+
+mock.module("@/lib/db/client", () => ({
+  db: {
+    select: () => {
+      throw new Error("default db.select should not be used in unit tests");
+    },
+    delete: () => {
+      throw new Error("default db.delete should not be used in unit tests");
+    },
+    execute: () => {
+      throw new Error("default db.execute should not be used in unit tests");
+    },
+  },
+}));
 
 /**
  * #1400 — event/output retention planning and job behavior.
