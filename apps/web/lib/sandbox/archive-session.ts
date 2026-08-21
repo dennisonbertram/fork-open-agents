@@ -4,7 +4,11 @@ import { connectSandbox } from "@open-agents/sandbox";
 import { getSessionById, updateSession } from "@/lib/db/sessions";
 import { findPullRequest, getPullRequestStatus } from "@/lib/github/pulls";
 import { getUserGitHubToken } from "@/lib/github/token";
-import { canOperateOnSandbox, clearSandboxState } from "./utils";
+import {
+  canOperateOnSandbox,
+  clearSandboxState,
+  getPersistentSandboxName,
+} from "./utils";
 
 type SessionRecord = NonNullable<Awaited<ReturnType<typeof getSessionById>>>;
 type SessionUpdateInput = Parameters<typeof updateSession>[1];
@@ -175,21 +179,29 @@ async function finalizeArchivedSessionSandbox(
         return;
       }
 
+      // The resume handle (`sandboxState`) is only cleared once `sandbox.stop()`
+      // has actually succeeded (see the try block above). We landed in this
+      // catch because something in that block failed — possibly `stop()`
+      // itself — so the sandbox may still be running. Clearing the handle
+      // here would make it permanently unstoppable by lifecycle, since
+      // nothing would retain the sandboxName needed to reconnect and retry.
+      // Preserve it so a later lifecycle pass can retry the stop.
+      if (canOperateOnSandbox(sessionAfterFailure.sandboxState)) {
+        console.warn(`${logPrefix} archive-stop-failed-handle-preserved`, {
+          sessionId,
+          sandboxName: getPersistentSandboxName(
+            sessionAfterFailure.sandboxState,
+          ),
+          errorKind: error instanceof Error ? error.name : typeof error,
+        });
+      }
+
       const failurePatch: SessionUpdateInput = {
         lifecycleState: "archived",
         sandboxExpiresAt: null,
         hibernateAfter: null,
         lifecycleError: `Archive finalization failed: ${errorMessage}`,
       };
-
-      if (
-        !sessionAfterFailure.snapshotUrl &&
-        canOperateOnSandbox(sessionAfterFailure.sandboxState)
-      ) {
-        failurePatch.sandboxState = clearSandboxState(
-          sessionAfterFailure.sandboxState,
-        );
-      }
 
       await updateSession(sessionId, failurePatch);
     } catch (persistError) {

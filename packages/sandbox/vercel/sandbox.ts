@@ -129,6 +129,34 @@ async function clearGitHubCredentialBrokeringBestEffort(
   }
 }
 
+/**
+ * Best-effort stop for a freshly created SDK sandbox that failed setup or
+ * `afterStart`. Swallows stop errors (logging them) so the original error
+ * that triggered this cleanup is what actually propagates to the caller.
+ */
+async function stopSandboxBestEffort(
+  sdk: VercelSandboxSDK,
+  stage: "create" | "afterStart",
+  error: unknown,
+): Promise<void> {
+  console.warn("[VercelSandbox] sandbox-orphan-prevented", {
+    sandboxName: sdk.name,
+    stage,
+    errorKind: error instanceof Error ? error.name : typeof error,
+  });
+
+  try {
+    await sdk.stop();
+  } catch (stopError) {
+    console.warn(
+      "[VercelSandbox] failed to stop sandbox after error during",
+      stage,
+      ":",
+      stopError,
+    );
+  }
+}
+
 type VercelSandboxSession = ReturnType<
   InstanceType<typeof VercelSandboxSDK>["currentSession"]
 >;
@@ -591,89 +619,107 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
 
     const workingDirectory = DEFAULT_WORKING_DIRECTORY;
 
-    // Run all workspace setup (clone/init, git config, initial commit, branch
-    // checkout) in a single combined shell command. Each runCommand is a network
-    // round-trip, so collapsing them — and cloning shallowly — meaningfully cuts
-    // cold-start time. The clone here only runs when a base snapshot occupies the
-    // SDK `source` slot; otherwise the native git source already cloned the repo.
-    //
-    // NOTE: `git clone ... .` requires the working directory to be empty. If a
-    // base snapshot ships files under /vercel/sandbox, switch to
-    // init + remote add + fetch + checkout, which tolerates existing contents.
-    const isEmptyWorkspace =
-      !source && !restoreSnapshotId && !skipGitWorkspaceBootstrap;
-    const setupCommand = buildWorkspaceSetupCommand({
-      ...(source && baseSnapshotId
-        ? {
-            clone: {
-              url: source.url,
-              depth: effectiveCloneDepth,
-              ...(source.branch ? { branch: source.branch } : {}),
-            },
-          }
-        : {}),
-      ...(isEmptyWorkspace ? { initEmptyRepo: true } : {}),
-      ...(gitUser && (source || !skipGitWorkspaceBootstrap) ? { gitUser } : {}),
-      ...(isEmptyWorkspace && gitUser ? { initialEmptyCommit: true } : {}),
-      ...(source?.newBranch ? { newBranch: source.newBranch } : {}),
-    });
+    // GitHub credential brokering is active on the network policy from the
+    // moment the SDK sandbox is created (`createBaseConfig.networkPolicy`)
+    // until we explicitly clear it below. Track whether we've cleared it so
+    // the `finally` block can best-effort clear it on any exit path —
+    // including a throw between "set" and "clear" — without double-clearing.
+    let githubCredentialBrokeringCleared = false;
+    let stage: "create" | "afterStart" = "create";
 
-    if (setupCommand) {
-      const setupResult = await sdk.runCommand({
-        cmd: "bash",
-        args: ["-c", setupCommand],
-        cwd: workingDirectory,
+    try {
+      // Run all workspace setup (clone/init, git config, initial commit, branch
+      // checkout) in a single combined shell command. Each runCommand is a network
+      // round-trip, so collapsing them — and cloning shallowly — meaningfully cuts
+      // cold-start time. The clone here only runs when a base snapshot occupies the
+      // SDK `source` slot; otherwise the native git source already cloned the repo.
+      //
+      // NOTE: `git clone ... .` requires the working directory to be empty. If a
+      // base snapshot ships files under /vercel/sandbox, switch to
+      // init + remote add + fetch + checkout, which tolerates existing contents.
+      const isEmptyWorkspace =
+        !source && !restoreSnapshotId && !skipGitWorkspaceBootstrap;
+      const setupCommand = buildWorkspaceSetupCommand({
+        ...(source && baseSnapshotId
+          ? {
+              clone: {
+                url: source.url,
+                depth: effectiveCloneDepth,
+                ...(source.branch ? { branch: source.branch } : {}),
+              },
+            }
+          : {}),
+        ...(isEmptyWorkspace ? { initEmptyRepo: true } : {}),
+        ...(gitUser && (source || !skipGitWorkspaceBootstrap)
+          ? { gitUser }
+          : {}),
+        ...(isEmptyWorkspace && gitUser ? { initialEmptyCommit: true } : {}),
+        ...(source?.newBranch ? { newBranch: source.newBranch } : {}),
       });
 
-      if (setupResult.exitCode !== 0) {
-        if (githubToken) {
-          await clearGitHubCredentialBrokeringBestEffort(sdk);
+      if (setupCommand) {
+        const setupResult = await sdk.runCommand({
+          cmd: "bash",
+          args: ["-c", setupCommand],
+          cwd: workingDirectory,
+        });
+
+        if (setupResult.exitCode !== 0) {
+          const stderr = (await setupResult.stderr()).trim();
+          throw new Error(
+            `Failed to set up sandbox workspace (exit code ${setupResult.exitCode})${
+              stderr ? `: ${stderr}` : ""
+            }`,
+          );
         }
-        const stderr = (await setupResult.stderr()).trim();
-        throw new Error(
-          `Failed to set up sandbox workspace (exit code ${setupResult.exitCode})${
-            stderr ? `: ${stderr}` : ""
-          }`,
-        );
+      }
+
+      // Track the current branch the workspace ended up on.
+      let currentBranch: string | undefined;
+      if (source?.newBranch) {
+        currentBranch = source.newBranch;
+      } else if (source?.branch) {
+        currentBranch = source.branch;
+      }
+
+      if (githubToken) {
+        await clearGitHubCredentialBrokering(sdk);
+        githubCredentialBrokeringCleared = true;
+      }
+
+      // Capture startTime AFTER all setup operations so users get their full timeout duration.
+      const startTime = Date.now();
+      const session = sdk.currentSession();
+      const sandbox = new VercelSandbox(
+        sdk,
+        session,
+        sdk.name,
+        session.sessionId,
+        workingDirectory,
+        env,
+        currentBranch,
+        hooks,
+        effectiveTimeout,
+        startTime,
+        ports,
+        true,
+      );
+
+      // Call afterStart hook if provided
+      if (hooks?.afterStart) {
+        stage = "afterStart";
+        await hooks.afterStart(sandbox);
+      }
+
+      return sandbox;
+    } catch (error) {
+      await stopSandboxBestEffort(sdk, stage, error);
+      throw error;
+    } finally {
+      if (githubToken && !githubCredentialBrokeringCleared) {
+        await clearGitHubCredentialBrokeringBestEffort(sdk);
       }
     }
-
-    // Track the current branch the workspace ended up on.
-    let currentBranch: string | undefined;
-    if (source?.newBranch) {
-      currentBranch = source.newBranch;
-    } else if (source?.branch) {
-      currentBranch = source.branch;
-    }
-
-    if (githubToken) {
-      await clearGitHubCredentialBrokering(sdk);
-    }
-
-    // Capture startTime AFTER all setup operations so users get their full timeout duration.
-    const startTime = Date.now();
-    const session = sdk.currentSession();
-    const sandbox = new VercelSandbox(
-      sdk,
-      session,
-      sdk.name,
-      session.sessionId,
-      workingDirectory,
-      env,
-      currentBranch,
-      hooks,
-      effectiveTimeout,
-      startTime,
-      ports,
-      true,
-    );
-
-    // Call afterStart hook if provided
-    if (hooks?.afterStart) {
-      await hooks.afterStart(sandbox);
-    }
-
-    return sandbox;
   }
 
   /**
@@ -1058,10 +1104,9 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
    * This method is idempotent - calling it multiple times is safe.
    */
   async stop(): Promise<void> {
-    // Ensure stop() only runs once
+    // Ensure stop() only runs once it has actually succeeded. If a prior
+    // attempt threw, isStopped is left unset so this call retries sdk.stop().
     if (this.isStopped) return;
-    this.isStopped = true;
-    this._expiresAt = undefined;
 
     // Clear proactive timeout timer
     if (this.timeoutTimer) {
@@ -1081,7 +1126,19 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
       }
     }
 
-    await this.sdk.stop();
+    try {
+      await this.sdk.stop();
+    } catch (error) {
+      console.warn("[VercelSandbox] sandbox-stop-retryable", {
+        sandboxName: this.name,
+        errorKind: error instanceof Error ? error.name : typeof error,
+      });
+      throw error;
+    }
+
+    // Only latch as stopped once sdk.stop() has actually succeeded.
+    this.isStopped = true;
+    this._expiresAt = undefined;
   }
 
   /**
