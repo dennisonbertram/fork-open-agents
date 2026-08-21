@@ -172,14 +172,18 @@ export const authSessions = pgTable(
 );
 
 // better-auth verification tokens
-export const verification = pgTable("verification", {
-  id: text("id").primaryKey(),
-  identifier: text("identifier").notNull(),
-  value: text("value").notNull(),
-  expiresAt: timestamp("expires_at").notNull(),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
-});
+export const verification = pgTable(
+  "verification",
+  {
+    id: text("id").primaryKey(),
+    identifier: text("identifier").notNull(),
+    value: text("value").notNull(),
+    expiresAt: timestamp("expires_at").notNull(),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [index("verification_identifier_idx").on(table.identifier)],
+);
 
 export const githubInstallations = pgTable(
   "github_installations",
@@ -3126,32 +3130,38 @@ export type AgentToolEntry = typeof agentToolEntries.$inferSelect;
 export type NewAgentToolEntry = typeof agentToolEntries.$inferInsert;
 
 // Usage tracking — one row per assistant turn (append-only)
-export const usageEvents = pgTable("usage_events", {
-  id: text("id").primaryKey(),
-  userId: text("user_id")
-    .notNull()
-    .references(() => users.id, { onDelete: "cascade" }),
-  source: text("source", { enum: ["web", "background-agent"] })
-    .notNull()
-    .default("web"),
-  agentType: text("agent_type", { enum: ["main", "subagent"] })
-    .notNull()
-    .default("main"),
-  provider: text("provider"),
-  modelId: text("model_id"),
-  inferenceRoute: text("inference_route", {
-    enum: ["gateway", "user"],
-  }),
-  inferenceProfileId: text("inference_profile_id").references(
-    () => inferenceProfiles.id,
-    { onDelete: "set null" },
-  ),
-  inputTokens: integer("input_tokens").notNull().default(0),
-  cachedInputTokens: integer("cached_input_tokens").notNull().default(0),
-  outputTokens: integer("output_tokens").notNull().default(0),
-  toolCallCount: integer("tool_call_count").notNull().default(0),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+export const usageEvents = pgTable(
+  "usage_events",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    source: text("source", { enum: ["web", "background-agent"] })
+      .notNull()
+      .default("web"),
+    agentType: text("agent_type", { enum: ["main", "subagent"] })
+      .notNull()
+      .default("main"),
+    provider: text("provider"),
+    modelId: text("model_id"),
+    inferenceRoute: text("inference_route", {
+      enum: ["gateway", "user"],
+    }),
+    inferenceProfileId: text("inference_profile_id").references(
+      () => inferenceProfiles.id,
+      { onDelete: "set null" },
+    ),
+    inputTokens: integer("input_tokens").notNull().default(0),
+    cachedInputTokens: integer("cached_input_tokens").notNull().default(0),
+    outputTokens: integer("output_tokens").notNull().default(0),
+    toolCallCount: integer("tool_call_count").notNull().default(0),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("usage_events_user_created_idx").on(table.userId, table.createdAt),
+  ],
+);
 
 export type UsageEvent = typeof usageEvents.$inferSelect;
 export type NewUsageEvent = typeof usageEvents.$inferInsert;

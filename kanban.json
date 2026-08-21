@@ -265,6 +265,14 @@
       "link": "docs/process/production-release-runbook.md"
     },
     {
+      "id": "iss-1400",
+      "title": "Hot-path DB indexes and event retention job",
+      "theme": "background-agents",
+      "column": "In progress",
+      "note": "Issue #1400 on cursor/feat-1400-db-indexes-retention-b536 (pushed, no PR). Migration 0095_rapid_quasimodo; focused tests green; full ci flake in unrelated packages/agent/tools/tools.test.ts timeout under test:isolated.",
+      "link": "https://github.com/dennisonbertram/fork-open-agents/issues/1400"
+    },
+    {
       "id": "iss-1389",
       "title": "Unblock the cloud UX walk \u2014 safe test-auth + bootstrap",
       "theme": "ux",
@@ -272,6 +280,7 @@
       "note": "PR #1390 implements epic #1389 slices 1\u20134. Slices 5\u20136 (Dev env flip + STORY-158 cloud proof) stay operator-blocked.",
       "link": "https://github.com/dennisonbertram/fork-open-agents/pull/1390"
     },
+
     {
       "id": "rel-next",
       "title": "Release train, round two",

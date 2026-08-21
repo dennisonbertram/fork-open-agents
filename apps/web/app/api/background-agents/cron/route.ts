@@ -1,6 +1,7 @@
 import { dispatchScheduledBackgroundAgents } from "@/lib/background-agents/dispatcher";
 import { getBackgroundAgentsCronSecret } from "@/lib/background-agents/config";
 import { isAuthorizedCronRequest } from "@/app/api/_lib/cron-auth";
+import { runEventRetention } from "@/lib/db/retention";
 
 async function handleCron(req: Request) {
   const secret = getBackgroundAgentsCronSecret();
@@ -21,8 +22,13 @@ async function handleCron(req: Request) {
     );
   }
 
+  const requestId = req.headers.get("x-request-id");
   const result = await dispatchScheduledBackgroundAgents({
-    requestId: req.headers.get("x-request-id"),
+    requestId,
+  });
+
+  await runEventRetention({
+    runId: requestId ?? crypto.randomUUID(),
   });
 
   return Response.json(result);

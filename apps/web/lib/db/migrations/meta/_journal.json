@@ -673,6 +673,13 @@
       "when": 1786730486781,
       "tag": "0094_black_centennial",
       "breakpoints": true
+    },
+    {
+      "idx": 95,
+      "version": "7",
+      "when": 1787298076472,
+      "tag": "0095_rapid_quasimodo",
+      "breakpoints": true
     }
   ]
 }
