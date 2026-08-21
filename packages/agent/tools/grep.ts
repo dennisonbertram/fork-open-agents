@@ -1,7 +1,7 @@
 import { tool } from "ai";
 import { z } from "zod";
 import { getSandbox, shellEscape, toDisplayPath } from "./utils";
-import { resolveWorkspacePath } from "./path-security";
+import { resolveSandboxRealPath, resolveWorkspacePath } from "./path-security";
 
 interface GrepMatch {
   file: string;
@@ -69,6 +69,22 @@ EXAMPLES:
           return {
             success: false,
             error: "Path must stay within the workspace.",
+            errorKind: "path_outside_workspace",
+          };
+        }
+
+        // The lexical check above cannot see symlinks. Resolve the real path
+        // in the sandbox and re-check containment so an in-workspace symlink
+        // pointing outside the workspace is refused too (see read.ts).
+        const realPath = await resolveSandboxRealPath({
+          sandbox,
+          absolutePath,
+          workingDirectory,
+        });
+        if (realPath && !resolveWorkspacePath(realPath, workingDirectory)) {
+          return {
+            success: false,
+            error: "Path resolves outside the workspace.",
             errorKind: "path_outside_workspace",
           };
         }

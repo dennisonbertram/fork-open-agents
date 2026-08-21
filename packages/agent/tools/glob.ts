@@ -2,7 +2,7 @@ import { tool } from "ai";
 import { z } from "zod";
 import * as path from "path";
 import { getSandbox, shellEscape, toDisplayPath } from "./utils";
-import { resolveWorkspacePath } from "./path-security";
+import { resolveSandboxRealPath, resolveWorkspacePath } from "./path-security";
 
 interface FileInfo {
   path: string;
@@ -101,6 +101,27 @@ EXAMPLES:
             };
           }
           searchDir = resolvedJoined;
+        }
+
+        // When the caller supplied an explicit base path, the lexical checks
+        // above cannot see symlinks. Resolve the real path in the sandbox and
+        // re-check containment so an in-workspace symlink pointing outside
+        // the workspace is refused too (see read.ts). The default (workspace
+        // root) case is skipped because the working directory itself may be
+        // reached through a symlink without that being an escape.
+        if (basePath) {
+          const realPath = await resolveSandboxRealPath({
+            sandbox,
+            absolutePath: searchDir,
+            workingDirectory,
+          });
+          if (realPath && !resolveWorkspacePath(realPath, workingDirectory)) {
+            return {
+              success: false,
+              error: "Path resolves outside the workspace.",
+              errorKind: "path_outside_workspace",
+            };
+          }
         }
 
         // Determine maxdepth from remaining wildcard directory segments.

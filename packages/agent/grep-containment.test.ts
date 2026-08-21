@@ -46,12 +46,25 @@ function executionOptions(experimental_context?: unknown) {
   };
 }
 
-function makeMockSandbox() {
+function makeMockSandbox(options?: {
+  realPathOutput?: string;
+  realPathSuccess?: boolean;
+}) {
   let executedCommand = "";
+  const execCalls: string[] = [];
   const sandbox = {
     workingDirectory: "/repo",
     exec: async (command: string) => {
+      execCalls.push(command);
       executedCommand = command;
+      if (command.startsWith("realpath")) {
+        return {
+          success: options?.realPathSuccess ?? true,
+          exitCode: 0,
+          stdout: options?.realPathOutput ?? "",
+          stderr: "",
+        };
+      }
       return {
         success: true,
         exitCode: 0,
@@ -63,7 +76,12 @@ function makeMockSandbox() {
   return {
     sandbox,
     getExecutedCommand: () => executedCommand,
+    getExecCalls: () => execCalls,
   };
+}
+
+function ranSearchCommand(execCalls: string[]): boolean {
+  return execCalls.some((command) => !command.startsWith("realpath"));
 }
 
 describe("grepTool workspace containment", () => {
@@ -112,6 +130,38 @@ describe("grepTool workspace containment", () => {
     expect(result).toMatchObject({ success: true });
     expect(getExecutedCommand()).toContain("/repo/src");
   });
+
+  test("refuses an in-workspace symlink whose target is outside the workspace (#1402)", async () => {
+    const { sandbox, getExecCalls } = makeMockSandbox({
+      realPathOutput: "/etc/passwd",
+    });
+
+    const result = await grepTool().execute?.(
+      { pattern: "root", path: "link" },
+      executionOptions(createContext(sandbox)),
+    );
+
+    expect(result).toMatchObject({
+      success: false,
+      errorKind: "path_outside_workspace",
+    });
+    expect(ranSearchCommand(getExecCalls())).toBe(false);
+  });
+
+  test("allows an in-workspace symlink whose target stays inside the workspace (#1402)", async () => {
+    const { sandbox, getExecCalls, getExecutedCommand } = makeMockSandbox({
+      realPathOutput: "/repo/src/real",
+    });
+
+    const result = await grepTool().execute?.(
+      { pattern: "root", path: "src/link" },
+      executionOptions(createContext(sandbox)),
+    );
+
+    expect(result).toMatchObject({ success: true });
+    expect(ranSearchCommand(getExecCalls())).toBe(true);
+    expect(getExecutedCommand()).toContain("/repo/src/link");
+  });
 });
 
 describe("globTool workspace containment", () => {
@@ -159,5 +209,37 @@ describe("globTool workspace containment", () => {
 
     expect(result).toMatchObject({ success: true });
     expect(getExecutedCommand()).toContain("/repo/src");
+  });
+
+  test("refuses an in-workspace symlink whose target is outside the workspace (#1402)", async () => {
+    const { sandbox, getExecCalls } = makeMockSandbox({
+      realPathOutput: "/etc",
+    });
+
+    const result = await globTool().execute?.(
+      { pattern: "*.conf", path: "link" },
+      executionOptions(createContext(sandbox)),
+    );
+
+    expect(result).toMatchObject({
+      success: false,
+      errorKind: "path_outside_workspace",
+    });
+    expect(ranSearchCommand(getExecCalls())).toBe(false);
+  });
+
+  test("allows an in-workspace symlink whose target stays inside the workspace (#1402)", async () => {
+    const { sandbox, getExecCalls, getExecutedCommand } = makeMockSandbox({
+      realPathOutput: "/repo/src/real",
+    });
+
+    const result = await globTool().execute?.(
+      { pattern: "**/*.ts", path: "src/link" },
+      executionOptions(createContext(sandbox)),
+    );
+
+    expect(result).toMatchObject({ success: true });
+    expect(ranSearchCommand(getExecCalls())).toBe(true);
+    expect(getExecutedCommand()).toContain("/repo/src/link");
   });
 });
