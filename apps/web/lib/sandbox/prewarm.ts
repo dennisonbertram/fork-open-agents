@@ -206,7 +206,15 @@ export async function prewarmSessionSandbox(params: {
     const installSkillIds = ["global", "user"] as const;
     for (let i = 0; i < installResults.length; i++) {
       const result = installResults[i];
-      if (result.status === "rejected") {
+      // installSessionGlobalSkills reports failure via its result value
+      // (ok:false) instead of rejecting; installSessionUserSkills rejects.
+      const failed =
+        result.status === "rejected" ||
+        (result.status === "fulfilled" &&
+          typeof result.value === "object" &&
+          result.value !== null &&
+          (result.value as { ok?: boolean }).ok === false);
+      if (failed) {
         console.warn(
           JSON.stringify({
             service: "sandbox-lifecycle",

@@ -486,6 +486,7 @@ const { resolveChatSandboxRuntime, buildSandboxState: buildOuterSandboxState } =
 const {
   DETERMINISTIC_SETUP_FAILURE_PHRASES,
   buildSandboxState: buildImplSandboxState,
+  installSessionGlobalSkills,
 } = await import("./chat-sandbox-runtime-impl");
 
 // ── Tests ──────────────────────────────────────────────────────────────────────
@@ -830,6 +831,57 @@ describe("resolveChatSandboxRuntime", () => {
       // heuristic is true; a sandbox that cannot report wasCreated must preserve
       // the prior install-on-cold-start behavior.
       expect(installGlobalSkillsSpy).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("REG-1399: installSessionGlobalSkills reports failure instead of swallowing", () => {
+    test("returns ok:false with skill_install_failed when the installer throws, without rejecting", async () => {
+      const session = makeRepoSession({
+        id: "session-install-fail-impl",
+        globalSkillRefs: ["acme/skills/formatter"],
+      });
+      testSessionById[session.id] = session;
+      installGlobalSkillsSpy.mockImplementationOnce(async () => {
+        throw new Error("npx skills add failed");
+      });
+
+      const result = await installSessionGlobalSkills({
+        session: session as never,
+        sandbox: fakeSandbox as unknown as Sandbox,
+        didSetupWorkspace: true,
+      });
+
+      expect(result).toEqual({
+        ok: false,
+        errorKind: "skill_install_failed",
+        message: "npx skills add failed",
+      });
+    });
+
+    test("returns ok:true on success and when there is nothing to install", async () => {
+      const session = makeRepoSession({
+        id: "session-install-ok-impl",
+        globalSkillRefs: ["acme/skills/formatter"],
+      });
+      testSessionById[session.id] = session;
+
+      const success = await installSessionGlobalSkills({
+        session: session as never,
+        sandbox: fakeSandbox as unknown as Sandbox,
+        didSetupWorkspace: true,
+      });
+      expect(success).toEqual({ ok: true });
+
+      const skipped = await installSessionGlobalSkills({
+        session: {
+          ...session,
+          id: "session-install-empty",
+          globalSkillRefs: [],
+        } as never,
+        sandbox: fakeSandbox as unknown as Sandbox,
+        didSetupWorkspace: true,
+      });
+      expect(skipped).toEqual({ ok: true });
     });
   });
 

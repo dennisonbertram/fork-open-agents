@@ -208,18 +208,22 @@ export async function getGitUser(userId: string) {
   };
 }
 
+export type SessionSkillInstallResult =
+  | { ok: true }
+  | { ok: false; errorKind: "skill_install_failed"; message: string };
+
 export async function installSessionGlobalSkills(params: {
   session: SessionRecord;
   sandbox: Sandbox;
   didSetupWorkspace: boolean;
-}): Promise<void> {
+}): Promise<SessionSkillInstallResult> {
   if (!params.didSetupWorkspace) {
-    return;
+    return { ok: true };
   }
 
   const globalSkillRefs = params.session.globalSkillRefs ?? [];
   if (globalSkillRefs.length === 0) {
-    return;
+    return { ok: true };
   }
 
   try {
@@ -227,11 +231,14 @@ export async function installSessionGlobalSkills(params: {
       sandbox: params.sandbox,
       globalSkillRefs,
     });
+    return { ok: true };
   } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
     console.error(
       `Failed to install global skills for session ${params.session.id}:`,
       error,
     );
+    return { ok: false, errorKind: "skill_install_failed", message };
   }
 }
 
