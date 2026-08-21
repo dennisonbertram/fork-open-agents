@@ -397,3 +397,7 @@ mistakes stacked up to hide it. Each is worth avoiding on its own.
   production trigger was refused weekly from 2026-07-06 and the only way to
   see it was a direct database query. `dispatchScheduledBackgroundAgents` now
   returns `skipped`, present only when something was refused.
+
+## 2026-08-21 — One PR per issue for watchdog fanout
+
+See [docs/security-hygiene/learnings.md](../security-hygiene/learnings.md). Concurrent agents sharing one checkout can publish empty branches; use isolated worktrees.
