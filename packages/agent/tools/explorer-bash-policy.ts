@@ -19,9 +19,65 @@ export type ExplorerBashDecision =
  * Heuristic — not a full shell parser. Prefer dedicated tools (read/grep/glob)
  * for exploration; bash is a narrow escape hatch for ls/find/git readouts.
  */
+/**
+ * Quote-aware scan for file-writing redirections.
+ *
+ * Any unquoted `>` or `>>` is treated as mutation for the explorer, except
+ * fd duplication forms like `2>&1` / `>&2` which only re-point streams.
+ * Quoted arguments (`grep "a > b" file`) are not redirects. This replaces
+ * the old whitespace-anchored regex, which missed `echo x>f`.
+ */
+export function hasUnquotedFileRedirect(command: string): boolean {
+  let inSingleQuote = false;
+  let inDoubleQuote = false;
+  for (let i = 0; i < command.length; i++) {
+    const ch = command[i];
+    if (inSingleQuote) {
+      if (ch === "'") {
+        inSingleQuote = false;
+      }
+      continue;
+    }
+    if (inDoubleQuote) {
+      if (ch === "\\") {
+        i++;
+      } else if (ch === '"') {
+        inDoubleQuote = false;
+      }
+      continue;
+    }
+    if (ch === "'") {
+      inSingleQuote = true;
+      continue;
+    }
+    if (ch === '"') {
+      inDoubleQuote = true;
+      continue;
+    }
+    if (ch === "\\") {
+      i++;
+      continue;
+    }
+    if (ch !== ">") {
+      continue;
+    }
+    if (command[i + 1] === ">") {
+      return true;
+    }
+    if (command[i + 1] === "&") {
+      const afterAmpersand = command.slice(i + 2).trimStart();
+      if (/^\d/.test(afterAmpersand)) {
+        continue;
+      }
+    }
+    return true;
+  }
+  return false;
+}
+
 const MUTATING_COMMAND_PATTERNS: RegExp[] = [
-  // Redirections that write files
-  /(?:^|[\s;|&])(?:>>?|tee\b)/,
+  // tee writes anywhere it is piped
+  /(?:^|[\s;|&])tee\b/,
   // Common mutating builtins / utilities
   /\b(?:rm|rmdir|mkdir|touch|cp|mv|ln|install|chmod|chown|chgrp|truncate|dd|mkfs|shred)\b/,
   // Editors / in-place mutation
@@ -33,8 +89,6 @@ const MUTATING_COMMAND_PATTERNS: RegExp[] = [
   /\bgit\b[^\n]*\b(?:add|commit|push|pull|fetch|merge|rebase|cherry-pick|reset|clean|tag\s+-d|branch\s+-d|stash\s+(?:push|pop|drop|apply|clear)|config\s+(?:--add|--unset))\b/,
   // find delete / exec mutation
   /\bfind\b[^\n]*(?:-delete|-exec\b)/,
-  // shell write helpers
-  /\b(?:printf|echo)\b[^\n]*>/,
 ];
 
 /**
@@ -73,7 +127,6 @@ const READ_ONLY_HEADS = new Set([
   "test",
   "[",
   "git",
-  "awk",
   "sed",
   "sort",
   "uniq",
@@ -149,12 +202,6 @@ function isReadOnlySimpleCommand(simpleCommand: string): boolean {
     if (head === "git" && !isReadOnlyGit(stage)) {
       return false;
     }
-    // sed without -i is read-only filter; with -i caught by MUTATING patterns
-    if (head === "echo" || head === "printf") {
-      if (/(?:^|[\s;|&])(?:>>?)/.test(stage)) {
-        return false;
-      }
-    }
   }
   return stages.length > 0;
 }
@@ -169,6 +216,16 @@ export function classifyExplorerBashCommand(
       errorKind: "tool_policy_denied",
       reason: "explorer_readonly",
       message: "Explorer bash refused an empty command (read-only policy).",
+    };
+  }
+
+  if (hasUnquotedFileRedirect(trimmed)) {
+    return {
+      allowed: false,
+      errorKind: "tool_policy_denied",
+      reason: "explorer_readonly",
+      message:
+        "Explorer bash is read-only and refused a file-writing redirection. Use read/grep/glob for inspection.",
     };
   }
 

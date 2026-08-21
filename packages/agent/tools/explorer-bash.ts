@@ -1,7 +1,7 @@
 import { tool } from "ai";
 import { z } from "zod";
 import * as path from "path";
-import { getSandbox } from "./utils";
+import { getContextSessionId, getSandbox } from "./utils";
 import { classifyExplorerBashCommand } from "./explorer-bash-policy";
 import { emitToolPolicyDenied } from "./tool-policy-events";
 
@@ -48,10 +48,15 @@ IMPORTANT:
     ) => {
       const decision = classifyExplorerBashCommand(command);
       if (!decision.allowed) {
+        // chatId/runId are not carried in tool experimental_context today;
+        // they are passed explicitly as undefined until a caller threads them.
         emitToolPolicyDenied({
           tool: "bash",
           reason: decision.reason,
           command,
+          sessionId: getContextSessionId(experimental_context),
+          chatId: undefined,
+          runId: undefined,
         });
         return {
           success: false,

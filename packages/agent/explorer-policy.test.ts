@@ -122,12 +122,16 @@ describe("explorer read-only bash policy (#1401)", () => {
     try {
       const tool = explorerBashTool();
       const command = "echo secret-token > /tmp/leak";
-      await tool.execute!({ command }, executionOptions(makeContext()));
+      await tool.execute!(
+        { command },
+        executionOptions(makeContext({ sessionId: "chat-123" })),
+      );
       expect(events.length).toBeGreaterThan(0);
       const denied = events.find((e) => e.event === "tool_policy_denied");
       expect(denied).toBeDefined();
       expect(denied?.reason).toBe("explorer_readonly");
       expect(denied?.tool).toBe("bash");
+      expect(denied?.sessionId).toBe("chat-123");
       const expectedHash = createHash("sha256")
         .update(command)
         .digest("hex")

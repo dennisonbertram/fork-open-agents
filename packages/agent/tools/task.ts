@@ -62,6 +62,7 @@ import { applyRosterOverrides } from "../subagents/roster";
 import { SUBAGENT_STEP_LIMIT } from "../subagents/constants";
 import { sumLanguageModelUsage } from "../usage";
 import {
+  getContextSessionId,
   getGithubToolAvailable,
   getSandboxContext,
   getSubagentModel,
@@ -797,6 +798,7 @@ IMPORTANT:
           managedRuntime: getManagedRuntimeContext(experimental_context),
           allowedBuiltinToolNames:
             getAllowedBuiltinToolNames(experimental_context),
+          sessionId: getContextSessionId(experimental_context),
         },
         abortSignal,
       });

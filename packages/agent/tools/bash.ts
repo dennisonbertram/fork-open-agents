@@ -3,6 +3,10 @@ import { z } from "zod";
 import * as path from "path";
 import { getSandbox, getUnattended } from "./utils";
 import { bashPolicy, classifyToolApproval } from "./approval-policy";
+import {
+  isUnattendedRun,
+  unattendedApprovalDenial,
+} from "./unattended-approval";
 
 const TIMEOUT_MS = 120_000;
 
@@ -58,20 +62,13 @@ export const bashTool = (options?: ToolOptions) =>
       }
 
       // In an unattended run (background agent / agent-loop step) there is no
-      // human to answer an approval prompt. Split on blast radius, not tool
-      // identity, so the run does not wedge on a never-approved tool call:
-      //   - local bash effects (bashPolicy) stay inside the ephemeral
-      //     per-session sandbox -> auto-approve.
-      //   - the git-push family (gitPushPolicy) mutates state that outlives
-      //     the sandbox -> keep gated.
-      //
-      // Keeping it gated in an unattended run ENDS the run: there is no
-      // non-browser path that resolves a pending approval, so the run stops
-      // with outcome `awaiting_tool_approval` and explains itself. An earlier
-      // version of this comment claimed "the unattended loop denies it with a
-      // recorded reason" — no such loop exists. Do not rely on one.
+      // human to answer an approval prompt. Never pend one here: the execute
+      // path re-checks the gate and auto-denies blast-radius-carrying calls
+      // (git force-push family) with a typed error, while local bash effects
+      // (bashPolicy categories) stay inside the ephemeral per-session sandbox
+      // and run without approval.
       if (getUnattended(experimental_context)) {
-        return decision.category === "git-force-push";
+        return false;
       }
 
       // Attended run: unchanged — respect any caller override else require
@@ -124,6 +121,18 @@ EXAMPLES:
       { command, cwd, detached },
       { experimental_context, abortSignal },
     ) => {
+      // Unattended runs have no approver: re-check the gate here and deny
+      // deterministically instead of letting a force-push family command run
+      // unapproved or pend forever.
+      if (isUnattendedRun(experimental_context)) {
+        const decision = classifyToolApproval("bash", {
+          command,
+        });
+        if (decision.requires && decision.category === "git-force-push") {
+          return unattendedApprovalDenial("bash");
+        }
+      }
+
       const sandbox = await getSandbox(experimental_context, "bash");
       const workingDirectory = sandbox.workingDirectory;
 

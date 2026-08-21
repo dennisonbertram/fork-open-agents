@@ -61,6 +61,7 @@ const callOptionsSchema = z.object({
   githubToolAvailable: z.boolean().optional(),
   managedRuntime: z.custom<ManagedRuntimeAgentContext>().optional(),
   allowedBuiltinToolNames: z.array(z.string()).nullish(),
+  sessionId: z.string().optional(),
 });
 
 export type ExecutorCallOptions = z.infer<typeof callOptionsSchema>;
@@ -114,6 +115,7 @@ ${SUBAGENT_REMINDER}`,
         githubToolAvailable: options.githubToolAvailable ?? false,
         managedRuntime: options.managedRuntime,
         allowedBuiltinToolNames: options.allowedBuiltinToolNames ?? null,
+        sessionId: options.sessionId,
       },
     };
   },
