@@ -348,5 +348,57 @@ describe("runEventRetention", () => {
     expect(failed.length).toBeGreaterThan(0);
     expect(failed[0]?.service).toBe("db-retention");
     expect(failed[0]?.errorKind).toBe("retention_batch_failed");
+    // #1400: the failure event must carry the actual error message so a
+    // broken retention pass is diagnosable from logs alone.
+    expect(failed[0]?.errorMessage).toBe("boom");
+    expect(JSON.stringify(failed[0])).not.toContain("runKey");
+  });
+});
+
+describe("shouldRunExcessSweep (#1400 keep-per-run throttle)", () => {
+  const MIN_INTERVAL_MS = 6 * 60 * 60 * 1000;
+
+  test("runs when the window-based delete deleted rows, even right after a sweep", async () => {
+    const { shouldRunExcessSweep } = await import("./retention");
+    expect(
+      shouldRunExcessSweep({
+        agedDeletedCount: 3,
+        nowMs: 1_000_000,
+        lastSweepAtMs: 999_999,
+        minIntervalMs: MIN_INTERVAL_MS,
+      }),
+    ).toBe(true);
+  });
+
+  test("skips the expensive sweep when nothing aged out and the throttle has not elapsed", async () => {
+    const { shouldRunExcessSweep } = await import("./retention");
+    expect(
+      shouldRunExcessSweep({
+        agedDeletedCount: 0,
+        nowMs: 1_000_000,
+        lastSweepAtMs: 1_000_000 - MIN_INTERVAL_MS + 1,
+        minIntervalMs: MIN_INTERVAL_MS,
+      }),
+    ).toBe(false);
+  });
+
+  test("runs on the first ever tick and once the throttle interval has elapsed", async () => {
+    const { shouldRunExcessSweep } = await import("./retention");
+    expect(
+      shouldRunExcessSweep({
+        agedDeletedCount: 0,
+        nowMs: 1_000_000,
+        lastSweepAtMs: null,
+        minIntervalMs: MIN_INTERVAL_MS,
+      }),
+    ).toBe(true);
+    expect(
+      shouldRunExcessSweep({
+        agedDeletedCount: 0,
+        nowMs: 1_000_000,
+        lastSweepAtMs: 1_000_000 - MIN_INTERVAL_MS,
+        minIntervalMs: MIN_INTERVAL_MS,
+      }),
+    ).toBe(true);
   });
 });

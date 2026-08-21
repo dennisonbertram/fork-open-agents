@@ -136,6 +136,7 @@ function logRetentionFailed(params: {
   runId: string;
   table: RetentionTableName;
   errorKind: "retention_batch_failed";
+  errorMessage: string;
 }): void {
   console.warn(
     JSON.stringify({
@@ -145,6 +146,7 @@ function logRetentionFailed(params: {
       runId: params.runId,
       table: params.table,
       errorKind: params.errorKind,
+      errorMessage: params.errorMessage,
     }),
   );
 }
@@ -356,6 +358,32 @@ async function deleteExcessBeyondKeepPerRun(params: {
   return deletedTotal;
 }
 
+/**
+ * The keep-per-run pass scans the whole table with ROW_NUMBER() OVER
+ * (PARTITION BY run_id), which is expensive on large tables. It only needs to
+ * run when rows actually aged out of the window (freeing rank slots) or at
+ * most once per throttle interval; a cron tick where nothing aged out and no
+ * excess was swept recently skips it entirely.
+ */
+export const EXCESS_SWEEP_MIN_INTERVAL_MS = 6 * 60 * 60 * 1000;
+
+export function shouldRunExcessSweep(params: {
+  agedDeletedCount: number;
+  nowMs: number;
+  lastSweepAtMs: number | null;
+  minIntervalMs: number;
+}): boolean {
+  if (params.agedDeletedCount > 0) {
+    return true;
+  }
+  if (params.lastSweepAtMs === null) {
+    return true;
+  }
+  return params.nowMs - params.lastSweepAtMs >= params.minIntervalMs;
+}
+
+let lastExcessSweepAtMs: number | null = null;
+
 async function retainTableOnDb(params: {
   table: RetentionTableName;
   cutoff: Date;
@@ -380,11 +408,22 @@ async function retainTableOnDb(params: {
       deleted += await deleteAgedVerifiedBuildEvents(cutoff, config.batchSize);
       break;
   }
+  if (
+    !shouldRunExcessSweep({
+      agedDeletedCount: deleted,
+      nowMs: Date.now(),
+      lastSweepAtMs: lastExcessSweepAtMs,
+      minIntervalMs: EXCESS_SWEEP_MIN_INTERVAL_MS,
+    })
+  ) {
+    return deleted;
+  }
   deleted += await deleteExcessBeyondKeepPerRun({
     table,
     keepPerRun: config.keepPerRun,
     batchSize: config.batchSize,
   });
+  lastExcessSweepAtMs = Date.now();
   return deleted;
 }
 
@@ -446,7 +485,7 @@ export async function runEventRetention(params?: {
         durationMs,
         windowDays: config.windowDays,
       });
-    } catch {
+    } catch (error) {
       const durationMs = Date.now() - started;
       tables.push({
         table,
@@ -459,6 +498,8 @@ export async function runEventRetention(params?: {
         runId,
         table,
         errorKind: "retention_batch_failed",
+        errorMessage:
+          error instanceof Error ? error.message : String(error ?? "unknown"),
       });
     }
   }
