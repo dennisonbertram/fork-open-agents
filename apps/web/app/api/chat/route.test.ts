@@ -61,6 +61,12 @@ let preferencesState: {
 let cachedSkillsState: unknown = null;
 let discoverSkillDirsCalls: string[][] = [];
 let abandonedAssistantMessageIds: string[] = [];
+let rateLimitResponse: Response | null = null;
+let checkRateLimitCalls: Array<{
+  key: string;
+  limit: number;
+  windowMs: number;
+}> = [];
 
 const claimChatActiveStreamIdSpy = mock(
   async () => claimActiveStreamDefaultResult,
@@ -269,6 +275,19 @@ mock.module("@/lib/session/get-server-session", () => ({
   getServerSession: async () => currentAuthSession,
 }));
 
+mock.module("@/lib/rate-limit", () => ({
+  checkRateLimit: async (options: {
+    key: string;
+    limit: number;
+    windowMs: number;
+  }) => {
+    checkRateLimitCalls.push(options);
+    return rateLimitResponse;
+  },
+  rateLimitKey: (parts: Array<number | string | null | undefined>) =>
+    parts.map((part) => String(part ?? "unknown")).join(":"),
+}));
+
 const routeModulePromise = import("./route");
 
 afterAll(() => {
@@ -324,6 +343,8 @@ describe("/api/chat route", () => {
     cachedSkillsState = null;
     discoverSkillDirsCalls = [];
     abandonedAssistantMessageIds = [];
+    rateLimitResponse = null;
+    checkRateLimitCalls = [];
     preferencesState = {
       autoCommitPush: true,
       autoCreatePr: false,
@@ -780,6 +801,34 @@ describe("/api/chat route", () => {
 
     expect(response.ok).toBe(true);
     expect(response.headers.get("x-workflow-run-id")).toBe("wrun_test-123");
+  });
+
+  test("checks the chat rate limit for the authenticated user with a 30/min ceiling", async () => {
+    const { POST } = await routeModulePromise;
+
+    const response = await POST(createValidRequest());
+
+    expect(response.ok).toBe(true);
+    expect(checkRateLimitCalls).toHaveLength(1);
+    expect(checkRateLimitCalls[0]).toEqual({
+      key: "chat:user-1",
+      limit: 30,
+      windowMs: 60_000,
+    });
+  });
+
+  test("returns the rate limit response without starting a workflow when limited", async () => {
+    rateLimitResponse = Response.json(
+      { error: "Too many requests", errorKind: "rate_limited" },
+      { status: 429 },
+    );
+    const { POST } = await routeModulePromise;
+
+    const response = await POST(createValidRequest());
+
+    expect(response.status).toBe(429);
+    expect(startCalls).toHaveLength(0);
+    expect(createChatMessageIfNotExistsSpy).not.toHaveBeenCalled();
   });
 
   // Issue #1133 / PR #1134 review. Same open chat, no reload: the client
