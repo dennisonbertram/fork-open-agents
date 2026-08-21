@@ -2,6 +2,7 @@ import { tool } from "ai";
 import { z } from "zod";
 import * as path from "path";
 import { getSandbox, shellEscape, toDisplayPath } from "./utils";
+import { resolveWorkspacePath } from "./path-security";
 
 interface FileInfo {
   path: string;
@@ -62,9 +63,15 @@ EXAMPLES:
       try {
         let searchDir: string;
         if (basePath) {
-          searchDir = path.isAbsolute(basePath)
-            ? basePath
-            : path.resolve(workingDirectory, basePath);
+          const resolvedBase = resolveWorkspacePath(basePath, workingDirectory);
+          if (!resolvedBase) {
+            return {
+              success: false,
+              error: "Path must stay within the workspace.",
+              errorKind: "path_outside_workspace",
+            };
+          }
+          searchDir = resolvedBase;
         } else {
           searchDir = workingDirectory;
         }
@@ -84,7 +91,16 @@ EXAMPLES:
           literalPrefix.push(part);
         }
         if (literalPrefix.length > 0) {
-          searchDir = path.join(searchDir, ...literalPrefix);
+          const joined = path.join(searchDir, ...literalPrefix);
+          const resolvedJoined = resolveWorkspacePath(joined, workingDirectory);
+          if (!resolvedJoined) {
+            return {
+              success: false,
+              error: "Path must stay within the workspace.",
+              errorKind: "path_outside_workspace",
+            };
+          }
+          searchDir = resolvedJoined;
         }
 
         // Determine maxdepth from remaining wildcard directory segments.
