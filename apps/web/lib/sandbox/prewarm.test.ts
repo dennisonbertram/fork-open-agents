@@ -160,14 +160,25 @@ mock.module("@/app/workflows/chat-sandbox-runtime", () => ({
     sandbox: Sandbox;
     didSetupWorkspace: boolean;
   }) => {
-    // Faithful to the real installer: a no-op when didSetupWorkspace is false.
+    // Faithful to the real installer: no-op when didSetupWorkspace is false,
+    // and a throwing installer surfaces as an ok:false result rather than a
+    // rejection (see chat-sandbox-runtime-impl installSessionGlobalSkills).
     if (!params.didSetupWorkspace) {
-      return;
+      return { ok: true as const };
     }
-    return spies.installGlobalSkills({
-      sandbox: params.sandbox,
-      globalSkillRefs: params.session.globalSkillRefs ?? [],
-    });
+    try {
+      await spies.installGlobalSkills({
+        sandbox: params.sandbox,
+        globalSkillRefs: params.session.globalSkillRefs ?? [],
+      });
+      return { ok: true as const };
+    } catch (error) {
+      return {
+        ok: false as const,
+        errorKind: "skill_install_failed" as const,
+        message: error instanceof Error ? error.message : String(error),
+      };
+    }
   },
 }));
 
@@ -710,6 +721,114 @@ describe("prewarmSessionSandbox", () => {
         sessionId: "reg-session",
         didSetupWorkspace: true,
       });
+    });
+  });
+
+  // #1399: skill-install rejection must not orphan a running VM — persist
+  // sandboxState first, keep prewarm successful, kick lifecycle, and emit
+  // prewarm.install_failed_state_preserved.
+  describe("REG-1399: skill install failure preserves sandbox state", () => {
+    test("persists sandboxState, kicks lifecycle, and returns prewarmed when global skill install rejects", async () => {
+      const session = makeTestSession({ id: "session-install-fail" });
+      spies.getSessionById.mockImplementationOnce(async () => session);
+      spies.installGlobalSkills.mockImplementationOnce(async () => {
+        throw new Error("npx skills add failed");
+      });
+
+      const warnSpy = mock((..._args: unknown[]) => undefined);
+      const originalWarn = console.warn;
+      console.warn = warnSpy as typeof console.warn;
+
+      try {
+        const result = await prewarmSessionSandbox({
+          sessionId: session.id,
+          userId: "user-1",
+        });
+
+        expect(result.status).toBe("prewarmed");
+        expect(spies.updateSession).toHaveBeenCalledTimes(1);
+        const updateCall = spies.updateSession.mock.calls[0] as unknown as [
+          string,
+          Record<string, unknown>,
+        ];
+        expect(updateCall[0]).toBe(session.id);
+        expect(updateCall[1]).toHaveProperty("sandboxState");
+        expect(spies.kickSandboxLifecycleWorkflow).toHaveBeenCalledTimes(1);
+
+        const warnPayloads = warnSpy.mock.calls.map((call) => {
+          const first = call[0];
+          if (typeof first !== "string") {
+            return null;
+          }
+          try {
+            return JSON.parse(first) as Record<string, unknown>;
+          } catch {
+            return null;
+          }
+        });
+        expect(warnPayloads).toContainEqual(
+          expect.objectContaining({
+            service: "sandbox-lifecycle",
+            event: "prewarm.install_failed_state_preserved",
+            sessionId: session.id,
+            skillId: "global",
+            errorKind: "skill_install_failed",
+          }),
+        );
+      } finally {
+        console.warn = originalWarn;
+      }
+    });
+
+    test("emits the warn event when installSessionUserSkills rejects, still persisting state and returning prewarmed", async () => {
+      const session = makeTestSession({ id: "session-user-install-fail" });
+      spies.getSessionById.mockImplementationOnce(async () => session);
+      spies.installSessionUserSkills.mockImplementationOnce(async () => {
+        throw new Error("user skill sync failed");
+      });
+
+      const warnSpy = mock((..._args: unknown[]) => undefined);
+      const originalWarn = console.warn;
+      console.warn = warnSpy as typeof console.warn;
+
+      try {
+        const result = await prewarmSessionSandbox({
+          sessionId: session.id,
+          userId: "user-1",
+        });
+
+        expect(result.status).toBe("prewarmed");
+        expect(spies.updateSession).toHaveBeenCalledTimes(1);
+        const updateCall = spies.updateSession.mock.calls[0] as unknown as [
+          string,
+          Record<string, unknown>,
+        ];
+        expect(updateCall[1]).toHaveProperty("sandboxState");
+        expect(spies.kickSandboxLifecycleWorkflow).toHaveBeenCalledTimes(1);
+
+        const warnPayloads = warnSpy.mock.calls.map((call) => {
+          const first = call[0];
+          if (typeof first !== "string") {
+            return null;
+          }
+          try {
+            return JSON.parse(first) as Record<string, unknown>;
+          } catch {
+            return null;
+          }
+        });
+        expect(warnPayloads).toContainEqual(
+          expect.objectContaining({
+            service: "sandbox-lifecycle",
+            event: "prewarm.install_failed_state_preserved",
+            sessionId: session.id,
+            skillId: "user",
+            errorKind: "skill_install_failed",
+          }),
+        );
+      } finally {
+        console.warn = originalWarn;
+      }
     });
   });
 });

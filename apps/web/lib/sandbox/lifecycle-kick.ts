@@ -61,9 +61,9 @@ function shouldStartLifecycle(
   if (!session) {
     return false;
   }
-  if (session.status === "archived" || session.lifecycleState === "archived") {
-    return false;
-  }
+  // Archived sessions are normally done, but one that still holds a live
+  // resume handle (#1395) needs a lifecycle run to retry the stop that failed
+  // at archive time. The operable checks below gate this to exactly that case.
   if (!session.sandboxState) {
     return false;
   }

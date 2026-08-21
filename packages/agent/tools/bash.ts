@@ -1,12 +1,12 @@
 import { tool } from "ai";
 import { z } from "zod";
-import * as path from "path";
 import { getSandbox, getUnattended } from "./utils";
 import { bashPolicy, classifyToolApproval } from "./approval-policy";
 import {
   isUnattendedRun,
   unattendedApprovalDenial,
 } from "./unattended-approval";
+import { resolveWorkspacePath } from "./path-security";
 
 const TIMEOUT_MS = 120_000;
 
@@ -136,12 +136,23 @@ EXAMPLES:
       const sandbox = await getSandbox(experimental_context, "bash");
       const workingDirectory = sandbox.workingDirectory;
 
-      // Resolve the working directory
-      const workingDir = cwd
-        ? path.isAbsolute(cwd)
-          ? cwd
-          : path.resolve(workingDirectory, cwd)
-        : workingDirectory;
+      // Resolve the working directory, refusing to run outside the workspace.
+      let workingDir: string;
+      if (cwd) {
+        const resolvedCwd = resolveWorkspacePath(cwd, workingDirectory);
+        if (!resolvedCwd) {
+          return {
+            success: false,
+            exitCode: null,
+            stdout: "",
+            stderr: "cwd must stay within the workspace.",
+            errorKind: "path_outside_workspace",
+          };
+        }
+        workingDir = resolvedCwd;
+      } else {
+        workingDir = workingDirectory;
+      }
 
       // Detached mode: start the command in the background and return immediately
       if (detached) {

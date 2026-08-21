@@ -47,7 +47,20 @@ async function computeLifecycleWakeDecision(
     return { shouldContinue: false, reason: "session-not-found" };
   }
   if (session.status === "archived" || session.lifecycleState === "archived") {
-    return { shouldContinue: false, reason: "session-archived" };
+    const archivedState = session.sandboxState;
+    if (
+      !canOperateOnSandbox(archivedState) ||
+      archivedState.type !== "vercel"
+    ) {
+      return { shouldContinue: false, reason: "session-archived" };
+    }
+    // #1395: the session is archived but still holds a live resume handle —
+    // the archive-time stop failed. Wake immediately so the evaluation pass
+    // retries the stop instead of orphaning the VM.
+    if (!(await claimLifecycleLease(sessionId, runId))) {
+      return { shouldContinue: false, reason: "run-replaced" };
+    }
+    return { shouldContinue: true, wakeAtMs: Date.now() };
   }
 
   const state = session.sandboxState;
@@ -115,6 +128,16 @@ export async function sandboxLifecycleWorkflow(
       (evaluation.reason === "not-due-yet" ||
         evaluation.reason === "active-workflow" ||
         evaluation.reason === "snapshot-already-in-progress")
+    ) {
+      continue;
+    }
+
+    // #1395: a retried archive stop that failed again must not end the run —
+    // the resume handle is still live, so keep looping (spaced by the minimum
+    // sleep) until the stop succeeds.
+    if (
+      evaluation.action === "failed" &&
+      evaluation.reason === "archive-stop-retry-failed"
     ) {
       continue;
     }

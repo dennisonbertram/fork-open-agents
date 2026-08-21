@@ -14,14 +14,7 @@
 
 import { getBackgroundAgentsCronSecret } from "@/lib/background-agents/config";
 import { sweepStalledLoopRuns } from "@/lib/agent-loops/sweep";
-
-function isAuthorized(req: Request, secret: string): boolean {
-  const authorization = req.headers.get("authorization");
-  if (authorization === `Bearer ${secret}`) {
-    return true;
-  }
-  return req.headers.get("x-background-agents-cron-secret") === secret;
-}
+import { isAuthorizedCronRequest } from "@/app/api/_lib/cron-auth";
 
 async function handleSweep(req: Request) {
   const secret = getBackgroundAgentsCronSecret();
@@ -35,7 +28,7 @@ async function handleSweep(req: Request) {
     );
   }
 
-  if (!isAuthorized(req, secret)) {
+  if (!isAuthorizedCronRequest(req, secret)) {
     return Response.json(
       { error: "Unauthorized", errorKind: "unauthorized" },
       { status: 401 },

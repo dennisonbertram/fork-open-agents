@@ -18,15 +18,6 @@ export async function GET(request: Request) {
     return response;
   } catch (error) {
     console.error("Failed to prepare managed runtime demo:", error);
-    return Response.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Failed to prepare managed runtime demo",
-        errorKind: "internal_error",
-      },
-      { status: 500 },
-    );
+    return Response.json({ errorKind: "internal_error" }, { status: 500 });
   }
 }
