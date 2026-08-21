@@ -40,7 +40,9 @@ const getCalls: Array<Record<string, unknown>> = [];
 const updateNetworkPolicyCalls: Array<Record<string, unknown>> = [];
 const runCommandCalls: MockRunCommandParams[] = [];
 const writeFilesCalls: Array<{ path: string; content: Buffer }[]> = [];
+const sdkStopCalls: Array<string> = [];
 let readFileToBufferResult: Buffer | null = Buffer.from("");
+let sdkStopImpl: (name: string) => Promise<void> = async () => {};
 
 let runCommandMock = async (
   _params?: MockRunCommandParams,
@@ -129,7 +131,10 @@ function createMockSandboxSdk(name: string) {
     readFileToBuffer: async (_opts: { path: string }) => {
       return readFileToBufferResult;
     },
-    stop: async () => {},
+    stop: async () => {
+      sdkStopCalls.push(name);
+      await sdkStopImpl(name);
+    },
     update: async (params: Record<string, unknown>) => {
       updateCalls.push(params);
     },
@@ -165,6 +170,8 @@ beforeEach(() => {
   updateNetworkPolicyCalls.length = 0;
   runCommandCalls.length = 0;
   writeFilesCalls.length = 0;
+  sdkStopCalls.length = 0;
+  sdkStopImpl = async () => {};
   readFileToBufferResult = Buffer.from("");
   portDomains.clear();
   missingPorts.clear();
@@ -393,6 +400,84 @@ describe("VercelSandbox persistence", () => {
   });
 });
 
+function captureWarnEvents(): {
+  events: Array<Record<string, unknown>>;
+  restore: () => void;
+} {
+  const events: Array<Record<string, unknown>> = [];
+  const originalWarn = console.warn;
+  console.warn = (...args: unknown[]) => {
+    const first = args[0];
+    if (typeof first === "string" && first.startsWith("{")) {
+      events.push(JSON.parse(first) as Record<string, unknown>);
+    }
+  };
+  return {
+    events,
+    restore: () => {
+      console.warn = originalWarn;
+    },
+  };
+}
+
+/**
+ * #1395 defect 3 — stop() used to latch `isStopped = true` before calling
+ * `sdk.stop()`. If the SDK call threw, the instance was permanently marked
+ * stopped and every subsequent stop() call was a silent no-op, leaking the
+ * VM forever. The latch must only flip after sdk.stop() actually resolves.
+ */
+describe("VercelSandbox.stop", () => {
+  test("throws once, and a second stop() call still invokes sdk.stop()", async () => {
+    let stopAttempts = 0;
+    sdkStopImpl = async () => {
+      stopAttempts += 1;
+      if (stopAttempts === 1) {
+        throw new Error("stop failed transiently");
+      }
+    };
+
+    const sandbox = await sandboxModule.VercelSandbox.connect(
+      "session_stop-retry",
+      { remainingTimeout: 0 },
+    );
+
+    const warned = captureWarnEvents();
+    try {
+      await expect(sandbox.stop()).rejects.toThrow("stop failed transiently");
+      expect(sdkStopCalls).toEqual(["session_stop-retry"]);
+      expect(warned.events).toContainEqual(
+        expect.objectContaining({
+          service: "sandbox",
+          event: "sandbox-stop-retryable",
+          level: "warn",
+          sandboxName: "session_stop-retry",
+          errorKind: "stop_failed_retryable",
+          errorName: "Error",
+        }),
+      );
+    } finally {
+      warned.restore();
+    }
+
+    await sandbox.stop();
+
+    expect(sdkStopCalls).toEqual(["session_stop-retry", "session_stop-retry"]);
+    expect(stopAttempts).toBe(2);
+  });
+
+  test("is idempotent after a successful stop", async () => {
+    const sandbox = await sandboxModule.VercelSandbox.connect(
+      "session_stop-once",
+      { remainingTimeout: 0 },
+    );
+
+    await sandbox.stop();
+    await sandbox.stop();
+
+    expect(sdkStopCalls).toEqual(["session_stop-once"]);
+  });
+});
+
 describe("GitHub setup credential brokering", () => {
   test("applies setup GitHub auth when creating a sandbox and then clears it", async () => {
     const basicAuthToken = Buffer.from(
@@ -613,6 +698,104 @@ describe("VercelSandbox.create", () => {
         },
       }),
     ).rejects.toThrow("fatal: repository not found");
+  });
+
+  // #1395 defect 1 — a setup failure must not leak the freshly created SDK
+  // sandbox. create() has to stop it best-effort before rethrowing, or the
+  // VM keeps running and billing until the platform timeout.
+  test("stops the freshly created sandbox best-effort when setup fails", async () => {
+    runCommandMock = async () => ({
+      exitCode: 1,
+      cmdId: "cmd-setup-failed",
+      stdout: async () => "",
+      stderr: async () => "fatal: setup failed\n",
+    });
+
+    const warned = captureWarnEvents();
+    try {
+      await expect(
+        sandboxModule.VercelSandbox.create({
+          name: "session_setup-fail",
+          baseSnapshotId: "snap-base-1",
+          source: {
+            url: "https://github.com/open-agents/example",
+            branch: "main",
+          },
+        }),
+      ).rejects.toThrow("fatal: setup failed");
+
+      expect(sdkStopCalls).toEqual(["session_setup-fail"]);
+      expect(warned.events).toContainEqual(
+        expect.objectContaining({
+          service: "sandbox",
+          event: "sandbox-orphan-prevented",
+          level: "warn",
+          sandboxName: "session_setup-fail",
+          stage: "create",
+          errorKind: "setup_failed_stopped",
+        }),
+      );
+    } finally {
+      warned.restore();
+    }
+  });
+
+  // #1395 defect 1 — same class of leak when hooks.afterStart throws after
+  // the sandbox has otherwise finished setup successfully.
+  test("stops the freshly created sandbox best-effort when afterStart throws", async () => {
+    const warned = captureWarnEvents();
+    try {
+      await expect(
+        sandboxModule.VercelSandbox.create({
+          name: "session_after-start-fail",
+          hooks: {
+            afterStart: async () => {
+              throw new Error("afterStart blew up");
+            },
+          },
+        }),
+      ).rejects.toThrow("afterStart blew up");
+
+      expect(sdkStopCalls).toEqual(["session_after-start-fail"]);
+      expect(warned.events).toContainEqual(
+        expect.objectContaining({
+          service: "sandbox",
+          event: "sandbox-orphan-prevented",
+          level: "warn",
+          sandboxName: "session_after-start-fail",
+          stage: "afterStart",
+          errorKind: "after_start_failed_stopped",
+        }),
+      );
+    } finally {
+      warned.restore();
+    }
+  });
+
+  // #1395 defect 1 — a throw between setting up GitHub credential brokering
+  // and clearing it must still clear the policy so an orphaned VM never
+  // keeps a token-brokered network policy active.
+  test("clears GitHub credential brokering even when setup fails", async () => {
+    runCommandMock = async () => ({
+      exitCode: 1,
+      cmdId: "cmd-setup-failed",
+      stdout: async () => "",
+      stderr: async () => "fatal: setup failed\n",
+    });
+
+    await expect(
+      sandboxModule.VercelSandbox.create({
+        name: "session_github-cleanup",
+        githubToken: "github-user-token",
+        baseSnapshotId: "snap-base-1",
+        source: {
+          url: "https://github.com/open-agents/example",
+          branch: "main",
+        },
+      }),
+    ).rejects.toThrow("fatal: setup failed");
+
+    expect(updateNetworkPolicyCalls).toEqual([{ allow: { "*": [] } }]);
   });
 
   test("creates empty git repo from base snapshot", async () => {

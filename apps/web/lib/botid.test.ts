@@ -15,6 +15,7 @@ const { checkBotProtection, botIdConfig } = await import("./botid");
 const originalNodeEnv = process.env.NODE_ENV;
 const originalTestAuth = process.env.OPEN_AGENTS_ENABLE_TEST_AUTH;
 const originalVercelEnv = process.env.VERCEL_ENV;
+const originalTestAuthSecret = process.env.TEST_AUTH_SECRET;
 const nodeEnvKey = "NODE_ENV" as keyof NodeJS.ProcessEnv;
 
 function restoreEnv() {
@@ -29,6 +30,11 @@ function restoreEnv() {
   } else {
     process.env.VERCEL_ENV = originalVercelEnv;
   }
+  if (originalTestAuthSecret === undefined) {
+    delete process.env.TEST_AUTH_SECRET;
+  } else {
+    process.env.TEST_AUTH_SECRET = originalTestAuthSecret;
+  }
   checkBotIdMock.mockClear();
 }
 
@@ -38,7 +44,8 @@ describe("checkBotProtection", () => {
   });
 
   test("bypasses BotID when test auth is explicitly enabled", async () => {
-    process.env[nodeEnvKey] = "production";
+    process.env[nodeEnvKey] = "test";
+    process.env.TEST_AUTH_SECRET = "test-secret";
     process.env.OPEN_AGENTS_ENABLE_TEST_AUTH = "1";
     process.env.VERCEL_ENV = "preview";
 
@@ -51,6 +58,7 @@ describe("checkBotProtection", () => {
 
   test("does not bypass BotID on Vercel production even if the test-auth flag is set", async () => {
     process.env[nodeEnvKey] = "production";
+    process.env.TEST_AUTH_SECRET = "test-secret";
     process.env.OPEN_AGENTS_ENABLE_TEST_AUTH = "1";
     process.env.VERCEL_ENV = "production";
 

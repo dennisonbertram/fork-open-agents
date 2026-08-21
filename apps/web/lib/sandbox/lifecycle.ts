@@ -170,6 +170,50 @@ async function restoreActiveLifecycleState(
 }
 
 /**
+ * Retry the stop for an archived session that still holds a live resume
+ * handle (#1395). `finalizeArchivedSessionSandbox` preserves the handle when
+ * its stop fails; without this retry the VM would be orphaned, since nothing
+ * else ever reconnects to an archived session. On success the handle is
+ * cleared with normal archive finalization; on failure it is preserved for
+ * the next lifecycle pass.
+ */
+async function retryArchivedSandboxStop(
+  sessionId: string,
+  sandboxState: SandboxState,
+): Promise<SandboxLifecycleEvaluationResult> {
+  try {
+    const sandbox = await connectSandbox(sandboxState);
+    await sandbox.stop();
+
+    const clearedState = clearSandboxState(sandboxState);
+    await updateSession(sessionId, {
+      snapshotUrl: null,
+      snapshotCreatedAt: null,
+      sandboxState: clearedState,
+      lifecycleState: "archived",
+      sandboxExpiresAt: null,
+      hibernateAfter: null,
+      lifecycleError: null,
+    });
+    console.log(
+      `[Lifecycle] Stopped sandbox for archived session ${sessionId} (sandboxName=${getPersistentSandboxName(clearedState) ?? "none"}).`,
+    );
+    return { action: "hibernated", reason: "archive-stop-retried" };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await updateSession(sessionId, {
+      lifecycleState: "archived",
+      lifecycleError: `Archive stop retry failed: ${message}`,
+    });
+    console.error(
+      `[Lifecycle] Failed to retry sandbox stop for archived session ${sessionId}:`,
+      error,
+    );
+    return { action: "failed", reason: "archive-stop-retry-failed" };
+  }
+}
+
+/**
  * One-shot lifecycle evaluator for workflow orchestration.
  *
  * This performs a single evaluation pass and exits.
@@ -184,16 +228,22 @@ export async function evaluateSandboxLifecycle(
     return { action: "skipped", reason: "session-not-found" };
   }
 
-  if (session.status === "archived" || session.lifecycleState === "archived") {
-    return { action: "skipped", reason: "session-archived" };
-  }
+  const isArchived =
+    session.status === "archived" || session.lifecycleState === "archived";
 
   const sandboxState = session.sandboxState;
   if (!canOperateOnSandbox(sandboxState)) {
-    return { action: "skipped", reason: "sandbox-not-operable" };
+    return {
+      action: "skipped",
+      reason: isArchived ? "session-archived" : "sandbox-not-operable",
+    };
   }
   if (sandboxState.type !== "vercel") {
     return { action: "skipped", reason: "unsupported-sandbox-type" };
+  }
+
+  if (isArchived) {
+    return retryArchivedSandboxStop(sessionId, sandboxState);
   }
 
   const nowMs = Date.now();
@@ -244,6 +294,23 @@ export async function evaluateSandboxLifecycle(
         );
         return { action: "skipped", reason: "not-due-yet" };
       }
+    }
+
+    // #1399: final TOCTOU guard — a stream may have started after the
+    // post-connect / timing rechecks and before stop(). Abort rather than
+    // tearing down a live workspace mid-run.
+    if (await hasActiveStreamForSession(sessionId)) {
+      await restoreActiveLifecycleState(sessionId, sandboxState);
+      console.info(
+        JSON.stringify({
+          service: "sandbox-lifecycle",
+          event: "hibernate.aborted_stream_active",
+          sessionId,
+          sandboxName: getPersistentSandboxName(sandboxState),
+          errorKind: "hibernate_race_aborted",
+        }),
+      );
+      return { action: "skipped", reason: "active-workflow" };
     }
 
     await sandbox.stop();

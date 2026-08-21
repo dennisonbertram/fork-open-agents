@@ -1,9 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { webFetchTool } from "./fetch";
-import {
-  type UnattendedMutatingFetchBlockedEvent,
-  setFetchEventRecorder,
-} from "./fetch-events";
+import { type FetchEvent, setFetchEventRecorder } from "./fetch-events";
 
 type NeedsApprovalFn = (
   input: { url: string; method?: string },
@@ -29,7 +26,7 @@ describe("unattended-mutating-fetch-blocked event (#1394)", () => {
   });
 
   test("denial path emits warn event with typed fields", async () => {
-    const events: UnattendedMutatingFetchBlockedEvent[] = [];
+    const events: FetchEvent[] = [];
     setFetchEventRecorder((event) => events.push(event));
 
     const requires = await needsApprovalResult(
@@ -40,8 +37,8 @@ describe("unattended-mutating-fetch-blocked event (#1394)", () => {
     expect(requires).toBe(true);
     expect(events).toHaveLength(1);
     const event = events[0];
-    if (!event) {
-      throw new Error("expected one event");
+    if (!event || event.event !== "unattended-mutating-fetch-blocked") {
+      throw new Error("expected unattended-mutating-fetch-blocked event");
     }
     expect(event.service).toBe("agent-fetch-tool");
     expect(event.event).toBe("unattended-mutating-fetch-blocked");
@@ -55,7 +52,7 @@ describe("unattended-mutating-fetch-blocked event (#1394)", () => {
   });
 
   test("emits nothing for unattended safe reads", async () => {
-    const events: UnattendedMutatingFetchBlockedEvent[] = [];
+    const events: FetchEvent[] = [];
     setFetchEventRecorder((event) => events.push(event));
 
     for (const method of ["GET", "HEAD"] as const) {
@@ -70,7 +67,7 @@ describe("unattended-mutating-fetch-blocked event (#1394)", () => {
   });
 
   test("emits nothing for attended mutating methods", async () => {
-    const events: UnattendedMutatingFetchBlockedEvent[] = [];
+    const events: FetchEvent[] = [];
     setFetchEventRecorder((event) => events.push(event));
 
     expect(
