@@ -9,7 +9,8 @@ import { TEST_AUTH_COOKIE, TEST_AUTH_USER_ID } from "@/lib/session/test-auth";
  *   CONTRACT_BASE_URL=http://localhost:3013 bun run test:contract
  *
  * The server must run with OPEN_AGENTS_ENABLE_TEST_AUTH=1 (dev does this by
- * default). For a protected Vercel preview, also set
+ * default) and a non-empty TEST_AUTH_SECRET; the cookie value is
+ * `test-auth:${TEST_AUTH_SECRET}`. For a protected Vercel preview, also set
  * VERCEL_AUTOMATION_BYPASS_SECRET so requests pass deployment protection.
  *
  * Without CONTRACT_BASE_URL the suites skip, so `bun run ci` stays green. Set
@@ -44,7 +45,10 @@ assertContractConfiguration({
   baseUrl: CONTRACT_BASE_URL,
 });
 
-const authCookie = `${TEST_AUTH_COOKIE}=${encodeURIComponent(TEST_AUTH_USER_ID)}`;
+const testAuthSecret = process.env.TEST_AUTH_SECRET?.trim();
+const authCookie = testAuthSecret
+  ? `${TEST_AUTH_COOKIE}=${encodeURIComponent(`test-auth:${testAuthSecret}`)}`
+  : `${TEST_AUTH_COOKIE}=${encodeURIComponent(TEST_AUTH_USER_ID)}`;
 // Bypasses Vercel deployment protection on protected previews. Sent on every
 // request (it gates the platform, not the app session) when configured.
 const bypassSecret = process.env.VERCEL_AUTOMATION_BYPASS_SECRET?.trim();

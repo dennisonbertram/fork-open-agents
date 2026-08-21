@@ -45,6 +45,7 @@ describe("resolveSessionFromHeaders", () => {
     authSession = undefined;
     delete process.env.OPEN_AGENTS_ENABLE_TEST_AUTH;
     delete process.env.VERCEL_ENV;
+    delete process.env.TEST_AUTH_SECRET;
   });
 
   test("skips Better Auth when no session credential headers are present", async () => {
@@ -56,10 +57,11 @@ describe("resolveSessionFromHeaders", () => {
 
   test("uses test auth cookie before Better Auth", async () => {
     process.env.OPEN_AGENTS_ENABLE_TEST_AUTH = "1";
+    process.env.TEST_AUTH_SECRET = "test-secret";
 
     const session = await resolveSessionFromHeaders(
       headers({
-        cookie: "open_agents_test_user_id=dev-managed-runtime-user",
+        cookie: `open_agents_test_user_id=${encodeURIComponent("test-auth:test-secret")}`,
       }),
     );
 
@@ -69,11 +71,12 @@ describe("resolveSessionFromHeaders", () => {
 
   test("refuses the test-auth cookie when VERCEL_ENV is production even if the flag is set", async () => {
     process.env.OPEN_AGENTS_ENABLE_TEST_AUTH = "1";
+    process.env.TEST_AUTH_SECRET = "test-secret";
     process.env.VERCEL_ENV = "production";
 
     const session = await resolveSessionFromHeaders(
       headers({
-        cookie: "open_agents_test_user_id=dev-managed-runtime-user",
+        cookie: `open_agents_test_user_id=${encodeURIComponent("test-auth:test-secret")}`,
       }),
     );
 

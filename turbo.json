@@ -21,6 +21,7 @@
         "POSTGRES_URL",
         "PRODUCTION_DB_HOST",
         "REDIS_URL",
+        "TEST_AUTH_SECRET",
         "VERCEL_APP_CLIENT_SECRET",
         "VERCEL_ENV"
       ],
