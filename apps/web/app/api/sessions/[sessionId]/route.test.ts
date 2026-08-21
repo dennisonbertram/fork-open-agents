@@ -138,7 +138,7 @@ describe("/api/sessions/[sessionId]", () => {
     const body = await getJson(response);
 
     expect(response.status).toBe(400);
-    expect(body.error).toBe("Invalid runtime mode");
+    expect(body.errorKind).toBe("invalid_session_update");
     expect(updateSessionCalls).toEqual([]);
   });
 
@@ -251,5 +251,38 @@ describe("/api/sessions/[sessionId]", () => {
     expect(response.status).toBe(400);
     expect(body.error).toBe("Invalid inference profile");
     expect(updateSessionCalls).toEqual([]);
+  });
+
+  test("PATCH rejects mass assignment of non-allowlisted fields", async () => {
+    const { PATCH } = await routeModulePromise;
+
+    const response = await PATCH(
+      patchRequest({ title: "ok", userId: "evil", sandboxState: "x" }),
+      routeContext(),
+    );
+    const body = await getJson(response);
+
+    expect(response.status).toBe(400);
+    expect(body.errorKind).toBe("invalid_session_update");
+    expect(updateSessionCalls).toEqual([]);
+  });
+
+  test("PATCH persists only the allowlisted fields from the request body", async () => {
+    const { PATCH } = await routeModulePromise;
+
+    const response = await PATCH(
+      patchRequest({ title: "renamed" }),
+      routeContext(),
+    );
+    const body = await getJson(response);
+
+    expect(response.status).toBe(200);
+    expect(updateSessionCalls).toEqual([
+      {
+        sessionId: "session-1",
+        update: { title: "renamed" },
+      },
+    ]);
+    expect((body.session as Record<string, unknown>).title).toBe("renamed");
   });
 });
