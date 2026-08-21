@@ -261,8 +261,8 @@
       "title": "Unblock the cloud UX walk — safe test-auth + bootstrap",
       "theme": "ux",
       "column": "In review",
-      "note": "PR #1390 implements epic #1389 slices 1–4. Slices 5–6 (Dev env flip + STORY-158 cloud proof) stay operator-blocked.",
-      "link": "https://github.com/dennisonbertram/fork-open-agents/pull/1390"
+      "note": "PR #1390 merged to develop as f1f918b4. Local STORY-158 walked 2/2. OPEN_AGENTS_ENABLE_TEST_AUTH is on custom dev (env ls, 7m ago). Live Dev still dpl_4j7yWJe HTML 404 — needs vercel deploy --target=dev. Cloud slice 6 not faked. Evidence PR #1391.",
+      "link": "https://github.com/dennisonbertram/fork-open-agents/pull/1391"
     },
     {
       "id": "rel-next",

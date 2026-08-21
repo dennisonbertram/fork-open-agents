@@ -68,7 +68,19 @@ Dated epic and sweep sections:
   sandbox. Browser tools have no cookie API; Playwright honors
   `Set-Cookie` on navigate, including `?next=/sessions` (307). Reject
   `/%5c%5c…` as well as `//` and absolute URLs — URL parsers treat
-  backslashes as an authority separator.
+  backslashes as an authority separator. Locally this unblocks STORY-158
+  in two clicks. On Vercel, JSON 404 means the route is deployed and the
+  flag is off; HTML 404 means an older build.
+- **Vercel `development` ≠ custom `dev`.**
+  `vercel env add NAME development` writes the built-in Development
+  scope used by `vercel env pull` / `vercel dev`. The stable Dev URL
+  (`open-agents-env-dev-dennisons-projects.vercel.app`) is the custom
+  environment named `dev` with its own var scope. After adding a var,
+  deploy current `develop` with `vercel deploy --target=dev`. Do not
+  `vercel redeploy` the previous HTML-404 deployment id. Branch
+  tracking is not proof of freshness: `vercel target list` showed this
+  project’s `dev` target Updated **80d** after `develop` had already
+  received #1390.
 
 - **A fake GitHub token bricks the demo user.**
   `GitHubReconnectGate` has no dismiss control (STORY-024). Seed the

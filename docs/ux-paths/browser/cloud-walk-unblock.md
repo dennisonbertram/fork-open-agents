@@ -31,7 +31,9 @@ stable Dev deployment only.
 
 ## Remaining
 
-Slices 5–6 are not done: no Vercel CLI in this environment, and no
+Slices 5–6 are not done. The 2026-08-20 operator add wrote
+`OPEN_AGENTS_ENABLE_TEST_AUTH` to Vercel `development`, not custom `dev`.
+The stable Dev URL is still the pre-merge HTML 404 deploy. No
 authenticated cloud walk was attempted or faked.
 
 ## Incorrect assumptions corrected while implementing
