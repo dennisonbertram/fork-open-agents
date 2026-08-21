@@ -207,14 +207,44 @@ export function isAllowedWebUrl(value: string): boolean {
   return !isPrivateHost(parsed.hostname);
 }
 
-async function resolvesToPrivateHost(params: {
+/**
+ * Reasons {@link resolveFetchHost} refuses to hand back a usable IP set.
+ * Kept distinct (rather than a single boolean) so callers/tests can assert on
+ * *why* a host was blocked without re-deriving it from strings.
+ */
+type FetchHostErrorKind =
+  | "private-host"
+  | "dns-resolution-failed"
+  | "no-public-ips";
+
+type ResolveFetchHostResult =
+  | { ok: true; ips: string[] }
+  | { ok: false; errorKind: FetchHostErrorKind };
+
+/**
+ * Resolve a hostname to the IP addresses curl should be pinned to via
+ * `--resolve`, guarding against DNS rebinding (TOCTOU between this check and
+ * curl's own lookup).
+ *
+ * Fails closed in every ambiguous case:
+ * - the hostname itself is a private/internal literal
+ * - DNS resolution fails outright
+ * - DNS resolution returns zero addresses
+ * - DNS resolution returns *any* private/internal address alongside public
+ *   ones (an attacker-controlled DNS response mixing public and private
+ *   answers is exactly the rebinding shape this guards against)
+ *
+ * Only on a fully public, non-empty resolution does it return `ok: true`
+ * with every validated public IP so the caller can pin curl to all of them.
+ */
+async function resolveFetchHost(params: {
   hostname: string;
   sandbox: Awaited<ReturnType<typeof getSandbox>>;
   workingDirectory: string;
   abortSignal?: AbortSignal;
-}): Promise<boolean> {
+}): Promise<ResolveFetchHostResult> {
   if (isPrivateHost(params.hostname)) {
-    return true;
+    return { ok: false, errorKind: "private-host" };
   }
 
   const result = await params.sandbox.exec(
@@ -225,14 +255,23 @@ async function resolvesToPrivateHost(params: {
   );
 
   if (!result.success) {
-    return true;
+    return { ok: false, errorKind: "dns-resolution-failed" };
   }
 
-  return result.stdout
+  const resolvedAddresses = result.stdout
     .split("\n")
     .map((address) => address.trim())
-    .filter(Boolean)
-    .some(isPrivateHost);
+    .filter(Boolean);
+
+  if (resolvedAddresses.length === 0) {
+    return { ok: false, errorKind: "no-public-ips" };
+  }
+
+  if (resolvedAddresses.some(isPrivateHost)) {
+    return { ok: false, errorKind: "private-host" };
+  }
+
+  return { ok: true, ips: resolvedAddresses };
 }
 
 const fetchInputSchema = z.object({
@@ -274,6 +313,7 @@ export const webFetchTool = tool({
   // there is no approver: exposure is governed by the agent's tool allowlist,
   // so being available *is* the pre-approval. Auto-approve to avoid wedging the
   // run with a dangling, never-approved tool call.
+  // Method-based unattended write gating is #1394 (separate PR).
   needsApproval: (_input, { experimental_context }) =>
     !getUnattended(experimental_context),
   description: `Fetch a URL from the web.
@@ -307,18 +347,34 @@ EXAMPLES:
 
     const sandbox = await getSandbox(experimental_context, "web_fetch");
     const workingDirectory = sandbox.workingDirectory;
-    if (
-      await resolvesToPrivateHost({
-        hostname: parsedUrl.hostname,
-        sandbox,
-        workingDirectory,
-        abortSignal,
-      })
-    ) {
+    const hostResolution = await resolveFetchHost({
+      hostname: parsedUrl.hostname,
+      sandbox,
+      workingDirectory,
+      abortSignal,
+    });
+
+    if (!hostResolution.ok) {
       return {
         success: false,
         error: "Fetch failed: URL resolves to a private or internal host",
       };
+    }
+
+    // Pin curl to the exact IPs we just validated (--resolve) instead of
+    // letting it re-resolve the hostname itself. Without this, an attacker
+    // controlling DNS for the target host can serve a public IP to our check
+    // above and a private/internal IP to curl's own lookup moments later
+    // (DNS rebinding / TOCTOU). No -L is passed anywhere, so redirects to a
+    // different host can't reintroduce the same gap.
+    const port =
+      parsedUrl.port || (parsedUrl.protocol === "https:" ? "443" : "80");
+    const resolveArgs: string[] = [];
+    for (const ip of hostResolution.ips) {
+      resolveArgs.push(
+        "--resolve",
+        shellEscape(`${parsedUrl.hostname}:${port}:${ip}`),
+      );
     }
 
     const args: string[] = [
@@ -328,6 +384,7 @@ EXAMPLES:
       shellEscape("=http,https"),
       "--proto-redir",
       shellEscape("=http,https"),
+      ...resolveArgs,
       "-X",
       method,
       "--max-time",
