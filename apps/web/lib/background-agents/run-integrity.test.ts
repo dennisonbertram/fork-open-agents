@@ -264,6 +264,53 @@ describe("#743 terminal-status guard: updateBackgroundAgentRunStatus", () => {
     expect(eventsTable).toHaveLength(0);
   });
 
+  test("#1396 force:true CAS only updates queued/running — terminal stays immutable", async () => {
+    seedRun("succeeded");
+    const { updateBackgroundAgentRunStatus } = await storePromise;
+
+    const result = await updateBackgroundAgentRunStatus({
+      runId: "run-1",
+      status: "failed",
+      errorKind: "stuck_running",
+      force: true,
+    });
+
+    expect(result).toBeNull();
+    expect(runsTable[0]?.status).toBe("succeeded");
+    expect(eventsTable).toHaveLength(0);
+  });
+
+  test("#1396 force:true still terminalizes a genuinely stuck running run", async () => {
+    seedRun("running");
+    const { updateBackgroundAgentRunStatus } = await storePromise;
+
+    const result = await updateBackgroundAgentRunStatus({
+      runId: "run-1",
+      status: "failed",
+      errorKind: "stuck_running",
+      force: true,
+    });
+
+    expect(result?.status).toBe("failed");
+    expect(runsTable[0]?.status).toBe("failed");
+  });
+
+  test("#1396 touchBackgroundAgentRunHeartbeat bumps updatedAt for live runs", async () => {
+    const row = seedRun("running");
+    row.updatedAt = new Date("2026-06-01T00:00:00.000Z");
+    const { touchBackgroundAgentRunHeartbeat } = await storePromise;
+
+    const result = await touchBackgroundAgentRunHeartbeat({
+      runId: "run-1",
+      turnIndex: 3,
+    });
+
+    expect(result).not.toBeNull();
+    expect((runsTable[0]?.updatedAt as Date).getTime()).toBeGreaterThan(
+      new Date("2026-06-01T00:00:00.000Z").getTime(),
+    );
+  });
+
   test("non-forced transitions between non-terminal statuses still succeed", async () => {
     seedRun("queued");
     const { updateBackgroundAgentRunStatus } = await storePromise;

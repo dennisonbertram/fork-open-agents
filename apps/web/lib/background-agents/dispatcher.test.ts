@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
+import type { BackgroundAgentRun } from "@/lib/db/schema";
 import type { BackgroundAgentWithTriggers } from "./store";
 import type { NormalizedBackgroundTriggerEvent } from "./types";
 
@@ -24,11 +25,17 @@ let scheduleRows: Array<{
   agent: BackgroundAgentWithTriggers;
   trigger: BackgroundAgentWithTriggers["triggers"][number];
 }> = [];
+let staleRuns: BackgroundAgentRun[] = [];
 const listMatchingTriggersForEvent = mock(async () => matchingRows);
 const getWebhookTriggerByPublicId = mock(async () => webhookRow);
 const listEnabledScheduleTriggers = mock(async () => scheduleRows);
-const listStaleBackgroundAgentRuns = mock(async () => []);
-const updateBackgroundAgentRunStatus = mock(async () => undefined);
+const listStaleBackgroundAgentRuns = mock(async () => staleRuns);
+const updateBackgroundAgentRunStatus = mock(
+  async (): Promise<BackgroundAgentRun | null> => null,
+);
+const touchBackgroundAgentRunHeartbeat = mock(
+  async (): Promise<BackgroundAgentRun | null> => null,
+);
 const advanceTriggerScheduleState = mock(async () => undefined);
 const recordTriggerSkipReason = mock(async () => undefined);
 let recentRunsForTargetCount = 0;
@@ -59,6 +66,7 @@ mock.module("./store", () => ({
   listMatchingTriggersForEvent,
   recordBackgroundAgentEvent,
   recordTriggerSkipReason,
+  touchBackgroundAgentRunHeartbeat,
   updateBackgroundAgentRunStatus,
 }));
 
@@ -167,6 +175,7 @@ function resetDispatcherMocks() {
   matchingRows = [];
   webhookRow = null;
   scheduleRows = [];
+  staleRuns = [];
   recentRunsForTargetCount = 0;
   start.mockClear();
   createRunForTrigger.mockClear();
@@ -179,12 +188,56 @@ function resetDispatcherMocks() {
   );
   recordBackgroundAgentEvent.mockClear();
   updateBackgroundAgentRunStatus.mockClear();
+  updateBackgroundAgentRunStatus.mockImplementation(async () => null);
+  touchBackgroundAgentRunHeartbeat.mockClear();
   listMatchingTriggersForEvent.mockClear();
   getWebhookTriggerByPublicId.mockClear();
   listEnabledScheduleTriggers.mockClear();
+  listStaleBackgroundAgentRuns.mockClear();
+  listStaleBackgroundAgentRuns.mockImplementation(async () => staleRuns);
   advanceTriggerScheduleState.mockClear();
   recordTriggerSkipReason.mockClear();
   countRecentRunsForTarget.mockClear();
+}
+
+function makeStaleRun(
+  overrides: Partial<BackgroundAgentRun> = {},
+): BackgroundAgentRun {
+  return {
+    id: "run-stale",
+    agentId: "agent-1",
+    triggerId: "trigger-schedule",
+    userId: "user-1",
+    status: "running",
+    source: "schedule",
+    triggerKind: "schedule.cron",
+    externalId: "trigger-schedule:2026-06-01T06:00",
+    idempotencyKey: "key",
+    repoOwner: "acme",
+    repoName: "widgets",
+    ref: null,
+    sha: null,
+    branch: null,
+    prNumber: null,
+    issueNumber: null,
+    deploymentUrl: null,
+    sandboxName: "sandbox-stale",
+    outputUrl: null,
+    errorKind: null,
+    errorMessage: null,
+    payloadSummary: {},
+    resultSummary: null,
+    executionSnapshot: null,
+    definitionVersion: null,
+    definitionHash: null,
+    workflowRunId: "workflow-stale",
+    requestId: "req-old",
+    startedAt: new Date("2026-06-01T06:00:00.000Z"),
+    finishedAt: null,
+    createdAt: new Date("2026-06-01T06:00:00.000Z"),
+    updatedAt: new Date("2026-06-01T06:00:00.000Z"),
+    ...overrides,
+  };
 }
 
 describe("dispatchBackgroundTriggerEvent", () => {
@@ -910,5 +963,179 @@ describe("dispatchManualBackgroundAgentTest", () => {
     });
     expect(createRunForTrigger).not.toHaveBeenCalled();
     expect(start).not.toHaveBeenCalled();
+  });
+});
+
+describe("#1396 background-agent sweeper race, catch-up, and heartbeat", () => {
+  beforeEach(() => {
+    resetDispatcherMocks();
+  });
+
+  test("force-race: terminalized run emits sweep_skipped_terminal, not swept_stale", async () => {
+    // Simulate the race: listStale still returns the run, but the CAS update
+    // matches zero rows because the executor already reached succeeded.
+    staleRuns = [makeStaleRun({ status: "running" })];
+    updateBackgroundAgentRunStatus.mockImplementationOnce(async () => null);
+    const { dispatchScheduledBackgroundAgents } = await dispatcherModulePromise;
+
+    await dispatchScheduledBackgroundAgents({
+      now: new Date("2026-06-01T09:00:00.000Z"),
+      requestId: "req-sweep-race",
+    });
+
+    expect(updateBackgroundAgentRunStatus).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runId: "run-stale",
+        status: "failed",
+        force: true,
+      }),
+    );
+    expect(recordBackgroundAgentEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runId: "run-stale",
+        eventName: "background-agent.run.sweep_skipped_terminal",
+        level: "info",
+      }),
+    );
+    expect(recordBackgroundAgentEvent).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventName: "background-agent.run.swept_stale",
+      }),
+    );
+  });
+
+  test("force-race: successful CAS emits swept_stale with previousStatus", async () => {
+    const staleRun = makeStaleRun({ status: "queued" });
+    staleRuns = [staleRun];
+    updateBackgroundAgentRunStatus.mockImplementationOnce(async () => ({
+      ...staleRun,
+      status: "failed",
+    }));
+    const { dispatchScheduledBackgroundAgents } = await dispatcherModulePromise;
+
+    await dispatchScheduledBackgroundAgents({
+      now: new Date("2026-06-01T09:00:00.000Z"),
+      requestId: "req-sweep-ok",
+    });
+
+    expect(recordBackgroundAgentEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runId: "run-stale",
+        eventName: "background-agent.run.swept_stale",
+        payload: expect.objectContaining({
+          previousStatus: "queued",
+          forced: true,
+        }),
+      }),
+    );
+  });
+
+  test("backlog catch-up: advances nextRunAt from now and emits caught_up once", async () => {
+    // Hourly cron, nextRunAt three hours in the past. Catch-up must fire once
+    // for the missed due window, then jump nextRunAt past now — not to
+    // dueAt+1h (which stays in the past and replays the backlog).
+    const missedDueAt = new Date("2026-06-01T06:00:00.000Z");
+    const now = new Date("2026-06-01T09:02:00.000Z");
+    const hourlyTrigger = {
+      ...scheduleTrigger,
+      id: "trigger-hourly",
+      schedule: "0 * * * *",
+      nextRunAt: missedDueAt,
+    };
+    scheduleRows = [{ agent, trigger: hourlyTrigger }];
+
+    advanceTriggerScheduleState.mockImplementation(
+      async (params: { triggerId: string; nextRunAt: Date | null }) => {
+        const row = scheduleRows.find((r) => r.trigger.id === params.triggerId);
+        if (row) {
+          row.trigger = { ...row.trigger, nextRunAt: params.nextRunAt };
+        }
+      },
+    );
+
+    let createCount = 0;
+    createRunForTrigger.mockImplementation(
+      async ({ event }: { event: unknown }) => {
+        createCount += 1;
+        return {
+          created: true,
+          run: { id: `run-catchup-${createCount}` },
+          event,
+        };
+      },
+    );
+
+    const { dispatchScheduledBackgroundAgents } = await dispatcherModulePromise;
+
+    const first = await dispatchScheduledBackgroundAgents({
+      now,
+      requestId: "req-catchup-1",
+    });
+    expect(first.created).toBe(1);
+
+    expect(advanceTriggerScheduleState).toHaveBeenCalledWith(
+      expect.objectContaining({
+        triggerId: "trigger-hourly",
+        lastRunAt: missedDueAt,
+        // From now=09:02, next hourly tick is 10:00 — not 07:00 (dueAt+1h).
+        nextRunAt: new Date("2026-06-01T10:00:00.000Z"),
+      }),
+    );
+    expect(recordBackgroundAgentEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventName: "background-agent.run.caught_up",
+        payload: expect.objectContaining({
+          triggerId: "trigger-hourly",
+          missedSlots: 3,
+          nextRunAt: "2026-06-01T10:00:00.000Z",
+        }),
+      }),
+    );
+
+    // One hour later the wrongly-advanced nextRunAt=07:00 would still be due
+    // and would create a second backlog run. With the fix, nextRunAt=10:00 so
+    // this sweep creates nothing.
+    createRunForTrigger.mockClear();
+    const second = await dispatchScheduledBackgroundAgents({
+      now: new Date("2026-06-01T09:05:00.000Z"),
+      requestId: "req-catchup-2",
+    });
+    expect(second.created).toBe(0);
+    expect(createRunForTrigger).not.toHaveBeenCalled();
+  });
+
+  test("heartbeat liveness: touchBackgroundAgentRunHeartbeat is the liveness signal for listStale", async () => {
+    // #1396: long live runs must bump runs.updatedAt (no heartbeatAt column —
+    // prefer updatedAt) so listStaleBackgroundAgentRuns stops returning them.
+    // This dispatcher-level contract asserts the store helper exists and is
+    // wired through the module mock the sweeper path shares.
+    const { touchBackgroundAgentRunHeartbeat: touch } = await import("./store");
+    expect(typeof touch).toBe("function");
+
+    const liveRun = makeStaleRun({
+      id: "run-live",
+      updatedAt: new Date("2026-06-01T06:00:00.000Z"),
+    });
+    touchBackgroundAgentRunHeartbeat.mockImplementationOnce(async () => ({
+      ...liveRun,
+      updatedAt: new Date("2026-06-01T08:55:00.000Z"),
+    }));
+
+    const heartbeated = await touchBackgroundAgentRunHeartbeat({
+      runId: "run-live",
+      turnIndex: 12,
+    });
+    expect(heartbeated?.updatedAt.toISOString()).toBe(
+      "2026-06-01T08:55:00.000Z",
+    );
+
+    // After heartbeat, the run is inside the fresh window and must not be swept.
+    staleRuns = [];
+    const { dispatchScheduledBackgroundAgents } = await dispatcherModulePromise;
+    await dispatchScheduledBackgroundAgents({
+      now: new Date("2026-06-01T09:00:00.000Z"),
+      requestId: "req-heartbeat",
+    });
+    expect(updateBackgroundAgentRunStatus).not.toHaveBeenCalled();
   });
 });
