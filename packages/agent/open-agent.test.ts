@@ -49,6 +49,7 @@ mock.module("ai", () => {
 });
 
 const {
+  getDelegatedWorkerToolPolicy,
   getOpenAgentToolsForRuntimeMode,
   getRuntimeModeToolPolicy,
   getChatOnlyTools,
@@ -707,5 +708,52 @@ describe("prepareCall composite model id guard (#1156)", () => {
         },
       }),
     ).not.toThrow();
+  });
+});
+
+// #1401 — managed_runtime worker tool policy inheritance
+describe("delegated worker tool policy (#1401)", () => {
+  test("managed_runtime executor workers keep coding tools stripped from the coordinator", () => {
+    const coordinator = Object.keys(
+      getOpenAgentToolsForRuntimeMode("managed_runtime"),
+    );
+    expect(coordinator).not.toContain("bash");
+    expect(coordinator).not.toContain("write");
+
+    const worker = Object.keys(
+      getDelegatedWorkerToolPolicy("executor", "managed_runtime"),
+    );
+    expect(worker).toContain("bash");
+    expect(worker).toContain("write");
+    expect(worker).toContain("read");
+    expect(worker).not.toContain("setup_managed_runtime_profile");
+    expect(worker).not.toContain("task");
+  });
+
+  test("managed_runtime explorer workers get read-oriented tools only", () => {
+    const worker = Object.keys(
+      getDelegatedWorkerToolPolicy("explorer", "managed_runtime"),
+    );
+    expect(worker.sort()).toEqual(["bash", "glob", "grep", "read"]);
+    expect(worker).not.toContain("write");
+    expect(worker).not.toContain("edit");
+  });
+
+  test("worker toolset intersects allowedBuiltinToolNames (profile/parent allowlist)", () => {
+    const worker = Object.keys(
+      getDelegatedWorkerToolPolicy("executor", "managed_runtime", {
+        allowedBuiltinToolNames: ["read", "bash", "grep"],
+      }),
+    );
+    expect(worker.sort()).toEqual(["bash", "grep", "read"]);
+  });
+
+  test("classic-mode worker toolset is unchanged (full role tools)", () => {
+    expect(
+      Object.keys(getDelegatedWorkerToolPolicy("executor", "classic")).sort(),
+    ).toEqual(["bash", "edit", "glob", "grep", "read", "write"]);
+    expect(
+      Object.keys(getDelegatedWorkerToolPolicy("explorer", "classic")).sort(),
+    ).toEqual(["bash", "glob", "grep", "read"]);
   });
 });
