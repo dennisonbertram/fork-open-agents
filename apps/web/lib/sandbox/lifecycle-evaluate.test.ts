@@ -250,9 +250,7 @@ describe("evaluateSandboxLifecycle", () => {
         // refresh reads the session again. Flip the stream active here so the
         // only chance to catch it is a pre-stop recheck.
         if (connectCompleted) {
-          chatsInSession = [
-            { id: "chat-1", activeStreamId: "wrun-late-race" },
-          ];
+          chatsInSession = [{ id: "chat-1", activeStreamId: "wrun-late-race" }];
         }
         return sessionRecord as never;
       });

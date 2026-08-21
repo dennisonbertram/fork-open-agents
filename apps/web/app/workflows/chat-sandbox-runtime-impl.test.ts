@@ -18,7 +18,9 @@ const implSource = readFileSync(
 
 describe("chat-sandbox-runtime-impl #1399 source contracts", () => {
   test("persists sandboxState before skill installs (no Promise.all coupling)", () => {
-    const persistIdx = implSource.indexOf("await updateSession(params.sessionId");
+    const persistIdx = implSource.indexOf(
+      "await updateSession(params.sessionId",
+    );
     const installIdx = implSource.indexOf("Promise.allSettled([");
     expect(persistIdx).toBeGreaterThan(-1);
     expect(installIdx).toBeGreaterThan(-1);
