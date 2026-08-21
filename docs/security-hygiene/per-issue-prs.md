@@ -17,18 +17,15 @@ Watchdog request: branch from `origin/develop`, open separate PRs into `develop`
 | #1400 | `cursor/feat-1400-db-indexes-retention-b536` | https://github.com/dennisonbertram/fork-open-agents/pull/1415 | Indexes + retention job |
 | #1401 | `cursor/feat-1401-tool-policy-harden-b536` | https://github.com/dennisonbertram/fork-open-agents/pull/1414 | Explorer RO / worker policy / wrappers |
 | #1402 (partial) | `cursor/fix-1402-cron-containment-b536` | https://github.com/dennisonbertram/fork-open-agents/pull/1408 | Timing-safe cron + grep/glob/bash containment |
+| #1402 (remainder) | `cursor/fix-1402-journal-env-jwe-b536` | https://github.com/dennisonbertram/fork-open-agents/pull/1416 | Journal idxs + `.env.example` + purge `JWE_SECRET` |
 
 Index PR: https://github.com/dennisonbertram/fork-open-agents/pull/1409
 
 Mega-batch https://github.com/dennisonbertram/fork-open-agents/pull/1403 is **superseded** — do not merge.
 
-## Still open on #1402
+## #1402 status
 
-Follow-up PR still needed for:
-
-- `.env.example` sync (non-retention pieces)
-- Drizzle journal repair (dup idx / missing snapshot) if still present on develop
-- Purge unused `JWE_SECRET` from turbo/CI
+Both #1402 slices are open as separate PRs (#1408 containment, remainder journal/env/JWE). No further #1402 work pending unless review finds gaps.
 
 ## Watchdog checklist (per PR)
 
