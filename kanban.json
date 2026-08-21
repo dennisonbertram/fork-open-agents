@@ -1,7 +1,7 @@
 {
-  "title": "Open Agents — build board",
+  "title": "Open Agents \u2014 build board",
   "description": "Work in flight on dennisonbertram/fork-open-agents. Cards are real GitHub PRs, real GitHub issues, or named local work. Nothing here is a projection or a target. A card in Shipped means the change is merged to main and the commit is deployed to production.",
-  "headerNote": "Snapshot: 2026-08-17 20:00. Production is live on ae40a224 and healthy — verified against the GitHub deployment record, which points at the running Vercel deployment. develop is 4 commits ahead of main and ready for the next release. GitHub recovered at 19:03 after a 5-hour partial outage.",
+  "headerNote": "Snapshot: 2026-08-17 20:00. Production is live on ae40a224 and healthy \u2014 verified against the GitHub deployment record, which points at the running Vercel deployment. develop is 4 commits ahead of main and ready for the next release. GitHub recovered at 19:03 after a 5-hour partial outage.",
   "columns": ["Backlog", "In progress", "In review", "Shipped"],
   "columnDescriptions": {
     "Backlog": "Filed and not started. Open issues and unmerged older PRs.",
@@ -32,6 +32,14 @@
   },
   "cards": [
     {
+      "id": "iss-1401",
+      "title": "feat: agent tool policy hardening (#1401)",
+      "theme": "agent-loops",
+      "column": "In progress",
+      "note": "Branch cursor/feat-1401-tool-policy-harden-b536 pushed (no PR per task). Explorer readonly bash, worker tool policy inheritance, wrapper-aware approvals. Grep containment deferred to #1408.",
+      "link": "https://github.com/dennisonbertram/fork-open-agents/issues/1401"
+    },
+    {
       "id": "pr-1332",
       "title": "Readiness must check the allowlist the dispatcher enforces",
       "theme": "background-agents",
@@ -44,7 +52,7 @@
       "title": "Guard every archived edit, not only definitions",
       "theme": "agent-loops",
       "column": "Shipped",
-      "note": "Merged and released to main in ae40a224. Codex raised one P2 — a loop deleted during the race window returned 409 instead of 404 — fixed in 517cca51, thread resolved.",
+      "note": "Merged and released to main in ae40a224. Codex raised one P2 \u2014 a loop deleted during the race window returned 409 instead of 404 \u2014 fixed in 517cca51, thread resolved.",
       "link": "https://github.com/dennisonbertram/fork-open-agents/pull/1330"
     },
     {
@@ -52,7 +60,7 @@
       "title": "Release: archived agent loops are actually read-only",
       "theme": "release",
       "column": "Shipped",
-      "note": "Merged as ae40a224. Its own CI failed twice on GitHub returning 429 for the setup-bun action download — infrastructure, not code — and went green on the third run.",
+      "note": "Merged as ae40a224. Its own CI failed twice on GitHub returning 429 for the setup-bun action download \u2014 infrastructure, not code \u2014 and went green on the third run.",
       "link": "https://github.com/dennisonbertram/fork-open-agents/pull/1329"
     },
     {
@@ -68,7 +76,7 @@
       "title": "Make run lists triageable",
       "theme": "ux",
       "column": "In review",
-      "note": "PR #1334 merged to develop, awaiting the next release. Attention reasons render, a status tab no longer counts as a filter, and a reason that only repeats the outcome is hidden — that last one came from looking at the rendered page, where a failed run showed Finished, Failed, Needs attention, Failed. A source-text guard broke when the copy moved file; CI caught it.",
+      "note": "PR #1334 merged to develop, awaiting the next release. Attention reasons render, a status tab no longer counts as a filter, and a reason that only repeats the outcome is hidden \u2014 that last one came from looking at the rendered page, where a failed run showed Finished, Failed, Needs attention, Failed. A source-text guard broke when the copy moved file; CI caught it.",
       "link": "https://github.com/dennisonbertram/fork-open-agents/pull/1334"
     },
     {
@@ -258,10 +266,10 @@
     },
     {
       "id": "iss-1389",
-      "title": "Unblock the cloud UX walk — safe test-auth + bootstrap",
+      "title": "Unblock the cloud UX walk \u2014 safe test-auth + bootstrap",
       "theme": "ux",
       "column": "In review",
-      "note": "PR #1390 implements epic #1389 slices 1–4. Slices 5–6 (Dev env flip + STORY-158 cloud proof) stay operator-blocked.",
+      "note": "PR #1390 implements epic #1389 slices 1\u20134. Slices 5\u20136 (Dev env flip + STORY-158 cloud proof) stay operator-blocked.",
       "link": "https://github.com/dennisonbertram/fork-open-agents/pull/1390"
     },
     {
