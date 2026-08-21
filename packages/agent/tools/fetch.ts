@@ -1,5 +1,6 @@
 import { tool } from "ai";
 import { z } from "zod";
+import { externalWritePolicy } from "./approval-policy";
 import {
   getGithubToolAvailable,
   getSandbox,
@@ -274,8 +275,19 @@ export const webFetchTool = tool({
   // there is no approver: exposure is governed by the agent's tool allowlist,
   // so being available *is* the pre-approval. Auto-approve to avoid wedging the
   // run with a dangling, never-approved tool call.
-  needsApproval: (_input, { experimental_context }) =>
-    !getUnattended(experimental_context),
+  // web_fetch is a network-egress gate. In an attended session it always
+  // requires human approval, regardless of method.
+  //
+  // In an unattended run (background agent / agent-loop step) there is no
+  // human approver. Auto-approve safe reads (GET/HEAD). Mutating methods
+  // still requireApproval via externalWritePolicy so unattended POST/PUT/
+  // PATCH/DELETE stay blocked rather than silently writing (#1394).
+  needsApproval: (input, { experimental_context }) => {
+    if (!getUnattended(experimental_context)) {
+      return true;
+    }
+    return externalWritePolicy(input.method ?? "GET").requires;
+  },
   description: `Fetch a URL from the web.
 
 USAGE:
