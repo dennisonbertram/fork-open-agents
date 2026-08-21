@@ -36,7 +36,7 @@
       "title": "feat: agent tool policy hardening (#1401)",
       "theme": "agent-loops",
       "column": "In progress",
-      "note": "Implementing on cursor/feat-1401-tool-policy-harden-b536: explorer readonly bash, worker tool policy inheritance, wrapper-aware approvals. Skipping grep containment (in #1408).",
+      "note": "Branch cursor/feat-1401-tool-policy-harden-b536 pushed (no PR per task). Explorer readonly bash, worker tool policy inheritance, wrapper-aware approvals. Grep containment deferred to #1408.",
       "link": "https://github.com/dennisonbertram/fork-open-agents/issues/1401"
     },
     {

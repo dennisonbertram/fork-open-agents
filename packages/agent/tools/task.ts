@@ -62,10 +62,12 @@ import { applyRosterOverrides } from "../subagents/roster";
 import { SUBAGENT_STEP_LIMIT } from "../subagents/constants";
 import { sumLanguageModelUsage } from "../usage";
 import {
+  getGithubToolAvailable,
   getSandboxContext,
   getSubagentModel,
   getSubagentModelSelection,
   getSubagentRoster,
+  getUnattended,
 } from "./utils";
 
 /**
@@ -215,6 +217,61 @@ function getRuntimeMode(
   return experimentalContext.runtimeMode === "managed_runtime"
     ? "managed_runtime"
     : "classic";
+}
+
+function getManagedRuntimeContext(experimentalContext: unknown):
+  | {
+      profileId?: string;
+      profileVersion?: string;
+      profileDisplayName?: string;
+      profileRunId?: string;
+      sandboxName?: string;
+      expectedTools?: string[];
+      optionalTools?: string[];
+    }
+  | undefined {
+  if (!isRecord(experimentalContext)) {
+    return undefined;
+  }
+  if (!isRecord(experimentalContext.managedRuntime)) {
+    return undefined;
+  }
+  const managedRuntime = experimentalContext.managedRuntime;
+  const expectedTools = Array.isArray(managedRuntime.expectedTools)
+    ? managedRuntime.expectedTools.filter(
+        (value): value is string => typeof value === "string",
+      )
+    : undefined;
+  const optionalTools = Array.isArray(managedRuntime.optionalTools)
+    ? managedRuntime.optionalTools.filter(
+        (value): value is string => typeof value === "string",
+      )
+    : undefined;
+  return {
+    profileId: getString(managedRuntime.profileId),
+    profileVersion: getString(managedRuntime.profileVersion),
+    profileDisplayName: getString(managedRuntime.profileDisplayName),
+    profileRunId: getString(managedRuntime.profileRunId),
+    sandboxName: getString(managedRuntime.sandboxName),
+    ...(expectedTools ? { expectedTools } : {}),
+    ...(optionalTools ? { optionalTools } : {}),
+  };
+}
+
+function getAllowedBuiltinToolNames(
+  experimentalContext: unknown,
+): string[] | null | undefined {
+  if (!isRecord(experimentalContext)) {
+    return undefined;
+  }
+  const value = experimentalContext.allowedBuiltinToolNames;
+  if (value == null) {
+    return value as null | undefined;
+  }
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  return value.filter((entry): entry is string => typeof entry === "string");
 }
 
 function getParentWorkspaceId(sandboxState: unknown): string | undefined {
@@ -734,6 +791,12 @@ IMPORTANT:
           sandbox: workerSandboxContext,
           model,
           workspacePolicy: workspacePolicyOutput,
+          runtimeMode: getRuntimeMode(experimental_context),
+          unattended: getUnattended(experimental_context),
+          githubToolAvailable: getGithubToolAvailable(experimental_context),
+          managedRuntime: getManagedRuntimeContext(experimental_context),
+          allowedBuiltinToolNames:
+            getAllowedBuiltinToolNames(experimental_context),
         },
         abortSignal,
       });

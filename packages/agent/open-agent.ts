@@ -41,20 +41,21 @@ import {
   MANAGE_BACKGROUND_AGENT_TOOL_NAME,
   type ManageBackgroundAgentAction,
 } from "./tools/manage-background-agent";
+import {
+  type ManagedRuntimeAgentContext,
+  type OpenAgentRuntimeMode,
+  OPEN_AGENT_RUNTIME_MODES,
+} from "./open-agent-runtime-mode";
 
 // Re-exported for backward compatibility: this type originated here before
 // moving to ./models (roster.ts needs it and cannot import from open-agent.ts).
 export type { AgentModelSelection } from "./models";
 
-export const OPEN_AGENT_RUNTIME_MODES = ["classic", "managed_runtime"] as const;
-export type OpenAgentRuntimeMode = (typeof OPEN_AGENT_RUNTIME_MODES)[number];
-
-export type ManagedRuntimeAgentContext = {
-  profileId?: string;
-  profileVersion?: string;
-  profileDisplayName?: string;
-  sandboxName?: string;
-};
+export {
+  OPEN_AGENT_RUNTIME_MODES,
+  type ManagedRuntimeAgentContext,
+  type OpenAgentRuntimeMode,
+} from "./open-agent-runtime-mode";
 
 export type OpenAgentModelInput = GatewayModelId | AgentModelSelection;
 
@@ -83,12 +84,13 @@ const callOptionsSchema = z.object({
       profileDisplayName: z.string().optional(),
       profileRunId: z.string().optional(),
       sandboxName: z.string().optional(),
+      expectedTools: z.array(z.string()).optional(),
+      optionalTools: z.array(z.string()).optional(),
     })
-    .optional(),
-  /**
+    .optional() /**
    * Per-role subagent configuration resolved from agents rows.
    * Absent = synthetic fallback (today's subagent behavior unchanged).
-   */
+   */,
   subagentRoster: z.custom<SubagentRoster>().optional(),
   /**
    * Phase 6 (#242): when true, the propose_composio_tool is included in the toolset.
@@ -230,6 +232,13 @@ export const MANAGED_RUNTIME_COORDINATOR_TOOL_NAMES = [
   | typeof PROPOSE_TOOL_NAME
   | typeof MANAGE_BACKGROUND_AGENT_TOOL_NAME
 >;
+
+export {
+  EXPLORER_WORKER_TOOL_NAMES,
+  EXECUTOR_WORKER_TOOL_NAMES,
+  getDelegatedWorkerToolPolicy,
+  type DelegatedWorkerRole,
+} from "./worker-tool-policy";
 
 /**
  * Tool names that are safe to expose when there is no sandbox VM.
@@ -539,6 +548,9 @@ export const openAgent = new ToolLoopAgent({
         // uses an isolated Playwright browser context per chat/run instead of
         // the process-wide "_default" singleton.
         ...(sessionId ? { sessionId } : {}),
+        // Thread allowlist so task-delegated workers can intersect their
+        // toolset with the parent's builtin policy (#1401).
+        allowedBuiltinToolNames,
       },
     };
   },
