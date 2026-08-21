@@ -31,12 +31,29 @@ const getWebhookTriggerByPublicId = mock(async () => webhookRow);
 const listEnabledScheduleTriggers = mock(async () => scheduleRows);
 const listStaleBackgroundAgentRuns = mock(async () => staleRuns);
 const updateBackgroundAgentRunStatus = mock(
-  async (): Promise<BackgroundAgentRun | null> => null,
+  async (_params?: {
+    runId: string;
+    status: string;
+    force?: boolean;
+    errorKind?: string;
+    errorMessage?: string;
+    agentId?: string | null;
+    userId?: string;
+  }): Promise<BackgroundAgentRun | null> => null,
 );
 const touchBackgroundAgentRunHeartbeat = mock(
-  async (): Promise<BackgroundAgentRun | null> => null,
+  async (_params?: {
+    runId: string;
+    turnIndex?: number;
+  }): Promise<BackgroundAgentRun | null> => null,
 );
-const advanceTriggerScheduleState = mock(async () => undefined);
+const advanceTriggerScheduleState = mock(
+  async (_params?: {
+    triggerId: string;
+    lastRunAt?: Date;
+    nextRunAt: Date | null;
+  }) => undefined,
+);
 const recordTriggerSkipReason = mock(async () => undefined);
 let recentRunsForTargetCount = 0;
 const countRecentRunsForTarget = mock(async () => recentRunsForTargetCount);
@@ -1045,7 +1062,14 @@ describe("#1396 background-agent sweeper race, catch-up, and heartbeat", () => {
     scheduleRows = [{ agent, trigger: hourlyTrigger }];
 
     advanceTriggerScheduleState.mockImplementation(
-      async (params: { triggerId: string; nextRunAt: Date | null }) => {
+      async (params?: {
+        triggerId: string;
+        nextRunAt: Date | null;
+        lastRunAt?: Date;
+      }) => {
+        if (!params) {
+          return;
+        }
         const row = scheduleRows.find((r) => r.trigger.id === params.triggerId);
         if (row) {
           row.trigger = { ...row.trigger, nextRunAt: params.nextRunAt };
@@ -1109,8 +1133,7 @@ describe("#1396 background-agent sweeper race, catch-up, and heartbeat", () => {
     // prefer updatedAt) so listStaleBackgroundAgentRuns stops returning them.
     // This dispatcher-level contract asserts the store helper exists and is
     // wired through the module mock the sweeper path shares.
-    const { touchBackgroundAgentRunHeartbeat: touch } = await import("./store");
-    expect(typeof touch).toBe("function");
+    expect(typeof touchBackgroundAgentRunHeartbeat).toBe("function");
 
     const liveRun = makeStaleRun({
       id: "run-live",

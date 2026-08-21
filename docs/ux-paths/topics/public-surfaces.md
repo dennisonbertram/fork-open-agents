@@ -232,7 +232,7 @@ sign_ba()  { printf '%s' "$1" | openssl dgst -sha256 -hmac "$BA_SECRET" | awk '{
 ### Variations
 - Send `x-request-id: cron-2026-08-02T14:00Z` on step 3; it is threaded into dispatcher logging as the request id.
 - Run step 3 with no due agents → `200` with zero counts, not an error.
-- Missed-window catch-up: set a persisted `nextRunAt` well in the past and call step 3 once; expect a single catch-up dispatch plus a stale-run sweep with `background-agent.run.swept_stale` evidence.
+- Missed-window catch-up: set a persisted `nextRunAt` well in the past and call step 3 once; expect a single catch-up dispatch (nextRunAt advanced from now, not each missed slot), a `background-agent.run.caught_up` event, plus a stale-run sweep with `background-agent.run.swept_stale` evidence when applicable.
 
 ### Edge Cases
 - Neither `CRON_SECRET` nor `BACKGROUND_AGENTS_CRON_SECRET` configured → `500 {error:"CRON_SECRET or BACKGROUND_AGENTS_CRON_SECRET is not configured"}` — returned *before* the auth check, so an unauthenticated caller can distinguish "misconfigured" from "wrong secret".

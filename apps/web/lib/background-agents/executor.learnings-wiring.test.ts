@@ -135,6 +135,7 @@ mock.module("./store", () => ({
   recordBackgroundAgentEvent,
   recordBackgroundAgentOutput: mock(async (input: unknown) => input),
   updateBackgroundAgentRunStatus,
+  touchBackgroundAgentRunHeartbeat: mock(async () => null),
   listBackgroundAgentEvents,
   listBackgroundAgentComposioEvents,
   listBackgroundAgentOutputs,
