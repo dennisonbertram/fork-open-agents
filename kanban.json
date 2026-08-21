@@ -261,7 +261,7 @@
       "title": "Hot-path DB indexes and event retention job",
       "theme": "background-agents",
       "column": "In progress",
-      "note": "Issue #1400 implemented on cursor/feat-1400-db-indexes-retention-b536. Indexes + 0095_rapid_quasimodo migration; retention.ts wired into background-agents cron. Push only — no PR per task.",
+      "note": "Issue #1400 on cursor/feat-1400-db-indexes-retention-b536 (pushed, no PR). Migration 0095_rapid_quasimodo; focused tests green; full ci flake in unrelated packages/agent/tools/tools.test.ts timeout under test:isolated.",
       "link": "https://github.com/dennisonbertram/fork-open-agents/issues/1400"
     },
     {
