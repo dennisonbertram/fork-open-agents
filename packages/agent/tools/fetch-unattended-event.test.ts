@@ -37,8 +37,8 @@ describe("unattended-mutating-fetch-blocked event (#1394)", () => {
     expect(requires).toBe(true);
     expect(events).toHaveLength(1);
     const event = events[0];
-    if (!event) {
-      throw new Error("expected one event");
+    if (!event || event.event !== "unattended-mutating-fetch-blocked") {
+      throw new Error("expected unattended-mutating-fetch-blocked event");
     }
     expect(event.service).toBe("agent-fetch-tool");
     expect(event.event).toBe("unattended-mutating-fetch-blocked");
