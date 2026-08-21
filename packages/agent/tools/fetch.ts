@@ -1,6 +1,10 @@
 import { tool } from "ai";
 import { z } from "zod";
 import {
+  emitFetchHostResolved,
+  emitFetchPrivateTargetBlocked,
+} from "./fetch-events";
+import {
   getGithubToolAvailable,
   getSandbox,
   getUnattended,
@@ -217,6 +221,34 @@ type FetchHostErrorKind =
   | "dns-resolution-failed"
   | "no-public-ips";
 
+/**
+ * Distinct user-facing message per error kind — collapsing these into one
+ * "private or internal host" string mislabels DNS failures as policy blocks.
+ */
+const FETCH_HOST_ERROR_MESSAGES: Record<
+  FetchHostErrorKind,
+  (host: string) => string
+> = {
+  "private-host": (host) =>
+    `Fetch failed: URL resolves to a private or internal host (${host})`,
+  "dns-resolution-failed": (host) =>
+    `Fetch failed: DNS resolution failed for host ${host}`,
+  "no-public-ips": (host) =>
+    `Fetch failed: DNS returned no addresses for host ${host}`,
+};
+
+function fetchHostEventErrorKind(
+  errorKind: FetchHostErrorKind,
+): "private_target_blocked" | "dns-resolution-failed" | "empty_resolution" {
+  if (errorKind === "private-host") {
+    return "private_target_blocked";
+  }
+  if (errorKind === "dns-resolution-failed") {
+    return "dns-resolution-failed";
+  }
+  return "empty_resolution";
+}
+
 type ResolveFetchHostResult =
   | { ok: true; ips: string[] }
   | { ok: false; errorKind: FetchHostErrorKind };
@@ -355,11 +387,24 @@ EXAMPLES:
     });
 
     if (!hostResolution.ok) {
+      emitFetchPrivateTargetBlocked({
+        host: parsedUrl.hostname,
+        errorKind: fetchHostEventErrorKind(hostResolution.errorKind),
+        experimental_context,
+      });
       return {
         success: false,
-        error: "Fetch failed: URL resolves to a private or internal host",
+        error: FETCH_HOST_ERROR_MESSAGES[hostResolution.errorKind](
+          parsedUrl.hostname,
+        ),
       };
     }
+
+    emitFetchHostResolved({
+      host: parsedUrl.hostname,
+      resolvedIps: hostResolution.ips,
+      experimental_context,
+    });
 
     // Pin curl to the exact IPs we just validated (--resolve) instead of
     // letting it re-resolve the hostname itself. Without this, an attacker

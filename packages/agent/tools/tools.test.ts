@@ -828,7 +828,8 @@ describe("tools execute behavior", () => {
 
     expect(result).toEqual({
       success: false,
-      error: "Fetch failed: URL resolves to a private or internal host",
+      error:
+        "Fetch failed: URL resolves to a private or internal host (internal.example)",
     });
   });
 
@@ -860,7 +861,7 @@ describe("tools execute behavior", () => {
 
     expect(result).toEqual({
       success: false,
-      error: "Fetch failed: URL resolves to a private or internal host",
+      error: "Fetch failed: DNS resolution failed for host unresolved.example",
     });
   });
 

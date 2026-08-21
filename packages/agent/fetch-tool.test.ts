@@ -198,7 +198,8 @@ describe("web_fetch DNS-rebinding guard (#1393)", () => {
     expect(curlRan).toBe(false);
     expect(result).toEqual({
       success: false,
-      error: "Fetch failed: URL resolves to a private or internal host",
+      error:
+        "Fetch failed: DNS returned no addresses for host empty-dns.example",
     });
   });
 
@@ -231,7 +232,8 @@ describe("web_fetch DNS-rebinding guard (#1393)", () => {
     expect(curlRan).toBe(false);
     expect(result).toEqual({
       success: false,
-      error: "Fetch failed: URL resolves to a private or internal host",
+      error:
+        "Fetch failed: URL resolves to a private or internal host (mixed-dns.example)",
     });
   });
 });
