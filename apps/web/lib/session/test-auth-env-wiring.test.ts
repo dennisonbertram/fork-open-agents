@@ -1,17 +1,19 @@
 import { describe, expect, test } from "bun:test";
 
 /**
- * `isTestAuthEnabled()` is a security boundary. Its two inputs only work as a
- * set: `VERCEL_ENV` is the production refusal, and
- * `OPEN_AGENTS_ENABLE_TEST_AUTH` is the opt-in on Preview/Dev.
+ * `isTestAuthEnabled()` is a security boundary. Its inputs only work as a
+ * set: `VERCEL_ENV` and `NODE_ENV` are the production refusals,
+ * `TEST_AUTH_SECRET` is the required shared secret without which test-auth
+ * stays disabled entirely, and `OPEN_AGENTS_ENABLE_TEST_AUTH` is the opt-in
+ * on Preview/Dev.
  *
  * Request-time session resolution reads these from the platform env, not from
  * Turbo. They are still declared on the build task so a future build-path
  * caller cannot silently drop them the way `PRODUCTION_DB_HOST` once did.
  *
- * `.env.example` documents the key. An empty template value does **not** arm
- * anything — this test only pins the comment so operators see the Production
- * refusal before they copy the file.
+ * `.env.example` documents the keys. An empty template value does **not** arm
+ * anything — this test only pins the comments so operators see the
+ * Production refusal and the secret requirement before they copy the file.
  */
 
 const TURBO_CONFIG_PATH = new URL("../../../../turbo.json", import.meta.url);
@@ -63,6 +65,10 @@ describe("test-auth env wiring", () => {
       "OPEN_AGENTS_ENABLE_TEST_AUTH",
       "Preview/Dev could not opt in after a Turbo-stripped build",
     ],
+    [
+      "TEST_AUTH_SECRET",
+      "the shared-secret requirement could never be satisfied after a Turbo-stripped build",
+    ],
   ])("turbo build declares %s — without it, %s", async (name) => {
     expect(await buildTaskEnv()).toContain(name);
   });
@@ -70,12 +76,24 @@ describe("test-auth env wiring", () => {
   test("the production refusal is pinned in source, not only in helper tests", async () => {
     const source = await Bun.file(TEST_AUTH_PATH).text();
     expect(source).toContain('process.env.VERCEL_ENV === "production"');
+    expect(source).toContain('process.env.NODE_ENV === "production"');
     expect(source).toMatch(/return false;/);
+  });
+
+  test("the shared-secret requirement is pinned in source, not only in helper tests", async () => {
+    const source = await Bun.file(TEST_AUTH_PATH).text();
+    expect(source).toContain("process.env.TEST_AUTH_SECRET");
   });
 
   test(".env.example documents the flag and the Production refusal (docs, not arming)", async () => {
     const example = await Bun.file(ENV_EXAMPLE_PATH).text();
     expect(example).toContain("OPEN_AGENTS_ENABLE_TEST_AUTH");
     expect(example).toMatch(/[Nn]ever.*[Pp]roduction|Production.*refus/);
+  });
+
+  test(".env.example documents TEST_AUTH_SECRET as local-only (docs, not arming)", async () => {
+    const example = await Bun.file(ENV_EXAMPLE_PATH).text();
+    expect(example).toContain("TEST_AUTH_SECRET");
+    expect(example).toMatch(/[Ll]ocal only/);
   });
 });

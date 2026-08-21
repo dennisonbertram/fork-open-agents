@@ -4,8 +4,8 @@
  * BT-743-A: updateBackgroundAgentRunStatus refuses a non-forced transition
  *   OUT of a terminal status (succeeded/failed/skipped/cancelled) and emits
  *   a background-agent.run.status_conflict warn event.
- * BT-743-B: updateBackgroundAgentRunStatus still applies the transition when
- *   force:true is passed (the stale sweeper's use case).
+ * BT-743-B / #1396: force:true uses CAS — only queued/running rows update;
+ *   a terminal status is immutable even under force (sweeper race skip).
  * BT-743-C: recordBackgroundAgentEvent assigns unique, gapless sequences to
  *   concurrent callers for the same run — a sequence collision is retried
  *   instead of silently dropping the event.
@@ -247,8 +247,25 @@ describe("#743 terminal-status guard: updateBackgroundAgentRunStatus", () => {
     });
   });
 
-  test("BT-743-B: force:true still applies the transition (sweeper use case)", async () => {
+  test("BT-743-B / #1396: force:true CAS only updates queued/running — terminal stays immutable", async () => {
     seedRun("succeeded");
+    const { updateBackgroundAgentRunStatus } = await storePromise;
+
+    const result = await updateBackgroundAgentRunStatus({
+      runId: "run-1",
+      status: "failed",
+      errorKind: "stuck_running",
+      force: true,
+    });
+
+    expect(result).toBeNull();
+    expect(runsTable[0]?.status).toBe("succeeded");
+    // Forced CAS misses are not conflicts — no status_conflict event.
+    expect(eventsTable).toHaveLength(0);
+  });
+
+  test("#1396 force:true still terminalizes a genuinely stuck running run", async () => {
+    seedRun("running");
     const { updateBackgroundAgentRunStatus } = await storePromise;
 
     const result = await updateBackgroundAgentRunStatus({
@@ -260,8 +277,24 @@ describe("#743 terminal-status guard: updateBackgroundAgentRunStatus", () => {
 
     expect(result?.status).toBe("failed");
     expect(runsTable[0]?.status).toBe("failed");
-    // Forced transitions are not conflicts — no status_conflict event.
-    expect(eventsTable).toHaveLength(0);
+  });
+
+  test("#1396 touchBackgroundAgentRunHeartbeat bumps updatedAt for live runs", async () => {
+    const row = seedRun("running");
+    row.updatedAt = new Date("2026-06-01T00:00:00.000Z");
+    const { touchBackgroundAgentRunHeartbeat } = await storePromise;
+
+    const result = await touchBackgroundAgentRunHeartbeat({
+      runId: "run-1",
+      turnIndex: 3,
+    });
+
+    expect(result).not.toBeNull();
+    const updatedAt = runsTable[0]?.updatedAt;
+    expect(updatedAt).toBeInstanceOf(Date);
+    expect((updatedAt as Date).getTime()).toBeGreaterThan(
+      new Date("2026-06-01T00:00:00.000Z").getTime(),
+    );
   });
 
   test("non-forced transitions between non-terminal statuses still succeed", async () => {

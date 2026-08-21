@@ -26,7 +26,10 @@ export async function resolveSessionFromHeaders(
   headers: Headers,
 ): Promise<Session | undefined> {
   const cookieHeader = headers.get("cookie");
-  const testSession = getTestAuthSessionFromCookieHeader(cookieHeader);
+  const testSession = getTestAuthSessionFromCookieHeader(cookieHeader, {
+    requestId: headers.get("x-request-id") ?? undefined,
+    host: headers.get("host") ?? undefined,
+  });
   if (testSession) {
     return testSession;
   }

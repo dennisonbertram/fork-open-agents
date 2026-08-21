@@ -716,7 +716,10 @@ describe("tools execute behavior", () => {
     );
     expect(postResult).toBe(true);
 
-    const unattendedResult = await getNeedsApprovalResult(
+    // Unattended runs have no human approver. A mutating method must still
+    // require approval so it stays blocked rather than silently writing to a
+    // third party (#1394) — only unattended GET/HEAD auto-approve below.
+    const unattendedPostResult = await getNeedsApprovalResult(
       webFetchTool.needsApproval,
       { url: "https://example.com", method: "POST" as const },
       {
@@ -724,7 +727,17 @@ describe("tools execute behavior", () => {
         unattended: true,
       },
     );
-    expect(unattendedResult).toBe(false);
+    expect(unattendedPostResult).toBe(true);
+
+    const unattendedGetResult = await getNeedsApprovalResult(
+      webFetchTool.needsApproval,
+      { url: "https://example.com", method: "GET" as const },
+      {
+        ...baseContext,
+        unattended: true,
+      },
+    );
+    expect(unattendedGetResult).toBe(false);
   });
 
   afterEach(() => {
@@ -828,7 +841,8 @@ describe("tools execute behavior", () => {
 
     expect(result).toEqual({
       success: false,
-      error: "Fetch failed: URL resolves to a private or internal host",
+      error:
+        "Fetch failed: URL resolves to a private or internal host (internal.example)",
     });
   });
 
@@ -860,7 +874,7 @@ describe("tools execute behavior", () => {
 
     expect(result).toEqual({
       success: false,
-      error: "Fetch failed: URL resolves to a private or internal host",
+      error: "Fetch failed: DNS resolution failed for host unresolved.example",
     });
   });
 

@@ -13,9 +13,13 @@ mock.module("@/lib/dev/test-auth-seed", () => ({
 
 const routeModulePromise = import("./route");
 
+const TEST_SECRET = "test-secret";
+const TEST_AUTH_COOKIE_VALUE = `test-auth:${TEST_SECRET}`;
+
 const originalNodeEnv = process.env.NODE_ENV;
 const originalTestAuth = process.env.OPEN_AGENTS_ENABLE_TEST_AUTH;
 const originalVercelEnv = process.env.VERCEL_ENV;
+const originalTestAuthSecret = process.env.TEST_AUTH_SECRET;
 const nodeEnvKey = "NODE_ENV" as keyof NodeJS.ProcessEnv;
 
 function restoreEnv() {
@@ -30,12 +34,18 @@ function restoreEnv() {
   } else {
     process.env.VERCEL_ENV = originalVercelEnv;
   }
+  if (originalTestAuthSecret === undefined) {
+    delete process.env.TEST_AUTH_SECRET;
+  } else {
+    process.env.TEST_AUTH_SECRET = originalTestAuthSecret;
+  }
 }
 
 describe("GET /api/dev/test-auth", () => {
   beforeEach(() => {
     seedCalls = 0;
     process.env[nodeEnvKey] = "test";
+    process.env.TEST_AUTH_SECRET = TEST_SECRET;
     delete process.env.OPEN_AGENTS_ENABLE_TEST_AUTH;
     delete process.env.VERCEL_ENV;
   });
@@ -83,7 +93,10 @@ describe("GET /api/dev/test-auth", () => {
       userId: "dev-managed-runtime-user",
     });
     expect(response.headers.get("Set-Cookie")).toContain(
-      "open_agents_test_user_id=dev-managed-runtime-user",
+      `open_agents_test_user_id=${encodeURIComponent(TEST_AUTH_COOKIE_VALUE)}`,
+    );
+    expect(response.headers.get("Set-Cookie")).not.toContain(
+      "dev-managed-runtime-user",
     );
     expect(seedCalls).toBe(1);
   });
@@ -100,7 +113,7 @@ describe("GET /api/dev/test-auth", () => {
       "http://localhost:3000/sessions",
     );
     expect(response.headers.get("Set-Cookie")).toContain(
-      "open_agents_test_user_id=dev-managed-runtime-user",
+      `open_agents_test_user_id=${encodeURIComponent(TEST_AUTH_COOKIE_VALUE)}`,
     );
     expect(seedCalls).toBe(1);
   });

@@ -6,13 +6,20 @@ The background-agent cron path now sweeps stale queued/running runs before it
 dispatches due schedules. Runs older than `BACKGROUND_AGENTS_STALE_RUN_MS`
 (default two hours) are marked failed with `errorKind=stuck_running` and a
 `background-agent.run.swept_stale` event that preserves request, workflow, and
-sandbox attribution when present.
+sandbox attribution when present. The sweeper uses a compare-and-set update
+(`status IN ('queued','running')`); if the executor already terminalized the
+run, the update matches zero rows and the sweeper emits
+`background-agent.run.sweep_skipped_terminal` instead of flipping a finished
+status. Live executors bump `runs.updatedAt` on each progress turn
+(`touchBackgroundAgentRunHeartbeat` — no separate `heartbeatAt` column) so
+long-running-but-alive work is not swept.
 
 For scheduled triggers, a persisted `nextRunAt` in the past is treated as the
 due schedule window. The dispatcher uses that due timestamp in the schedule
-idempotency key and event `occurredAt`, then advances schedule state from that
-window. This lets a missed cron poll catch up once without creating duplicate
-runs for the same missed minute.
+idempotency key and event `occurredAt`, then advances `nextRunAt` from **now**
+(skipping the whole missed backlog) and emits `background-agent.run.caught_up`
+with `{ triggerId, missedSlots, nextRunAt }`. This catches up at most once
+after an outage without replaying every missed slot as its own run.
 
 Use this runbook for GitHub issue
 [#26](https://github.com/dennisonbertram/fork-open-agents/issues/26) before

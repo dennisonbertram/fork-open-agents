@@ -151,9 +151,11 @@ mock.module("workflow", () => ({
   FatalError: MockFatalError,
 }));
 
+const updateSessionSpy = mock(async () => undefined);
+
 mock.module("@/lib/db/sessions", () => ({
   getSessionById: async (id: string) => testSessionById[id] ?? null,
-  updateSession: async () => undefined,
+  updateSession: updateSessionSpy,
 }));
 
 type VerifyRepoAccessResult =
@@ -484,6 +486,7 @@ const { resolveChatSandboxRuntime, buildSandboxState: buildOuterSandboxState } =
 const {
   DETERMINISTIC_SETUP_FAILURE_PHRASES,
   buildSandboxState: buildImplSandboxState,
+  installSessionGlobalSkills,
 } = await import("./chat-sandbox-runtime-impl");
 
 // ── Tests ──────────────────────────────────────────────────────────────────────
@@ -619,6 +622,7 @@ beforeEach(() => {
   resolveManagedRuntimeProfileSpy.mockClear();
   emitSessionEventSpy.mockClear();
   installGlobalSkillsSpy.mockClear();
+  updateSessionSpy.mockClear();
   installSessionUserSkillsSpy.mockClear();
   connectedSandboxWasCreated = undefined;
   verifyRepoAccessSpy.mockClear();
@@ -827,6 +831,57 @@ describe("resolveChatSandboxRuntime", () => {
       // heuristic is true; a sandbox that cannot report wasCreated must preserve
       // the prior install-on-cold-start behavior.
       expect(installGlobalSkillsSpy).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("REG-1399: installSessionGlobalSkills reports failure instead of swallowing", () => {
+    test("returns ok:false with skill_install_failed when the installer throws, without rejecting", async () => {
+      const session = makeRepoSession({
+        id: "session-install-fail-impl",
+        globalSkillRefs: ["acme/skills/formatter"],
+      });
+      testSessionById[session.id] = session;
+      installGlobalSkillsSpy.mockImplementationOnce(async () => {
+        throw new Error("npx skills add failed");
+      });
+
+      const result = await installSessionGlobalSkills({
+        session: session as never,
+        sandbox: fakeSandbox as unknown as Sandbox,
+        didSetupWorkspace: true,
+      });
+
+      expect(result).toEqual({
+        ok: false,
+        errorKind: "skill_install_failed",
+        message: "npx skills add failed",
+      });
+    });
+
+    test("returns ok:true on success and when there is nothing to install", async () => {
+      const session = makeRepoSession({
+        id: "session-install-ok-impl",
+        globalSkillRefs: ["acme/skills/formatter"],
+      });
+      testSessionById[session.id] = session;
+
+      const success = await installSessionGlobalSkills({
+        session: session as never,
+        sandbox: fakeSandbox as unknown as Sandbox,
+        didSetupWorkspace: true,
+      });
+      expect(success).toEqual({ ok: true });
+
+      const skipped = await installSessionGlobalSkills({
+        session: {
+          ...session,
+          id: "session-install-empty",
+          globalSkillRefs: [],
+        } as never,
+        sandbox: fakeSandbox as unknown as Sandbox,
+        didSetupWorkspace: true,
+      });
+      expect(skipped).toEqual({ ok: true });
     });
   });
 
@@ -1652,6 +1707,115 @@ describe("resolveChatSandboxRuntime", () => {
 
       expect(mintInstallationTokenSpy).not.toHaveBeenCalled();
       expect(connectSandboxSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("#1399: install failure still persists state and kicks lifecycle", () => {
+    test("installGlobalSkills rejection still persists sandboxState and kicks lifecycle", async () => {
+      const session = makeRepoSession({
+        id: "session-install-fail-runtime",
+        globalSkillRefs: ["acme/skills/formatter"],
+        sandboxState: {
+          type: "vercel",
+          sandboxName: "session_session-install-fail-runtime",
+        } as never,
+      });
+      testSessionById[session.id] = session;
+      connectedSandboxWasCreated = true;
+      installGlobalSkillsSpy.mockImplementationOnce(async () => {
+        throw new Error("skill install failed");
+      });
+      kickSandboxLifecycleWorkflowSpy.mockClear();
+      updateSessionSpy.mockClear();
+
+      const result = await resolveChatSandboxRuntime({
+        userId: "user-1",
+        sessionId: session.id,
+        chatId: "chat-install-fail",
+        assistantId: "asst-1399",
+        workflowRunId: "wrun-1399",
+      });
+
+      expect(result.mode).toBe("sandbox");
+      expect(updateSessionSpy).toHaveBeenCalled();
+      expect(kickSandboxLifecycleWorkflowSpy).toHaveBeenCalled();
+      // Skill installers swallow errors today; the critical contract is that
+      // sandboxState was persisted and lifecycle cleanup was still kicked.
+      expect(installGlobalSkillsSpy).toHaveBeenCalled();
+    });
+
+    test("managed-runtime verification failure kicks lifecycle and emits provisioning.cleanup_kicked_on_error", async () => {
+      resolveProfileResult = {
+        ok: true,
+        profile: {
+          ...DEFAULT_BUILT_IN_PROFILE,
+          setupCommands: [],
+          verificationCommands: [
+            {
+              id: "verify-tool",
+              label: "Verify tool",
+              description: "Confirms tool availability.",
+              command: "command -v tool",
+              required: true,
+            },
+          ],
+        },
+        source: "built_in",
+        requestedProfileId: "test-profile",
+        resolvedProfileId: "test-profile",
+      };
+      execImpl = () =>
+        Promise.resolve({
+          success: false,
+          exitCode: 1,
+          stdout: "",
+          stderr: "tool not found",
+          truncated: false,
+        });
+      const session = makeManagedRuntimeSession({
+        id: "session-1399-cleanup-event",
+      });
+      testSessionById[session.id] = session;
+      kickSandboxLifecycleWorkflowSpy.mockClear();
+
+      const warnSpy = mock((..._args: unknown[]) => undefined);
+      const originalWarn = console.warn;
+      console.warn = warnSpy as typeof console.warn;
+
+      try {
+        await expect(
+          resolveChatSandboxRuntime({
+            userId: "user-1",
+            sessionId: session.id,
+            chatId: "chat-1399-cleanup",
+            assistantId: "asst-1399-cleanup",
+            workflowRunId: "wrun-1399-cleanup",
+          }),
+        ).rejects.toThrow();
+
+        expect(kickSandboxLifecycleWorkflowSpy).toHaveBeenCalled();
+
+        const warnPayloads = warnSpy.mock.calls.map((call) => {
+          const first = call[0];
+          if (typeof first !== "string") return null;
+          try {
+            return JSON.parse(first) as Record<string, unknown>;
+          } catch {
+            return null;
+          }
+        });
+        expect(warnPayloads).toContainEqual(
+          expect.objectContaining({
+            service: "sandbox-lifecycle",
+            event: "provisioning.cleanup_kicked_on_error",
+            sessionId: session.id,
+            chatId: "chat-1399-cleanup",
+            workflowRunId: "wrun-1399-cleanup",
+          }),
+        );
+      } finally {
+        console.warn = originalWarn;
+      }
     });
   });
 });
