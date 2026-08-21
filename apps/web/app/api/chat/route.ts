@@ -1,5 +1,6 @@
 import { createUIMessageStreamResponse, type InferUIMessageChunk } from "ai";
 import { checkBotProtection } from "@/lib/botid";
+import { checkRateLimit, rateLimitKey } from "@/lib/rate-limit";
 import type { WebAgentUIMessage } from "@/app/types";
 import { createHarnessClient } from "@/lib/harness/client";
 import { getHarnessConfig } from "@/lib/harness/config";
@@ -96,6 +97,17 @@ export async function POST(req: Request) {
       { error: "Access denied", errorKind: "forbidden" },
       { status: 403 },
     );
+  }
+
+  // Chat is higher-volume than generate-title (10/min), so it gets a higher
+  // ceiling: 30 requests/min per user.
+  const limited = await checkRateLimit({
+    key: rateLimitKey(["chat", userId]),
+    limit: 30,
+    windowMs: 60_000,
+  });
+  if (limited) {
+    return limited;
   }
 
   const parsedBody = await parseChatRequestBody(req);
