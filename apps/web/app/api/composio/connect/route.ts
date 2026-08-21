@@ -50,6 +50,16 @@ export async function POST(req: Request) {
     );
   }
 
+  if (
+    parsed.data.callbackUrl &&
+    !isAllowedCallbackOrigin(parsed.data.callbackUrl, req)
+  ) {
+    return Response.json(
+      { error: "callbackUrl is not allowed", errorKind: "invalid_request" },
+      { status: 400 },
+    );
+  }
+
   try {
     const client = getComposioClient();
     const composioUserId = toComposioUserId(authResult.userId);
@@ -80,13 +90,59 @@ export async function POST(req: Request) {
       redirectUrl: connectionRequest.redirectUrl,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    // Never echo error.message to the client — Composio SDK errors can carry
+    // internal hostnames/infra details. Log the raw message server-side only.
+    console.warn(
+      JSON.stringify({
+        service: "composio-connect",
+        event: "composio.connect.failed",
+        errorKind: "composio_connect_failed",
+        message: error instanceof Error ? error.message : String(error),
+      }),
+    );
     return Response.json(
       {
-        error: message || "Failed to create Composio connection link",
-        errorKind: "invalid_request",
+        error: "Failed to create Composio connection link",
+        errorKind: "composio_connect_failed",
       },
       { status: 400 },
     );
   }
+}
+
+/**
+ * Restricts callbackUrl to this app's own origins so the connect endpoint
+ * cannot be used as an open redirect: the request's own origin, plus known
+ * deployment origins derived from env (BETTER_AUTH_URL / VERCEL_URL /
+ * NEXT_PUBLIC_VERCEL_PROJECT_PRODUCTION_URL).
+ */
+function isAllowedCallbackOrigin(callbackUrl: string, req: Request): boolean {
+  let callbackOrigin: string;
+  try {
+    callbackOrigin = new URL(callbackUrl).origin;
+  } catch {
+    return false;
+  }
+
+  const allowedOrigins = new Set<string>([new URL(req.url).origin]);
+  for (const value of [
+    process.env.BETTER_AUTH_URL,
+    process.env.VERCEL_URL,
+    process.env.NEXT_PUBLIC_VERCEL_PROJECT_PRODUCTION_URL,
+  ]) {
+    if (!value) {
+      continue;
+    }
+    try {
+      const normalized =
+        value.startsWith("http://") || value.startsWith("https://")
+          ? value
+          : `https://${value}`;
+      allowedOrigins.add(new URL(normalized).origin);
+    } catch {
+      // Ignore malformed env values.
+    }
+  }
+
+  return allowedOrigins.has(callbackOrigin);
 }
