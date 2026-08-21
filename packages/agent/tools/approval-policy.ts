@@ -30,6 +30,11 @@ export type ToolApprovalDecision = {
 /**
  * Patterns for commands that could cause irreversible filesystem damage.
  * Ported from DANGEROUS_COMMAND_PATTERNS in bash.ts.
+ *
+ * NOTE: This regex layer is explicitly heuristic — it is not a shell parser.
+ * Exotic obfuscation (base64 pipes, quote-splitting, indirection) can still
+ * evade it. Wrapper unwrapping below catches the common bash/sh -c / eval /
+ * xargs shapes; a full parser is a separate research spike.
  */
 const DANGEROUS_COMMAND_PATTERNS = [
   /\bcurl\b/,
@@ -39,6 +44,51 @@ const DANGEROUS_COMMAND_PATTERNS = [
   /:\(\)\s*\{\s*:\|:/,
 ];
 
+/**
+ * Expand shell wrappers so inner payloads are classified too.
+ * Handles: bash -c / sh -c / eval / xargs, plus light backslash unescaping.
+ */
+export function expandShellWrapperPayloads(command: string): string[] {
+  const payloads = new Set<string>([command]);
+  const trimmed = command.trim();
+
+  const pushNormalized = (raw: string) => {
+    const value = raw.trim();
+    if (!value) {
+      return;
+    }
+    payloads.add(value);
+    // `eval rm\ -rf\ /tmp/x` → `eval rm -rf /tmp/x` / `rm -rf /tmp/x`
+    const unescaped = value.replace(/\\(.)/g, "$1");
+    if (unescaped !== value) {
+      payloads.add(unescaped);
+    }
+  };
+
+  // bash|sh [-opts] -c 'payload'   OR   bash|sh -c "payload"
+  const shellDashC =
+    /\b(?:bash|sh|zsh|dash|ksh)\b(?:\s+-[a-zA-Z]+)*\s+-c\s+(?:'([^']*)'|"([^"]*)"|(\S+))/gi;
+  for (const match of trimmed.matchAll(shellDashC)) {
+    pushNormalized(match[1] ?? match[2] ?? match[3] ?? "");
+  }
+
+  // eval 'payload' | eval "payload" | eval payload
+  const evalMatch =
+    /\beval\b\s+(?:'([^']*)'|"([^"]*)"|((?:\\.|[^\s;|&])+))/i.exec(trimmed);
+  if (evalMatch) {
+    pushNormalized(evalMatch[1] ?? evalMatch[2] ?? evalMatch[3] ?? "");
+  }
+
+  // xargs [opts] <command...>  — classify the command portion after xargs flags
+  const xargsMatch = /\bxargs\b(?:\s+(?:-[a-zA-Z]\S*|\S+=\S+))*\s+(.+)$/i.exec(
+    trimmed,
+  );
+  if (xargsMatch?.[1]) {
+    pushNormalized(xargsMatch[1]);
+  }
+
+  return [...payloads];
+}
 /**
  * Patterns for files that contain credentials or sensitive environment data.
  * Ported from SENSITIVE_FILE_PATTERNS in bash.ts.
@@ -125,32 +175,34 @@ const BROWSER_TOOL_NAMES = new Set([
  * Behavior-preserving port of commandNeedsApproval() from bash.ts.
  */
 export function bashPolicy(command: string): ToolApprovalDecision {
-  const trimmedCommand = command.trim();
-  const lowerCommand = trimmedCommand.toLowerCase();
+  const candidates = expandShellWrapperPayloads(command);
 
-  for (const pattern of DANGEROUS_COMMAND_PATTERNS) {
-    if (pattern.test(trimmedCommand)) {
-      return {
-        requires: true,
-        category: "dangerous-command",
-        reason: `Command matches dangerous pattern: ${pattern}`,
-      };
+  for (const candidate of candidates) {
+    for (const pattern of DANGEROUS_COMMAND_PATTERNS) {
+      if (pattern.test(candidate)) {
+        return {
+          requires: true,
+          category: "dangerous-command",
+          reason: `Command matches dangerous pattern: ${pattern}`,
+        };
+      }
     }
-  }
 
-  for (const pattern of SENSITIVE_FILE_PATTERNS) {
-    if (pattern.test(lowerCommand)) {
-      return {
-        requires: true,
-        category: "sensitive-file",
-        reason: "Command references a sensitive file (.env, credentials, etc.)",
-      };
+    const lowerCandidate = candidate.toLowerCase();
+    for (const pattern of SENSITIVE_FILE_PATTERNS) {
+      if (pattern.test(lowerCandidate)) {
+        return {
+          requires: true,
+          category: "sensitive-file",
+          reason:
+            "Command references a sensitive file (.env, credentials, etc.)",
+        };
+      }
     }
   }
 
   return { requires: false, category: null, reason: null };
 }
-
 /**
  * Git force-push / destructive git operation policy.
  * Gates git push --force/--force-with-lease/-f, git reset --hard, git clean -fd.
