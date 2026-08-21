@@ -2,6 +2,7 @@ import { tool } from "ai";
 import { z } from "zod";
 import * as path from "path";
 import { getSandbox, shellEscape, toDisplayPath } from "./utils";
+import { resolveSandboxRealPath, resolveWorkspacePath } from "./path-security";
 
 interface FileInfo {
   path: string;
@@ -62,9 +63,15 @@ EXAMPLES:
       try {
         let searchDir: string;
         if (basePath) {
-          searchDir = path.isAbsolute(basePath)
-            ? basePath
-            : path.resolve(workingDirectory, basePath);
+          const resolvedBase = resolveWorkspacePath(basePath, workingDirectory);
+          if (!resolvedBase) {
+            return {
+              success: false,
+              error: "Path must stay within the workspace.",
+              errorKind: "path_outside_workspace",
+            };
+          }
+          searchDir = resolvedBase;
         } else {
           searchDir = workingDirectory;
         }
@@ -84,7 +91,37 @@ EXAMPLES:
           literalPrefix.push(part);
         }
         if (literalPrefix.length > 0) {
-          searchDir = path.join(searchDir, ...literalPrefix);
+          const joined = path.join(searchDir, ...literalPrefix);
+          const resolvedJoined = resolveWorkspacePath(joined, workingDirectory);
+          if (!resolvedJoined) {
+            return {
+              success: false,
+              error: "Path must stay within the workspace.",
+              errorKind: "path_outside_workspace",
+            };
+          }
+          searchDir = resolvedJoined;
+        }
+
+        // When the caller supplied an explicit base path, the lexical checks
+        // above cannot see symlinks. Resolve the real path in the sandbox and
+        // re-check containment so an in-workspace symlink pointing outside
+        // the workspace is refused too (see read.ts). The default (workspace
+        // root) case is skipped because the working directory itself may be
+        // reached through a symlink without that being an escape.
+        if (basePath) {
+          const realPath = await resolveSandboxRealPath({
+            sandbox,
+            absolutePath: searchDir,
+            workingDirectory,
+          });
+          if (realPath && !resolveWorkspacePath(realPath, workingDirectory)) {
+            return {
+              success: false,
+              error: "Path resolves outside the workspace.",
+              errorKind: "path_outside_workspace",
+            };
+          }
         }
 
         // Determine maxdepth from remaining wildcard directory segments.

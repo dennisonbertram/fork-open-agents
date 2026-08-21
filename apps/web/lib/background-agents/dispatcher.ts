@@ -748,6 +748,44 @@ function getDueScheduleTime(
     : now;
 }
 
+/**
+ * #1396: count schedule matches in (dueAt, now] — the backlog slots we skip
+ * when jumping nextRunAt from `now` instead of replaying each missed window.
+ */
+function countMissedScheduleSlots(
+  schedule: string | null | undefined,
+  dueAt: Date,
+  now: Date,
+): number {
+  if (dueAt >= now) {
+    return 0;
+  }
+  let count = 0;
+  const candidate = new Date(dueAt);
+  candidate.setUTCSeconds(0, 0);
+  candidate.setUTCMinutes(candidate.getUTCMinutes() + 1);
+  while (candidate <= now) {
+    if (scheduleMatchesNow(schedule, candidate)) {
+      count += 1;
+    }
+    candidate.setUTCMinutes(candidate.getUTCMinutes() + 1);
+  }
+  return count;
+}
+
+/**
+ * #1396: after catching up one missed due window, advance from `now` so all
+ * remaining missed slots are skipped (at most one catch-up run per outage).
+ */
+function nextRunAtAfterCatchUp(
+  schedule: string | null | undefined,
+  dueAt: Date,
+  now: Date,
+): Date | null {
+  const from = dueAt < now ? now : dueAt;
+  return computeNextRuns(schedule, from, 1)[0] ?? null;
+}
+
 async function sweepStaleBackgroundRuns(params: {
   now: Date;
   requestId?: string | null;
@@ -762,11 +800,11 @@ async function sweepStaleBackgroundRuns(params: {
   });
 
   for (const run of staleRuns) {
-    // #743: force:true — a stale/stuck run may have already reached a
-    // terminal status via a race with its own executor. The sweeper's job is
-    // to terminalize genuinely stuck runs, so it must bypass the
-    // terminal-status guard rather than have its own update silently refused.
-    await updateBackgroundAgentRunStatus({
+    const previousStatus = run.status;
+    // #1396: force uses CAS (queued/running only). Zero rows = executor won
+    // the race to a terminal status — emit sweep_skipped_terminal, not
+    // swept_stale, so finished runs keep their terminal status.
+    const updated = await updateBackgroundAgentRunStatus({
       runId: run.id,
       status: "failed",
       errorKind: "stuck_running",
@@ -776,6 +814,30 @@ async function sweepStaleBackgroundRuns(params: {
       agentId: run.agentId,
       userId: run.userId,
     });
+
+    if (!updated) {
+      await recordBackgroundAgentEvent({
+        runId: run.id,
+        agentId: run.agentId,
+        userId: run.userId,
+        eventName: "background-agent.run.sweep_skipped_terminal",
+        status: "info",
+        level: "info",
+        summary:
+          "Stale-run sweeper skipped a run that reached a terminal status concurrently.",
+        requestId: params.requestId ?? null,
+        workflowRunId: run.workflowRunId,
+        sandboxName: run.sandboxName,
+        errorKind: "sweep_race_skipped",
+        payload: {
+          previousStatus,
+          staleAfterMs,
+          lastEventAt: run.updatedAt.toISOString(),
+        },
+      });
+      continue;
+    }
+
     await recordBackgroundAgentEvent({
       runId: run.id,
       agentId: run.agentId,
@@ -792,6 +854,8 @@ async function sweepStaleBackgroundRuns(params: {
       payload: {
         staleAfterMs,
         lastEventAt: run.updatedAt.toISOString(),
+        previousStatus,
+        forced: true,
       },
     });
   }
@@ -910,12 +974,14 @@ export async function dispatchScheduledBackgroundAgents(params?: {
     if (row.trigger.loopId) {
       // Advance schedule state unconditionally (same wedge-prevention semantics
       // as agent triggers — loop runs must not wedge the cron schedule).
+      // #1396: advance nextRunAt from `now` after a missed window so we catch
+      // up at most once instead of replaying every backlog slot.
       const dueAt = getDueScheduleTime(row.trigger, now);
-      const nextRuns = computeNextRuns(row.trigger.schedule, dueAt, 1);
+      const nextRunAt = nextRunAtAfterCatchUp(row.trigger.schedule, dueAt, now);
       await advanceTriggerScheduleState({
         triggerId: row.trigger.id,
         lastRunAt: dueAt,
-        nextRunAt: nextRuns[0] ?? null,
+        nextRunAt,
       });
       const loop = await getAgentLoopById(row.trigger.loopId);
       if (!loop) continue;
@@ -939,6 +1005,27 @@ export async function dispatchScheduledBackgroundAgents(params?: {
 
       if (!loopResult.skipped && loopResult.runId) {
         loopRunIds.push(loopResult.runId);
+        if (dueAt < now) {
+          await recordBackgroundAgentEvent({
+            runId: loopResult.runId,
+            agentId: null,
+            userId: row.trigger.userId,
+            eventName: "background-agent.run.caught_up",
+            status: "info",
+            level: "info",
+            summary: "Caught up a missed schedule window (single catch-up).",
+            requestId: params?.requestId ?? null,
+            payload: {
+              triggerId: row.trigger.id,
+              missedSlots: countMissedScheduleSlots(
+                row.trigger.schedule,
+                dueAt,
+                now,
+              ),
+              nextRunAt: nextRunAt?.toISOString() ?? null,
+            },
+          });
+        }
       } else if (loopResult.skipped) {
         const reason = mapLoopRepoPolicySkipReason(loopResult.reason);
         if (reason) {
@@ -979,11 +1066,14 @@ export async function dispatchScheduledBackgroundAgents(params?: {
 
     // Advance schedule state regardless of whether this was a duplicate.
     // BT-006: a failed run must not wedge the schedule — advance unconditionally.
-    const nextRuns = computeNextRuns(row.trigger.schedule, dueAt, 1);
+    // #1396: compute nextRunAt from `now` when catching up a past due window so
+    // we skip the whole missed backlog (at most one catch-up run), not
+    // dueAt+interval which stays in the past and replays every slot.
+    const nextRunAt = nextRunAtAfterCatchUp(row.trigger.schedule, dueAt, now);
     await advanceTriggerScheduleState({
       triggerId: row.trigger.id,
       lastRunAt: dueAt,
-      nextRunAt: nextRuns[0] ?? null,
+      nextRunAt,
     });
 
     if (!result.created) {
@@ -1006,6 +1096,27 @@ export async function dispatchScheduledBackgroundAgents(params?: {
         externalId: event.externalId,
       },
     });
+    if (dueAt < now) {
+      await recordBackgroundAgentEvent({
+        runId: result.run.id,
+        agentId: agent.id,
+        userId: agent.userId,
+        eventName: "background-agent.run.caught_up",
+        status: "info",
+        level: "info",
+        summary: "Caught up a missed schedule window (single catch-up).",
+        requestId: params?.requestId ?? null,
+        payload: {
+          triggerId: row.trigger.id,
+          missedSlots: countMissedScheduleSlots(
+            row.trigger.schedule,
+            dueAt,
+            now,
+          ),
+          nextRunAt: nextRunAt?.toISOString() ?? null,
+        },
+      });
+    }
     const workflowRunId = await startRun(result.run.id);
     if (!workflowRunId) {
       await recordWorkflowStartFailure({

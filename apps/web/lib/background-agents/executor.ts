@@ -70,6 +70,7 @@ import {
   listBackgroundAgentEvents,
   listBackgroundAgentOutputs,
   recordBackgroundAgentEvent,
+  touchBackgroundAgentRunHeartbeat,
   updateBackgroundAgentRunStatus,
 } from "./store";
 import {
@@ -1514,6 +1515,31 @@ async function runBackgroundAgent(params: {
         maxStaleTurns,
       },
     });
+
+    // #1396: bump runs.updatedAt so the stale sweeper treats this live run as
+    // fresh. Prefer updatedAt over a dedicated heartbeatAt column (no migration).
+    const heartbeated = await touchBackgroundAgentRunHeartbeat({
+      runId: params.runId,
+      turnIndex: step,
+    });
+    if (heartbeated) {
+      await recordBackgroundAgentEvent({
+        runId: params.runId,
+        agentId: params.agentId,
+        userId: params.userId,
+        eventName: "background-agent.run.heartbeat",
+        status: "info",
+        level: "info",
+        summary: `Heartbeat after turn ${step}.`,
+        workflowRunId: params.workflowRunId,
+        requestId: params.requestId,
+        sandboxName: params.sandboxName,
+        payload: {
+          runId: params.runId,
+          turnIndex: step,
+        },
+      });
+    }
 
     // (#915) Independent second signal: feed this turn's whole-turn
     // tool-call signature into the repetition/cycle detector regardless of

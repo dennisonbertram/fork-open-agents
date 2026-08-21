@@ -249,6 +249,7 @@ mock.module("./store", () => ({
   listBackgroundAgentEvents,
   listBackgroundAgentComposioEvents,
   listBackgroundAgentOutputs: listBackgroundAgentOutputsMock,
+  touchBackgroundAgentRunHeartbeat: mock(async () => null),
   // needed by builtin-agent.ts (imported via isLearningsAgent in executor.ts)
   listRepoBackgroundAgents: mock(async () => []),
   listBackgroundAgents: mock(async () => []),
