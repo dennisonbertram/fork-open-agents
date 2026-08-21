@@ -139,11 +139,20 @@ async function stopSandboxBestEffort(
   stage: "create" | "afterStart",
   error: unknown,
 ): Promise<void> {
-  console.warn("[VercelSandbox] sandbox-orphan-prevented", {
-    sandboxName: sdk.name,
-    stage,
-    errorKind: error instanceof Error ? error.name : typeof error,
-  });
+  console.warn(
+    JSON.stringify({
+      service: "sandbox",
+      event: "sandbox-orphan-prevented",
+      level: "warn",
+      sandboxName: sdk.name,
+      stage,
+      errorKind:
+        stage === "create"
+          ? "setup_failed_stopped"
+          : "after_start_failed_stopped",
+      errorName: error instanceof Error ? error.name : typeof error,
+    }),
+  );
 
   try {
     await sdk.stop();
@@ -1129,10 +1138,16 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
     try {
       await this.sdk.stop();
     } catch (error) {
-      console.warn("[VercelSandbox] sandbox-stop-retryable", {
-        sandboxName: this.name,
-        errorKind: error instanceof Error ? error.name : typeof error,
-      });
+      console.warn(
+        JSON.stringify({
+          service: "sandbox",
+          event: "sandbox-stop-retryable",
+          level: "warn",
+          sandboxName: this.name,
+          errorKind: "stop_failed_retryable",
+          errorName: error instanceof Error ? error.name : typeof error,
+        }),
+      );
       throw error;
     }
 

@@ -185,15 +185,21 @@ async function finalizeArchivedSessionSandbox(
       // itself — so the sandbox may still be running. Clearing the handle
       // here would make it permanently unstoppable by lifecycle, since
       // nothing would retain the sandboxName needed to reconnect and retry.
-      // Preserve it so a later lifecycle pass can retry the stop.
+      // Preserve it: evaluateSandboxLifecycle retries the stop for archived
+      // sessions that still hold a live handle (#1395).
       if (canOperateOnSandbox(sessionAfterFailure.sandboxState)) {
-        console.warn(`${logPrefix} archive-stop-failed-handle-preserved`, {
-          sessionId,
-          sandboxName: getPersistentSandboxName(
-            sessionAfterFailure.sandboxState,
-          ),
-          errorKind: error instanceof Error ? error.name : typeof error,
-        });
+        console.warn(
+          JSON.stringify({
+            service: "sandbox-archive",
+            event: "archive-stop-failed-handle-preserved",
+            level: "warn",
+            sessionId,
+            sandboxName: getPersistentSandboxName(
+              sessionAfterFailure.sandboxState,
+            ),
+            errorKind: error instanceof Error ? error.name : typeof error,
+          }),
+        );
       }
 
       const failurePatch: SessionUpdateInput = {

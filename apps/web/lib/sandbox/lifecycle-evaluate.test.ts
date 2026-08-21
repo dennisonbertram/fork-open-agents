@@ -231,3 +231,107 @@ describe("evaluateSandboxLifecycle", () => {
     expect(spies.stop).not.toHaveBeenCalled();
   });
 });
+
+describe("evaluateSandboxLifecycle archived stop retry (#1395)", () => {
+  function makeArchivedSessionWithLiveHandle(): TestSessionRecord {
+    const nowMs = Date.now();
+
+    return {
+      id: "session-1",
+      status: "archived",
+      lifecycleState: "archived",
+      sandboxState: {
+        type: "vercel",
+        sandboxName: "session_session-1",
+        expiresAt: nowMs + 5 * 60_000,
+      },
+      hibernateAfter: null,
+      lastActivityAt: new Date(nowMs - 60_000),
+      sandboxExpiresAt: null,
+      updatedAt: new Date(nowMs - 60_000),
+    };
+  }
+
+  test("retries the stop for an archived session that still holds a live resume handle", async () => {
+    sessionRecord = makeArchivedSessionWithLiveHandle();
+
+    const result = await evaluateSandboxLifecycle(
+      "session-1",
+      "status-check-overdue",
+    );
+
+    expect(result).toEqual({
+      action: "hibernated",
+      reason: "archive-stop-retried",
+    });
+    expect(spies.connectSandbox).toHaveBeenCalledTimes(1);
+    expect(spies.stop).toHaveBeenCalledTimes(1);
+
+    const finalPatch = (spies.updateSession.mock.calls as unknown[][]).at(
+      -1,
+    )?.[1] as Record<string, unknown>;
+
+    expect(finalPatch).toEqual({
+      snapshotUrl: null,
+      snapshotCreatedAt: null,
+      sandboxState: {
+        type: "vercel",
+        sandboxName: "session_session-1",
+      },
+      lifecycleState: "archived",
+      sandboxExpiresAt: null,
+      hibernateAfter: null,
+      lifecycleError: null,
+    });
+  });
+
+  test("preserves the resume handle when the retried stop fails again", async () => {
+    sessionRecord = makeArchivedSessionWithLiveHandle();
+    spies.stop.mockImplementationOnce(async () => {
+      throw new Error("stop boom");
+    });
+
+    const result = await evaluateSandboxLifecycle(
+      "session-1",
+      "status-check-overdue",
+    );
+
+    expect(result).toEqual({
+      action: "failed",
+      reason: "archive-stop-retry-failed",
+    });
+
+    const updateCalls = spies.updateSession.mock.calls as unknown[][];
+    const failurePatch = updateCalls.at(-1)?.[1] as Record<string, unknown>;
+
+    expect(failurePatch.lifecycleState).toBe("archived");
+    expect(failurePatch.lifecycleError).toContain("stop boom");
+    expect(failurePatch).not.toHaveProperty("sandboxState");
+    expect(sessionRecord?.sandboxState).toEqual(
+      expect.objectContaining({
+        type: "vercel",
+        sandboxName: "session_session-1",
+        expiresAt: expect.any(Number),
+      }),
+    );
+  });
+
+  test("still skips archived sessions whose handle is no longer operable", async () => {
+    sessionRecord = {
+      ...makeArchivedSessionWithLiveHandle(),
+      sandboxState: {
+        type: "vercel",
+        sandboxName: "session_session-1",
+      } as TestSessionRecord["sandboxState"],
+    };
+
+    const result = await evaluateSandboxLifecycle(
+      "session-1",
+      "status-check-overdue",
+    );
+
+    expect(result).toEqual({ action: "skipped", reason: "session-archived" });
+    expect(spies.connectSandbox).not.toHaveBeenCalled();
+    expect(spies.stop).not.toHaveBeenCalled();
+  });
+});

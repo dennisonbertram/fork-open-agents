@@ -296,6 +296,64 @@ describe("archiveSession", () => {
     );
   });
 
+  test("emits the handle-preserved warning as single-line JSON", async () => {
+    const { archiveSession } = await archiveSessionModulePromise;
+
+    sandboxQueue = [
+      createMockSandbox(),
+      createMockSandbox({
+        stop: async () => {
+          throw new Error("sdk.stop() failed transiently");
+        },
+      }),
+    ];
+
+    const warnLines: string[] = [];
+    const originalWarn = console.warn;
+    console.warn = (...args: unknown[]) => {
+      const first = args[0];
+      if (typeof first === "string") {
+        warnLines.push(first);
+      }
+    };
+
+    try {
+      let backgroundTask: Promise<void> | null = null;
+
+      const result = await archiveSession("session-1", {
+        logPrefix: "[Test]",
+        scheduleBackgroundWork: (callback) => {
+          backgroundTask = callback();
+        },
+      });
+
+      expect(result.archiveTriggered).toBe(true);
+      if (!backgroundTask) {
+        throw new Error("Expected archive finalization task to be scheduled");
+      }
+      await backgroundTask;
+    } finally {
+      console.warn = originalWarn;
+    }
+
+    const eventLine = warnLines.find((line) =>
+      line.includes("archive-stop-failed-handle-preserved"),
+    );
+    expect(eventLine).toBeDefined();
+
+    const parsed = JSON.parse(eventLine as string) as Record<string, unknown>;
+    expect(parsed).toMatchObject({
+      service: "sandbox-archive",
+      event: "archive-stop-failed-handle-preserved",
+      level: "warn",
+      sessionId: "session-1",
+      sandboxName: "session_session-1",
+    });
+    expect(warnLines).toContainEqual(
+      expect.stringContaining('"sandboxName":"session_session-1"'),
+    );
+  });
+
   test("preserves runtime sandbox state when archive finalization fails but snapshot already exists", async () => {
     const { archiveSession } = await archiveSessionModulePromise;
 

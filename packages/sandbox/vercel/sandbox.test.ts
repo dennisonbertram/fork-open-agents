@@ -400,6 +400,26 @@ describe("VercelSandbox persistence", () => {
   });
 });
 
+function captureWarnEvents(): {
+  events: Array<Record<string, unknown>>;
+  restore: () => void;
+} {
+  const events: Array<Record<string, unknown>> = [];
+  const originalWarn = console.warn;
+  console.warn = (...args: unknown[]) => {
+    const first = args[0];
+    if (typeof first === "string" && first.startsWith("{")) {
+      events.push(JSON.parse(first) as Record<string, unknown>);
+    }
+  };
+  return {
+    events,
+    restore: () => {
+      console.warn = originalWarn;
+    },
+  };
+}
+
 /**
  * #1395 defect 3 — stop() used to latch `isStopped = true` before calling
  * `sdk.stop()`. If the SDK call threw, the instance was permanently marked
@@ -421,8 +441,23 @@ describe("VercelSandbox.stop", () => {
       { remainingTimeout: 0 },
     );
 
-    await expect(sandbox.stop()).rejects.toThrow("stop failed transiently");
-    expect(sdkStopCalls).toEqual(["session_stop-retry"]);
+    const warned = captureWarnEvents();
+    try {
+      await expect(sandbox.stop()).rejects.toThrow("stop failed transiently");
+      expect(sdkStopCalls).toEqual(["session_stop-retry"]);
+      expect(warned.events).toContainEqual(
+        expect.objectContaining({
+          service: "sandbox",
+          event: "sandbox-stop-retryable",
+          level: "warn",
+          sandboxName: "session_stop-retry",
+          errorKind: "stop_failed_retryable",
+          errorName: "Error",
+        }),
+      );
+    } finally {
+      warned.restore();
+    }
 
     await sandbox.stop();
 
@@ -676,35 +711,65 @@ describe("VercelSandbox.create", () => {
       stderr: async () => "fatal: setup failed\n",
     });
 
-    await expect(
-      sandboxModule.VercelSandbox.create({
-        name: "session_setup-fail",
-        baseSnapshotId: "snap-base-1",
-        source: {
-          url: "https://github.com/open-agents/example",
-          branch: "main",
-        },
-      }),
-    ).rejects.toThrow("fatal: setup failed");
+    const warned = captureWarnEvents();
+    try {
+      await expect(
+        sandboxModule.VercelSandbox.create({
+          name: "session_setup-fail",
+          baseSnapshotId: "snap-base-1",
+          source: {
+            url: "https://github.com/open-agents/example",
+            branch: "main",
+          },
+        }),
+      ).rejects.toThrow("fatal: setup failed");
 
-    expect(sdkStopCalls).toEqual(["session_setup-fail"]);
+      expect(sdkStopCalls).toEqual(["session_setup-fail"]);
+      expect(warned.events).toContainEqual(
+        expect.objectContaining({
+          service: "sandbox",
+          event: "sandbox-orphan-prevented",
+          level: "warn",
+          sandboxName: "session_setup-fail",
+          stage: "create",
+          errorKind: "setup_failed_stopped",
+        }),
+      );
+    } finally {
+      warned.restore();
+    }
   });
 
   // #1395 defect 1 — same class of leak when hooks.afterStart throws after
   // the sandbox has otherwise finished setup successfully.
   test("stops the freshly created sandbox best-effort when afterStart throws", async () => {
-    await expect(
-      sandboxModule.VercelSandbox.create({
-        name: "session_after-start-fail",
-        hooks: {
-          afterStart: async () => {
-            throw new Error("afterStart blew up");
+    const warned = captureWarnEvents();
+    try {
+      await expect(
+        sandboxModule.VercelSandbox.create({
+          name: "session_after-start-fail",
+          hooks: {
+            afterStart: async () => {
+              throw new Error("afterStart blew up");
+            },
           },
-        },
-      }),
-    ).rejects.toThrow("afterStart blew up");
+        }),
+      ).rejects.toThrow("afterStart blew up");
 
-    expect(sdkStopCalls).toEqual(["session_after-start-fail"]);
+      expect(sdkStopCalls).toEqual(["session_after-start-fail"]);
+      expect(warned.events).toContainEqual(
+        expect.objectContaining({
+          service: "sandbox",
+          event: "sandbox-orphan-prevented",
+          level: "warn",
+          sandboxName: "session_after-start-fail",
+          stage: "afterStart",
+          errorKind: "after_start_failed_stopped",
+        }),
+      );
+    } finally {
+      warned.restore();
+    }
   });
 
   // #1395 defect 1 — a throw between setting up GitHub credential brokering
