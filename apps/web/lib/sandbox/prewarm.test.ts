@@ -712,4 +712,61 @@ describe("prewarmSessionSandbox", () => {
       });
     });
   });
+
+  // #1399: skill-install rejection must not orphan a running VM — persist
+  // sandboxState first, keep prewarm successful, kick lifecycle, and emit
+  // prewarm.install_failed_state_preserved.
+  describe("REG-1399: skill install failure preserves sandbox state", () => {
+    test("persists sandboxState, kicks lifecycle, and returns prewarmed when global skill install rejects", async () => {
+      const session = makeTestSession({ id: "session-install-fail" });
+      spies.getSessionById.mockImplementationOnce(async () => session);
+      spies.installGlobalSkills.mockImplementationOnce(async () => {
+        throw new Error("npx skills add failed");
+      });
+
+      const warnSpy = mock((..._args: unknown[]) => undefined);
+      const originalWarn = console.warn;
+      console.warn = warnSpy as typeof console.warn;
+
+      try {
+        const result = await prewarmSessionSandbox({
+          sessionId: session.id,
+          userId: "user-1",
+        });
+
+        expect(result.status).toBe("prewarmed");
+        expect(spies.updateSession).toHaveBeenCalledTimes(1);
+        const updateCall = spies.updateSession.mock.calls[0] as unknown as [
+          string,
+          Record<string, unknown>,
+        ];
+        expect(updateCall[0]).toBe(session.id);
+        expect(updateCall[1]).toHaveProperty("sandboxState");
+        expect(spies.kickSandboxLifecycleWorkflow).toHaveBeenCalledTimes(1);
+
+        const warnPayloads = warnSpy.mock.calls.map((call) => {
+          const first = call[0];
+          if (typeof first !== "string") {
+            return null;
+          }
+          try {
+            return JSON.parse(first) as Record<string, unknown>;
+          } catch {
+            return null;
+          }
+        });
+        expect(warnPayloads).toContainEqual(
+          expect.objectContaining({
+            service: "sandbox-lifecycle",
+            event: "prewarm.install_failed_state_preserved",
+            sessionId: session.id,
+            skillId: "global",
+            errorKind: "skill_install_failed",
+          }),
+        );
+      } finally {
+        console.warn = originalWarn;
+      }
+    });
+  });
 });

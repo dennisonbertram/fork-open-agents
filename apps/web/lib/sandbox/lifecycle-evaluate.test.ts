@@ -230,4 +230,63 @@ describe("evaluateSandboxLifecycle", () => {
     expect(result).toEqual({ action: "skipped", reason: "active-workflow" });
     expect(spies.stop).not.toHaveBeenCalled();
   });
+
+  // #1399: TOCTOU between the post-connect / timing rechecks and sandbox.stop().
+  // A stream that appears in that window must abort hibernation; stop must not
+  // run, and hibernate.aborted_stream_active must be emitted.
+  test("#1399 aborts stop when a stream becomes active after timing recheck", async () => {
+    const infoSpy = mock((..._args: unknown[]) => undefined);
+    const originalInfo = console.info;
+    console.info = infoSpy as typeof console.info;
+
+    try {
+      let connectCompleted = false;
+      spies.connectSandbox.mockImplementationOnce(async () => {
+        connectCompleted = true;
+        return { stop: stopSpy };
+      });
+      spies.getSessionById.mockImplementation(async () => {
+        // After connect + the post-connect active-stream check, the timing
+        // refresh reads the session again. Flip the stream active here so the
+        // only chance to catch it is a pre-stop recheck.
+        if (connectCompleted) {
+          chatsInSession = [
+            { id: "chat-1", activeStreamId: "wrun-late-race" },
+          ];
+        }
+        return sessionRecord as never;
+      });
+
+      const result = await evaluateSandboxLifecycle(
+        "session-1",
+        "status-check-overdue",
+      );
+
+      expect(result).toEqual({ action: "skipped", reason: "active-workflow" });
+      expect(spies.stop).not.toHaveBeenCalled();
+
+      const infoPayloads = infoSpy.mock.calls.map((call) => {
+        const first = call[0];
+        if (typeof first !== "string") {
+          return null;
+        }
+        try {
+          return JSON.parse(first) as Record<string, unknown>;
+        } catch {
+          return null;
+        }
+      });
+      expect(infoPayloads).toContainEqual(
+        expect.objectContaining({
+          service: "sandbox-lifecycle",
+          event: "hibernate.aborted_stream_active",
+          sessionId: "session-1",
+          sandboxName: "session_session-1",
+          errorKind: "hibernate_race_aborted",
+        }),
+      );
+    } finally {
+      console.info = originalInfo;
+    }
+  });
 });
