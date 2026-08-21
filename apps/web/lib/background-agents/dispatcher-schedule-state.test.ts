@@ -26,7 +26,9 @@ const listEnabledScheduleTriggersMock = mock(async () => scheduleRows);
 const listStaleBackgroundAgentRunsMock = mock(
   async (): Promise<BackgroundAgentRun[]> => [],
 );
-const updateBackgroundAgentRunStatusMock = mock(async () => undefined);
+const updateBackgroundAgentRunStatusMock = mock(
+  async (): Promise<BackgroundAgentRun | undefined> => undefined,
+);
 
 let scheduleRows: Array<{
   agent: BackgroundAgentWithTriggers;
@@ -457,6 +459,10 @@ describe("dispatchScheduledBackgroundAgents — persisted schedule state", () =>
     listStaleBackgroundAgentRunsMock.mockImplementationOnce(async () => [
       staleRun,
     ]);
+    updateBackgroundAgentRunStatusMock.mockImplementationOnce(async () => ({
+      ...staleRun,
+      status: "failed",
+    }));
     const { dispatchScheduledBackgroundAgents } = await dispatcherModulePromise;
 
     await dispatchScheduledBackgroundAgents({
@@ -464,10 +470,8 @@ describe("dispatchScheduledBackgroundAgents — persisted schedule state", () =>
       requestId: "req-sweep",
     });
 
-    // #743: the sweeper must pass force:true — a swept "stuck" run may have
-    // already reached a terminal status via a race with its own executor,
-    // and the sweeper's terminalization must not be silently refused by the
-    // new terminal-status guard.
+    // #1396: force:true uses CAS (queued/running only). Returning a row means
+    // the sweeper won and may emit swept_stale.
     expect(updateBackgroundAgentRunStatusMock).toHaveBeenCalledWith({
       runId: "run-stale",
       status: "failed",
@@ -485,6 +489,10 @@ describe("dispatchScheduledBackgroundAgents — persisted schedule state", () =>
         errorKind: "stuck_running",
         workflowRunId: "workflow-stale",
         sandboxName: "sandbox-stale",
+        payload: expect.objectContaining({
+          previousStatus: "running",
+          forced: true,
+        }),
       }),
     );
   });

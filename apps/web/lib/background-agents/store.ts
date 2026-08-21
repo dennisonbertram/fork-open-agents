@@ -709,10 +709,10 @@ export async function updateBackgroundAgentRunStatus(params: {
   errorMessage?: string | null;
   outputUrl?: string | null;
   /**
-   * Bypasses the terminal-status guard below. Only the stale-run sweeper
-   * (dispatcher.ts) should pass this — it must be able to terminalize a run
-   * that is legitimately stuck, even if the run already reached a terminal
-   * status through a race with its own executor (#743).
+   * Narrow force for the stale-run sweeper (#1396): update only when the run
+   * is still queued/running. Terminal statuses stay immutable — a race where
+   * the executor finished between listStale and this UPDATE matches zero rows
+   * (benign skip). Prefer this over bypassing the terminal guard entirely.
    */
   force?: boolean;
   /**
@@ -745,7 +745,10 @@ export async function updateBackgroundAgentRunStatus(params: {
   };
 
   const whereCondition = params.force
-    ? eq(backgroundAgentRuns.id, params.runId)
+    ? and(
+        eq(backgroundAgentRuns.id, params.runId),
+        inArray(backgroundAgentRuns.status, ["queued", "running"]),
+      )
     : and(
         eq(backgroundAgentRuns.id, params.runId),
         notInArray(backgroundAgentRuns.status, TERMINAL_RUN_STATUSES),
@@ -794,6 +797,31 @@ export async function updateBackgroundAgentRunStatus(params: {
   }
 
   return null;
+}
+
+/**
+ * #1396: bump runs.updatedAt from the executor's per-turn progress path so
+ * long-lived-but-alive runs stay outside listStaleBackgroundAgentRuns.
+ * Prefer updating updatedAt over adding a heartbeatAt column (no migration).
+ * Only touches queued/running rows; terminal runs are left alone.
+ */
+export async function touchBackgroundAgentRunHeartbeat(params: {
+  runId: string;
+  turnIndex?: number;
+}): Promise<BackgroundAgentRun | null> {
+  const now = new Date();
+  const [run] = await db
+    .update(backgroundAgentRuns)
+    .set({ updatedAt: now })
+    .where(
+      and(
+        eq(backgroundAgentRuns.id, params.runId),
+        inArray(backgroundAgentRuns.status, ["queued", "running"]),
+      ),
+    )
+    .returning();
+
+  return run ?? null;
 }
 
 export async function getBackgroundAgentRun(

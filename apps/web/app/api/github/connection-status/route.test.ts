@@ -50,6 +50,7 @@ const routeModulePromise = import("./route");
 
 const originalTestAuth = process.env.OPEN_AGENTS_ENABLE_TEST_AUTH;
 const originalVercelEnv = process.env.VERCEL_ENV;
+const originalTestAuthSecret = process.env.TEST_AUTH_SECRET;
 
 function restoreTestAuthEnv() {
   if (originalTestAuth === undefined) {
@@ -61,6 +62,11 @@ function restoreTestAuthEnv() {
     delete process.env.VERCEL_ENV;
   } else {
     process.env.VERCEL_ENV = originalVercelEnv;
+  }
+  if (originalTestAuthSecret === undefined) {
+    delete process.env.TEST_AUTH_SECRET;
+  } else {
+    process.env.TEST_AUTH_SECRET = originalTestAuthSecret;
   }
 }
 
@@ -76,6 +82,7 @@ describe("GET /api/github/connection-status", () => {
     syncErrorIsAuth = false;
     delete process.env.OPEN_AGENTS_ENABLE_TEST_AUTH;
     delete process.env.VERCEL_ENV;
+    delete process.env.TEST_AUTH_SECRET;
   });
 
   afterEach(() => {
@@ -193,6 +200,7 @@ describe("GET /api/github/connection-status", () => {
   // a degraded status instead.
   test("stays connected for the test-auth user even when the token is missing", async () => {
     process.env.OPEN_AGENTS_ENABLE_TEST_AUTH = "1";
+    process.env.TEST_AUTH_SECRET = "test-secret";
     authSession = { user: { id: "dev-managed-runtime-user" } };
     userToken = null;
     const { GET } = await routeModulePromise;
