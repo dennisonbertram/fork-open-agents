@@ -25,9 +25,12 @@ export {
 export {
   defaultModel,
   defaultModelLabel,
+  getDelegatedWorkerToolPolicy,
   getOpenAgentToolsForRuntimeMode,
   getRuntimeModeToolPolicy,
   MANAGED_RUNTIME_COORDINATOR_TOOL_NAMES,
+  EXPLORER_WORKER_TOOL_NAMES,
+  EXECUTOR_WORKER_TOOL_NAMES,
   OPEN_AGENT_RUNTIME_MODES,
   OPEN_AGENT_TOOL_NAMES,
   openAgent,

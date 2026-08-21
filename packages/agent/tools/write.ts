@@ -3,12 +3,11 @@ import { z } from "zod";
 import * as path from "path";
 import { getSandbox, toDisplayPath } from "./utils";
 import {
-  isCommittedDotEnvTemplate,
-  isDotEnvFilePath,
-  isSensitiveDotEnvPath,
-  resolveSandboxRealPath,
-  resolveWorkspacePath,
-} from "./path-security";
+  isUnattendedRun,
+  unattendedApprovalDenial,
+} from "./unattended-approval";
+import { requiresDotEnvApproval } from "./dotenv-approval-gate";
+import { resolveSandboxRealPath, resolveWorkspacePath } from "./path-security";
 
 const writeInputSchema = z.object({
   filePath: z
@@ -42,47 +41,15 @@ const editInputSchema = z.object({
 export const writeFileTool = () =>
   tool({
     needsApproval: async ({ filePath }, { experimental_context }) => {
-      // A dotenv name alone no longer decides. The sandbox is needed either
-      // way: to resolve symlinks, and to ask git whether a template really is
-      // a committed, unmodified placeholder. No sandbox means fail closed for
-      // anything dotenv-shaped.
-      let sandbox;
-      try {
-        sandbox = await getSandbox(experimental_context, "write");
-      } catch {
-        return isDotEnvFilePath(filePath);
-      }
-      const workingDirectory = sandbox.workingDirectory;
-      const absolutePath = resolveWorkspacePath(filePath, workingDirectory);
-      if (!absolutePath) {
+      // Unattended runs never pend an approval; execute auto-denies instead.
+      if (isUnattendedRun(experimental_context)) {
         return false;
       }
-
-      const realPath = await resolveSandboxRealPath({
-        sandbox,
-        absolutePath,
-        workingDirectory,
+      return requiresDotEnvApproval({
+        filePath,
+        experimental_context,
+        toolName: "write",
       });
-
-      if (
-        !isSensitiveDotEnvPath({
-          requestedPath: filePath,
-          absolutePath,
-          realPath,
-        })
-      ) {
-        return false;
-      }
-
-      // It is dotenv-shaped. Only a template git confirms is committed and
-      // unmodified skips approval; everything else stays gated. Checked
-      // against the resolved real path so a symlink cannot launder a live
-      // dotenv file behind a template name.
-      return !(await isCommittedDotEnvTemplate({
-        sandbox,
-        absolutePath: realPath ?? absolutePath,
-        workingDirectory,
-      }));
     },
     description: `Write content to a file on the filesystem.
 
@@ -112,6 +79,17 @@ EXAMPLES:
 - Replace a script after reading it: filePath: "scripts/build.sh", content: "<entire updated script>"`,
     inputSchema: writeInputSchema,
     execute: async ({ filePath, content }, { experimental_context }) => {
+      if (
+        isUnattendedRun(experimental_context) &&
+        (await requiresDotEnvApproval({
+          filePath,
+          experimental_context,
+          toolName: "write",
+        }))
+      ) {
+        return unattendedApprovalDenial("write");
+      }
+
       const sandbox = await getSandbox(experimental_context, "write");
       const workingDirectory = sandbox.workingDirectory;
 
@@ -160,45 +138,15 @@ EXAMPLES:
 export const editFileTool = () =>
   tool({
     needsApproval: async ({ filePath }, { experimental_context }) => {
-      // See the write gate above: the name alone no longer decides, and no
-      // sandbox means fail closed for anything dotenv-shaped.
-      let sandbox;
-      try {
-        sandbox = await getSandbox(experimental_context, "edit");
-      } catch {
-        return isDotEnvFilePath(filePath);
-      }
-      const workingDirectory = sandbox.workingDirectory;
-      const absolutePath = resolveWorkspacePath(filePath, workingDirectory);
-      if (!absolutePath) {
+      // See the write gate above: unattended runs never pend an approval.
+      if (isUnattendedRun(experimental_context)) {
         return false;
       }
-
-      const realPath = await resolveSandboxRealPath({
-        sandbox,
-        absolutePath,
-        workingDirectory,
+      return requiresDotEnvApproval({
+        filePath,
+        experimental_context,
+        toolName: "edit",
       });
-
-      if (
-        !isSensitiveDotEnvPath({
-          requestedPath: filePath,
-          absolutePath,
-          realPath,
-        })
-      ) {
-        return false;
-      }
-
-      // It is dotenv-shaped. Only a template git confirms is committed and
-      // unmodified skips approval; everything else stays gated. Checked
-      // against the resolved real path so a symlink cannot launder a live
-      // dotenv file behind a template name.
-      return !(await isCommittedDotEnvTemplate({
-        sandbox,
-        absolutePath: realPath ?? absolutePath,
-        workingDirectory,
-      }));
     },
     description: `Perform exact string replacement in a file.
 
@@ -233,6 +181,17 @@ EXAMPLES:
       { filePath, oldString, newString, replaceAll = false },
       { experimental_context },
     ) => {
+      if (
+        isUnattendedRun(experimental_context) &&
+        (await requiresDotEnvApproval({
+          filePath,
+          experimental_context,
+          toolName: "edit",
+        }))
+      ) {
+        return unattendedApprovalDenial("edit");
+      }
+
       const sandbox = await getSandbox(experimental_context, "edit");
       const workingDirectory = sandbox.workingDirectory;
 

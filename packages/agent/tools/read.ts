@@ -1,13 +1,12 @@
 import { tool } from "ai";
 import { z } from "zod";
 import { getSandbox, toDisplayPath } from "./utils";
+import { resolveSandboxRealPath, resolveWorkspacePath } from "./path-security";
 import {
-  isCommittedDotEnvTemplate,
-  isDotEnvFilePath,
-  isSensitiveDotEnvPath,
-  resolveSandboxRealPath,
-  resolveWorkspacePath,
-} from "./path-security";
+  isUnattendedRun,
+  unattendedApprovalDenial,
+} from "./unattended-approval";
+import { requiresDotEnvApproval } from "./dotenv-approval-gate";
 
 const readInputSchema = z.object({
   filePath: z
@@ -28,47 +27,15 @@ const readInputSchema = z.object({
 export const readFileTool = () =>
   tool({
     needsApproval: async ({ filePath }, { experimental_context }) => {
-      // A dotenv name alone no longer decides. The sandbox is needed either
-      // way: to resolve symlinks, and to ask git whether a template really is
-      // a committed, unmodified placeholder. No sandbox means fail closed for
-      // anything dotenv-shaped.
-      let sandbox;
-      try {
-        sandbox = await getSandbox(experimental_context, "read");
-      } catch {
-        return isDotEnvFilePath(filePath);
-      }
-      const workingDirectory = sandbox.workingDirectory;
-      const absolutePath = resolveWorkspacePath(filePath, workingDirectory);
-      if (!absolutePath) {
+      // Unattended runs never pend an approval; execute auto-denies instead.
+      if (isUnattendedRun(experimental_context)) {
         return false;
       }
-
-      const realPath = await resolveSandboxRealPath({
-        sandbox,
-        absolutePath,
-        workingDirectory,
+      return requiresDotEnvApproval({
+        filePath,
+        experimental_context,
+        toolName: "read",
       });
-
-      if (
-        !isSensitiveDotEnvPath({
-          requestedPath: filePath,
-          absolutePath,
-          realPath,
-        })
-      ) {
-        return false;
-      }
-
-      // It is dotenv-shaped. Only a template git confirms is committed and
-      // unmodified skips approval; everything else stays gated. Checked
-      // against the resolved real path so a symlink cannot launder a live
-      // dotenv file behind a template name.
-      return !(await isCommittedDotEnvTemplate({
-        sandbox,
-        absolutePath: realPath ?? absolutePath,
-        workingDirectory,
-      }));
     },
     description: `Read a file from the filesystem.
 
@@ -92,6 +59,17 @@ EXAMPLES:
       { filePath, offset = 1, limit = 2000 },
       { experimental_context },
     ) => {
+      if (
+        isUnattendedRun(experimental_context) &&
+        (await requiresDotEnvApproval({
+          filePath,
+          experimental_context,
+          toolName: "read",
+        }))
+      ) {
+        return unattendedApprovalDenial("read");
+      }
+
       const sandbox = await getSandbox(experimental_context, "read");
       const workingDirectory = sandbox.workingDirectory;
 

@@ -197,3 +197,56 @@ describe("classifyToolApproval", () => {
     expect(result.requires).toBe(false);
   });
 });
+
+// #1401 — wrapper-aware destructive-command detection (heuristic regex layer)
+describe("wrapper-aware bash approvals (#1401)", () => {
+  test("bash -c with dangerous inner payload requires approval", () => {
+    const result = bashPolicy("bash -c 'rm -rf /tmp/x'");
+    expect(result.requires).toBe(true);
+    expect(result.category).toBe("dangerous-command");
+  });
+
+  test("sh -c with dangerous inner payload requires approval", () => {
+    const result = bashPolicy('sh -c "rm -rf /tmp/x"');
+    expect(result.requires).toBe(true);
+    expect(result.category).toBe("dangerous-command");
+  });
+
+  test("eval with dangerous inner payload requires approval", () => {
+    const result = bashPolicy("eval 'rm -rf /tmp/x'");
+    expect(result.requires).toBe(true);
+    expect(result.category).toBe("dangerous-command");
+  });
+
+  test("eval with backslash-escaped dangerous payload requires approval", () => {
+    // Evades a naive top-level scan that does not unwrap/normalize escapes.
+    const result = bashPolicy("eval rm\\ -rf\\ /tmp/x");
+    expect(result.requires).toBe(true);
+    expect(result.category).toBe("dangerous-command");
+  });
+
+  test("xargs with dangerous inner payload requires approval", () => {
+    const result = bashPolicy("echo /tmp/x | xargs rm -rf");
+    expect(result.requires).toBe(true);
+    expect(result.category).toBe("dangerous-command");
+  });
+
+  test("classifyToolApproval surfaces wrapper-wrapped rm in attended path", () => {
+    const result = classifyToolApproval("bash", {
+      command: "bash -c 'rm -rf /tmp/x'",
+    });
+    expect(result.requires).toBe(true);
+    expect(result.category).toBe("dangerous-command");
+  });
+
+  test("allow path: bash -c with safe inner payload does not require approval", () => {
+    const result = bashPolicy("bash -c 'ls -la'");
+    expect(result.requires).toBe(false);
+  });
+
+  test("allow path: plain attended rm still requires approval", () => {
+    const result = bashPolicy("rm -rf /tmp/x");
+    expect(result.requires).toBe(true);
+    expect(result.category).toBe("dangerous-command");
+  });
+});

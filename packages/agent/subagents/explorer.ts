@@ -2,11 +2,12 @@ import type { LanguageModel } from "ai";
 import { gateway, stepCountIs, ToolLoopAgent } from "ai";
 import { z } from "zod";
 import { delegatedWorkspaceLaunchPolicySchema } from "../delegated-workspace";
-import { bashTool } from "../tools/bash";
-import { globTool } from "../tools/glob";
-import { grepTool } from "../tools/grep";
-import { readFileTool } from "../tools/read";
+import type {
+  ManagedRuntimeAgentContext,
+  OpenAgentRuntimeMode,
+} from "../open-agent-runtime-mode";
 import type { SandboxExecutionContext } from "../types";
+import { getDelegatedWorkerToolPolicy } from "../worker-tool-policy";
 import {
   SUBAGENT_NO_QUESTIONS_RULES,
   SUBAGENT_RESPONSE_FORMAT,
@@ -45,7 +46,7 @@ Example final response:
 
 ## TOOLS & GUIDELINES
 
-You have access to: read, grep, glob, bash (read-only commands only)
+You have access to: read, grep, glob, bash (read-only commands only — mutating bash is refused by policy)
 
 **Strengths:**
 - Rapidly finding files using glob patterns
@@ -71,19 +72,25 @@ const callOptionsSchema = z.object({
     .describe("Sandbox for file system and shell operations"),
   model: z.custom<LanguageModel>().describe("Language model for this subagent"),
   workspacePolicy: delegatedWorkspaceLaunchPolicySchema.optional(),
+  runtimeMode: z.enum(["classic", "managed_runtime"]).optional(),
+  unattended: z.boolean().optional(),
+  githubToolAvailable: z.boolean().optional(),
+  managedRuntime: z.custom<ManagedRuntimeAgentContext>().optional(),
+  allowedBuiltinToolNames: z.array(z.string()).nullish(),
+  sessionId: z.string().optional(),
 });
 
 export type ExplorerCallOptions = z.infer<typeof callOptionsSchema>;
 
+const defaultExplorerTools = getDelegatedWorkerToolPolicy(
+  "explorer",
+  "classic",
+);
+
 export const explorerSubagent = new ToolLoopAgent({
   model: gateway("anthropic/claude-haiku-4.5"),
   instructions: EXPLORER_SYSTEM_PROMPT,
-  tools: {
-    read: readFileTool(),
-    grep: grepTool(),
-    glob: globTool(),
-    bash: bashTool(),
-  },
+  tools: defaultExplorerTools,
   stopWhen: stepCountIs(SUBAGENT_STEP_LIMIT),
   callOptionsSchema,
   prepareCall: ({ options, ...settings }) => {
@@ -93,9 +100,17 @@ export const explorerSubagent = new ToolLoopAgent({
 
     const sandbox = options.sandbox;
     const model = options.model ?? settings.model;
+    const runtimeMode: OpenAgentRuntimeMode = options.runtimeMode ?? "classic";
+    const workerTools = getDelegatedWorkerToolPolicy("explorer", runtimeMode, {
+      allowedBuiltinToolNames: options.allowedBuiltinToolNames,
+      expectedTools: options.managedRuntime?.expectedTools,
+      optionalTools: options.managedRuntime?.optionalTools,
+    });
+
     return {
       ...settings,
       model,
+      tools: workerTools,
       instructions: `${EXPLORER_SYSTEM_PROMPT}
 
 ${SUBAGENT_WORKING_DIR}
@@ -111,6 +126,12 @@ ${EXPLORER_REMINDER}`,
         sandbox,
         model,
         workspacePolicy: options.workspacePolicy,
+        runtimeMode,
+        unattended: options.unattended ?? false,
+        githubToolAvailable: options.githubToolAvailable ?? false,
+        managedRuntime: options.managedRuntime,
+        allowedBuiltinToolNames: options.allowedBuiltinToolNames ?? null,
+        sessionId: options.sessionId,
       },
     };
   },

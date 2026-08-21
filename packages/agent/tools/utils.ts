@@ -83,6 +83,23 @@ export function getGithubToolAvailable(experimental_context: unknown): boolean {
 }
 
 /**
+ * Session-scoped id (chat/run id) from experimental_context, when present.
+ * Used to attribute tool-policy events to their session.
+ */
+export function getContextSessionId(
+  experimental_context: unknown,
+): string | undefined {
+  if (
+    typeof experimental_context !== "object" ||
+    experimental_context === null
+  ) {
+    return undefined;
+  }
+  const value = (experimental_context as Record<string, unknown>)["sessionId"];
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+/**
  * Whether this agent run is unattended (a background agent or agent-loop step)
  * with no human available to approve tool calls.
  *
