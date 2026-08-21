@@ -16,15 +16,44 @@ export type UnattendedMutatingFetchBlockedEvent = {
   errorKind: "unattended_write_blocked";
 };
 
-export type FetchEventRecorder = (
-  event: UnattendedMutatingFetchBlockedEvent,
-) => void;
+export type FetchHostResolvedEvent = {
+  service: "agent-fetch-tool";
+  event: "fetch-host-resolved";
+  level: "info";
+  sessionId: string | undefined;
+  chatId: string | undefined;
+  runId: string | undefined;
+  host: string;
+  resolvedIps: string[];
+  outcome: "allowed";
+};
+
+export type FetchPrivateTargetBlockedEvent = {
+  service: "agent-fetch-tool";
+  event: "fetch-private-target-blocked";
+  level: "warn";
+  sessionId: string | undefined;
+  chatId: string | undefined;
+  runId: string | undefined;
+  host: string;
+  errorKind:
+    | "private_target_blocked"
+    | "dns-resolution-failed"
+    | "empty_resolution";
+};
+
+export type FetchEvent =
+  | UnattendedMutatingFetchBlockedEvent
+  | FetchHostResolvedEvent
+  | FetchPrivateTargetBlockedEvent;
+
+export type FetchEventRecorder = (event: FetchEvent) => void;
 
 let recorder: FetchEventRecorder | null = null;
 
 /**
  * Test/injection hook for structured fetch events. Production default logs a
- * single-line JSON warn via console.warn.
+ * single-line JSON line via console.info/console.warn.
  */
 export function setFetchEventRecorder(next: FetchEventRecorder | null): void {
   recorder = next;
@@ -46,28 +75,80 @@ function fetchEventContext(experimental_context: unknown): FetchEventContext {
   };
 }
 
+function emit(event: FetchEvent, level: "info" | "warn"): void {
+  if (recorder) {
+    recorder(event);
+    return;
+  }
+  const line = JSON.stringify(event);
+  if (level === "warn") {
+    console.warn(line);
+    return;
+  }
+  console.info(line);
+}
+
 export function emitUnattendedMutatingFetchBlocked(params: {
   method: string;
   host: string;
   experimental_context: unknown;
 }): void {
   const ids = fetchEventContext(params.experimental_context);
-  const event: UnattendedMutatingFetchBlockedEvent = {
-    service: "agent-fetch-tool",
-    event: "unattended-mutating-fetch-blocked",
-    level: "warn",
-    sessionId: ids.sessionId,
-    chatId: ids.chatId,
-    runId: ids.runId,
-    method: params.method,
-    host: params.host,
-    errorKind: "unattended_write_blocked",
-  };
+  emit(
+    {
+      service: "agent-fetch-tool",
+      event: "unattended-mutating-fetch-blocked",
+      level: "warn",
+      sessionId: ids.sessionId,
+      chatId: ids.chatId,
+      runId: ids.runId,
+      method: params.method,
+      host: params.host,
+      errorKind: "unattended_write_blocked",
+    },
+    "warn",
+  );
+}
 
-  if (recorder) {
-    recorder(event);
-    return;
-  }
+export function emitFetchHostResolved(params: {
+  host: string;
+  resolvedIps: string[];
+  experimental_context: unknown;
+}): void {
+  const ids = fetchEventContext(params.experimental_context);
+  emit(
+    {
+      service: "agent-fetch-tool",
+      event: "fetch-host-resolved",
+      level: "info",
+      sessionId: ids.sessionId,
+      chatId: ids.chatId,
+      runId: ids.runId,
+      host: params.host,
+      resolvedIps: params.resolvedIps,
+      outcome: "allowed",
+    },
+    "info",
+  );
+}
 
-  console.warn(JSON.stringify(event));
+export function emitFetchPrivateTargetBlocked(params: {
+  host: string;
+  errorKind: FetchPrivateTargetBlockedEvent["errorKind"];
+  experimental_context: unknown;
+}): void {
+  const ids = fetchEventContext(params.experimental_context);
+  emit(
+    {
+      service: "agent-fetch-tool",
+      event: "fetch-private-target-blocked",
+      level: "warn",
+      sessionId: ids.sessionId,
+      chatId: ids.chatId,
+      runId: ids.runId,
+      host: params.host,
+      errorKind: params.errorKind,
+    },
+    "warn",
+  );
 }
