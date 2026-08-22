@@ -47,3 +47,15 @@ export {
   type VercelSandboxConnectConfig,
   type VercelState,
 } from "./vercel";
+
+// compute metering
+export {
+  getSandboxMeter,
+  MEMORY_MB_PER_VCPU,
+  setSandboxMeter,
+  type SandboxMeter,
+  type SandboxMeterAttribution,
+  type SandboxMeterCloseEvent,
+  type SandboxMeterCloseReason,
+  type SandboxMeterOpenEvent,
+} from "./meter";
