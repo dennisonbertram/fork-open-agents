@@ -190,7 +190,13 @@ beforeEach(() => {
 });
 
 describe("archiveSession", () => {
-  test("clears runtime sandbox state when archive finalization fails without a snapshot", async () => {
+  // #1395 defect 2 — the resume handle (sandboxState) must only be cleared
+  // once sandbox.stop() has actually succeeded. When connecting to the
+  // sandbox fails outright (as here, via the empty sandboxQueue), stop()
+  // never even ran, so clearing the handle would make the sandbox
+  // permanently unstoppable by lifecycle. Preserve it so a later pass can
+  // retry.
+  test("preserves runtime sandbox state when archive finalization fails to connect", async () => {
     const { archiveSession } = await archiveSessionModulePromise;
 
     let backgroundTask: Promise<void> | null = null;
@@ -220,16 +226,132 @@ describe("archiveSession", () => {
       sandboxExpiresAt: null,
       hibernateAfter: null,
       lifecycleError: "Archive finalization failed: sandbox connection failed",
-      sandboxState: {
+    });
+    expect(recoveryPatch?.sandboxState).toBeUndefined();
+
+    expect(sessionRecord?.sandboxState).toEqual(
+      expect.objectContaining({
         type: "vercel",
         sandboxName: "session_session-1",
+      }),
+    );
+  });
+
+  // #1395 defect 2 — same preservation requirement when we DO connect to the
+  // sandbox but sandbox.stop() itself throws. This is the scenario the issue
+  // calls out explicitly: stop() failing must never clear the only handle
+  // that could be used to retry it.
+  test("preserves runtime sandbox state when sandbox.stop() fails", async () => {
+    const { archiveSession } = await archiveSessionModulePromise;
+
+    // Two sandboxes are consumed in order: one by refreshArchiveGitState
+    // (called synchronously by archiveSession before the update), and one by
+    // finalizeArchivedSessionSandbox's stop attempt in the background task.
+    sandboxQueue = [
+      createMockSandbox(),
+      createMockSandbox({
+        stop: async () => {
+          throw new Error("sdk.stop() failed transiently");
+        },
+      }),
+    ];
+
+    let backgroundTask: Promise<void> | null = null;
+
+    const result = await archiveSession("session-1", {
+      logPrefix: "[Test]",
+      scheduleBackgroundWork: (callback) => {
+        backgroundTask = callback();
       },
     });
 
-    expect(sessionRecord?.sandboxState).toEqual({
-      type: "vercel",
+    expect(result.archiveTriggered).toBe(true);
+    if (!backgroundTask) {
+      throw new Error("Expected archive finalization task to be scheduled");
+    }
+    await backgroundTask;
+
+    const updateCalls = spies.updateSession.mock.calls as Array<
+      [string, Record<string, unknown>]
+    >;
+
+    expect(updateCalls).toHaveLength(2);
+    const recoveryPatch = updateCalls[1]?.[1];
+
+    expect(recoveryPatch).toMatchObject({
+      lifecycleState: "archived",
+      sandboxExpiresAt: null,
+      hibernateAfter: null,
+      lifecycleError:
+        "Archive finalization failed: sdk.stop() failed transiently",
+    });
+    expect(recoveryPatch?.sandboxState).toBeUndefined();
+
+    expect(sessionRecord?.sandboxState).toEqual(
+      expect.objectContaining({
+        type: "vercel",
+        sandboxName: "session_session-1",
+        expiresAt: expect.any(Number),
+      }),
+    );
+  });
+
+  test("emits the handle-preserved warning as single-line JSON", async () => {
+    const { archiveSession } = await archiveSessionModulePromise;
+
+    sandboxQueue = [
+      createMockSandbox(),
+      createMockSandbox({
+        stop: async () => {
+          throw new Error("sdk.stop() failed transiently");
+        },
+      }),
+    ];
+
+    const warnLines: string[] = [];
+    const originalWarn = console.warn;
+    console.warn = (...args: unknown[]) => {
+      const first = args[0];
+      if (typeof first === "string") {
+        warnLines.push(first);
+      }
+    };
+
+    try {
+      let backgroundTask: Promise<void> | null = null;
+
+      const result = await archiveSession("session-1", {
+        logPrefix: "[Test]",
+        scheduleBackgroundWork: (callback) => {
+          backgroundTask = callback();
+        },
+      });
+
+      expect(result.archiveTriggered).toBe(true);
+      if (!backgroundTask) {
+        throw new Error("Expected archive finalization task to be scheduled");
+      }
+      await backgroundTask;
+    } finally {
+      console.warn = originalWarn;
+    }
+
+    const eventLine = warnLines.find((line) =>
+      line.includes("archive-stop-failed-handle-preserved"),
+    );
+    expect(eventLine).toBeDefined();
+
+    const parsed = JSON.parse(eventLine as string) as Record<string, unknown>;
+    expect(parsed).toMatchObject({
+      service: "sandbox-archive",
+      event: "archive-stop-failed-handle-preserved",
+      level: "warn",
+      sessionId: "session-1",
       sandboxName: "session_session-1",
     });
+    expect(warnLines).toContainEqual(
+      expect.stringContaining('"sandboxName":"session_session-1"'),
+    );
   });
 
   test("preserves runtime sandbox state when archive finalization fails but snapshot already exists", async () => {

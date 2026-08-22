@@ -1,14 +1,7 @@
 import { dispatchScheduledBackgroundAgents } from "@/lib/background-agents/dispatcher";
 import { getBackgroundAgentsCronSecret } from "@/lib/background-agents/config";
-
-function isAuthorized(req: Request, secret: string): boolean {
-  const authorization = req.headers.get("authorization");
-  if (authorization === `Bearer ${secret}`) {
-    return true;
-  }
-
-  return req.headers.get("x-background-agents-cron-secret") === secret;
-}
+import { isAuthorizedCronRequest } from "@/app/api/_lib/cron-auth";
+import { runEventRetention } from "@/lib/db/retention";
 
 async function handleCron(req: Request) {
   const secret = getBackgroundAgentsCronSecret();
@@ -22,15 +15,20 @@ async function handleCron(req: Request) {
     );
   }
 
-  if (!isAuthorized(req, secret)) {
+  if (!isAuthorizedCronRequest(req, secret)) {
     return Response.json(
       { error: "Unauthorized", errorKind: "unauthorized" },
       { status: 401 },
     );
   }
 
+  const requestId = req.headers.get("x-request-id");
   const result = await dispatchScheduledBackgroundAgents({
-    requestId: req.headers.get("x-request-id"),
+    requestId,
+  });
+
+  await runEventRetention({
+    runId: requestId ?? crypto.randomUUID(),
   });
 
   return Response.json(result);

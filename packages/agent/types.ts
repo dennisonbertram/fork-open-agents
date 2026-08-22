@@ -34,7 +34,7 @@ export type AgentContextWriter = {
   }) => Promise<void> | void;
 };
 
-export interface AgentContext {
+export type AgentContext = {
   sandbox: AgentSandboxContext;
   skills?: SkillMetadata[];
   model: LanguageModel;
@@ -55,6 +55,8 @@ export interface AgentContext {
     profileDisplayName?: string;
     profileRunId?: string;
     sandboxName?: string;
+    expectedTools?: string[];
+    optionalTools?: string[];
   };
   /**
    * Per-role subagent configuration resolved from agents rows in the web app.
@@ -68,6 +70,15 @@ export interface AgentContext {
    */
   githubToolAvailable?: boolean;
   /**
+   * True for unattended runs (background agents / agent-loop steps) where no
+   * human is available to answer approval prompts.
+   */
+  unattended?: boolean;
+  /**
+   * Optional parent/profile builtin tool allowlist threaded into workers.
+   */
+  allowedBuiltinToolNames?: ReadonlyArray<string> | null;
+  /**
    * Optional stream writer for inline image/file parts (e.g. browser screenshots).
    * When present, tools call writer.write({ type: "file", url, mediaType }) to
    * stream chunks that render inline in the chat UI.
@@ -77,8 +88,7 @@ export interface AgentContext {
    * Session-scoped id used by browser tools to isolate Playwright contexts.
    */
   sessionId?: string;
-}
-
+};
 export interface SandboxExecutionContext {
   sandbox: AgentSandboxContext;
 }

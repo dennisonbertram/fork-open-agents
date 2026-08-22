@@ -72,7 +72,6 @@ jobs:
           POSTGRES_URL: postgres://user:pass@localhost:5432/db
           BETTER_AUTH_SECRET: ci_placeholder_secret_at_least_32_chars_long
           ENCRYPTION_KEY: ci_placeholder_secret_at_least_32_chars_long
-          JWE_SECRET: ci_placeholder_secret_at_least_32_chars_long
           GITHUB_CLIENT_SECRET: ci-placeholder
           VERCEL_APP_CLIENT_SECRET: ci-placeholder
           NEXT_PUBLIC_GITHUB_CLIENT_ID: ci-placeholder

@@ -50,9 +50,32 @@ Dated epic and sweep sections:
 - Strong agent process needs executable issue/PR structure, not only prose docs: standard issue templates should require protected path, behavior contract, tests to add first, observability evidence, red/green TDD audit trail, deploy impact, and definition of done.
 - Skill install/discovery is duplicated across the sandbox setup paths (`app/workflows/chat-sandbox-runtime.ts` and `app/api/sandbox/route.ts` both have an `installSessionGlobalSkills`; `app/api/chat/_lib/runtime.ts` only discovers). New work that materializes files into the sandbox at setup must hook **both** setup paths; discovery elsewhere then picks the files up. Tests for those files `mock.module` the skills helpers, so adding a new consumer (e.g. `@/lib/skills/session-user-skills`) requires mocking it in `chat-sandbox-runtime.test.ts` and `app/api/sandbox/route.test.ts`, or the suite fails at load with `Export named '…' not found` / hits the real DB client.
 - During authenticated local smokes, `agent-browser fill`/`type` sets the DOM value but does not always update a React controlled component's state, so form **submits** can fire with empty state. Prove server/DB write paths (create/update/delete, duplicate/reserved-name guards) with an authenticated `curl` using the `open_agents_test_user_id` cookie, and use `agent-browser` for rendering + `click`-based interactions (toggles, dialogs) which do work.
+- Subagents must not import values from `open-agent.ts` (even type-only imports that get widened). `open-agent` → `taskTool` → registry → explorer/executor is already a cycle; put shared runtime-mode types in `open-agent-runtime-mode.ts` and worker tool policy in `worker-tool-policy.ts` (#1401).
 
 ## Auth / OAuth
 
+- **Test-auth Sign out is a no-op unless the cookie is cleared.**
+  Better Auth `signOut` plus `redirect("/")` leaves
+  `open_agents_test_user_id` in place. With test-auth enabled, `/`
+  immediately re-authenticates. Delete the cookie with `Path=/` in the
+  server action (#1386).
+- **`VERCEL_ENV === "production"` is the Production refusal for test-auth.**
+  `NODE_ENV=production` is true on Preview and Dev too. Never enable
+  `OPEN_AGENTS_ENABLE_TEST_AUTH` on Production; the helper now refuses
+  even if the flag is set. Unset `VERCEL_ENV` must not look like
+  Production (local/CI).
+- **Cookie-only bootstrap is `GET /api/dev/test-auth`.**
+  `/api/dev/managed-runtime-demo` also sets the cookie but provisions a
+  sandbox. Browser tools have no cookie API; Playwright honors
+  `Set-Cookie` on navigate, including `?next=/sessions` (307). Reject
+  `/%5c%5c…` as well as `//` and absolute URLs — URL parsers treat
+  backslashes as an authority separator.
+
+- **A fake GitHub token bricks the demo user.**
+  `GitHubReconnectGate` has no dismiss control (STORY-024). Seed the
+  demo GitHub account with a null token and short-circuit
+  `/api/github/connection-status` for `dev-managed-runtime-user` while
+  test-auth is enabled.
 - For local Vercel sign-in, the Vercel OAuth app must register the exact Better Auth callback `http://localhost:3000/api/auth/callback/vercel` alongside the production callback. In production, `BETTER_AUTH_URL` pins Vercel sign-in to the canonical callback; in local development without `BETTER_AUTH_URL`, the app derives `redirect_uri` from the request host. Verify behavior by POSTing to `/api/auth/sign-in/social` and checking the returned Vercel URL.
 
 ## Next.js

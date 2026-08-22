@@ -639,13 +639,15 @@ describe("tools execute behavior", () => {
     expect(safeGitStatus).toBe(false);
   });
 
-  // #1272: an unattended run (background agent / agent-loop step) has no human
-  // to answer an approval prompt. Split on blast radius, not tool identity:
+  // #1272 + #1401: an unattended run (background agent / agent-loop step) has
+  // no human to answer an approval prompt. Split on blast radius, not tool
+  // identity:
   //   - local bash effects (bashPolicy: rm -rf on scratch paths, .env) stay
   //     inside the ephemeral per-session sandbox -> auto-approve to avoid
   //     wedging the run on a never-approved tool call.
   //   - the git-push family (gitPushPolicy: force-push / reset --hard /
-  //     clean -fd) mutates state that outlives the sandbox -> deny.
+  //     clean -fd) mutates state that outlives the sandbox -> never pends an
+  //     approval; execute auto-denies with a typed error instead.
   describe("bashTool unattended approval policy (#1272)", () => {
     const attendedContext = {
       sandbox: { workingDirectory: "/repo" },
@@ -669,18 +671,32 @@ describe("tools execute behavior", () => {
       }
     });
 
-    test("unattended run DOES refuse a git-push-family command (effect leaves the sandbox)", async () => {
+    test("unattended run auto-denies a git-push-family command with a typed error (#1401)", async () => {
       for (const command of [
         "git push --force origin main",
         "git reset --hard HEAD~1",
         "git clean -fd",
       ]) {
-        const result = await getNeedsApprovalResult(
+        const needsApproval = await getNeedsApprovalResult(
           bashTool().needsApproval,
           { command },
           unattendedContext,
         );
-        expect(result).toBe(true);
+        expect(needsApproval).toBe(false);
+
+        const result = await bashTool().execute?.(
+          { command },
+          {
+            toolCallId: "tc-unattended-deny",
+            messages: [],
+            experimental_context: unattendedContext,
+          },
+        );
+        expect(result).toMatchObject({
+          success: false,
+          errorKind: "tool_policy_denied",
+          reason: "unattended_approval_unavailable",
+        });
       }
     });
 
@@ -716,7 +732,10 @@ describe("tools execute behavior", () => {
     );
     expect(postResult).toBe(true);
 
-    const unattendedResult = await getNeedsApprovalResult(
+    // Unattended runs have no human approver. A mutating method must still
+    // require approval so it stays blocked rather than silently writing to a
+    // third party (#1394) — only unattended GET/HEAD auto-approve below.
+    const unattendedPostResult = await getNeedsApprovalResult(
       webFetchTool.needsApproval,
       { url: "https://example.com", method: "POST" as const },
       {
@@ -724,7 +743,17 @@ describe("tools execute behavior", () => {
         unattended: true,
       },
     );
-    expect(unattendedResult).toBe(false);
+    expect(unattendedPostResult).toBe(true);
+
+    const unattendedGetResult = await getNeedsApprovalResult(
+      webFetchTool.needsApproval,
+      { url: "https://example.com", method: "GET" as const },
+      {
+        ...baseContext,
+        unattended: true,
+      },
+    );
+    expect(unattendedGetResult).toBe(false);
   });
 
   afterEach(() => {
@@ -828,7 +857,8 @@ describe("tools execute behavior", () => {
 
     expect(result).toEqual({
       success: false,
-      error: "Fetch failed: URL resolves to a private or internal host",
+      error:
+        "Fetch failed: URL resolves to a private or internal host (internal.example)",
     });
   });
 
@@ -860,7 +890,7 @@ describe("tools execute behavior", () => {
 
     expect(result).toEqual({
       success: false,
-      error: "Fetch failed: URL resolves to a private or internal host",
+      error: "Fetch failed: DNS resolution failed for host unresolved.example",
     });
   });
 

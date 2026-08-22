@@ -1,6 +1,11 @@
 import { after } from "next/server";
 import { isManagedRuntimeProfileId } from "@open-agents/sandbox/managed-runtime-profiles";
 import {
+  invalidUpdateSessionKeys,
+  type UpdateSessionRequest,
+  updateSessionRequestSchema,
+} from "@/app/api/sessions/[sessionId]/_lib/update-session-request";
+import {
   deleteSession,
   getSessionById,
   updateSession,
@@ -10,18 +15,6 @@ import { getManagedRuntimeSavedProfile } from "@/lib/db/managed-runtime-saved-pr
 import { archiveSession } from "@/lib/sandbox/archive-session";
 import { hasRuntimeSandboxState } from "@/lib/sandbox/utils";
 import { getServerSession } from "@/lib/session/get-server-session";
-
-interface UpdateSessionRequest {
-  title?: string;
-  status?: "running" | "completed" | "failed" | "archived";
-  runtimeMode?: "classic" | "managed_runtime";
-  managedRuntimeProfileId?: string;
-  inferenceProfileId?: string | null;
-  linesAdded?: number;
-  linesRemoved?: number;
-  prNumber?: number;
-  prStatus?: "open" | "merged" | "closed";
-}
 
 export async function GET(
   _req: Request,
@@ -84,9 +77,9 @@ export async function PATCH(
     );
   }
 
-  let body: UpdateSessionRequest;
+  let rawBody: unknown;
   try {
-    body = (await req.json()) as UpdateSessionRequest;
+    rawBody = await req.json();
   } catch {
     return Response.json(
       { error: "Invalid JSON body", errorKind: "invalid_request" },
@@ -94,16 +87,29 @@ export async function PATCH(
     );
   }
 
-  if (
-    body.runtimeMode !== undefined &&
-    body.runtimeMode !== "classic" &&
-    body.runtimeMode !== "managed_runtime"
-  ) {
+  const parsed = updateSessionRequestSchema.safeParse(rawBody);
+  if (!parsed.success) {
+    const invalidKeys = invalidUpdateSessionKeys(parsed.error);
+    console.warn(
+      JSON.stringify({
+        service: "sessions-api",
+        event: "session-update-rejected",
+        userId: session.user.id,
+        sessionId,
+        errorKind: "invalid_session_update",
+        invalidKeys,
+      }),
+    );
     return Response.json(
-      { error: "Invalid runtime mode", errorKind: "invalid_request" },
+      {
+        error: "Invalid session update payload",
+        errorKind: "invalid_session_update",
+      },
       { status: 400 },
     );
   }
+
+  const body: UpdateSessionRequest = parsed.data;
 
   if (body.managedRuntimeProfileId !== undefined) {
     const savedProfile = isManagedRuntimeProfileId(body.managedRuntimeProfileId)
@@ -131,12 +137,6 @@ export async function PATCH(
     body.inferenceProfileId !== undefined &&
     body.inferenceProfileId !== null
   ) {
-    if (typeof body.inferenceProfileId !== "string") {
-      return Response.json(
-        { error: "Invalid inference profile", errorKind: "invalid_request" },
-        { status: 400 },
-      );
-    }
     const profile = await getInferenceProfileByIdForUser(
       session.user.id,
       body.inferenceProfileId,
@@ -202,6 +202,16 @@ export async function PATCH(
       { status: 404 },
     );
   }
+
+  console.info(
+    JSON.stringify({
+      service: "sessions-api",
+      event: "session-updated",
+      userId: session.user.id,
+      sessionId,
+      updatedFields: Object.keys(parsed.data),
+    }),
+  );
 
   return Response.json({ session: updatedSession });
 }

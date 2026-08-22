@@ -10,6 +10,11 @@ const dispatchScheduledBackgroundAgents = mock(async () => ({
   runIds: ["run-1"],
 }));
 
+const runEventRetention = mock(async () => ({
+  tables: [],
+  runId: "cron-retention",
+}));
+
 mock.module("@/lib/background-agents/dispatcher", () => ({
   dispatchBackgroundTriggerEvent: async () => ({
     enabled: true,
@@ -28,12 +33,23 @@ mock.module("@/lib/background-agents/dispatcher", () => ({
   }),
 }));
 
+mock.module("@/lib/db/retention", () => ({
+  runEventRetention,
+  getRetentionConfig: () => ({
+    windowDays: 30,
+    keepPerRun: 200,
+    batchSize: 500,
+  }),
+  planEventRetentionDeletes: () => [],
+}));
+
 const routeModulePromise = import("./route");
 
 describe("POST /api/background-agents/cron", () => {
   beforeEach(() => {
     process.env.BACKGROUND_AGENTS_CRON_SECRET = "cron-secret";
     dispatchScheduledBackgroundAgents.mockClear();
+    runEventRetention.mockClear();
   });
 
   test("requires cron secret configuration", async () => {
@@ -84,5 +100,27 @@ describe("POST /api/background-agents/cron", () => {
     expect(dispatchScheduledBackgroundAgents).toHaveBeenCalledWith({
       requestId: "req-1",
     });
+    expect(runEventRetention).toHaveBeenCalled();
+  });
+
+  test("invokes event retention after authorized dispatch (#1400)", async () => {
+    const { POST } = await routeModulePromise;
+
+    const response = await POST(
+      new Request("http://localhost/api/background-agents/cron", {
+        method: "POST",
+        headers: {
+          Authorization: "Bearer cron-secret",
+          "x-request-id": "req-retention",
+        },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(runEventRetention).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runId: expect.any(String),
+      }),
+    );
   });
 });

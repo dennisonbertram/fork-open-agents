@@ -122,10 +122,15 @@ Before opening the browser:
 
 5. Use `agent-browser` to exercise the actual authenticated path. In
    development-only smoke runs, the test-auth cookie may be used when the path
-   does not require OAuth provider behavior:
+   does not require OAuth provider behavior. Test-auth requires a non-empty
+   `TEST_AUTH_SECRET` in `apps/web/.env.local` (local only); the cookie value
+   is `test-auth:${TEST_AUTH_SECRET}`, not the plain demo user id. Prefer
+   `GET /api/dev/test-auth`, which sets the secret-derived cookie for you:
 
    ```bash
-   agent-browser --session local-ui cookies set open_agents_test_user_id dev-managed-runtime-user --url http://localhost:3001 --path / --sameSite Lax
+   curl -sS -D - http://localhost:3001/api/dev/test-auth -o /dev/null
+   # or, when driving agent-browser directly (substitute your local secret):
+   agent-browser --session local-ui cookies set open_agents_test_user_id "test-auth:${TEST_AUTH_SECRET}" --url http://localhost:3001 --path / --sameSite Lax
    ```
 
 After the smoke, check:

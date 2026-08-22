@@ -2,12 +2,12 @@ import type { LanguageModel } from "ai";
 import { gateway, stepCountIs, ToolLoopAgent } from "ai";
 import { z } from "zod";
 import { delegatedWorkspaceLaunchPolicySchema } from "../delegated-workspace";
-import { bashTool } from "../tools/bash";
-import { globTool } from "../tools/glob";
-import { grepTool } from "../tools/grep";
-import { readFileTool } from "../tools/read";
-import { editFileTool, writeFileTool } from "../tools/write";
+import type {
+  ManagedRuntimeAgentContext,
+  OpenAgentRuntimeMode,
+} from "../open-agent-runtime-mode";
 import type { SandboxExecutionContext } from "../types";
+import { getDelegatedWorkerToolPolicy } from "../worker-tool-policy";
 import {
   SUBAGENT_BASH_RULES,
   SUBAGENT_COMPLETE_TASK_RULES,
@@ -56,21 +56,25 @@ const callOptionsSchema = z.object({
     .describe("Sandbox for file system and shell operations"),
   model: z.custom<LanguageModel>().describe("Language model for this subagent"),
   workspacePolicy: delegatedWorkspaceLaunchPolicySchema.optional(),
+  runtimeMode: z.enum(["classic", "managed_runtime"]).optional(),
+  unattended: z.boolean().optional(),
+  githubToolAvailable: z.boolean().optional(),
+  managedRuntime: z.custom<ManagedRuntimeAgentContext>().optional(),
+  allowedBuiltinToolNames: z.array(z.string()).nullish(),
+  sessionId: z.string().optional(),
 });
 
 export type ExecutorCallOptions = z.infer<typeof callOptionsSchema>;
 
+const defaultExecutorTools = getDelegatedWorkerToolPolicy(
+  "executor",
+  "classic",
+);
+
 export const executorSubagent = new ToolLoopAgent({
   model: gateway("anthropic/claude-haiku-4.5"),
   instructions: EXECUTOR_SYSTEM_PROMPT,
-  tools: {
-    read: readFileTool(),
-    write: writeFileTool(),
-    edit: editFileTool(),
-    grep: grepTool(),
-    glob: globTool(),
-    bash: bashTool(),
-  },
+  tools: defaultExecutorTools,
   stopWhen: stepCountIs(SUBAGENT_STEP_LIMIT),
   callOptionsSchema,
   prepareCall: ({ options, ...settings }) => {
@@ -80,9 +84,17 @@ export const executorSubagent = new ToolLoopAgent({
 
     const sandbox = options.sandbox;
     const model = options.model ?? settings.model;
+    const runtimeMode: OpenAgentRuntimeMode = options.runtimeMode ?? "classic";
+    const workerTools = getDelegatedWorkerToolPolicy("executor", runtimeMode, {
+      allowedBuiltinToolNames: options.allowedBuiltinToolNames,
+      expectedTools: options.managedRuntime?.expectedTools,
+      optionalTools: options.managedRuntime?.optionalTools,
+    });
+
     return {
       ...settings,
       model,
+      tools: workerTools,
       instructions: `${EXECUTOR_SYSTEM_PROMPT}
 
 ${SUBAGENT_WORKING_DIR}
@@ -98,6 +110,12 @@ ${SUBAGENT_REMINDER}`,
         sandbox,
         model,
         workspacePolicy: options.workspacePolicy,
+        runtimeMode,
+        unattended: options.unattended ?? false,
+        githubToolAvailable: options.githubToolAvailable ?? false,
+        managedRuntime: options.managedRuntime,
+        allowedBuiltinToolNames: options.allowedBuiltinToolNames ?? null,
+        sessionId: options.sessionId,
       },
     };
   },

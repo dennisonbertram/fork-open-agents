@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterAll, beforeEach, describe, expect, mock, test } from "bun:test";
 
 mock.module("server-only", () => ({}));
 
@@ -66,11 +66,22 @@ function post(body: unknown): Request {
 }
 
 describe("/api/composio/connect", () => {
+  const originalBetterAuthUrl = process.env.BETTER_AUTH_URL;
+
   beforeEach(() => {
     authResult = { ok: true, userId: "user-1" };
     link.mockClear();
     authConfigsList.mockClear();
     authConfigsCreate.mockClear();
+    process.env.BETTER_AUTH_URL = "https://open-agents.dev";
+  });
+
+  afterAll(() => {
+    if (originalBetterAuthUrl === undefined) {
+      delete process.env.BETTER_AUTH_URL;
+    } else {
+      process.env.BETTER_AUTH_URL = originalBetterAuthUrl;
+    }
   });
 
   test("requires authentication", async () => {
@@ -173,5 +184,74 @@ describe("/api/composio/connect", () => {
 
     expect(response.status).toBe(400);
     expect(link).not.toHaveBeenCalled();
+  });
+
+  test("rejects a callbackUrl whose origin is not the request origin or a known app origin", async () => {
+    const { POST } = await routeModulePromise;
+
+    const response = await POST(
+      post({
+        authConfigId: "auth-1",
+        callbackUrl: "https://evil.example.com/steal-tokens",
+      }),
+    );
+    const body = (await response.json()) as {
+      error: string;
+      errorKind: string;
+    };
+
+    expect(response.status).toBe(400);
+    expect(body.errorKind).toBe("invalid_request");
+    expect(link).not.toHaveBeenCalled();
+  });
+
+  test("allows a callbackUrl matching the request's own origin", async () => {
+    const { POST } = await routeModulePromise;
+
+    const response = await POST(
+      post({
+        authConfigId: "auth-1",
+        callbackUrl: "http://localhost/settings/composio",
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(link).toHaveBeenCalledWith("open_agents_user_user-1", "auth-1", {
+      callbackUrl: "http://localhost/settings/composio",
+    });
+  });
+
+  test("sanitizes internal error details from the response body and logs them server-side", async () => {
+    link.mockImplementationOnce(() => {
+      throw new Error("internal host db-123.provider.net");
+    });
+    const warnSpy = mock((_message: string) => {});
+    const originalWarn = console.warn;
+    console.warn = warnSpy;
+
+    try {
+      const { POST } = await routeModulePromise;
+
+      const response = await POST(post({ authConfigId: "auth-1" }));
+      const bodyText = await response.text();
+
+      expect(response.status).toBe(400);
+      expect(bodyText).not.toContain("db-123");
+      expect(JSON.parse(bodyText)).toEqual({
+        error: "Failed to create Composio connection link",
+        errorKind: "composio_connect_failed",
+      });
+
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      const [loggedLine] = warnSpy.mock.calls[0] as [string];
+      expect(loggedLine).toContain("db-123");
+      expect(JSON.parse(loggedLine)).toMatchObject({
+        service: "composio-connect",
+        event: "composio.connect.failed",
+        errorKind: "composio_connect_failed",
+      });
+    } finally {
+      console.warn = originalWarn;
+    }
   });
 });
