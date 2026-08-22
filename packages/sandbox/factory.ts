@@ -1,4 +1,5 @@
 import type { Sandbox, SandboxHooks } from "./interface";
+import type { SandboxMeterAttribution } from "./meter";
 import type { SandboxStatus } from "./types";
 import { connectVercel } from "./vercel/connect";
 import type { VercelState } from "./vercel/state";
@@ -16,6 +17,12 @@ export type SandboxState = { type: "vercel" } & VercelState;
  * Base connect options for all sandbox types.
  */
 export interface ConnectOptions {
+  /**
+   * Tenant this sandbox is being provisioned for, used to attribute its
+   * compute cost. Only meaningful on a call that actually creates a sandbox;
+   * a reconnect attaches to a VM that is already running and already billed.
+   */
+  meter?: SandboxMeterAttribution;
   /** Environment variables available to sandbox commands */
   env?: Record<string, string>;
   /** GitHub token used only during setup clone/fetch, then cleared */

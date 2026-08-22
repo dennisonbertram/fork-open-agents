@@ -1167,6 +1167,14 @@ export async function resolveChatSandboxRuntime(params: {
   const repoIdentity = getRequiredRepoIdentity(session);
 
   const connectOptionsBase = {
+    // Attribution for the compute billing span. Set on the shared base rather
+    // than on each branch so the two cold-create paths cannot drift apart; the
+    // warm path reattaches via VercelSandbox.connect(), which opens no span.
+    meter: {
+      userId: params.userId,
+      sessionId: params.sessionId,
+      source: "web" as const,
+    },
     timeout: DEFAULT_SANDBOX_TIMEOUT_MS,
     vcpus: DEFAULT_SANDBOX_VCPUS,
     ports: sandboxPorts,

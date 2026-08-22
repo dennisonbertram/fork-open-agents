@@ -39,3 +39,26 @@ describe("vercel.json crons — agent-loops sweep registration", () => {
     expect(backgroundAgentsCron?.schedule).toBe("*/5 * * * *");
   });
 });
+
+/**
+ * Same failure shape as #758, for the model price sync.
+ *
+ * `model_prices` starts empty, and nothing else populates it. If the route
+ * ships without its cron entry, every usage event is written with
+ * `pricing_status = 'unknown_model'` and a NULL cost — cost instrumentation
+ * that is fully installed, passes its own tests, and reports nothing forever.
+ */
+describe("vercel.json crons — model price sync registration", () => {
+  test("includes a daily cron entry for /api/usage/price-sync", () => {
+    const crons = vercelConfig.crons as CronEntry[];
+
+    const priceSyncCron = crons.find(
+      (cron) => cron.path === "/api/usage/price-sync",
+    );
+
+    expect(priceSyncCron).toBeDefined();
+    // Published vendor rates change on the order of months, not minutes; daily
+    // is frequent enough and keeps the price book's history readable.
+    expect(priceSyncCron?.schedule).toBe("0 6 * * *");
+  });
+});
