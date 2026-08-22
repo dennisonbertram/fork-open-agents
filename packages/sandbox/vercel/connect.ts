@@ -1,9 +1,11 @@
 import type { Sandbox, SandboxHooks } from "../interface";
+import type { SandboxMeterAttribution } from "../meter";
 import type { VercelSandboxConfig } from "./config";
 import { VercelSandbox } from "./sandbox";
 import type { VercelState } from "./state";
 
 interface ConnectOptions {
+  meter?: SandboxMeterAttribution;
   env?: Record<string, string>;
   githubToken?: string;
   gitUser?: { name: string; email: string };
@@ -56,7 +58,7 @@ function isSandboxNotFoundError(error: unknown): boolean {
   return message.includes("status code 404") || message.includes("not found");
 }
 
-function buildCreateConfig(
+export function buildCreateConfig(
   state: VercelState,
   options?: ConnectOptions,
 ): VercelSandboxConfig {
@@ -74,6 +76,7 @@ function buildCreateConfig(
         }
       : {}),
     ...(state.snapshotId ? { restoreSnapshotId: state.snapshotId } : {}),
+    ...(options?.meter ? { meter: options.meter } : {}),
     env: options?.env,
     githubToken: options?.githubToken,
     gitUser: options?.gitUser,
@@ -118,6 +121,10 @@ async function connectNamedSandbox(
       remainingTimeout,
       ports: options?.ports,
       resume: options?.resume,
+      // Forwarded so a resumed sandbox — the common case once a session has
+      // hibernated once — can open a billing span with a real size.
+      meter: options?.meter,
+      vcpus: options?.vcpus,
       // Carried through the resume path too: it is only applied at creation
       // otherwise, so every reconnect would leave the snapshot this sandbox
       // writes on stop unbounded.

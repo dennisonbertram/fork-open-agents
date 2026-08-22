@@ -2464,6 +2464,9 @@ async function runBackgroundAgentExecution(
         },
       },
       options: {
+        // Attribution for the compute billing span. A background run has no
+        // chat session behind it, so only the tenant is recorded.
+        meter: { userId: run.userId, source: "background-agent" as const },
         githubToken: setupToken.token,
         gitUser: await getGitUser(run.userId),
         timeout: BACKGROUND_AGENT_SANDBOX_TIMEOUT_MS,

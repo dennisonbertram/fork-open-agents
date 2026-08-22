@@ -1,6 +1,18 @@
 import type { SandboxHooks } from "../interface";
+import type { SandboxMeterAttribution } from "../meter";
 
 export interface VercelSandboxConfig {
+  /**
+   * Who this sandbox is being provisioned for.
+   *
+   * Supplied by the caller rather than resolved here: this package has no
+   * database and cannot map a sandbox name back to a tenant. Only the handful
+   * of call sites that actually CREATE a sandbox need to pass it, and all of
+   * them already have the user in scope. Without it the sandbox still runs
+   * normally — it simply produces no billing span, which shows up as a
+   * coverage gap rather than as compute attributed to the wrong tenant.
+   */
+  meter?: SandboxMeterAttribution;
   /**
    * Optional persistent sandbox name.
    * When provided, repeated creates are expected to target the same durable sandbox.

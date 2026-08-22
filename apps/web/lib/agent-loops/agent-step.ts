@@ -919,6 +919,10 @@ export async function executeAgentStep(
           },
         },
         options: {
+          // Attribution for the compute billing span. An agent-loop run has no
+          // chat session behind it (`agentLoopRuns` carries no session column),
+          // so only the tenant is recorded.
+          meter: { userId: executionUserId, source: "agent-loop" as const },
           githubToken: cloneToken,
           timeout: DEFAULT_SANDBOX_TIMEOUT_MS,
           vcpus: DEFAULT_SANDBOX_VCPUS,

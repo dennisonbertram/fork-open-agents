@@ -148,6 +148,10 @@ export async function prewarmSessionSandbox(params: {
       sandbox = await connectSandbox({
         state: sandboxInputState,
         options: {
+          // Attribution for the compute billing span. Passed here because the
+          // sandbox package has no database and cannot map a sandbox name to a
+          // tenant; without it the sandbox still runs, it just records no span.
+          meter: { userId, sessionId, source: "web" },
           githubToken: setupToken?.token,
           gitUser,
           timeout: DEFAULT_SANDBOX_TIMEOUT_MS,
