@@ -8,6 +8,11 @@ import type {
   SnapshotResult,
 } from "../interface";
 import type { SandboxStatus } from "../types";
+import {
+  MEMORY_MB_PER_VCPU,
+  reportSandboxClose,
+  reportSandboxOpen,
+} from "../meter";
 import type { VercelSandboxConfig, VercelSandboxConnectConfig } from "./config";
 import type { VercelState } from "./state";
 import {
@@ -573,6 +578,7 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
       hooks,
       skipGitWorkspaceBootstrap = false,
       cloneDepth,
+      meter,
     } = config;
 
     // Default to a shallow clone; `cloneDepth: 0` opts into full history.
@@ -720,6 +726,17 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
         await hooks.afterStart(sandbox);
       }
 
+      // The billing span starts here: a VM is now provisioned and its memory is
+      // being charged on wall-clock life until stop().
+      reportSandboxOpen({
+        attribution: meter,
+        sandboxName: sdk.name,
+        sandboxId: session.sessionId,
+        vcpus,
+        memoryMb: vcpus * MEMORY_MB_PER_VCPU,
+        startedAt: new Date(startTime),
+      });
+
       return sandbox;
     } catch (error) {
       await stopSandboxBestEffort(sdk, stage, error);
@@ -811,6 +828,17 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
     if (options.hooks?.afterStart) {
       await options.hooks.afterStart(sandbox);
     }
+
+    // Deliberately NOT metered as an open.
+    //
+    // A reconnect attaches to a VM that is already running and already being
+    // billed, so it does not begin a billing span. More importantly, the vCPU
+    // count was fixed at creation and is not recoverable here — and vCPU is
+    // what provisioned memory, and therefore cost, is derived from. Opening a
+    // span here would mean guessing that number, and a guessed input to a cost
+    // figure is worse than a missing span: the gap is visible, the guess is not.
+    //
+    // Spans are opened in create(), which is the only place the size is known.
 
     return sandbox;
   }
@@ -1154,6 +1182,16 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
     // Only latch as stopped once sdk.stop() has actually succeeded.
     this.isStopped = true;
     this._expiresAt = undefined;
+
+    // Closed only after the SDK confirms the stop. A failed stop throws above,
+    // leaving the span open — which is correct, because a VM whose stop failed
+    // is still running and still being billed.
+    reportSandboxClose({
+      sandboxName: this.name,
+      sandboxId: this.id,
+      endedAt: new Date(),
+      reason: "stopped",
+    });
   }
 
   /**

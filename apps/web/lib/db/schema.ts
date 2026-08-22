@@ -3,6 +3,7 @@ import type { ManagedRuntimeProfileCommand } from "@open-agents/sandbox/managed-
 import type { SetupManagedRuntimeProfileInput } from "@open-agents/agent";
 import type { ModelVariant } from "@/lib/model-variants";
 import type { InferenceProfileModel } from "@/lib/inference/types";
+import type { AvailableModelCost } from "@/lib/models";
 import type { GlobalSkillRef } from "@/lib/skills/global-skill-refs";
 import type { ModelSystemPrompts } from "@/lib/model-system-prompts";
 import {
@@ -19,6 +20,7 @@ import {
   index,
   integer,
   jsonb,
+  numeric,
   pgTable,
   primaryKey,
   text,
@@ -3129,6 +3131,53 @@ export const agentToolEntries = pgTable("agent_tool_entries", {
 export type AgentToolEntry = typeof agentToolEntries.$inferSelect;
 export type NewAgentToolEntry = typeof agentToolEntries.$inferInsert;
 
+// ---------------------------------------------------------------------------
+// Model price book — effective-dated snapshots of published per-model rates.
+//
+// Prices are NOT authored by hand. `cost` mirrors the exact shape the Vercel AI
+// Gateway publishes (`AvailableModelCost` in lib/models.ts: USD per million
+// tokens, with an optional `context_over_200k` tier), so the catalogue can be
+// snapshotted verbatim and `estimateModelUsageCost` can price a row without a
+// second, divergent implementation of the same arithmetic.
+//
+// Rows are append-only and effective-dated rather than mutated in place. A
+// usage event stamps the price it was charged at (`usage_events.cost_usd` plus
+// `model_price_id`), so a vendor changing its rates tomorrow can never silently
+// restate what last month cost — the historical total stays the total that was
+// actually paid.
+// ---------------------------------------------------------------------------
+export const modelPrices = pgTable(
+  "model_prices",
+  {
+    id: text("id").primaryKey(),
+    // Provider-prefixed canonical id, e.g. "anthropic/claude-opus-4.5".
+    modelId: text("model_id").notNull(),
+    provider: text("provider").notNull(),
+    cost: jsonb("cost").$type<AvailableModelCost>().notNull(),
+    // Where the numbers came from. Never invent a rate: a manually entered row
+    // must say so, so a reader can tell a published price from a guess.
+    source: text("source", { enum: ["vercel-ai-gateway", "manual"] })
+      .notNull()
+      .default("vercel-ai-gateway"),
+    effectiveFrom: timestamp("effective_from").defaultNow().notNull(),
+    // NULL means "current". Superseding a price sets this on the old row.
+    effectiveTo: timestamp("effective_to"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("model_prices_model_effective_idx").on(
+      table.modelId,
+      table.effectiveFrom,
+    ),
+    // Serves the hot lookup: the current price for a model
+    // (WHERE model_id = ? AND effective_to IS NULL).
+    index("model_prices_current_idx").on(table.modelId, table.effectiveTo),
+  ],
+);
+
+export type ModelPrice = typeof modelPrices.$inferSelect;
+export type NewModelPrice = typeof modelPrices.$inferInsert;
+
 // Usage tracking — one row per assistant turn (append-only)
 export const usageEvents = pgTable(
   "usage_events",
@@ -3156,15 +3205,124 @@ export const usageEvents = pgTable(
     cachedInputTokens: integer("cached_input_tokens").notNull().default(0),
     outputTokens: integer("output_tokens").notNull().default(0),
     toolCallCount: integer("tool_call_count").notNull().default(0),
+    // What these tokens were worth, stamped at write time from the price that
+    // was current then. `numeric` (not a float) because these are summed into
+    // money; Drizzle returns it as a string, which keeps the arithmetic in SQL
+    // where it belongs instead of accumulating binary-float dust in JS.
+    //
+    // This is the value of the tokens, NOT who paid. Who paid is
+    // `inferenceRoute`: "gateway" is platform spend, "user" is a caller
+    // spending their own key. Both are worth pricing — one is our cost, the
+    // other is the subsidy a BYO-key user is absorbing — so the split stays a
+    // query concern rather than two half-populated columns.
+    costUsd: numeric("cost_usd", { precision: 18, scale: 9 }),
+    // Coverage signal. A total is only trustworthy next to the share of events
+    // it could actually price, so record why a row has no cost instead of
+    // leaving NULL to mean both "free" and "unknown".
+    pricingStatus: text("pricing_status", {
+      enum: ["priced", "no_price", "unknown_model"],
+    })
+      .notNull()
+      .default("no_price"),
+    // Which price row produced `cost_usd`, so any figure can be traced back to
+    // the published rate it came from.
+    modelPriceId: text("model_price_id").references(() => modelPrices.id, {
+      onDelete: "set null",
+    }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
     index("usage_events_user_created_idx").on(table.userId, table.createdAt),
+    // Serves the per-user-per-model rollup, which is the whole point of the
+    // table in a multi-tenant world: "what did each tenant spend, by model".
+    index("usage_events_user_model_created_idx").on(
+      table.userId,
+      table.modelId,
+      table.createdAt,
+    ),
   ],
 );
 
 export type UsageEvent = typeof usageEvents.$inferSelect;
 export type NewUsageEvent = typeof usageEvents.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// Sandbox compute metering — one row per sandbox lifetime (open → stop).
+//
+// Token spend is only half the bill. Vercel bills provisioned memory on
+// WALL-CLOCK life, not on work done, so an idle box costs what a busy one does
+// — which is why this is metered as a span, not as a counter.
+//
+// One row per lifetime, not per session: a session hibernates after inactivity
+// and resumes from its snapshot on the next message, so a single session can
+// open and close the same sandbox many times. Each of those is a separate
+// billing span.
+//
+// What this table can and cannot know:
+//   - Wall-clock, vCPU and memory are exact. The app chooses them at create
+//     time and observes both ends of the span, so `memory_gb_hours` is a real
+//     measurement, not an estimate.
+//   - Active CPU is NOT observable from inside the sandbox. Vercel meters it,
+//     but the SDK does not report it back, so `active_cpu_seconds` stays NULL
+//     unless something later backfills it from Vercel's usage API.
+//
+// `estimated_cost_usd` therefore covers provisioned memory plus the creation
+// fee and deliberately excludes Active CPU. On the measured sample that made
+// this table necessary (168 sandboxes at 4 vCPU / 8192 MB), memory was $0.709
+// of $0.714 per sandbox — so the figure is a lower bound that is close, and the
+// column name says "estimated" because the CPU term is genuinely missing.
+// ---------------------------------------------------------------------------
+export const sandboxUsageEvents = pgTable(
+  "sandbox_usage_events",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    // Null for runs with no chat session behind them (background agents).
+    sessionId: text("session_id").references(() => sessions.id, {
+      onDelete: "set null",
+    }),
+    source: text("source", { enum: ["web", "background-agent", "agent-loop"] })
+      .notNull()
+      .default("web"),
+    // Durable resume key; the join back to Vercel's own usage records.
+    sandboxName: text("sandbox_name"),
+    sandboxId: text("sandbox_id"),
+    vcpus: integer("vcpus").notNull(),
+    // The Vercel SDK allocates 2048 MB per vCPU. Stored rather than derived so
+    // a future change to that ratio cannot silently restate old spans.
+    memoryMb: integer("memory_mb").notNull(),
+    region: text("region"),
+    startedAt: timestamp("started_at").notNull(),
+    // NULL while the span is open. A span still open long after its timeout is
+    // a leak, and that is exactly what this column makes queryable.
+    endedAt: timestamp("ended_at"),
+    wallClockMs: integer("wall_clock_ms"),
+    endReason: text("end_reason", {
+      enum: ["hibernated", "stopped", "archived", "expired", "failed"],
+    }),
+    memoryGbHours: numeric("memory_gb_hours", { precision: 18, scale: 9 }),
+    activeCpuSeconds: numeric("active_cpu_seconds", {
+      precision: 18,
+      scale: 3,
+    }),
+    estimatedCostUsd: numeric("estimated_cost_usd", {
+      precision: 18,
+      scale: 9,
+    }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("sandbox_usage_user_started_idx").on(table.userId, table.startedAt),
+    // Finds open spans: the close path looks a span up by its resume key, and
+    // the leak sweep looks for spans that never closed.
+    index("sandbox_usage_open_idx").on(table.sandboxName, table.endedAt),
+  ],
+);
+
+export type SandboxUsageEvent = typeof sandboxUsageEvents.$inferSelect;
+export type NewSandboxUsageEvent = typeof sandboxUsageEvents.$inferInsert;
 
 // ---------------------------------------------------------------------------
 // Goal ledger — issue #35
