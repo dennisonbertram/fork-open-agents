@@ -50,6 +50,40 @@ async function handleCron(req: Request): Promise<Response> {
 
   const requestId = req.headers.get("x-request-id") ?? crypto.randomUUID();
 
+  // Two independent jobs on one schedule. They are run and reported separately
+  // on purpose: a transient catalogue outage must not also disable the span
+  // sweep, because a stale open span suppresses every later lifetime for that
+  // sandbox until something closes it.
+  const priceSync = await runPriceSyncStep(requestId);
+  const spanSweep = await runSpanSweepStep(requestId);
+
+  const status = priceSync.ok && spanSweep.ok ? 200 : 500;
+  return Response.json(
+    { requestId, priceSync: priceSync.result, spanSweep: spanSweep.result },
+    { status },
+  );
+}
+
+type StepOutcome = { ok: boolean; result: unknown };
+
+function logStepFailure(
+  event: string,
+  requestId: string,
+  error: unknown,
+): void {
+  console.error(
+    JSON.stringify({
+      service: "usage",
+      event,
+      level: "error",
+      requestId,
+      errorName: error instanceof Error ? error.name : typeof error,
+      errorMessage: error instanceof Error ? error.message : String(error),
+    }),
+  );
+}
+
+async function runPriceSyncStep(requestId: string): Promise<StepOutcome> {
   try {
     const summary = await runModelPriceSync({
       fetchCatalogue: async () =>
@@ -63,12 +97,6 @@ async function handleCron(req: Request): Promise<Response> {
     // visible to the very next turn.
     clearModelPriceCache();
 
-    // Same cadence, different job: close billing spans for sandboxes the
-    // provider reclaimed at their hard timeout, which never ran stop() and so
-    // never closed themselves. Cheap, and it keeps "open spans" meaning
-    // "actually running" for anything that reads them.
-    const swept = await sweepStaleSandboxSpans();
-
     console.log(
       JSON.stringify({
         service: "usage",
@@ -79,31 +107,31 @@ async function handleCron(req: Request): Promise<Response> {
       }),
     );
 
-    return Response.json({
-      requestId,
-      ...summary,
-      staleSpansClosed: swept.closed,
-    });
+    return { ok: true, result: summary };
   } catch (error) {
-    console.error(
+    logStepFailure("model-price-sync.failed", requestId, error);
+    return { ok: false, result: { error: "price sync failed" } };
+  }
+}
+
+async function runSpanSweepStep(requestId: string): Promise<StepOutcome> {
+  try {
+    const swept = await sweepStaleSandboxSpans();
+
+    console.log(
       JSON.stringify({
         service: "usage",
-        event: "model-price-sync.failed",
-        level: "error",
+        event: "sandbox-span-sweep.completed",
+        level: "info",
         requestId,
-        errorName: error instanceof Error ? error.name : typeof error,
-        errorMessage: error instanceof Error ? error.message : String(error),
+        staleSpansClosed: swept.closed,
       }),
     );
 
-    return Response.json(
-      {
-        error: "Model price sync failed",
-        errorKind: "internal_error",
-        requestId,
-      },
-      { status: 500 },
-    );
+    return { ok: true, result: swept };
+  } catch (error) {
+    logStepFailure("sandbox-span-sweep.failed", requestId, error);
+    return { ok: false, result: { error: "span sweep failed" } };
   }
 }
 
