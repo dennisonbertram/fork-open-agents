@@ -1,0 +1,2 @@
+ALTER TABLE "model_prices" ALTER COLUMN "source" SET DEFAULT 'models-dev';--> statement-breakpoint
+CREATE UNIQUE INDEX "sandbox_usage_one_open_per_sandbox_idx" ON "sandbox_usage_events" USING btree ("sandbox_name") WHERE "sandbox_usage_events"."ended_at" is null;

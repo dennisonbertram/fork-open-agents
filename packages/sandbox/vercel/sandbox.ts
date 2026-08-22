@@ -169,6 +169,11 @@ async function stopSandboxBestEffort(
       ":",
       stopError,
     );
+    // Deliberately no close: the stop failed, so the VM is still provisioned
+    // and still billing until its timeout. Recording an end here would
+    // understate exactly the compute that a failed cleanup wastes. The stale
+    // span is reconciled by the sweep instead.
+    return;
   }
 
   // The span was opened as soon as the VM was provisioned, so a creation that

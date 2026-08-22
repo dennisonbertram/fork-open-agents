@@ -5,11 +5,19 @@ import {
   clearModelPriceCache,
   listCurrentModelPrices,
 } from "@/lib/db/model-prices";
-import { fetchAvailableLanguageModels } from "@/lib/models-with-context";
+import { fetchAvailableLanguageModelsWithContext } from "@/lib/models-with-context";
 import { runModelPriceSync } from "@/lib/usage/price-sync-run";
+import { sweepStaleSandboxSpans } from "@/lib/usage/sandbox-meter";
 
 /**
- * Refresh the model price book from the Vercel AI Gateway catalogue.
+ * Refresh the model price book from the published model catalogue.
+ *
+ * Note which catalogue: `fetchAvailableLanguageModels` returns
+ * `GatewayAvailableModel`s, which carry NO `cost` field. Rates are attached
+ * only by `fetchAvailableLanguageModelsWithContext`, from models.dev metadata.
+ * Calling the wrong one leaves every entry unpriced, `model_prices` empty and
+ * every usage event stamped `unknown_model` — instrumentation that runs daily
+ * and records nothing.
  *
  * Without this running, `model_prices` stays empty and every usage event is
  * written with `pricing_status = 'unknown_model'` and a NULL cost — the
@@ -44,7 +52,8 @@ async function handleCron(req: Request): Promise<Response> {
 
   try {
     const summary = await runModelPriceSync({
-      fetchCatalogue: async () => await fetchAvailableLanguageModels(),
+      fetchCatalogue: async () =>
+        await fetchAvailableLanguageModelsWithContext(),
       listCurrentPrices: listCurrentModelPrices,
       applyActions: applyModelPriceSync,
     });
@@ -53,6 +62,12 @@ async function handleCron(req: Request): Promise<Response> {
     // sync that changed nothing would otherwise take up to that long to be
     // visible to the very next turn.
     clearModelPriceCache();
+
+    // Same cadence, different job: close billing spans for sandboxes the
+    // provider reclaimed at their hard timeout, which never ran stop() and so
+    // never closed themselves. Cheap, and it keeps "open spans" meaning
+    // "actually running" for anything that reads them.
+    const swept = await sweepStaleSandboxSpans();
 
     console.log(
       JSON.stringify({
@@ -64,7 +79,11 @@ async function handleCron(req: Request): Promise<Response> {
       }),
     );
 
-    return Response.json({ requestId, ...summary });
+    return Response.json({
+      requestId,
+      ...summary,
+      staleSpansClosed: swept.closed,
+    });
   } catch (error) {
     console.error(
       JSON.stringify({
