@@ -3156,9 +3156,11 @@ export const modelPrices = pgTable(
     cost: jsonb("cost").$type<AvailableModelCost>().notNull(),
     // Where the numbers came from. Never invent a rate: a manually entered row
     // must say so, so a reader can tell a published price from a guess.
-    source: text("source", { enum: ["vercel-ai-gateway", "manual"] })
+    source: text("source", {
+      enum: ["models-dev", "vercel-ai-gateway", "manual"],
+    })
       .notNull()
-      .default("vercel-ai-gateway"),
+      .default("models-dev"),
     effectiveFrom: timestamp("effective_from").defaultNow().notNull(),
     // NULL means "current". Superseding a price sets this on the old row.
     effectiveTo: timestamp("effective_to"),
@@ -3318,6 +3320,14 @@ export const sandboxUsageEvents = pgTable(
     // Finds open spans: the close path looks a span up by its resume key, and
     // the leak sweep looks for spans that never closed.
     index("sandbox_usage_open_idx").on(table.sandboxName, table.endedAt),
+    // One live VM is one open span, enforced by the database rather than by
+    // the writer. The application-side check is process-local, so two server
+    // instances reconnecting to the same sandbox can both read "no open span"
+    // before either inserts, and both insert. A later close updates one of
+    // them and the other leaks as a permanently open span, inflating cost.
+    uniqueIndex("sandbox_usage_one_open_per_sandbox_idx")
+      .on(table.sandboxName)
+      .where(sql`${table.endedAt} is null`),
   ],
 );
 

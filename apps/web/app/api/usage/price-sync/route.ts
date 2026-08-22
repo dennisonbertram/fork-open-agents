@@ -5,11 +5,19 @@ import {
   clearModelPriceCache,
   listCurrentModelPrices,
 } from "@/lib/db/model-prices";
-import { fetchAvailableLanguageModels } from "@/lib/models-with-context";
+import { fetchAvailableLanguageModelsWithContext } from "@/lib/models-with-context";
 import { runModelPriceSync } from "@/lib/usage/price-sync-run";
+import { sweepStaleSandboxSpans } from "@/lib/usage/sandbox-meter";
 
 /**
- * Refresh the model price book from the Vercel AI Gateway catalogue.
+ * Refresh the model price book from the published model catalogue.
+ *
+ * Note which catalogue: `fetchAvailableLanguageModels` returns
+ * `GatewayAvailableModel`s, which carry NO `cost` field. Rates are attached
+ * only by `fetchAvailableLanguageModelsWithContext`, from models.dev metadata.
+ * Calling the wrong one leaves every entry unpriced, `model_prices` empty and
+ * every usage event stamped `unknown_model` — instrumentation that runs daily
+ * and records nothing.
  *
  * Without this running, `model_prices` stays empty and every usage event is
  * written with `pricing_status = 'unknown_model'` and a NULL cost — the
@@ -42,9 +50,44 @@ async function handleCron(req: Request): Promise<Response> {
 
   const requestId = req.headers.get("x-request-id") ?? crypto.randomUUID();
 
+  // Two independent jobs on one schedule. They are run and reported separately
+  // on purpose: a transient catalogue outage must not also disable the span
+  // sweep, because a stale open span suppresses every later lifetime for that
+  // sandbox until something closes it.
+  const priceSync = await runPriceSyncStep(requestId);
+  const spanSweep = await runSpanSweepStep(requestId);
+
+  const status = priceSync.ok && spanSweep.ok ? 200 : 500;
+  return Response.json(
+    { requestId, priceSync: priceSync.result, spanSweep: spanSweep.result },
+    { status },
+  );
+}
+
+type StepOutcome = { ok: boolean; result: unknown };
+
+function logStepFailure(
+  event: string,
+  requestId: string,
+  error: unknown,
+): void {
+  console.error(
+    JSON.stringify({
+      service: "usage",
+      event,
+      level: "error",
+      requestId,
+      errorName: error instanceof Error ? error.name : typeof error,
+      errorMessage: error instanceof Error ? error.message : String(error),
+    }),
+  );
+}
+
+async function runPriceSyncStep(requestId: string): Promise<StepOutcome> {
   try {
     const summary = await runModelPriceSync({
-      fetchCatalogue: async () => await fetchAvailableLanguageModels(),
+      fetchCatalogue: async () =>
+        await fetchAvailableLanguageModelsWithContext(),
       listCurrentPrices: listCurrentModelPrices,
       applyActions: applyModelPriceSync,
     });
@@ -64,27 +107,31 @@ async function handleCron(req: Request): Promise<Response> {
       }),
     );
 
-    return Response.json({ requestId, ...summary });
+    return { ok: true, result: summary };
   } catch (error) {
-    console.error(
+    logStepFailure("model-price-sync.failed", requestId, error);
+    return { ok: false, result: { error: "price sync failed" } };
+  }
+}
+
+async function runSpanSweepStep(requestId: string): Promise<StepOutcome> {
+  try {
+    const swept = await sweepStaleSandboxSpans();
+
+    console.log(
       JSON.stringify({
         service: "usage",
-        event: "model-price-sync.failed",
-        level: "error",
+        event: "sandbox-span-sweep.completed",
+        level: "info",
         requestId,
-        errorName: error instanceof Error ? error.name : typeof error,
-        errorMessage: error instanceof Error ? error.message : String(error),
+        staleSpansClosed: swept.closed,
       }),
     );
 
-    return Response.json(
-      {
-        error: "Model price sync failed",
-        errorKind: "internal_error",
-        requestId,
-      },
-      { status: 500 },
-    );
+    return { ok: true, result: swept };
+  } catch (error) {
+    logStepFailure("sandbox-span-sweep.failed", requestId, error);
+    return { ok: false, result: { error: "span sweep failed" } };
   }
 }
 

@@ -6,11 +6,15 @@ import type {
   SandboxMeterOpenEvent,
 } from "@open-agents/sandbox";
 import { setSandboxMeter } from "@open-agents/sandbox";
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, isNull, lt } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { db } from "@/lib/db/client";
 import { sandboxUsageEvents } from "@/lib/db/schema";
 import { estimateSandboxCost } from "@/lib/usage/compute-pricing";
+import {
+  decideOpenSpan,
+  MAX_SANDBOX_LIFETIME_MS,
+} from "@/lib/usage/span-lifecycle";
 
 function warn(phase: "open" | "close", error: unknown): void {
   console.warn(
@@ -22,6 +26,70 @@ function warn(phase: "open" | "close", error: unknown): void {
       errorName: error instanceof Error ? error.name : typeof error,
     }),
   );
+}
+
+async function closeSpan(span: {
+  id: string;
+  startedAt: Date;
+  memoryMb: number;
+  endedAt: Date;
+  reason: "hibernated" | "stopped" | "archived" | "expired" | "failed";
+}): Promise<void> {
+  const wallClockMs = Math.max(
+    0,
+    span.endedAt.getTime() - span.startedAt.getTime(),
+  );
+  const { memoryGbHours, estimatedCostUsd } = estimateSandboxCost({
+    memoryMb: span.memoryMb,
+    wallClockMs,
+  });
+
+  await db
+    .update(sandboxUsageEvents)
+    .set({
+      endedAt: span.endedAt,
+      wallClockMs,
+      endReason: span.reason,
+      memoryGbHours,
+      estimatedCostUsd,
+    })
+    .where(eq(sandboxUsageEvents.id, span.id));
+}
+
+/**
+ * Close spans that nothing will ever close.
+ *
+ * A sandbox reclaimed by the provider at its hard timeout, or one whose owning
+ * process died, never runs `stop()`. Its span would otherwise stay open
+ * forever: uncosted, and counted as a leak by anything reading open spans.
+ * Ends each at the latest moment it could have been running.
+ */
+export async function sweepStaleSandboxSpans(): Promise<{ closed: number }> {
+  const cutoff = new Date(Date.now() - MAX_SANDBOX_LIFETIME_MS);
+  const stale = await db
+    .select({
+      id: sandboxUsageEvents.id,
+      startedAt: sandboxUsageEvents.startedAt,
+      memoryMb: sandboxUsageEvents.memoryMb,
+    })
+    .from(sandboxUsageEvents)
+    .where(
+      and(
+        isNull(sandboxUsageEvents.endedAt),
+        lt(sandboxUsageEvents.startedAt, cutoff),
+      ),
+    )
+    .limit(500);
+
+  for (const span of stale) {
+    await closeSpan({
+      ...span,
+      endedAt: new Date(span.startedAt.getTime() + MAX_SANDBOX_LIFETIME_MS),
+      reason: "expired",
+    });
+  }
+
+  return { closed: stale.length };
 }
 
 /**
@@ -46,7 +114,11 @@ export function createSandboxMeter(): SandboxMeter {
 
         if (event.sandboxName) {
           const [existingOpenSpan] = await db
-            .select({ id: sandboxUsageEvents.id })
+            .select({
+              id: sandboxUsageEvents.id,
+              startedAt: sandboxUsageEvents.startedAt,
+              memoryMb: sandboxUsageEvents.memoryMb,
+            })
             .from(sandboxUsageEvents)
             .where(
               and(
@@ -56,10 +128,31 @@ export function createSandboxMeter(): SandboxMeter {
             )
             .limit(1);
 
-          // One live VM is one span. A reconnect reports another open for a
-          // sandbox whose span is already open — ignore it.
           if (existingOpenSpan) {
-            return;
+            // One live VM is one span: a reconnect to a sandbox whose span is
+            // already open reports another open, and it is ignored.
+            if (
+              decideOpenSpan(existingOpenSpan.startedAt, event.startedAt) ===
+              "ignore"
+            ) {
+              return;
+            }
+
+            // Older than any sandbox can possibly live, so nothing closed it —
+            // the provider reclaimed the VM at its hard timeout and no stop()
+            // ever ran. Leaving it would suppress every future lifetime for
+            // this sandbox, silently merging separate billed intervals into
+            // one row that never ends. Close it at the timeout it could not
+            // have outlived, then open the new span.
+            await closeSpan({
+              id: existingOpenSpan.id,
+              startedAt: existingOpenSpan.startedAt,
+              memoryMb: existingOpenSpan.memoryMb,
+              endedAt: new Date(
+                existingOpenSpan.startedAt.getTime() + MAX_SANDBOX_LIFETIME_MS,
+              ),
+              reason: "expired",
+            });
           }
         }
 

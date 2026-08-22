@@ -338,6 +338,16 @@ export interface CostCoverageSummary {
   platformCostUsd: string;
   /** Value of tokens a caller paid for with their own key. */
   userKeyCostUsd: string;
+  /**
+   * Priced events whose route was never recorded, so it is not known who paid.
+   *
+   * Not folded into platform spend. `recordUsage` is called without a route in
+   * places (the subagent path in chat-post-finish-impl.ts), and defaulting
+   * those to "we paid" would silently bill the platform for a BYO-key user's
+   * subagent turns. An unclassified bucket is a visible gap; a wrong total is
+   * not.
+   */
+  unclassifiedCostUsd: string;
 }
 
 /**
@@ -352,8 +362,9 @@ export async function getCostCoverage(
       eventCount: sql<number>`count(*)::double precision`,
       pricedEventCount: sql<number>`coalesce(sum(case when ${usageEvents.pricingStatus} = 'priced' then 1 else 0 end), 0)::double precision`,
       unknownModelEventCount: sql<number>`coalesce(sum(case when ${usageEvents.pricingStatus} = 'unknown_model' then 1 else 0 end), 0)::double precision`,
-      platformCostUsd: sql<string>`coalesce(sum(case when ${usageEvents.inferenceRoute} = 'user' then 0 else ${usageEvents.costUsd} end), 0)::text`,
+      platformCostUsd: sql<string>`coalesce(sum(case when ${usageEvents.inferenceRoute} = 'gateway' then ${usageEvents.costUsd} else 0 end), 0)::text`,
       userKeyCostUsd: sql<string>`coalesce(sum(case when ${usageEvents.inferenceRoute} = 'user' then ${usageEvents.costUsd} else 0 end), 0)::text`,
+      unclassifiedCostUsd: sql<string>`coalesce(sum(case when ${usageEvents.inferenceRoute} is null then ${usageEvents.costUsd} else 0 end), 0)::text`,
     })
     .from(usageEvents)
     .where(buildCostRollupWhereClause(options));
@@ -368,5 +379,6 @@ export async function getCostCoverage(
     pricedRatio: eventCount === 0 ? 0 : pricedEventCount / eventCount,
     platformCostUsd: row?.platformCostUsd ?? "0",
     userKeyCostUsd: row?.userKeyCostUsd ?? "0",
+    unclassifiedCostUsd: row?.unclassifiedCostUsd ?? "0",
   };
 }

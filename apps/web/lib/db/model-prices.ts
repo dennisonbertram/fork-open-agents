@@ -23,8 +23,22 @@ const currentPriceCache = new Map<
   { value: CurrentModelPrice | null; expiresAt: number }
 >();
 
+/**
+ * Circuit breaker for an unreachable price book.
+ *
+ * Pricing is best-effort and runs on every assistant turn, so a database that
+ * is briefly unreachable would otherwise mean one failed connection attempt per
+ * turn — a connection storm at exactly the moment the database is least able to
+ * absorb one. A short cool-off makes the first failure the only attempt for a
+ * while; callers get unpriced rows meanwhile, which `pricing_status` already
+ * reports honestly.
+ */
+const LOOKUP_COOLDOWN_MS = 30 * 1000;
+let lookupUnavailableUntil = 0;
+
 export function clearModelPriceCache(): void {
   currentPriceCache.clear();
+  lookupUnavailableUntil = 0;
 }
 
 export async function getCurrentModelPrice(
@@ -35,14 +49,33 @@ export async function getCurrentModelPrice(
     return cached.value;
   }
 
-  const [row] = await db
-    .select({ id: modelPrices.id, cost: modelPrices.cost })
-    .from(modelPrices)
-    .where(
-      and(eq(modelPrices.modelId, modelId), isNull(modelPrices.effectiveTo)),
-    )
-    .orderBy(desc(modelPrices.effectiveFrom))
-    .limit(1);
+  if (Date.now() < lookupUnavailableUntil) {
+    return null;
+  }
+
+  let row: CurrentModelPrice | undefined;
+  try {
+    [row] = await db
+      .select({ id: modelPrices.id, cost: modelPrices.cost })
+      .from(modelPrices)
+      .where(
+        and(eq(modelPrices.modelId, modelId), isNull(modelPrices.effectiveTo)),
+      )
+      .orderBy(desc(modelPrices.effectiveFrom))
+      .limit(1);
+  } catch (error) {
+    lookupUnavailableUntil = Date.now() + LOOKUP_COOLDOWN_MS;
+    console.warn(
+      JSON.stringify({
+        service: "usage",
+        event: "model-price-lookup-unavailable",
+        level: "warn",
+        cooldownMs: LOOKUP_COOLDOWN_MS,
+        errorName: error instanceof Error ? error.name : typeof error,
+      }),
+    );
+    return null;
+  }
 
   const value = row ?? null;
   currentPriceCache.set(modelId, {
@@ -90,7 +123,11 @@ export async function applyModelPriceSync(
         modelId: action.modelId,
         provider: action.provider,
         cost: action.cost,
-        source: "vercel-ai-gateway",
+        // models.dev is where these rates actually come from: the raw gateway
+        // catalogue carries no `cost` field at all. Writing anything else here
+        // makes the column lie and leaves an audit unable to tell a published
+        // rate from a hand-entered one.
+        source: "models-dev",
       });
 
       if (action.kind === "supersede") {
