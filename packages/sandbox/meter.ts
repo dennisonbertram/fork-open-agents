@@ -96,24 +96,60 @@ function swallow(error: unknown, phase: "open" | "close"): void {
   );
 }
 
+/**
+ * Per-sandbox write queue.
+ *
+ * Both report functions are fire-and-forget, so without this a sandbox created
+ * and stopped in quick succession runs `onOpen` and `onClose` concurrently. The
+ * close query then reads before the open insert lands, finds no open span and
+ * does nothing — and the open it raced inserts a span that stays open forever.
+ * Chaining per sandbox name keeps callers non-blocking while guaranteeing a
+ * close observes its own open.
+ */
+const writeQueues = new Map<string, Promise<void>>();
+
+function enqueue(key: string, work: () => Promise<void>): void {
+  const previous = writeQueues.get(key) ?? Promise.resolve();
+  const next = previous.then(work, work);
+  writeQueues.set(key, next);
+  void next.finally(() => {
+    // Drop the entry once this is the last queued write, so a long-lived
+    // process does not retain one promise per sandbox it has ever seen.
+    if (writeQueues.get(key) === next) {
+      writeQueues.delete(key);
+    }
+  });
+}
+
 export function reportSandboxOpen(event: SandboxMeterOpenEvent): void {
-  if (!registeredMeter) return;
-  try {
-    void Promise.resolve(registeredMeter.onOpen(event)).catch((error) =>
-      swallow(error, "open"),
-    );
-  } catch (error) {
-    swallow(error, "open");
+  const meter = registeredMeter;
+  if (!meter) {
+    return;
   }
+  enqueue(event.sandboxName ?? event.sandboxId ?? "unknown", async () => {
+    try {
+      await meter.onOpen(event);
+    } catch (error) {
+      swallow(error, "open");
+    }
+  });
 }
 
 export function reportSandboxClose(event: SandboxMeterCloseEvent): void {
-  if (!registeredMeter) return;
-  try {
-    void Promise.resolve(registeredMeter.onClose(event)).catch((error) =>
-      swallow(error, "close"),
-    );
-  } catch (error) {
-    swallow(error, "close");
+  const meter = registeredMeter;
+  if (!meter) {
+    return;
   }
+  enqueue(event.sandboxName ?? event.sandboxId ?? "unknown", async () => {
+    try {
+      await meter.onClose(event);
+    } catch (error) {
+      swallow(error, "close");
+    }
+  });
+}
+
+/** Test seam: resolves once every queued meter write has settled. */
+export async function flushSandboxMeter(): Promise<void> {
+  await Promise.all(writeQueues.values());
 }

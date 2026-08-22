@@ -121,6 +121,10 @@ async function connectNamedSandbox(
       remainingTimeout,
       ports: options?.ports,
       resume: options?.resume,
+      // Forwarded so a resumed sandbox — the common case once a session has
+      // hibernated once — can open a billing span with a real size.
+      meter: options?.meter,
+      vcpus: options?.vcpus,
       // Carried through the resume path too: it is only applied at creation
       // otherwise, so every reconnect would leave the snapshot this sandbox
       // writes on stop unbounded.

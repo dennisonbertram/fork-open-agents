@@ -12,6 +12,7 @@ import {
   MEMORY_MB_PER_VCPU,
   reportSandboxClose,
   reportSandboxOpen,
+  type SandboxMeterAttribution,
 } from "../meter";
 import type { VercelSandboxConfig, VercelSandboxConnectConfig } from "./config";
 import type { VercelState } from "./state";
@@ -169,6 +170,15 @@ async function stopSandboxBestEffort(
       stopError,
     );
   }
+
+  // The span was opened as soon as the VM was provisioned, so a creation that
+  // dies during setup still has one. Close it here or it stays open forever
+  // and reads as a leaked sandbox.
+  reportSandboxClose({
+    sandboxName: sdk.name,
+    endedAt: new Date(),
+    reason: "failed",
+  });
 }
 
 type VercelSandboxSession = ReturnType<
@@ -632,6 +642,22 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
       sdk = await VercelSandboxSDK.create(createBaseConfig);
     }
 
+    // Billing starts the moment the SDK returns a provisioned VM. The
+    // `startTime` captured further down is deliberately taken AFTER workspace
+    // setup so the user gets their full timeout, which makes it the wrong
+    // clock for cost: provisioning plus a clone is billable and can run for
+    // minutes. Opening here also means a VM whose setup or afterStart hook
+    // throws still has a span, which `stopSandboxBestEffort` then closes.
+    const billingStartedAt = new Date();
+    reportSandboxOpen({
+      attribution: meter,
+      sandboxName: sdk.name,
+      sandboxId: sdk.currentSession().sessionId,
+      vcpus,
+      memoryMb: vcpus * MEMORY_MB_PER_VCPU,
+      startedAt: billingStartedAt,
+    });
+
     const workingDirectory = DEFAULT_WORKING_DIRECTORY;
 
     // GitHub credential brokering is active on the network policy from the
@@ -726,17 +752,6 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
         await hooks.afterStart(sandbox);
       }
 
-      // The billing span starts here: a VM is now provisioned and its memory is
-      // being charged on wall-clock life until stop().
-      reportSandboxOpen({
-        attribution: meter,
-        sandboxName: sdk.name,
-        sandboxId: session.sessionId,
-        vcpus,
-        memoryMb: vcpus * MEMORY_MB_PER_VCPU,
-        startedAt: new Date(startTime),
-      });
-
       return sandbox;
     } catch (error) {
       await stopSandboxBestEffort(sdk, stage, error);
@@ -766,6 +781,14 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
       ports?: number[];
       /** Whether to explicitly resume a stopped sandbox */
       resume?: boolean;
+      /** Tenant attribution, so a resumed VM's span can be recorded. */
+      meter?: SandboxMeterAttribution;
+      /**
+       * vCPUs this session is configured for. The SDK does not report a
+       * resumed sandbox's restored allocation back, so this is what a resumed
+       * span records — the size the caller asked for, not a guess.
+       */
+      vcpus?: number;
       /**
        * Retention for the snapshot this sandbox writes when it stops.
        *
@@ -829,16 +852,29 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
       await options.hooks.afterStart(sandbox);
     }
 
-    // Deliberately NOT metered as an open.
+    // Report an open on every attach, and let the handler decide.
     //
-    // A reconnect attaches to a VM that is already running and already being
-    // billed, so it does not begin a billing span. More importantly, the vCPU
-    // count was fixed at creation and is not recoverable here — and vCPU is
-    // what provisioned memory, and therefore cost, is derived from. Opening a
-    // span here would mean guessing that number, and a guessed input to a cost
-    // figure is worse than a missing span: the gap is visible, the guess is not.
+    // This path serves two very different cases and cannot tell them apart:
+    // attaching to a VM that is already running (already billed, no new span)
+    // and RESUMING a stopped one, which starts a fresh billable lifetime.
+    // Hibernation makes the second case the common one — every session after
+    // its first idle timeout arrives here — so skipping it would leave most
+    // real sandbox lifetimes unrecorded.
     //
-    // Spans are opened in create(), which is the only place the size is known.
+    // Rather than guess, both are reported: the handler is idempotent on an
+    // unclosed span for this sandbox name, so an already-running reconnect is
+    // ignored and a resume opens exactly one span. `startedAt` comes from the
+    // SDK session itself, which is when billing actually began.
+    if (options.vcpus !== undefined) {
+      reportSandboxOpen({
+        attribution: options.meter,
+        sandboxName,
+        sandboxId: session.sessionId,
+        vcpus: options.vcpus,
+        memoryMb: options.vcpus * MEMORY_MB_PER_VCPU,
+        startedAt: session.startedAt ?? new Date(),
+      });
+    }
 
     return sandbox;
   }

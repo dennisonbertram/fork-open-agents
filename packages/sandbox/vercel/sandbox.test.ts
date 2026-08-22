@@ -1074,3 +1074,73 @@ describe("connectVercel forwards snapshot expiry to a resumed sandbox", () => {
     expect(updateCalls).toContainEqual({ snapshotExpiration: 604_800_000 });
   });
 });
+
+/**
+ * Resume is the common case, not the rare one.
+ *
+ * A session hibernates after 30 minutes idle and resumes from its snapshot on
+ * the next message, and `connectNamedSandbox` reaches `VercelSandbox.connect`
+ * — not `create` — whenever the named sandbox still exists. An earlier version
+ * of the meter only opened spans in `create()`, so every lifetime after a
+ * session's first hibernate was billed and never recorded. These guard that.
+ */
+describe("billing spans on the resume path", () => {
+  test("a resumed named sandbox opens a billing span", async () => {
+    const meterModule = await import("../meter");
+    const opens: Array<Record<string, unknown>> = [];
+    meterModule.setSandboxMeter({
+      onOpen: (event) => {
+        opens.push(event as unknown as Record<string, unknown>);
+      },
+      onClose: () => {},
+    });
+
+    try {
+      const { connectVercel } = await import("./connect");
+      await connectVercel(
+        { sandboxName: "session_resume-meter-test" },
+        {
+          resume: true,
+          vcpus: 4,
+          meter: { userId: "user_resume", sessionId: "sess_resume" },
+        },
+      );
+      await meterModule.flushSandboxMeter();
+
+      expect(opens).toHaveLength(1);
+      expect(opens[0]).toMatchObject({
+        sandboxName: "session_resume-meter-test",
+        vcpus: 4,
+        memoryMb: 4 * meterModule.MEMORY_MB_PER_VCPU,
+      });
+    } finally {
+      meterModule.setSandboxMeter(null);
+    }
+  });
+
+  test("opens no span when the caller supplied no size to bill", async () => {
+    const meterModule = await import("../meter");
+    const opens: unknown[] = [];
+    meterModule.setSandboxMeter({
+      onOpen: (event) => {
+        opens.push(event);
+      },
+      onClose: () => {},
+    });
+
+    try {
+      const { connectVercel } = await import("./connect");
+      await connectVercel(
+        { sandboxName: "session_resume-no-size" },
+        { resume: true, meter: { userId: "user_resume" } },
+      );
+      await meterModule.flushSandboxMeter();
+
+      // vCPU is what memory cost derives from. With no size the honest record
+      // is no record, rather than a span built on a guessed allocation.
+      expect(opens).toHaveLength(0);
+    } finally {
+      meterModule.setSandboxMeter(null);
+    }
+  });
+});
