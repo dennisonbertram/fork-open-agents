@@ -46,8 +46,20 @@ class StoryErrorBoundary extends Component<
   }
 }
 
-const withErrorBoundary: Decorator = (Story) => (
-  <StoryErrorBoundary>
+/**
+ * Keyed on the story and its args so the boundary REMOUNTS when either changes.
+ *
+ * Generated stories pass no props, so a component with required props throws on
+ * first render and the boundary catches it. Supplying those props through
+ * Controls re-renders the same decorated tree rather than remounting it, so
+ * without a changing key the caught error would persist and the fallback would
+ * stay on screen forever — leaving Controls unable to recover exactly the
+ * components that need it most.
+ */
+const withErrorBoundary: Decorator = (Story, context) => (
+  <StoryErrorBoundary
+    key={`${context.id}:${JSON.stringify(context.args ?? {})}`}
+  >
     <Story />
   </StoryErrorBoundary>
 );

@@ -11,6 +11,10 @@ const matches = [...atlas.matchAll(/components\/[A-Za-z0-9/_.-]+\.tsx/g)].map(
 );
 const unique = [...new Set(matches)].sort();
 
+// Curated stories are preserved unless this is set.
+const force = process.argv.includes("--force");
+const skippedCurated: string[] = [];
+
 function pascalize(segment: string): string {
   return segment
     .split(/[-_.]/)
@@ -113,11 +117,35 @@ type Story = StoryObj;
 export const Default: Story = {};
 `;
 
-  await writeFile(path.join(webRoot, storyRel), content);
+  // Never clobber a story someone has curated.
+  //
+  // Filling in real args is the whole follow-up to this scaffold, and running
+  // this script again to pick up one new component would otherwise silently
+  // reset every story back to the empty template. Generated files are marked
+  // with `generatedFrom`; anything without that marker has been edited by hand
+  // and is left alone. Pass --force to overwrite regardless.
+  const storyPath = path.join(webRoot, storyRel);
+  const existing = await readFile(storyPath, "utf8").catch(() => null);
+  if (existing !== null && !force) {
+    if (!existing.includes("generatedFrom:")) {
+      skippedCurated.push(storyRel);
+      continue;
+    }
+  }
+
+  await writeFile(storyPath, content);
   created += 1;
 }
 
 console.log(`created: ${created}`);
+if (skippedCurated.length > 0) {
+  console.log(
+    `kept curated (use --force to overwrite): ${skippedCurated.length}`,
+  );
+  for (const item of skippedCurated) {
+    console.log(`  ${item}`);
+  }
+}
 if (skippedMissing.length > 0) {
   console.log(`missing on disk: ${skippedMissing.length}`);
   for (const item of skippedMissing) {
