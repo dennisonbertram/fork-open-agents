@@ -4,6 +4,26 @@ This file provides guidance for AI coding agents working in this repository.
 
 **This is a living document.** When you make a mistake or learn something new about this codebase, add it to [Lessons Learned](docs/agents/lessons-learned.md).
 
+[Distilled Learnings](docs/agents/distilled-learnings.md) is the companion:
+the recurring *shapes* of mistakes here, mined from session transcripts and
+each tied to evidence. Read it before dispatching cloud work, writing a guard,
+or trusting a status field. Its most load-bearing sections:
+
+- [Reading status from the cloud loop](docs/agents/distilled-learnings.md#reading-status-from-the-cloud-loop)
+  — `completed` is not success, and a null field may be unsettled rather than empty.
+- [Writing a dispatch brief](docs/agents/distilled-learnings.md#writing-a-dispatch-brief)
+  — the five things a remote agent cannot ask you for.
+- [The MCP server itself](docs/agents/distilled-learnings.md#the-mcp-server-itself)
+  — consent, scopes advertised before their tools existed, and why the OIDC provider is load-bearing.
+- [Guards that pass while doing nothing](docs/agents/distilled-learnings.md#guards-that-pass-while-doing-nothing)
+  — including one that existed only in a comment.
+- [Release, deploy and status tools](docs/agents/distilled-learnings.md#release-deploy-and-status-tools)
+  — where `ops:status` can name a deployment and report another one's commit.
+- [Recurring product defect shapes](docs/agents/distilled-learnings.md#recurring-product-defect-shapes)
+  — readiness checks that ask a different question than the thing that fails.
+- [Working with several agents at once](docs/agents/distilled-learnings.md#working-with-several-agents-at-once)
+  — worktree isolation, and suspecting the brief before the agent.
+
 Keep this file as a routing document. Do not add long runbooks, design notes,
 or detailed procedures here; put that material in `docs/agents`,
 `docs/process`, or `docs/plans`, then link to it from this file.
@@ -13,6 +33,7 @@ or detailed procedures here; put that material in `docs/agents`,
 - [Architecture & Workspace Structure](docs/agents/architecture.md)
 - [Code Style & Patterns](docs/agents/code-style.md)
 - [Lessons Learned](docs/agents/lessons-learned.md)
+- [Distilled Learnings](docs/agents/distilled-learnings.md)
 - [Process Index](docs/process/index.md)
 - [Local Development Setup](docs/process/local-development.md)
 - [Development Workflow](docs/process/development-workflow.md)
@@ -26,7 +47,6 @@ or detailed procedures here; put that material in `docs/agents`,
 - [Managed Runtime Proof Standard](docs/process/managed-runtime-proof-standard.md)
 - [Deployed Feature Proof Standard](docs/process/deployed-feature-proof-standard.md)
 - [Production Release Runbook](docs/process/production-release-runbook.md)
-- [Cloud UX walk plan](docs/plans/cloud-ux-walk.md)
 - [Cloud UX walk plan](docs/plans/cloud-ux-walk.md)
 
 ## Repository Ownership And Upstream Policy
