@@ -34,15 +34,33 @@ claude mcp add --transport http open-agents \
 ```
 
 Then authenticate. The server uses OAuth with dynamic client registration, so
-there is no API key to paste and nothing to configure by hand:
+there is no API key to paste and nothing to configure by hand.
 
-1. Call the client's `authenticate` tool for the server. It returns an
-   authorization URL.
-2. The user opens that URL and approves the requested scopes.
-3. The browser redirects to `http://localhost:<port>/callback?code=…&state=…`.
-   On a remote or headless session that page will fail to load — **the URL in
-   the address bar is still valid**. Pass it to `complete_authentication`.
-4. The server's real tools appear automatically.
+**From a terminal** — the supported CLI flow, and the one to reach for first:
+
+```bash
+claude mcp login open-agents
+
+# SSH or headless: print the URL instead of opening a browser,
+# then paste the redirect URL back when prompted.
+claude mcp login open-agents --no-browser
+```
+
+`claude mcp list` and `claude mcp get open-agents` report whether the server is
+connected. `claude mcp logout open-agents` clears stored credentials.
+
+**From inside an agent session**, some harnesses instead expose the OAuth flow
+as two model-callable tools on the server — `authenticate`, which returns an
+authorization URL for the user to approve, and `complete_authentication`, which
+takes the callback URL. Use them when the client offers them; they are not part
+of the Claude Code CLI, so `claude mcp login` remains the path at a terminal.
+
+Either way, one detail catches people out: after approving, the browser is
+redirected to `http://localhost:<port>/callback?code=…&state=…`. On a remote or
+headless session **that page will fail to load — the URL in the address bar is
+still valid**, and it is what the CLI prompt or `complete_authentication` wants.
+
+Once authorization succeeds the server's real tools become available.
 
 ### Any other MCP client
 
@@ -61,11 +79,13 @@ Scopes advertised: `sessions:read`, `sessions:write`, `agents:read`,
 Two distinct failures look the same from a chat window: the server being down,
 and this session not holding a token. Separate them before debugging anything.
 
-**Is the session connected?** Look at which tools the client exposes for this
-server. If the only ones present are `authenticate` and
-`complete_authentication`, you are **not** connected — the real tools load only
-after OAuth. Once connected, `open_agents_whoami` is the cheapest confirmation
-that the token works and reports which account it belongs to.
+**Is the session connected?** From a terminal, `claude mcp get open-agents`
+reports connection status directly. From inside an agent session, look at which
+tools the client exposes for this server: if the only ones present are
+`authenticate` and `complete_authentication`, you are **not** connected — the
+real tools load only after OAuth. Once connected, `open_agents_whoami` is the
+cheapest confirmation that the token works, and it reports which account it
+belongs to.
 
 **Is the server up?** An unauthenticated request should return `401` with a
 `WWW-Authenticate: Bearer resource_metadata="…"` header:
@@ -142,7 +162,9 @@ matter most:
 ## Provenance of this skill
 
 The endpoint, discovery responses, advertised scopes and the `401` signature
-were verified live against production. The tool names, scopes, annotations and
+were verified live against production. The `claude mcp add`, `login`,
+`--no-browser`, `list`, `get` and `logout` commands were taken from the CLI's
+own `--help` output rather than from memory. The tool names, scopes, annotations and
 `start_session` input schema were read from the server source in
 `apps/web/lib/mcp-server/`. An end-to-end dispatch was **not** executed while
 writing this, so treat the dispatch section as accurate about the contract and
