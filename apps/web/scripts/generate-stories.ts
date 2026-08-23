@@ -1,19 +1,41 @@
+import { Glob } from "bun";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 const repoRoot = path.resolve(import.meta.dir, "../../..");
-const atlasPath = path.join(repoRoot, "docs/component-atlas.html");
 const webRoot = path.join(repoRoot, "apps/web");
 
-const atlas = await readFile(atlasPath, "utf8");
-const matches = [...atlas.matchAll(/components\/[A-Za-z0-9/_.-]+\.tsx/g)].map(
-  (m) => m[0],
-);
-const unique = [...new Set(matches)].sort();
+/**
+ * The component source tree is the manifest.
+ *
+ * This used to parse the committed `docs/component-atlas.html` for file paths,
+ * which meant a component added after that snapshot could never be discovered:
+ * the atlas is a static artefact with no regeneration command in this repo, so
+ * "regenerate the stories" would quietly keep reproducing an old list forever.
+ * Reading the tree makes the script self-maintaining.
+ */
+const unique = [...new Glob("components/**/*.tsx").scanSync({ cwd: webRoot })]
+  .filter(
+    (file) => !(file.endsWith(".test.tsx") || file.endsWith(".stories.tsx")),
+  )
+  .sort();
 
 // Curated stories are preserved unless this is set.
 const force = process.argv.includes("--force");
 const skippedCurated: string[] = [];
+
+/**
+ * Whether a story on disk is still the untouched generated one.
+ *
+ * Compared with whitespace collapsed, because the repo formatter rewraps these
+ * files after generation — a purely cosmetic difference that a byte comparison
+ * would misread as curation, permanently freezing those stories. Any real edit
+ * (args, decorators, extra exports) survives normalisation and is preserved.
+ */
+function isUntouched(existing: string, generated: string): boolean {
+  const normalise = (value: string) => value.replace(/\s+/g, " ").trim();
+  return normalise(existing) === normalise(generated);
+}
 
 function pascalize(segment: string): string {
   return segment
@@ -119,18 +141,21 @@ export const Default: Story = {};
 
   // Never clobber a story someone has curated.
   //
-  // Filling in real args is the whole follow-up to this scaffold, and running
-  // this script again to pick up one new component would otherwise silently
-  // reset every story back to the empty template. Generated files are marked
-  // with `generatedFrom`; anything without that marker has been edited by hand
-  // and is left alone. Pass --force to overwrite regardless.
+  // Filling in real args is the whole follow-up to this scaffold, so running
+  // the script again to pick up a new component must not reset that work. The
+  // test is whether the file on disk is byte-identical to what would be
+  // generated for it: if it is, nobody has touched it and rewriting is a no-op;
+  // if it differs in any way, it has been edited and is left alone.
+  //
+  // Deliberately NOT keyed on the `generatedFrom` marker. Curating a story
+  // means adding args, not stripping its provenance metadata, so a marker check
+  // would treat every curated file as regenerable and delete exactly the work
+  // it was meant to protect. Pass --force to overwrite regardless.
   const storyPath = path.join(webRoot, storyRel);
   const existing = await readFile(storyPath, "utf8").catch(() => null);
-  if (existing !== null && !force) {
-    if (!existing.includes("generatedFrom:")) {
-      skippedCurated.push(storyRel);
-      continue;
-    }
+  if (existing !== null && !force && !isUntouched(existing, content)) {
+    skippedCurated.push(storyRel);
+    continue;
   }
 
   await writeFile(storyPath, content);
