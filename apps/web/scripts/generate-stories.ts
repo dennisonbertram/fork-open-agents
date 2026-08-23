@@ -25,16 +25,40 @@ const force = process.argv.includes("--force");
 const skippedCurated: string[] = [];
 
 /**
- * Whether a story on disk is still the untouched generated one.
+ * Whether a story on disk is still an untouched generated scaffold.
  *
- * Compared with whitespace collapsed, because the repo formatter rewraps these
- * files after generation — a purely cosmetic difference that a byte comparison
- * would misread as curation, permanently freezing those stories. Any real edit
- * (args, decorators, extra exports) survives normalisation and is preserved.
+ * Tested structurally rather than by diffing against the freshly generated
+ * text. A content diff cannot tell "a human added args" from "the component
+ * renamed its export, so the template moved underneath an untouched file" —
+ * and misreading the second as curation leaves a stale import in place, which
+ * can stop Storybook compiling. `--force` is not the escape hatch, because it
+ * would overwrite genuine curation too.
+ *
+ * A generated scaffold is exactly one empty `Default` story and nothing else.
+ * Anything a person would add while curating — args, decorators, play
+ * functions, extra named stories — fails this test and is preserved, whatever
+ * the component's export is called.
  */
-function isUntouched(existing: string, generated: string): boolean {
-  const normalise = (value: string) => value.replace(/\s+/g, " ").trim();
-  return normalise(existing) === normalise(generated);
+function isUntouchedScaffold(existing: string): boolean {
+  const normalised = existing.replace(/\s+/g, " ").trim();
+
+  if (!normalised.includes("export const Default: Story = {};")) {
+    return false;
+  }
+
+  const storyExports = [
+    ...normalised.matchAll(/export const ([A-Za-z0-9_]+)/g),
+  ].map((match) => match[1]);
+  if (storyExports.length !== 1 || storyExports[0] !== "Default") {
+    return false;
+  }
+
+  return !(
+    normalised.includes("args:") ||
+    normalised.includes("decorators:") ||
+    normalised.includes("play:") ||
+    normalised.includes("render:")
+  );
 }
 
 function pascalize(segment: string): string {
@@ -153,7 +177,7 @@ export const Default: Story = {};
   // it was meant to protect. Pass --force to overwrite regardless.
   const storyPath = path.join(webRoot, storyRel);
   const existing = await readFile(storyPath, "utf8").catch(() => null);
-  if (existing !== null && !force && !isUntouched(existing, content)) {
+  if (existing !== null && !force && !isUntouchedScaffold(existing)) {
     skippedCurated.push(storyRel);
     continue;
   }
