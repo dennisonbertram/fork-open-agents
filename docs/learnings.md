@@ -17,3 +17,7 @@ Short cross-cutting notes. Detailed entries live in
 - A seeded GitHub account with a fake token trips undismissable
   `GitHubReconnectGate`. Prefer a null token plus a connection-status
   exception for `dev-managed-runtime-user` while test-auth is on.
+
+## 2026-08-21 — security hygiene fanout
+
+See [docs/security-hygiene/learnings.md](security-hygiene/learnings.md).
