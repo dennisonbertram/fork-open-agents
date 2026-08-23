@@ -1,19 +1,65 @@
+import { Glob } from "bun";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 const repoRoot = path.resolve(import.meta.dir, "../../..");
-const atlasPath = path.join(repoRoot, "docs/component-atlas.html");
 const webRoot = path.join(repoRoot, "apps/web");
 
-const atlas = await readFile(atlasPath, "utf8");
-const matches = [...atlas.matchAll(/components\/[A-Za-z0-9/_.-]+\.tsx/g)].map(
-  (m) => m[0],
-);
-const unique = [...new Set(matches)].sort();
+/**
+ * The component source tree is the manifest.
+ *
+ * This used to parse the committed `docs/component-atlas.html` for file paths,
+ * which meant a component added after that snapshot could never be discovered:
+ * the atlas is a static artefact with no regeneration command in this repo, so
+ * "regenerate the stories" would quietly keep reproducing an old list forever.
+ * Reading the tree makes the script self-maintaining.
+ */
+const unique = [...new Glob("components/**/*.tsx").scanSync({ cwd: webRoot })]
+  .filter(
+    (file) => !(file.endsWith(".test.tsx") || file.endsWith(".stories.tsx")),
+  )
+  .sort();
 
 // Curated stories are preserved unless this is set.
 const force = process.argv.includes("--force");
 const skippedCurated: string[] = [];
+
+/**
+ * Whether a story on disk is still an untouched generated scaffold.
+ *
+ * Tested structurally rather than by diffing against the freshly generated
+ * text. A content diff cannot tell "a human added args" from "the component
+ * renamed its export, so the template moved underneath an untouched file" —
+ * and misreading the second as curation leaves a stale import in place, which
+ * can stop Storybook compiling. `--force` is not the escape hatch, because it
+ * would overwrite genuine curation too.
+ *
+ * A generated scaffold is exactly one empty `Default` story and nothing else.
+ * Anything a person would add while curating — args, decorators, play
+ * functions, extra named stories — fails this test and is preserved, whatever
+ * the component's export is called.
+ */
+function isUntouchedScaffold(existing: string): boolean {
+  const normalised = existing.replace(/\s+/g, " ").trim();
+
+  if (!normalised.includes("export const Default: Story = {};")) {
+    return false;
+  }
+
+  const storyExports = [
+    ...normalised.matchAll(/export const ([A-Za-z0-9_]+)/g),
+  ].map((match) => match[1]);
+  if (storyExports.length !== 1 || storyExports[0] !== "Default") {
+    return false;
+  }
+
+  return !(
+    normalised.includes("args:") ||
+    normalised.includes("decorators:") ||
+    normalised.includes("play:") ||
+    normalised.includes("render:")
+  );
+}
 
 function pascalize(segment: string): string {
   return segment
@@ -119,18 +165,21 @@ export const Default: Story = {};
 
   // Never clobber a story someone has curated.
   //
-  // Filling in real args is the whole follow-up to this scaffold, and running
-  // this script again to pick up one new component would otherwise silently
-  // reset every story back to the empty template. Generated files are marked
-  // with `generatedFrom`; anything without that marker has been edited by hand
-  // and is left alone. Pass --force to overwrite regardless.
+  // Filling in real args is the whole follow-up to this scaffold, so running
+  // the script again to pick up a new component must not reset that work. The
+  // test is whether the file on disk is byte-identical to what would be
+  // generated for it: if it is, nobody has touched it and rewriting is a no-op;
+  // if it differs in any way, it has been edited and is left alone.
+  //
+  // Deliberately NOT keyed on the `generatedFrom` marker. Curating a story
+  // means adding args, not stripping its provenance metadata, so a marker check
+  // would treat every curated file as regenerable and delete exactly the work
+  // it was meant to protect. Pass --force to overwrite regardless.
   const storyPath = path.join(webRoot, storyRel);
   const existing = await readFile(storyPath, "utf8").catch(() => null);
-  if (existing !== null && !force) {
-    if (!existing.includes("generatedFrom:")) {
-      skippedCurated.push(storyRel);
-      continue;
-    }
+  if (existing !== null && !force && !isUntouchedScaffold(existing)) {
+    skippedCurated.push(storyRel);
+    continue;
   }
 
   await writeFile(storyPath, content);
