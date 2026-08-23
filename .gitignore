@@ -52,3 +52,4 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 
 # Generated kanban board (source of truth is kanban.json)
 .kanban/
+apps/web/storybook-static/
